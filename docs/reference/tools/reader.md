@@ -705,7 +705,8 @@ Continue with the returned `next_cursor`, even if this page has no entries.
 Read a folder's authored or synthesized navigation and its source.
 
 Use `okf_inventory` to page through a bundle subtree. Synthesis covers
-immediate children only.
+immediate children only. Its links are relative to folder: join them to
+folder to read a note or list a child.
 
 **Parameters**
 

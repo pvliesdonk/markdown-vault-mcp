@@ -139,8 +139,8 @@ def synthesize(folder: str, inspection: BundleInspection) -> str:
     """
     entries: list[tuple[str, str, str | None]] = [
         (
-            entry.path.rsplit("/", 1)[-1],
-            "/" + entry.path + ("/" if entry.role == "directory" else ""),
+            (name := entry.path.rsplit("/", 1)[-1]),
+            "./" + name + ("/" if entry.role == "directory" else ""),
             None,
         )
         for entry in inspection.entries
@@ -231,7 +231,15 @@ class ReaderFacet:
         Returns:
             Navigation body, source, scope state and enumeration observations.
         """
-        inspection = self.inspect_bundle(
+        manager = self._doc_mgr
+        inspector = BundleInspector(
+            manager._source_dir,
+            manager._exclude_patterns or (),
+            manager._artifacts.extensions(),
+            manager._max_note_read_bytes,
+            manager._inspection_policy,
+        )
+        inspection = inspector.inspect(
             BundleChildrenRequest(root=folder, entry_limit=entry_limit, cursor=cursor)
         )
         index_path = f"{folder}/index.md" if folder else "index.md"
@@ -245,20 +253,8 @@ class ReaderFacet:
         )
         if inspection.state != "inspected":
             return result
-        manager = self._doc_mgr
-        inspector = BundleInspector(
-            manager._source_dir,
-            manager._exclude_patterns or (),
-            manager._artifacts.extensions(),
-            manager._max_note_read_bytes,
-            manager._inspection_policy,
-        )
-        try:
-            inspector._prepare_policy(manager._source_dir.resolve(strict=True))
-            if inspector._internal(index_path):
-                return replace(result, reason="internal")
-        except (OSError, RuntimeError):
-            return replace(result, reason="io_error")
+        if inspector._internal(index_path):
+            return replace(result, reason="internal")
         text, reason = read_authored(
             manager._source_dir, folder, manager._max_note_read_bytes
         )

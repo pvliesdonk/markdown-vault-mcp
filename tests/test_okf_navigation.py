@@ -58,14 +58,14 @@ def test_synthesis_includes_live_candidates_and_does_not_write(tmp_path):
     try:
         result = vault.reader.okf_navigation("")
         assert result.source == "synthesized"
-        assert "[untyped.md](/untyped.md)" in result.body
-        assert "[bad.md](/bad.md)" in result.body
-        assert "[.hidden.md](/.hidden.md)" in result.body
-        assert "[child](/child/)" in result.body
+        assert "[untyped.md](./untyped.md)" in result.body
+        assert "[bad.md](./bad.md)" in result.body
+        assert "[.hidden.md](./.hidden.md)" in result.body
+        assert "[child](./child/)" in result.body
         assert {p.name: p.stat().st_mtime_ns for p in tmp_path.iterdir()} == before
         vault.index.build_index()
         indexed = vault.reader.okf_navigation("")
-        assert "[untyped.md](/untyped.md)" in indexed.body
+        assert "[untyped.md](./untyped.md)" in indexed.body
     finally:
         vault.close()
 
@@ -106,11 +106,7 @@ def test_unreadable_authored_is_not_replaced(tmp_path, monkeypatch, kind, reason
 
 @pytest.mark.parametrize("policy_kind", ["path", "failure"])
 def test_internal_index_is_refused(tmp_path, monkeypatch, policy_kind):
-    from markdown_vault_mcp.bundle_inventory import (
-        BundleInspectionRequest,
-        BundleInspector,
-        InspectionPolicy,
-    )
+    from markdown_vault_mcp.bundle_inventory import BundleInspector, InspectionPolicy
 
     index = tmp_path / "index.md"
     index.write_text("secret")
@@ -120,18 +116,21 @@ def test_internal_index_is_refused(tmp_path, monkeypatch, policy_kind):
         # An uninspected folder returns before attempting an authored read.
         assert vault.reader.okf_navigation("missing").state == "missing"
         if policy_kind == "failure":
-            inspection = vault.reader.inspect_bundle(BundleInspectionRequest(""))
-            monkeypatch.setattr(
-                vault.reader, "inspect_bundle", lambda _request: inspection
-            )
 
             def fail(*_args):
                 raise PermissionError(errno.EACCES, "denied")
 
             monkeypatch.setattr(BundleInspector, "_prepare_policy", fail)
         result = vault.reader.okf_navigation("")
-        reason = "internal" if policy_kind == "path" else "io_error"
-        assert (result.source, result.reason, result.body) == (None, reason, None)
+        state, reason = (
+            ("inspected", "internal")
+            if policy_kind == "path"
+            else (
+                "unavailable",
+                None,
+            )
+        )
+        assert (result.state, result.reason, result.body) == (state, reason, None)
     finally:
         vault.close()
 
@@ -174,7 +173,7 @@ async def test_navigation_tool(tmp_path, monkeypatch):
                     },
                 )
             ).structured_content
-            assert "[b.md](/guides/b.md)" in continued["body"]
+            assert "[b.md](./b.md)" in continued["body"]
             with pytest.raises(ToolError, match="cursor"):
                 await client.call_tool(
                     "okf_navigation",
@@ -224,7 +223,7 @@ def test_navigation_pages_more_than_thousand_children(tmp_path):
         assert first.next_cursor is not None
         assert second.next_cursor is None
         assert sum(page.body.count("- [") for page in (first, second)) == 1010
-        assert "[note-1009.md](/note-1009.md)" in second.body
+        assert "[note-1009.md](./note-1009.md)" in second.body
     finally:
         vault.close()
 
@@ -257,9 +256,32 @@ def test_pages_only_immediate_children_in_name_order(tmp_path):
                 assert page.enumeration == "complete"
                 break
             assert page.enumeration == "entry_limit"
-        expected = [f"- [dir-{n}](/bundle/dir-{n}/)" for n in range(3)] + [
-            f"- [note-{n:02}.md](/bundle/note-{n:02}.md)" for n in range(25)
+        expected = [f"- [dir-{n}](./dir-{n}/)" for n in range(3)] + [
+            f"- [note-{n:02}.md](./note-{n:02}.md)" for n in range(25)
         ]
         assert lines == expected
+    finally:
+        vault.close()
+
+
+def test_selected_bundle_destinations_resolve_from_its_index(tmp_path):
+    import re
+    from urllib.parse import urljoin
+
+    bundle = tmp_path / "collection" / "bundle"
+    (bundle / "child").mkdir(parents=True)
+    (bundle / "note.md").write_text("note")
+    (bundle / "mail:note.md").write_text("note")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        page = vault.reader.okf_navigation("collection/bundle")
+        links = dict(re.findall(r"\[([^]]+)\]\(([^)]+)\)", page.body))
+        index = "https://example.invalid/index.md"
+        assert urljoin(index, links["note.md"]) == "https://example.invalid/note.md"
+        assert urljoin(index, links["child"]) == "https://example.invalid/child/"
+        assert (
+            urljoin(index, links["mail:note.md"])
+            == "https://example.invalid/mail:note.md"
+        )
     finally:
         vault.close()
