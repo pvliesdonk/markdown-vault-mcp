@@ -175,6 +175,15 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+Content writes serialize supplied frontmatter in caller insertion order,
+including nested mappings and mappings inside lists. Edit, append, OKF
+verification and git conflict marking retain surviving fields in their
+existing order when they serialize a header. This preserves mapping order and
+values, not comments, quoting, whitespace or arbitrary exact formatting. Every
+frontmatter dump (the document writer, the two OKF transforms and the two
+conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+[Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
+
 **The body the index reads (#2036)**: `scanner.note_body` returns
 python-frontmatter's body, which is stripped at both ends, with one repair:
 the first non-blank line keeps its leading spaces and tabs. Without it, a note
