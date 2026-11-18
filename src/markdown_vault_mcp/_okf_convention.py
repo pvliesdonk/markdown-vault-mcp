@@ -219,8 +219,7 @@ class ConventionMaintainer:
         ):
             return False
         try:
-            rel = path.relative_to(self._source_dir.resolve())
-            folder = "" if rel.parent == Path() else rel.parent.as_posix()
+            folder = self._canonical(str(path.parent))
             return self._detector.state().active and self._may_index(folder)
         except (ValueError, InvalidRequestError):
             return False
@@ -236,15 +235,7 @@ class ConventionMaintainer:
         """
         if self._source_dir is None:
             return paths
-        folders = {
-            p: (
-                ""
-                if p.parent == self._source_dir.resolve()
-                else p.parent.relative_to(self._source_dir.resolve()).as_posix()
-            )
-            for p in paths
-            if p.is_relative_to(self._source_dir.resolve())
-        }
+        folders = {p: self._canonical(str(p.parent)) for p in paths}
         failed = self.refresh_indexes(folders.values(), trigger_paths=())
         return [p for p, folder in folders.items() if folder in failed]
 

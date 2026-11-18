@@ -1166,36 +1166,17 @@ class GitWriteStrategy:
             ], marker.read_bytes() if marker.exists() else b""
 
     def settle_generated_indexes(
-        self,
-        repo_path: Path,
-        done: list[Path],
-        snapshot: bytes,
-        refused: list[Path] | None = None,
-    ) -> bool:
-        """Settle paths only when the marker and committed bytes still match."""
+        self, repo_path: Path, done: list[Path], snapshot: bytes
+    ) -> None:
+        """Settle regenerated paths if the marker has not changed."""
         root = self._bootstrap.ensure_git_root(repo_path)
-        if root is None:
-            return False
-        with self._lock:
-            marker = conflict._pending_file(root)
-            if not marker.exists() or marker.read_bytes() != snapshot:
-                return False
-            committed = []
-            for path in done:
-                rel = path.relative_to(root).as_posix()
-                result = subprocess.run(
-                    ["git", "-C", str(root), "show", f"HEAD:{rel}"],
-                    capture_output=True,
-                    check=False,
-                )
-                if result.returncode == 0 and path.read_bytes() == result.stdout:
-                    committed.append(rel)
-            settled = committed + [
-                p.relative_to(root).as_posix() for p in (refused or [])
-            ]
-            if settled:
-                conflict.settle_generated_indexes(root, settled)
-            return len(committed) == len(done)
+        if root is not None:
+            with self._lock:
+                marker = conflict._pending_file(root)
+                if marker.exists() and marker.read_bytes() == snapshot:
+                    conflict.settle_generated_indexes(
+                        root, [p.relative_to(root).as_posix() for p in done]
+                    )
 
     def _finish_conflicts(
         self, recovery: _ConflictRecovery
@@ -1352,6 +1333,13 @@ class GitWriteStrategy:
                 )
             )
             if result is not None:
+                if result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED:
+                    # DEBUG since #1287: this repeats every pull cycle while the
+                    # divergence stands. SyncHealthTracker logs the unsynced
+                    # state once at ERROR.
+                    logger.debug(
+                        "git_conflict_resolution_failed strategy=%s", log_prefix
+                    )
                 return result
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD

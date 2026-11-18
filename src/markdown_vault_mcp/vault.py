@@ -788,7 +788,6 @@ class Vault:
         )
         # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        self._recovery_read_only = settings.read_only
         from markdown_vault_mcp.config_sections.content import ContentConfig
 
         capabilities = (
@@ -1057,16 +1056,15 @@ class Vault:
         if self._head_reconciler is None:
             return "current"
         outcome = self._head_reconciler.reconcile(source=source)
-        if (
-            outcome in ("current", "reindexed")
-            and not self._regenerate_recovered_indexes()
-        ):
-            return "failed"
+        if outcome in ("current", "reindexed"):
+            self._regenerate_recovered_indexes()
         return outcome
 
-    def _regenerate_recovered_indexes(self) -> bool:
-        if not isinstance(self._git_strategy, GitWriteStrategy):
-            return True
+    def _regenerate_recovered_indexes(self) -> None:
+        if self._okf_convention is None or not isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            return
         try:
             pending, snapshot = self._git_strategy.pending_generated_indexes(
                 self._source_dir
@@ -1074,32 +1072,15 @@ class Vault:
             pending = [
                 p for p in pending if p.is_relative_to(self._source_dir.resolve())
             ]
-            if not pending:
-                return True
-            if self._recovery_read_only:
-                return False
-            convention = self._okf_convention
-            refused = [
-                p
-                for p in pending
-                if convention is None or not convention.generated_index(p)
-            ]
-            eligible = [p for p in pending if p not in refused]
-            failed = convention.refresh_generated(eligible) if convention else []
-            if eligible and not self._write_callback.drain():
-                return False
-            succeeded = [p for p in eligible if p not in failed]
-            return (
+            if pending:
+                failed = self._okf_convention.refresh_generated(pending)
                 self._git_strategy.settle_generated_indexes(
-                    self._source_dir, succeeded, snapshot, refused
+                    self._source_dir, [p for p in pending if p not in failed], snapshot
                 )
-                and not failed
-            )
         except Exception:
             logger.warning(
                 "git_pending_index_regeneration_failed action=retry", exc_info=True
             )
-            return False
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.

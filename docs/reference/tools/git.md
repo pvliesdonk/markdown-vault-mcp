@@ -121,7 +121,7 @@ Envelope dict whose shape depends on `per_commit`:
 
 Pull from and push to the vault's git remote now; returns what each leg did.
 
-With direction "both" the pull runs first, and a failed pull or recovery skips the push.
+With direction "both" the pull runs first, and a failed pull skips the push.
 
 **Parameters**
 
@@ -166,12 +166,12 @@ Dict with the following fields:
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,
-    optional): present when search indexing or generated index recovery failed after
-    the pull. Search results or generated listings may be stale
-    until a later reconcile.
+    optional): present when the search index could not be
+    refreshed after the pull, so search serves stale results
+    until the next reindex.
 
 - push (dict | None): Payload from the push leg, or `None`
-  when direction is `"pull"` or when the pull leg or its recovery failed with
+  when direction is `"pull"` or when the pull leg failed with
   direction `"both"`. Contains applied, `commits_pushed`,
   `remote_sha_before`, `remote_sha_after`, and an optional reason
   (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or

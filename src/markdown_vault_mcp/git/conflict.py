@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import subprocess
-import tempfile
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -364,7 +363,7 @@ def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> 
     atomic_write(target, os.fsencode(content))
 
 
-def write_conflict_files(
+def write_conflict_files(  # noqa: PLR0913, PLR0915, RUF100  # Existing sibling workflow and call contract.
     git_root: Path,
     saved: list[tuple[str, str]],
     env: dict[str, str] | None,
@@ -550,10 +549,9 @@ def read_generated_indexes(git_root: Path) -> list[str]:
         data = json.loads(marker.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
-    if isinstance(data, dict):
-        if data.get("version") != 1:
-            raise ValueError("unsupported pending index marker version")
-        data = data.get("paths")
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise ValueError("unsupported pending index marker version")
+    data = data.get("paths")
     if not isinstance(data, list) or any(
         not isinstance(p, str) or Path(p).is_absolute() or ".." in Path(p).parts
         for p in data
@@ -567,20 +565,12 @@ def _write_generated_indexes(git_root: Path, paths: list[str]) -> None:
     if not paths:
         marker.unlink(missing_ok=True)
         return
-    fd, name = tempfile.mkstemp(prefix=".pending-indexes-", dir=marker.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(
-                {
-                    "version": 1,
-                    "revision": uuid.uuid4().hex,
-                    "paths": sorted(set(paths)),
-                },
-                stream,
-            )
-        Path(name).replace(marker)
-    finally:
-        Path(name).unlink(missing_ok=True)
+    atomic_write(
+        marker,
+        json.dumps(
+            {"version": 1, "revision": uuid.uuid4().hex, "paths": sorted(set(paths))}
+        ),
+    )
 
 
 def record_generated_indexes(git_root: Path, paths: list[str]) -> None:

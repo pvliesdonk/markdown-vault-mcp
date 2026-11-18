@@ -151,7 +151,7 @@ async def _reconcile_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None
     if outcome == "failed":
         pull_dict["reindex_failed"] = True
         pull_dict["reindex_hint"] = (
-            "The FTS index or a pending generated index could not be refreshed after the pull.  "
+            "The FTS index could not be refreshed after the pull.  "
             "search / list_documents / get_context will serve stale data "
             "until the next reconcile (the periodic pull, a webhook "
             "delivery, another git_sync) or a call to the reindex tool."
@@ -357,7 +357,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Pull from and push to the vault's git remote now; returns what each leg did.
 
-        With direction "both" the pull runs first, and a failed pull or recovery skips the push.
+        With direction "both" the pull runs first, and a failed pull skips the push.
 
         Args:
             direction: `pull`, `push` or `both` (default).
@@ -399,12 +399,12 @@ def register(mcp: FastMCP) -> None:
               - would_apply (bool, dry run only): true when a real pull
                 would change HEAD.
               - reindex_failed (bool, optional) and reindex_hint (str,
-                optional): present when search indexing or generated index recovery failed after
-                the pull. Search results or generated listings may be stale
-                until a later reconcile.
+                optional): present when the search index could not be
+                refreshed after the pull, so search serves stale results
+                until the next reindex.
 
             - push (dict | None): Payload from the push leg, or `None`
-              when direction is `"pull"` or when the pull leg or its recovery failed with
+              when direction is `"pull"` or when the pull leg failed with
               direction `"both"`. Contains applied, commits_pushed,
               remote_sha_before, remote_sha_after, and an optional reason
               (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
@@ -439,11 +439,7 @@ def register(mcp: FastMCP) -> None:
             # push leg's ``dry_run_unsupported`` reason then surfaces in the
             # response, distinguishing a preview from a
             # real-pull-failed-push-skipped result.
-            if (
-                direction == "both"
-                and not dry_run
-                and (not pull_dict["applied"] or pull_dict.get("reindex_failed", False))
-            ):
+            if direction == "both" and not pull_dict["applied"] and not dry_run:
                 # Refresh head_sha defensively (today's force_pull leaves
                 # HEAD in place on failure, but allowed to move).
                 result["head_sha"] = await asyncio.to_thread(

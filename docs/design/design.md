@@ -7044,7 +7044,9 @@ indexes and logs keep a verbatim local sibling. Designated generated indexes
 instead take upstream during a completed rebase and are recorded under the Git
 directory for regeneration after the search index reconciles. Failed or
 interrupted regeneration is retried on a later reconcile, including after a
-restart. A generated-only conflict returns `rebased` without siblings. The
+restart. The versioned marker refuses invalid or unsupported formats and a
+revision prevents an older reconcile from settling a newly recorded conflict.
+A generated-only conflict returns `rebased` without siblings. The
 upstream root `okf_version` wins; a local-only change to it is not carried
 forward. If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
