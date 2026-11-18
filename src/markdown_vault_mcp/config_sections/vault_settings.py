@@ -69,10 +69,8 @@ def normalize_protected_paths(patterns: Sequence[str] | None) -> tuple[str, ...]
         )
     normalized = []
     for pattern in patterns:
-        if not isinstance(pattern, str) or not pattern or "\x00" in pattern:
-            raise ConfigurationError(
-                f"{setting} must contain non-empty glob strings without NUL."
-            )
+        if not isinstance(pattern, str) or not pattern:
+            raise ConfigurationError(f"{setting} must contain non-empty glob strings.")
         path = PurePosixPath(pattern)
         if path.is_absolute() or ".." in path.parts:
             raise ConfigurationError(

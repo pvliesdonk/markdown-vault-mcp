@@ -138,39 +138,64 @@ class WriterFacet:
         """
         return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
 
-    def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
+    def okf_convert_links(
+        self, *, folder: str | None = None, allow_protected: bool = False
+    ) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
 
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
                 whole vault.
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
-        """
-        return self._migrate().convert_links(folder=folder)
 
-    def okf_generate_index(self, *, folder: str = "") -> OkfIndexResult:
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+        """
+        return self._migrate().convert_links(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_generate_index(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing from the TOC (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
-        """
-        return self._migrate().generate_index(folder=folder)
 
-    def okf_seed_log(self, *, folder: str = "") -> OkfLogResult:
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+        """
+        return self._migrate().generate_index(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_seed_log(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfLogResult:
         """Seed a reserved ``log.md`` from git history (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
 
+            allow_protected: Allow this library call to change protected paths.
+
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfLogResult`.
+
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
         """
-        return self._migrate().seed_log(folder=folder)
+        return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
 
     def okf_author(
         self,
@@ -593,6 +618,12 @@ class WriterFacet:
         """Create or overwrite a non-.md attachment.
 
         Delegates to :meth:`DocumentManager.write_attachment`.
+
+        Args:
+            path: Relative attachment path.
+            content: Attachment bytes.
+            if_match: Optional current etag.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.

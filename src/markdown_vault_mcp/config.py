@@ -161,7 +161,7 @@ class ProjectConfig:
     protected_paths: Sequence[str] | None = field(
         default=None,
         metadata={
-            "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,policies. Empty by default.",
+            "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder.",
             "tags": ("vault", "readme"),
         },
     )

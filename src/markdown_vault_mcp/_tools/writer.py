@@ -351,6 +351,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds
                 `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
@@ -464,6 +465,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If parameter combination is invalid, or line
                 numbers are out of range.
             EditConflictError: If old_text is not found or appears more
@@ -555,6 +557,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If content is empty.
             DocumentNotFoundError: If no file exists at the given path and
                 create_if_missing is false.
@@ -608,6 +611,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If no file exists at the given path.
             `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
@@ -667,6 +671,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If old_path does not exist.
             DocumentExistsError: If new_path already exists.
             ValueError: If the path fails traversal validation.
@@ -741,6 +746,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If no non-empty folder exists at old_dir.
             DocumentExistsError: If any destination file already exists; nothing
                 is moved.
@@ -839,6 +845,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentExistsError: If the server runs with
                 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path*
                 already exists while no *if_match* is supplied. The save
@@ -872,6 +879,7 @@ def register(mcp: FastMCP) -> None:
             path,
         )
         await asyncio.to_thread(vault._doc_mgr.refuse_folder_in_submodule, path, "path")
+        await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         cap_bytes = (
             0
             if is_markdown or vault.max_attachment_size_mb <= 0
@@ -1014,6 +1022,7 @@ def register(mcp: FastMCP) -> None:
             left as it is and not counted.
 
         Raises:
+            InvalidRequestError: If a path is protected; eligible bulk writes remain.
             TimeoutError: If writes queued before the call have not reached the index
                 within 60 seconds; nothing is changed.
             IndexUnavailableError: If the index build failed; nothing is changed.
@@ -1065,6 +1074,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a path is protected; eligible bulk writes remain.
             TimeoutError: If writes queued before the call have not reached the index
                 within 60 seconds; nothing is changed.
             IndexUnavailableError: If the index build failed; nothing is changed.
@@ -1109,6 +1119,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ToolError: If log.md already exists in the folder; nothing is written.
             DocumentUnreadableError: If log.md exists but cannot be read; it is left
                 untouched.

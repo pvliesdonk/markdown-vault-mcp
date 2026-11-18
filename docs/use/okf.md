@@ -234,3 +234,9 @@ Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` 
 The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
 settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
 implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprecation notice; explicit settings override its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+
+Protected paths also prevent automatic index and log upkeep. A primary write
+to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
+bulk transforms finish eligible writes before reporting protected paths they
+skipped; see [protected paths](../reference/configuration.md).

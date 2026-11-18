@@ -534,7 +534,7 @@
       "label": "Protected Paths",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
-      "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,policies. Empty by default."
+      "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
     },
     {
       "id": "report_unresolved_links",
