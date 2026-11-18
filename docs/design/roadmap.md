@@ -471,10 +471,11 @@ touching call sites. Folding pvl-core into the server side also serves
 [#2016][2016] (pvl-core's errors and environment helpers,
 fastmcp-pvl-core#543) into this repository.
 
-`derived` — No package yet. The detach ships nothing to users (`chore`, `ci`,
-`docs`), and the core epic's first releasable child is chosen at its
-refinement. Bug [#2235][2235] keeps its lock-only override as the near-term fix;
-its CI-side option becomes a local edit once [#2240][2240]'s detach lands.
+`stated` — This work goes first: the template part as package `010`, the
+pvl-core part as `015`, ahead of every other open package (18 November 2026).
+§ Packages has both. Bug [#2235][2235] keeps its lock-only override as the
+near-term fix, in `010`; its CI-side option becomes a local edit once
+[#2240][2240]'s detach lands.
 
 `derived` — Refinement turned [#2240][2240] into features. The final sync
 ([#2245][2245]) comes first, because whatever it does not bring in has to be
@@ -514,6 +515,33 @@ maintenance and infrastructure issues likewise remain actionable wishes without
 a mandatory parent or a release promise.
 
 ## Packages
+
+`stated` — **010 template-detach** and **015 pvl-core-fold** come before every
+other open package (18 November 2026).
+
+`evidenced` — A closed package's title gives up its ordinal for the release
+version at the cut (`v6.0.0 incremental-embeddings`), so the shipped
+`010 reliable-vault` and `015 incremental-embeddings` below no longer hold those
+numbers; the lowest ordinal on an open item was `024` (issue search by milestone
+title, 18 November 2026).
+
+`derived` — **010 template-detach** carries the children of [#2240][2240] and
+[#2235][2235]. Most of it is `chore`, `ci` and `docs`, which cut no release on
+their own; its kind follows whatever user-facing commit the final sync
+([#2245][2245]) brings, and the template's v11.7.0 changes are features. The
+epic itself carries no package: it stays open until `015`'s vendored copy
+lands (§ Independence from the template and pvl-core).
+
+`derived` — **015 pvl-core-fold** carries [refinement #2243][2243] and the
+features it files, up to the vendored copy without the dependency. Dissolving
+the copy area by area is later work, packaged once refined. Its kind waits on
+the known unknown about pvl-core types in the public library interface.
+
+`derived` — Because the release workflow closes the lowest open package at a
+stable cut, `010` and then `015` are what the next stable cuts consume. A
+stable release cut before either is complete unassigns its open members, so
+putting this work first also means holding stable cuts until each package is
+done, or re-committing the leftovers by hand.
 
 `derived` — **[010 reliable-vault](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/12)
 (major)** is the first cut: carry the adopted
@@ -1137,6 +1165,13 @@ on pvl-core routing (§ Independence from the template and pvl-core). The epic b
 re-refinements moved to their own epics: [refinement #2251][2251] under
 [#1471][1471], and [#1728][1728] now waits on [#2246][2246]. The trial detach
 answered the known unknown on template-coupled tests, so its row is removed.
+
+### 18 November 2026 — put the independence work first
+
+`stated` — The owner placed the template part as package `010` and the pvl-core
+part as `015`, ahead of every other open package (§ Packages).
+
+`derived` — `024` and later keep their relative order behind them.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
