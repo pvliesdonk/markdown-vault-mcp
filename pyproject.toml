@@ -377,6 +377,11 @@ ignore = ["E501"]
 # matching the implementation. Gate-only rule, so a `# noqa` would be
 # stripped (RUF100).
 "src/markdown_vault_mcp/git/interfaces.py" = ["PLR0913"]
+# PLR0913: the env readers' signatures (moved from pvl-core, #2275) carry
+# keyword-only bounds and strictness options every config section passes;
+# their argument counts are the readers' public shape. Gate-only rule, so a
+# `# noqa` would be stripped (RUF100).
+"src/markdown_vault_mcp/_env.py" = ["PLR0913"]
 # S105: GITLAB_SIGNING_TOKEN_PREFIX is the published `whsec_` format marker
 # GitLab puts in front of a signing token, not a credential — the secret is
 # the base64 that follows it. Gate-only rule, so a `# noqa` would be

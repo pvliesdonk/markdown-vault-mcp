@@ -29,14 +29,14 @@ from markdown_vault_mcp._pvl_core import (
 # (keeps the import above in its own statement, so adding a name to the one
 #  below never makes ruff re-sort the two — that fix would be outside the
 #  sentinels.)
+# Used by `_default_server_name` below, and re-exported so CONFIG-FROM-ENV
+# additions don't need a new import.  No `noqa: F401` — that factory makes
+# the import genuinely used, and a redundant directive fails RUF100.
+from markdown_vault_mcp._env import env
 from markdown_vault_mcp._pvl_core import (
     JobsConfig,
     ServerConfig,
     TransferConfig,
-    # Used by `_default_server_name` below, and re-exported so CONFIG-FROM-ENV
-    # additions don't need a new import.  No `noqa: F401` — that factory makes
-    # the import genuinely used, and a redundant directive fails RUF100.
-    env,
 )
 from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
