@@ -1073,3 +1073,168 @@ def test_write_hint_resolution(
             assert row.content_digest == hashlib.sha256(b"external").hexdigest()
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("reconcile", ["refresh", "sweep"])
+@pytest.mark.parametrize("drain_first", [False, True])
+def test_recreated_source_preserves_proven_destination(
+    tmp_path: Path, reconcile: str, drain_first: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("first")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        ledger = vault._index_mgr.observations
+        if drain_first:
+            ledger.refresh_many({"a.md", "b.md"})
+        vault.writer.write("a.md", "second")
+        if reconcile == "sweep":
+            ledger.sweep()
+        else:
+            ledger.refresh_many({"a.md", "b.md"})
+        rows = ledger.rows()
+        assert rows["a.md"].presence == "present"
+        assert rows["a.md"].moved_to is None
+        assert rows["b.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("reconcile", ["refresh", "sweep"])
+@pytest.mark.parametrize("drain_first", [False, True])
+@pytest.mark.parametrize("same_bytes", [False, True])
+def test_recreated_source_moves_keep_each_proven_destination(
+    tmp_path: Path, reconcile: str, drain_first: bool, same_bytes: bool
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("first")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        ledger = vault._index_mgr.observations
+        if drain_first:
+            ledger.refresh_many({"a.md", "b.md"})
+        vault.writer.write("a.md", "first" if same_bytes else "second")
+        vault.writer.rename("a.md", "c.md", update_links=False)
+        if reconcile == "sweep":
+            ledger.sweep()
+        else:
+            ledger.refresh_many({"a.md", "b.md", "c.md"})
+        rows = ledger.rows()
+        assert rows["a.md"].moved_to == "c.md"
+        assert rows["b.md"].moved_from == "a.md"
+        assert rows["c.md"].moved_from == "a.md"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("same_bytes", [False, True])
+@pytest.mark.parametrize("interruption", ["blocked", "save_failure"])
+@pytest.mark.parametrize("replace_destination", [False, True])
+def test_recreated_source_move_evidence_survives_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interruption: str,
+    replace_destination: bool,
+    same_bytes: bool,
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("first")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        vault.writer.write("a.md", "first" if same_bytes else "second")
+        vault.writer.rename("a.md", "c.md", update_links=False)
+        if replace_destination:
+            (source / "b.md").write_text("external")
+        ledger = vault._index_mgr.observations
+        inspector = ledger._inspector
+        observe = inspector.observe_path
+        save = ledger._save
+
+        def blocked(path: str, visit: object) -> str:
+            if path == "b.md":
+                return "blocked"
+            return observe(path, visit)  # type: ignore[arg-type]
+
+        def fail(_rows: object) -> None:
+            raise OSError("disk full")
+
+        if interruption == "blocked":
+            monkeypatch.setattr(inspector, "observe_path", blocked)
+            ledger.refresh_many({"a.md", "b.md", "c.md"})
+            monkeypatch.setattr(inspector, "observe_path", observe)
+        else:
+            monkeypatch.setattr(ledger, "_save", fail)
+            with pytest.raises(OSError, match="disk full"):
+                ledger.refresh_many({"a.md", "b.md", "c.md"})
+            monkeypatch.setattr(ledger, "_save", save)
+        ledger.sweep()
+        rows = ledger.rows()
+        assert rows["a.md"].moved_to == "c.md"
+        assert rows["c.md"].moved_from == "a.md"
+        assert rows["b.md"].moved_from == (None if replace_destination else "a.md")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("recovery", ["refresh", "sweep"])
+def test_blocked_older_move_does_not_claim_replaced_latest_incarnation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recovery: str
+) -> None:
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("same")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._mark_paths_dirty = lambda _paths: None
+        vault.writer.rename("a.md", "b.md", update_links=False)
+        vault.writer.write("a.md", "same")
+        vault.writer.rename("a.md", "c.md", update_links=False)
+        (source / "c.md").write_text("external")
+        ledger = vault._index_mgr.observations
+        inspector = ledger._inspector
+        observe = inspector.observe_path
+
+        def blocked(path: str, visit: object) -> str:
+            if path == "b.md":
+                return "blocked"
+            return observe(path, visit)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(inspector, "observe_path", blocked)
+        ledger.refresh_many({"a.md", "b.md", "c.md"})
+        monkeypatch.setattr(inspector, "observe_path", observe)
+        if recovery == "refresh":
+            ledger.refresh_many({"a.md", "b.md"})
+        else:
+            ledger.sweep()
+        rows = ledger.rows()
+        assert rows["b.md"].moved_from == "a.md"
+        assert rows["c.md"].moved_from is None
+        assert rows["a.md"].presence == "removed"
+        assert rows["a.md"].moved_to is None
+    finally:
+        vault.close()

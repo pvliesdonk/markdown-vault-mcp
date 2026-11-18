@@ -56,9 +56,12 @@ class _Captured:
 @dataclass(frozen=True)
 class _Removal:
     captured: _Captured | None
-    destination: str | None
-    source_present: bool = False
     rewritten: str | None = None
+    source_present: bool = False
+
+
+# Move evidence keyed by (source, destination); a deletion has no destination.
+_Evidence = dict[tuple[str, str | None], _Removal]
 
 
 @dataclass(frozen=True, eq=False)
@@ -157,7 +160,7 @@ class ObservationLedger:
         self._path = path
         self._inspector = inspector
         self._pending: dict[str, _WriteHint] = {}
-        self._removals: dict[str, _Removal] = {}
+        self._removals: _Evidence = {}
         self._pending_lock = threading.Lock()
         self._rows: dict[str, Observation] | None = {} if path is None else None
         self._lock = (
@@ -232,7 +235,6 @@ class ObservationLedger:
         path: str,
         captured: _Captured | None,
         destination: str | None = None,
-        *,
         rewritten: str | None = None,
     ) -> None:
         """Queue evidence for an already completed deletion or move.
@@ -244,7 +246,8 @@ class ObservationLedger:
             rewritten: Digest of a successful rewrite at the destination.
         """
         with self._pending_lock:
-            self._removals[path] = _Removal(captured, destination, rewritten=rewritten)
+            self._removals.pop((path, destination), None)
+            self._removals[path, destination] = _Removal(captured, rewritten)
             self._pending.pop(path, None)
 
     def refresh_many(self, paths: set[str]) -> None:
@@ -261,8 +264,8 @@ class ObservationLedger:
                 pending = self._pending.copy()
             paths = self._related_paths(paths, removals)
             states: dict[str, str] = {}
+            self._seed_capture(rows, removals, paths)
             for path in paths:
-                self._seed_capture(rows, path, removals.get(path))
                 hint = pending.get(path)
                 states[path] = self._refresh_locked(
                     rows, path, hint.digest if hint else None
@@ -286,12 +289,11 @@ class ObservationLedger:
             rows.pop(path, None)
 
     @staticmethod
-    def _related_paths(paths: set[str], removals: dict[str, _Removal]) -> set[str]:
+    def _related_paths(paths: set[str], removals: _Evidence) -> set[str]:
         result = set(paths)
         while True:
             before = len(result)
-            for source, removal in removals.items():
-                target = removal.destination
+            for source, target in removals:
                 if target is not None and (source in result or target in result):
                     result.update((source, target))
             if len(result) == before:
@@ -301,42 +303,54 @@ class ObservationLedger:
     def _link_moves(
         rows: dict[str, Observation],
         previous: dict[str, Observation],
-        removals: dict[str, _Removal],
+        removals: _Evidence,
         states: dict[str, str],
     ) -> None:
-        for source, removal in removals.items():
-            target = removal.destination
+        latest = dict(removals.keys())
+        known_sources = {source for (source, _), r in removals.items() if r.captured}
+        for (source, target), removal in removals.items():
+            captured = removal.captured
             if (
                 target is None
-                or states.get(source) != "missing"
+                or states.get(source) not in ("present", "missing")
                 or states.get(target) not in ("present", "missing")
                 or target not in rows
-            ):
-                continue
-            target_removal = removals.get(target)
-            if states[target] == "missing" and (
-                target_removal is None or target_removal.captured is None
-            ):
-                continue
-            if rows[target].content_digest not in (
-                removal.captured.digest if removal.captured else None,
-                removal.rewritten,
+                or (states[target] == "missing" and target not in known_sources)
+                or rows[target].content_digest
+                not in (captured and captured.digest, removal.rewritten)
             ):
                 continue
             rows[target] = replace(rows[target], moved_from=source)
-            old = previous.get(source)
-            known = (
-                removal.captured is not None
-                or removal.source_present
-                or (old is not None and old.presence == "present")
-            )
-            if known and source in rows and rows[source].presence == "removed":
-                rows[source] = replace(rows[source], moved_to=target)
+            if latest[source] == target:
+                ObservationLedger._mark_moved(rows, previous, source, target, removal)
+
+    @staticmethod
+    def _mark_moved(
+        rows: dict[str, Observation],
+        previous: dict[str, Observation],
+        source: str,
+        target: str,
+        removal: _Removal,
+    ) -> None:
+        row, old, captured = rows.get(source), previous.get(source), removal.captured
+        known = (
+            captured or removal.source_present or (old and old.presence == "present")
+        )
+        # The removed row must still describe the incarnation this move took;
+        # a destination already recorded belongs to a later, consumed move.
+        if (
+            known
+            and row is not None
+            and row.presence == "removed"
+            and row.moved_to is None
+            and (captured is None or captured.digest == row.content_digest)
+        ):
+            rows[source] = replace(row, moved_to=target)
 
     def _consume_evidence(
         self,
         pending: dict[str, _WriteHint],
-        removals: dict[str, _Removal],
+        removals: _Evidence,
         previous: dict[str, Observation],
         states: dict[str, str],
     ) -> None:
@@ -347,42 +361,33 @@ class ObservationLedger:
                     and self._pending.get(path) is hint
                 ):
                     self._pending.pop(path, None)
-            for path, removal in removals.items():
-                if self._removals.get(path) is not removal or path not in states:
+            held: set[str] = set()  # sources with older evidence still retained
+            for key, removal in removals.items():
+                path, target = key
+                if self._removals.get(key) is not removal or path not in states:
                     continue
-                target = removal.destination
-                if states[path] == "blocked" or (
-                    target is not None and states.get(target, "blocked") == "blocked"
-                ):
+                ends = states[path], states.get(target or path, "blocked")
+                if path in held or "blocked" in ends:
+                    held.add(path)
                     old = previous.get(path)
-                    if (
-                        old is not None
-                        and old.presence == "present"
-                        and not removal.source_present
-                    ):
-                        self._removals[path] = replace(removal, source_present=True)
+                    if old and old.presence == "present":
+                        self._removals[key] = replace(removal, source_present=True)
                     continue
-                self._removals.pop(path, None)
+                self._removals.pop(key, None)
 
     @staticmethod
     def _seed_capture(
-        rows: dict[str, Observation], path: str, removal: _Removal | None
+        rows: dict[str, Observation], removals: _Evidence, paths: set[str]
     ) -> None:
-        if removal is None or removal.captured is None:
-            return
-        captured = removal.captured
-        old = rows.get(path)
-        if old is not None:
-            last = (
-                old.removed_observed_at
-                if old.presence == "removed"
-                else old.last_change_observed_at
-            )
-            if last is not None and datetime.fromisoformat(
-                last
+        for (path, _), removal in removals.items():
+            captured, old = removal.captured, rows.get(path)
+            if captured is None or path not in paths:
+                continue
+            if old is not None and datetime.fromisoformat(
+                old.removed_observed_at or old.last_change_observed_at
             ) >= datetime.fromisoformat(captured.observed_at):
-                return
-        rows[path] = _present(path, old, captured)
+                continue
+            rows[path] = _present(path, old, captured)
 
     def _refresh_locked(
         self, rows: dict[str, Observation], path: str, expected: str | None
@@ -425,20 +430,17 @@ class ObservationLedger:
                 expected = pending.get(path)
                 if expected is not None and expected.digest != digest:
                     contradicted.add(path)
-                self._seed_capture(result, path, removals.get(path))
                 result[path] = _present(
                     path,
                     result.get(path),
                     _Captured(role, digest, frontmatter, datetime.now(UTC).isoformat()),
                 )
 
-            blocked = self._inspector.observe_files(visit)
             relevant = {p for p, row in previous.items() if row.presence == "present"}
             relevant.update(pending)
-            relevant.update(removals)
-            relevant.update(
-                r.destination for r in removals.values() if r.destination is not None
-            )
+            relevant.update(path for pair in removals for path in pair if path)
+            self._seed_capture(result, removals, relevant)
+            blocked = self._inspector.observe_files(visit)
             states: dict[str, str] = {}
             for path in relevant:
                 if path in found:
@@ -449,7 +451,6 @@ class ObservationLedger:
                 ):
                     states[path] = "blocked"
                 else:
-                    self._seed_capture(result, path, removals.get(path))
                     states[path] = self._refresh_locked(result, path, None)
                     if states[path] == "blocked":
                         self._restore_blocked(result, previous, path)
