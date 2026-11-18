@@ -182,7 +182,7 @@ class ReservedFrontmatterRepair:
                 candidate: _PendingRepair | ReservedRepair | None
                 try:
                     candidate = self._inspect_entry(entry)
-                except (MarkdownMCPError, OSError, UnicodeError) as exc:
+                except (MarkdownMCPError, OSError) as exc:
                     candidate = ReservedRepair(entry.path, (), str(exc))
                 if candidate:
                     result.append(candidate)
@@ -196,23 +196,12 @@ class ReservedFrontmatterRepair:
 
     def _inspect_entry(self, entry: BundleEntry) -> _PendingRepair | None:
         name = entry.path.rsplit("/", 1)[-1]
-        if entry.role == "directory" and entry.state == "unavailable":
-            raise InvalidRequestError(
-                f"Cannot inspect directory {entry.path!r}: {entry.reason}"
-            )
-        if name in {"index.md", "log.md"} and entry.role not in {
-            "navigation",
-            "history",
-        }:
-            raise InvalidRequestError(
-                f"Cannot inspect reserved file {entry.path!r}: {entry.reason}"
-            )
-        if entry.role not in {"navigation", "history"}:
+        if name not in {"index.md", "log.md"}:
             return None
-        if entry.state != "inspected" and entry.reason not in {
-            "note_limit",
-            "byte_budget",
-        }:
+        if entry.role not in {"navigation", "history"} or (
+            entry.state != "inspected"
+            and entry.reason not in {"note_limit", "byte_budget"}
+        ):
             raise InvalidRequestError(
                 f"Cannot inspect reserved file {entry.path!r}: {entry.reason}"
             )
@@ -220,16 +209,8 @@ class ReservedFrontmatterRepair:
 
     def _one(self, path: str) -> _PendingRepair | None:
         vault = self._vault
-        doc = vault._doc_mgr
-        note = doc.read(path)
-        if note is None:
-            raise InvalidRequestError(f"Reserved file {path!r} disappeared")
-        raw = doc._validate_path(path).read_bytes()
-        etag = compute_etag(raw)
-        if note.etag != etag:
-            raise InvalidRequestError(
-                f"Reserved file {path!r} changed during inspection"
-            )
+        _, original = vault._doc_mgr._okf_author_snapshot(path)
+        etag = compute_etag(original.encode("utf-8"))
         folder = path.rpartition("/")[0]
         title = (
             OKF_LOG_TITLE
@@ -238,7 +219,7 @@ class ReservedFrontmatterRepair:
         )
         try:
             text, keys = _strip(
-                raw.decode("utf-8"),
+                original,
                 vault._required_frontmatter or [],
                 vault._title_field,
                 title,
@@ -265,6 +246,6 @@ class ReservedFrontmatterRepair:
                     allow_protected=allow_protected,
                     allow_designated=True,
                 )
-        except (MarkdownMCPError, OSError, UnicodeError) as exc:
+        except (MarkdownMCPError, OSError) as exc:
             return ReservedRepair(item.result.path, (), str(exc))
         return item.result
