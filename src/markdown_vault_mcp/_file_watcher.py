@@ -737,10 +737,18 @@ class VaultFileWatcher:
             if self._stopped or self._observer is None:
                 return False
         if rebuild:
+            try:
+                present = is_directory(parent)
+            except OSError:
+                logger.warning(
+                    "file_watcher_child_unreadable path=%s", parent, exc_info=True
+                )
+                return False
+            roots = _tree_roots(parent) if present else []
+            if present and not roots:
+                return False
             changed = self._retire(parent)
-            if not is_directory(parent):
-                return changed
-            for root in _tree_roots(parent):
+            for root in roots:
                 changed = self._register(root) or changed
             return changed
         try:
@@ -814,7 +822,7 @@ class VaultFileWatcher:
             observe=self._on_observation is not None,
         )
         scheduled: list[_WatchRoot] = []
-        for root in roots:
+        for root in sorted(roots, key=lambda root: not root.search):
             pieces = _tree_roots(root.path) if not root.search else [root]
             for piece in pieces:
                 if self._register(piece):
@@ -885,7 +893,8 @@ if _WATCHDOG_AVAILABLE:
         descendants while hidden noise below any root is still dropped.
         """
 
-        def __init__(
+        # The existing callbacks and root context are separate handler inputs.
+        def __init__(  # noqa: PLR0913, RUF100
             self,
             schedule: Callable[[], None],
             watch_root: Path,
@@ -903,9 +912,6 @@ if _WATCHDOG_AVAILABLE:
             self._root = root_info or _WatchRoot(watch_root, True)
             self._sync = sync
             self._notices = _HiddenChangeNotices()
-            self._derived = _HiddenChangeNotices()
-            self._directory_modes: dict[str, tuple[int, int]] = {}
-            self._directory_access_changed(str(watch_root))
 
         def _concerns_vault(self, event: FileSystemEvent) -> bool:
             """Return whether a mutating event is a visible, non-derived change."""
@@ -921,21 +927,8 @@ if _WATCHDOG_AVAILABLE:
                 return False
             return not self._notices.absorbs(event)
 
-        def _directory_access_changed(self, path: str) -> bool:
-            try:
-                info = Path(path).stat()
-                mode = (info.st_mode, info.st_ctime_ns)
-            except OSError:
-                return True
-            previous = self._directory_modes.get(path)
-            self._directory_modes[path] = mode
-            return previous != mode
-
         def _observation_event(self, event: FileSystemEvent) -> bool:
             paths = _event_paths(event)
-            derived = self._derived.absorbs(event)
-            if not derived:
-                self._derived.note_hidden(event, paths)
             relative: list[tuple[str, tuple[str, ...]]] = []
             for path in paths:
                 try:
@@ -944,12 +937,6 @@ if _WATCHDOG_AVAILABLE:
                     )
                 except ValueError:
                     continue
-            access_changed = (
-                not derived
-                and event.is_directory
-                and event.event_type == EVENT_TYPE_MODIFIED
-                and any(self._directory_access_changed(path) for path, _ in relative)
-            )
             if event.is_directory and self._sync is not None:
                 internal = any(
                     any(part in INTERNAL_DIRECTORY_NAMES for part in parts)
@@ -966,7 +953,7 @@ if _WATCHDOG_AVAILABLE:
                 if (
                     not self._root.search
                     and self._root.recursive
-                    and (event.event_type == "attrib" or access_changed)
+                    and event.event_type == "attrib"
                     and not internal
                 ):
                     self._sync(self._watch_root, True)
@@ -975,28 +962,18 @@ if _WATCHDOG_AVAILABLE:
                 direct = any(len(parts) == 1 for _, parts in relative)
                 if (
                     not self._root.recursive
-                    and (
-                        own
-                        or (
-                            direct
-                            and (
-                                event.event_type != EVENT_TYPE_MODIFIED
-                                or access_changed
-                            )
-                        )
-                    )
+                    and (own or direct)
                     and self._sync(self._watch_root, False)
                 ):
                     return True
             return any(
-                (parts or access_changed or event.event_type == "attrib")
-                and not any(part in INTERNAL_DIRECTORY_NAMES for part in parts)
+                not any(part in INTERNAL_DIRECTORY_NAMES for part in parts)
                 and (
                     (
                         event.is_directory
-                        and (event.event_type != EVENT_TYPE_MODIFIED or access_changed)
+                        and (parts or self._root.recursive or not self._root.search)
                     )
-                    or (not event.is_directory and is_note(path))
+                    or (not event.is_directory and bool(parts) and is_note(path))
                 )
                 for path, parts in relative
             )

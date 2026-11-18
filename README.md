@@ -90,7 +90,7 @@ For VS Code or Goose Desktop, use the
 [remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)
 or the [local Goose configuration](docs/get-started/installation.md#goose-desktop-local-vault).
 
-The file watcher requires watchdog 4.0.2 or later. Its mutation-only subscriptions suppress Linux read-event traffic during indexing while preserving file and directory changes. It observes readable search-excluded and hidden paths as well; see [observation scope and recovery](docs/use/okf.md#local-observation-state) and the [subscription reference](docs/design/reference/watchdog-event-filtering.md).
+The file watcher requires watchdog 4.0.2 or later. Its filtered subscriptions suppress Linux read-event traffic during indexing while preserving file and directory changes. It observes readable search-excluded and hidden paths as well; see [observation scope and recovery](docs/use/okf.md#local-observation-state) and the [subscription reference](docs/design/reference/watchdog-event-filtering.md).
 
 When watching is active, external saves that replace a note from a hidden temporary file also trigger reindexing.
 <!-- DOMAIN-README-EXTRAS-END -->

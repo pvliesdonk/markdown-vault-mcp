@@ -283,10 +283,9 @@ warning and leaves semantic search disabled.
 #### Indexing {#indexing-and-search}
 
 Persistent deployments normally put `INDEX_PATH`, `EMBEDDINGS_PATH`, and
-`STATE_PATH` outside content folders. The file watcher excludes the directories
-holding those files so index writes cannot trigger another scan; placing state
-inside a content directory also prevents sibling content in that directory
-from being watched.
+`STATE_PATH` outside content folders. Search never watches the folders holding
+those files, so index writes cannot trigger a reindex. Observation still watches
+readable notes beside them; the files themselves are not notes in the ledger.
 
 `INDEXED_FIELDS` controls structured filters. `SEARCHABLE_FIELDS` defaults to
 the same list and controls keyword-searchable frontmatter plus first-chunk

@@ -146,12 +146,18 @@ Non-recursive FSEvents registrations still use
 recursive native streams, so the internal-directory boundary applies to
 registrations. [source: fs402] The
 search handler retains root-relative hidden-path checks; see
-the [watcher design](../design.md). For observation, an adjacent parent notice
-after create, delete or move is absorbed before checking the directory mode and
-change time. Reordered or coalesced non-note events can still cost a sweep per
-changed signature. An access change merged into an adjacent notice is recovered
-by a later sweep or standalone notice; explicit attribute events remain
-deliverable. The scheduling pin covers recursive visible
+the [watcher design](../design.md). Observation does not suppress adjacent
+parent notices: a directory notice can carry a coalesced access change. It can
+cause one full sweep per quiet debounce window, including for non-note changes;
+an unchanged sweep does not write the ledger. A direct directory event under a
+non-recursive observation piece reconciles its children, so a child omitted
+while unreadable can be watched after access is restored. Source inspection of
+inotify shows that a directory created unreadable inside an already recursive
+watch can be omitted: on watchdog 4.0.2 through 6.x a scan records its current notes,
+but restoring watch coverage may require a restart. Search-owned roots retain their inherited behavior. FSEvents
+probes with watchdog 4.0.2 and 7.1 delivered later edits after restoration through
+its recursive stream; native Linux execution remains unverified. [source: ino4]
+[source: ino7] The scheduling pin covers recursive visible
 and dot-roots, the optional floor, excluded children and protected state paths.
 [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]
 

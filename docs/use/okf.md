@@ -313,7 +313,11 @@ path after replacement, but later edits there do not trigger search reindex
 until restart. With the watcher root floor disabled, root-level files and
 new, recreated or moved top-level directories rely on a later startup, pull or
 reindex sweep; restart also begins watching those directories. Native Linux
-move-self delivery remains unverified.
+move-self delivery remains unverified. Non-note changes in observed folders can
+also trigger a full sweep after a quiet debounce window. An unchanged sweep does
+not write the ledger. On Linux with watchdog 4.0.2 through 6.x, a directory created
+unreadable inside an existing recursive watch may need a later scan to record
+edits after access restoration; restart restores watch coverage.
 
 A readable empty root records previously observed files as removed,
 even if search refuses to prune its own rows for an empty root.

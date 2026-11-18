@@ -1552,13 +1552,27 @@ A new or replaced top-level root is observation-only until restart; search
 may reindex on creation but does not watch later edits there. Search and
 observation events share one debounce: reindex sweeps the ledger, with a
 standalone sweep if reindex fails. Inventory enforces access and internal-path
-boundaries during each sweep. Attribute events request observation, while
-legacy directory modifications compare mode and change time. An adjacent parent
-notice after a child create, delete or move is absorbed without advancing that
-signature. Reordered or coalesced non-note changes may cost a sweep per changed
-directory signature. A simultaneous access change indistinguishable from an
-adjacent notice is seen by a later sweep; the next standalone notice can still
-trigger one. Explicit attribute events are not absorbed.
+boundaries during each sweep. Directory modifications and attribute events
+request observation without inferring whether a metadata change was part of an
+adjacent child event. A non-note change can therefore trigger a full sweep per
+quiet debounce window; an unchanged sweep writes nothing. A ledger save can
+cause one follow-up sweep that writes nothing. A warm sweep of 5,000 notes was
+measured at about 0.21 seconds. Search roots and the floor are registered before
+observation-only roots, so those subscriptions get priority at the watch limit.
+An inaccessible root keeps its existing watch until it can be inspected. At a
+non-recursive observation ancestor, direct directory notices reconcile children,
+so a formerly inaccessible child can acquire a watch without restarting.
+
+The inspected inotify implementations can omit watches under an unreadable
+directory. A directory created unreadable inside an already recursive observation
+root can remain unwatched after restoration on watchdog 4.0.2 through 6.x. A later
+scan records its current notes, while restart restores watch coverage; later
+versions provide attribute events that rebuild the observation root. Existing search-owned roots retain inherited behavior. Native Linux delivery
+for these cases remains unverified. On macOS, tested FSEvents recursive streams
+delivered changes after restoration on watchdog 4.0.2 and 7.1. A direct directory
+notice on a non-recursive piece reconciles direct children against watches; the
+observed cost was about 23 ms at 60 and 250 ms at 200 children. Walking a 20,000
+directory excluded tree at startup was measured at about 0.45 seconds.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
