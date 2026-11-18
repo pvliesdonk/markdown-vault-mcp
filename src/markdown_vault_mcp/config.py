@@ -347,8 +347,9 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Comma-separated frontmatter fields required on every "
-                "document; documents missing any are excluded from the index."
+                "Comma-separated required frontmatter fields; documents missing any "
+                "are excluded from the index, except index.md and log.md "
+                "in an active OKF vault."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -434,8 +435,9 @@ class ProjectConfig:
                 "(the default), read annotations switch on when the vault "
                 "declares an OKF version in its root index.md. Use off to "
                 "disable OKF semantics entirely, or on to force them for an "
-                "undeclared vault. Annotations are read-only; write "
-                "behavior is never affected."
+                "undeclared vault. OKF maintenance and independent review require "
+                "active semantics; the OKF_WRITE alias also permits review of an "
+                "undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -461,8 +463,7 @@ class ProjectConfig:
         default=DEFAULT_VERIFY,
         metadata={
             "help": (
-                "How the okf_verify tool attributes a human review. This "
-                "applies only when OKF_WRITE is on, which gates the tool. With "
+                "How the okf_verify tool attributes a human review. With "
                 "elicit, okf_verify asks the human to confirm "
                 "the review through an MCP elicitation, then records the "
                 "attestation only on an affirmative reply. It fails closed "
@@ -476,8 +477,8 @@ class ProjectConfig:
                 "leaving attestation to external tooling. "
                 "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
                 "elicit or trust-auth with OKF_MODE=off is a configuration error. "
-                "The independently configured mode is resolved now; runtime gating "
-                "continues to require OKF_WRITE until a later update."
+                "Independent review requires an active OKF vault and a writable server. "
+                "The OKF_WRITE alias also permits review of an undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -1341,7 +1342,7 @@ class ProjectConfig:
     okf_index: bool | None = field(
         default=None,
         metadata={
-            "help": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+            "help": "Enable automatic index maintenance in designated folders; defaults to false.",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },
@@ -1349,7 +1350,7 @@ class ProjectConfig:
     okf_log: str | None = field(
         default=None,
         metadata={
-            "help": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting.",
+            "help": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write.",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },
@@ -1357,7 +1358,11 @@ class ProjectConfig:
     okf_folders: Sequence[str] | None = field(
         default=None,
         metadata={
-            "help": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting.",
+            "help": (
+                "Comma-separated designated OKF folder globs; defaults to root (.). "
+                "* matches one folder level; ** spans levels. Leading ./ or / "
+                "and trailing / are ignored."
+            ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

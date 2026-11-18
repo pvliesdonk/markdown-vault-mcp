@@ -38,6 +38,13 @@ from markdown_vault_mcp._okf_log_repair import (
     retain_original,
 )
 from markdown_vault_mcp._path_guard import PathGuard
+from markdown_vault_mcp.bundle_inventory import (
+    BundleInspection,
+    BundleInspectionRequest,
+    BundleInspector,
+    InspectionPolicy,
+    project_search_state,
+)
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -52,6 +59,7 @@ from markdown_vault_mcp.exceptions import (
     SubmodulePathError,
 )
 from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.interfaces import ReportsRowState
 from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
@@ -193,6 +201,8 @@ class DocumentManager:
             ``read()`` titles would diverge from search titles.
         submodule_guard: Refuses a write into a git submodule or nested
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
+        inspection_policy: Configured conventions and state paths for bundle inspection.
+        inventory_ready: Read-only index readiness check.
     """
 
     def __init__(
@@ -214,9 +224,13 @@ class DocumentManager:
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
+        inspection_policy: InspectionPolicy | None = None,
+        inventory_ready: Callable[[], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
+        self._inspection_policy = inspection_policy or InspectionPolicy()
+        self._inventory_ready = inventory_ready
         self._file_write_lock = write_lock
         self._chunk_strategy = chunk_strategy
         self._read_only = read_only
@@ -248,6 +262,35 @@ class DocumentManager:
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect a selected directory and report available index state.
+
+        Args:
+            request: Explicit bundle root, directory and observation cap.
+
+        Returns:
+            Current policy-visible observations, without content or write authority.
+        """
+        inspection = BundleInspector(
+            self._source_dir,
+            self._exclude_patterns or (),
+            self._artifacts.extensions(),
+            self._max_note_read_bytes,
+            self._inspection_policy,
+        ).inspect(request)
+
+        if (
+            self._inventory_ready is not None
+            and self._inventory_ready()
+            and isinstance(self._fts, ReportsRowState)
+        ):
+            try:
+                return project_search_state(inspection, self._fts.row_state)
+            except sqlite3.Error:
+                logger.debug("inventory_search_state_unavailable", exc_info=True)
+                return inspection
+        return inspection
 
     # ------------------------------------------------------------------
     # Validation helpers

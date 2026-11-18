@@ -207,7 +207,8 @@ Vault(
 - `None` (default): all `.md` files are indexed regardless of frontmatter.
 - `["title", "cluster"]`: documents missing any listed field are excluded from
   the index entirely and will not be searchable. At scan completion, the
-  number of skipped documents is logged at `INFO` level.
+  number of skipped documents is logged at `INFO` level. In an active OKF
+  vault, reserved `index.md` and `log.md` files bypass this field gate.
 
 ### Frontmatter Filtering
 
@@ -235,7 +236,7 @@ The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
 gives O(1) indexed lookup without `json_extract()` performance problems.
 
-**Filter semantics**: `filters` is `dict[str, str]`. Each key-value pair is
+**Filter semantics**: `filters` maps keys to strings. On an active OKF bundle, `type: null` selects indexed non-reserved notes without a non-empty string type, including non-string values; it is evaluated after admission and does not change indexed rows. Each key-value pair is
 ANDed. Example: `filters={"cluster": "fiction", "genre": "horror"}` returns
 documents tagged with both `cluster=fiction` AND `genre=horror`. Multi-valued
 OR queries within a single key are not supported in Phase 1; use multiple
@@ -948,6 +949,11 @@ Two methods manage the index:
   `reindex(force=True)` is the manual counterpart, surfacing the
   already-existing `build_index(force=True)` for an index an operator has
   reason to distrust.
+
+  Version 13 (#1438) rebuilds indexes written with version 12, which shipped
+  in v6.1.2, so reserved OKF files can be admitted without required concept
+  fields. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
+
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
@@ -1987,14 +1993,18 @@ the spec itself says, dated and sourced, in
   `stale` (a bare `stale_after` date: the server-local day has reached it;
   an instant with an offset: `now >= stale_after`; an offset-less datetime
   is ignored — #1357, #1373), and
-  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
-  prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`; a bare `verified` mapping is a one-element list, as the
-  spec's single-verifier shorthand requires, at every site that reads
-  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
-  `sources_count`. Section reads omit the key (no frontmatter to derive
-  from). When inactive, no payload changes at all — the non-OKF baseline
-  is byte-identical.
+  `trust_tier` as a recorded-claim label. Only records with a recognized
+  actor shape and an offset-aware `at` contribute; malformed records never
+  promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
+  evidence and its basis; `review` counts usable and malformed records with
+  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  `review_applicability` separately reports unbound supplied entries, absence,
+  or malformed outer input; it never infers snapshot coverage from timestamps.
+  Full reads additionally expose supplied expiry/reviews under `recorded`,
+  preserving parsed values, while compact results omit that projection.
+  The exact contract and supported timestamp subset are in `okf.md` §3.
+  Reads carry the full `sources` list; search hits carry `sources_count`. Section reads omit the key (no frontmatter to derive
+  from). When inactive, these note-read payloads omit the `okf` key.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -2003,7 +2013,10 @@ the spec itself says, dated and sourced, in
   population `okf_validate` audits). Its `write_configured` reports the
   vault's configured `OKF_WRITE` flag and `write_effective` is true only
   when that flag is enabled, OKF detection is active, and the vault is not
-  read-only. The section remains absent when OKF is inactive.
+  read-only. The section always carries `capabilities`; when OKF is inactive,
+  it contains only that block. `capabilities` reports configured and effective
+  authority, reasons and folder scope, as does `config://vault` under
+  `okf_capabilities` (see `okf.md` §2).
   `config://vault` reports those same values as `okf_write_configured` and
   `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
@@ -2045,8 +2058,8 @@ the spec itself says, dated and sourced, in
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
-  index-independent, per-file reads capped at the probe's read limit
-  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  index-independent, existing checks capped at the probe's read limit
+  (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
@@ -2061,6 +2074,12 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Additional evidence findings distinguish missing expiry (informational),
+  malformed expiry/reviews (format observations), and evidence unavailable
+  due to reading/parsing failures or overflow detected by one-character
+  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
+  non-excluded concepts, not complete traversal or editorial-policy compliance.
+  Existing capped conformance checks and discovery rules are unchanged.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index
@@ -3648,6 +3667,87 @@ import (directly or transitively) ``fastmcp_pvl_core``, ``beartype``,
 The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
 operations to them. No manager holds a back-reference to Vault.
+
+#### Selected bundle directory inventory (#1442)
+
+`ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
+`DocumentManager` to `BundleInspector`. The caller explicitly chooses a
+vault-relative root and one root-relative directory. This library-only surface
+observes disk files independently of index admission: untyped and malformed
+Markdown remain visible. Once the index is queryable, entries report search
+state from a single index row read without refreshing or writing the index. Live rows
+and tombstones take precedence over current exclusions; an absent row falls
+back to the exclusion label. Backends without the optional row-state protocol
+leave the state unevaluated. Unknown and internal-error categories remain
+unevaluated. Any SQLite error from the index read, including after the vault
+closes, leaves all entries unevaluated. Each entry is read separately, so a page
+is not a snapshot.
+Before readiness and without index knowledge, search state is `not_evaluated`.
+These observations can lag disk changes and do not determine format conformance.
+Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
+candidates) confer no bundle conformance, global OKF activation or writer authority.
+
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
+recognize alternate case and Unicode spellings before opening selected components.
+Directory, attachment and budget-exhausted note candidates receive a no-follow
+open probe; permission refusals make enumeration incomplete and do not reveal
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
+source resolves once and its absolute components are opened from the filesystem
+root without following symlinks; selected components and child reads remain
+anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing
+configured sources and unavailable primitives are unavailable; only contained
+ENOENT/ENOTDIR imply missing. Errors retain explicit incomplete observations. A stat failure for an unknown
+file type hides its name but makes enumeration unavailable, because it could be
+a visible directory.
+
+Enumeration visits at most 100 entries by default (maximum 1000), counting
+omitted entries, plus one lookahead. It sorts only the bounded observations.
+`complete` means immediate policy-visible enumeration, never complete content or
+a whole bundle. Reads cap each Markdown file at the smaller of 64 KiB and a
+nonzero configured note-read cap, plus bounded lookahead, within 1 MiB aggregate
+including failed read reservations. Only complete bytes reach the existing UTF-8
+and frontmatter parsers. An inventory-only YAML event preflight uses the existing
+frontmatter delimiter handler: aliases, more than 4096 events or collection
+depth above 32 stop before metadata construction, preventing exponential merge
+expansion. Such files remain `not_inspected` with `metadata_complexity`, not
+malformed. General scanner parsing, Markdown bodies and other frontmatter
+formats retain their existing semantics. Parser recursion/overflow limits also
+remain uninspected. Known tag/value/shape conversion failures become malformed
+metadata; unexpected parser exceptions instead yield unavailable entries with
+`unexpected_parser_error`, without exception details or loss of sibling results.
+This keeps encoding, input, resource-limit and unexpected failures separate,
+analogous to the scanner's categorized boundary without adopting its admission
+or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
+invalid encoding, malformed metadata and absent/invalid/present type fields are
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
+following them. There is no navigation synthesis or declaration discovery.
+
+Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
+Their targets and target kinds are not returned, and they are never followed.
+Callers must inspect unavailable rows even when enumeration is complete.
+Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
 
 #### Internal Manager Architecture
 
@@ -7647,11 +7747,14 @@ undo the primary write. A rename or folder move skips protected
 backlink rewrites and reports them; bulk OKF transforms finish eligible writes
 and report protected paths they skipped.
 
-
 ### OKF capability transition
 
 The configuration resolves independent author, verify, index, log and folder
 capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
-resolved capabilities; explicit settings take precedence. Runtime write gates
-still follow `OKF_WRITE` until the subsequent transition.
+resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
+remains tied to `OKF_WRITE`.
+
+### Bundle inventory surfaces
+
+The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. Search admission remains an observation and can be unknown without an index. The local CLI uses a usable configured index only when the selected source resolves to the configured vault. An unusable or unsupported optional index leaves search state unknown without modifying the store.
