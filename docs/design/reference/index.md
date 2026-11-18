@@ -21,6 +21,9 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —
   initial namespace identity, process liveness and static ownership labels used
   by the PostgreSQL fixture to recover after SIGKILL (#1952).
+- [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md) —
+  pinned serializer keyword forwarding, recursive mapping order and formatting
+  boundaries used by the document writer and OKF transforms.
 - [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
   up-to-date requirements, merge queue, workflow branch filters, closing
   keywords, retargeting, merge methods, knope's commit walk and git's
