@@ -260,7 +260,7 @@ def test_escaped_backtick_does_not_open_code(tmp_path):
 
 def test_wikilinks_in_code_remain_literal(tmp_path):
     (tmp_path / "guides").mkdir()
-    body = "[[b]]\n\n```\n[[b]]\n```\n"
+    body = "[[b]]\n\n```\n[[b]]\n> example\n```\n\n[[b]]\n"
     (tmp_path / "guides/a.md").write_text(body)
     (tmp_path / "guides/b.md").write_text("# B")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -270,7 +270,10 @@ def test_wikilinks_in_code_remain_literal(tmp_path):
             vault, ProjectConfig(source_dir=tmp_path), folder="guides"
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md") == b"[b](/b.md)\n\n```\n[[b]]\n```\n"
+            assert (
+                archive.read("a.md")
+                == b"[b](/b.md)\n\n```\n[[b]]\n> example\n```\n\n[b](/b.md)\n"
+            )
     finally:
         vault.close()
 
@@ -317,6 +320,90 @@ def test_quoted_definition_outside_collision(tmp_path):
         == b"[ref]\r\n\r\n> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
     )
     assert [d.target for d in report.dependencies] == ["/b.md#part"]
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "- [ref]: /guides/b.md\n",
+        '> - [ref]: /guides/b.md "title"\n',
+        '- outer\n  - [ref]: </guides/b.md> "title"\n',
+    ],
+)
+def test_list_definition_relocates_selected_target(tmp_path, definition):
+    from markdown_it import MarkdownIt
+
+    body = definition + "\n[ref]\n"
+    assert 'href="/guides/b.md"' in MarkdownIt().render(body)
+    output, report = _export_body(tmp_path, body.encode())
+    assert output.decode() == body.replace("/guides/b.md", "/b.md")
+    assert 'href="/b.md"' in MarkdownIt().render(output.decode())
+    assert not report.dependencies
+    assert report.transformed == ["a.md"]
+
+
+@pytest.mark.parametrize("base", [None, "https://example.org/vault"])
+def test_list_definition_outside_collision_or_external_url(tmp_path, base):
+    body = b'- [ref]: /b.md#part "title"\n\n[ref]\n'
+    if base is None:
+        with pytest.raises(ValueError, match="collision"):
+            _export_body(tmp_path, body)
+    else:
+        output, report = _export_body(tmp_path, body, external_base=base)
+        assert output == body.replace(
+            b"/b.md#part", b"https://example.org/vault/b.md#part"
+        )
+        assert [(d.path, d.target) for d in report.dependencies] == [
+            ("a.md", "/b.md#part")
+        ]
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+@pytest.mark.parametrize("container", ["root", "list", "quoted_list"])
+def test_quote_line_inside_fence_keeps_following_link_active(fence, container):
+    if container == "quoted_list":
+        body = f"> - {fence}\n>   > literal\n>   [hidden](/guides/b.md)\n>   {fence}\n\n[real](/guides/b.md)\n"
+    elif container == "list":
+        body = f"- {fence}\n  > quote\n  [hidden](/guides/b.md)\n  {fence}\n\n[real](/guides/b.md)\n"
+    else:
+        body = f"{fence}\n> quote\n[hidden](/guides/b.md)\n{fence}\n\n[real](/guides/b.md)\n"
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == body.replace("[real](/guides/b.md)", "[real](/b.md)")
+    assert not dependencies
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "- <pre>\n[a](/guides/b.md)\n",
+        "> <pre>\n[a](/guides/b.md)\n",
+        "<pre>\n</script>\n[a](/guides/b.md)\n",
+        "<script>\n</StYlE>\n[a](/guides/b.md)\n",
+    ],
+)
+def test_html_block_container_or_type_one_closer_releases_link(body):
+    from markdown_it import MarkdownIt
+
+    assert 'href="/guides/b.md"' in MarkdownIt().render(body)
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == body.replace("/guides/b.md", "/b.md")
+    assert not dependencies
+
+
+@pytest.mark.parametrize(
+    "prefix, live", [("> \t", True), (">  \t", True), ("\t", False)]
+)
+def test_quote_tab_keeps_live_link_distinct_from_indented_code(prefix, live):
+    from markdown_it import MarkdownIt
+
+    body = prefix + "[a](/guides/b.md)\n"
+    assert ('href="/guides/b.md"' in MarkdownIt().render(body)) is live
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == (body.replace("/guides/b.md", "/b.md") if live else body)
+    assert not dependencies
 
 
 def test_list_fence_ends_with_container(tmp_path):

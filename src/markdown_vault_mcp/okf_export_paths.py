@@ -51,6 +51,10 @@ if TYPE_CHECKING:
 _MARKER = re.compile(r"^( *)(?:[-+*]|[0-9]{1,9}[.)])(?= |$)( *)")
 _HTML_OPEN = re.compile(r"^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)", re.I)
 _TICKS = re.compile(r"`+|<!--")
+_HTML_CLOSE = re.compile(r"</(?:pre|script|style|textarea)>", re.I)
+_CONTAINER = re.compile(
+    r"^(?:(?: {0,3}>[ \t]?)|(?:[ \t]*(?:[-+*]|[0-9]{1,9}[.)])[ \t]+))+", re.MULTILINE
+)
 # Line endings a link's parentheses may hold: after "(", before a title or ")".
 _LINE_END = re.compile(r"[ \t]*\n")  # a masked CRLF is a space, then a newline
 _SOFT = re.compile(r"\((?=[ \t]*\n)[ \t]*\n|\n(?=[ \t]*[\"')(])")
@@ -65,35 +69,43 @@ class _BlockState:
     blank_before: bool = True
     in_code: bool = False
 
-    def _container(self, line: str) -> tuple[str, int, re.Match[str] | None]:
+    def _quote(self, line: str) -> str:
+        """Strip the quote prefix and track depth; a deeper ``>`` in a block is content."""
         quote = _RE_LINE_QUOTE_PREFIX.match(line)
         prefix = quote.group() if quote else ""
         depth = prefix.count(">")
+        if (self.fence or self.html_end) and depth > self.depth:
+            cut = re.match(rf"(?: {{0,3}}>[ \t]?){{{self.depth}}}", line)
+            return line[cut.end() :] if cut else line
         if depth != self.depth:
             self.items.clear()
-            if self.fence and self.depth:
-                self.fence = None
+            self.fence = self.html_end = None
             self.depth = depth
-        text = line[len(prefix) :].rstrip("\n").expandtabs(4)
+        return line[len(prefix) :]
+
+    def _container(self, line: str) -> tuple[str, int, re.Match[str] | None]:
+        text = self._quote(line.rstrip("\n").expandtabs(4))
         indent = len(text) - len(text.lstrip(" "))
         marker = _MARKER.match(text)
-        leaving_fence = bool(self.fence and text.strip())
+        block = bool(self.fence or self.html_end)
         while (
             self.items
             and indent < self.items[-1]
-            and (leaving_fence or (not self.fence and (self.blank_before or marker)))
+            and (
+                (block and text.strip())
+                or (not block and (self.blank_before or marker))
+            )
         ):
             self.items.pop()
-            self.fence = None
+            self.fence = self.html_end = None
         return text, indent, marker
 
     def _open(self, inner: str) -> bool:
         self.fence = _fence_opener(inner)
         if self.fence:
             return True
-        tag = _HTML_OPEN.match(inner)
-        if tag:
-            self.html_end = re.compile(r"</" + tag.group(1) + r"\s*>", re.I).search
+        if _HTML_OPEN.match(inner):
+            self.html_end = _HTML_CLOSE.search
         elif inner.lstrip(" ").startswith("<!--") and "-->" not in inner:
             self.html_end = lambda line: "-->" in line
         return self._active(inner)
@@ -222,11 +234,7 @@ def _definition_spans(
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     definitions = []
     first: dict[str, tuple[int, int]] = {}
-    unquoted = re.sub(
-        re.compile(_RE_LINE_QUOTE_PREFIX.pattern, re.MULTILINE),
-        lambda match: " " * len(match.group()),
-        masked,
-    )
+    unquoted = _CONTAINER.sub(lambda match: " " * len(match.group()), masked)
     for label, tail, start, end in _iter_definition_matches(unquoted):
         key = _label_key(label)
         if not key or key.startswith("^"):
