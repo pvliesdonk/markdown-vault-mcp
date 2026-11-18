@@ -30,7 +30,7 @@ same rewrite the tool does (#1401).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
@@ -68,7 +68,6 @@ class OkfMigrationManager:
         search_mgr: SearchManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
-        reserved_unindexed: Callable[[dict[str, Any]], bool],
     ) -> None:
         """Hold the collaborators the transforms delegate to.
 
@@ -81,28 +80,12 @@ class OkfMigrationManager:
             git_query_mgr: Vault-wide history for the log seeder.
             require_built: Index-readiness gate; the link/TOC-dependent
                 transforms call it first.
-            reserved_unindexed: Whether missing required fields exclude this file.
         """
         self._doc_mgr = doc_mgr
         self._link_mgr = link_mgr
         self._search_mgr = search_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
-        self._reserved_unindexed = reserved_unindexed
-
-    def _index_warning(self, metadata: dict[str, Any]) -> str | None:
-        """Report a confirmed field-gate exclusion without guessing on probe error."""
-        try:
-            excluded = self._reserved_unindexed(metadata)
-        except OSError:
-            return None
-        if not excluded:
-            return None
-        return (
-            "Generated reserved files missing required fields are not indexed while "
-            "OKF scope is inactive. Set MARKDOWN_VAULT_MCP_OKF_MODE=on or use "
-            "auto mode with a root okf_version declaration, then reindex."
-        )
 
     def convert_links(
         self, *, folder: str | None = None, allow_protected: bool = False
@@ -297,7 +280,6 @@ class OkfMigrationManager:
                 if designated(prefix + sub) or self._has_index(prefix + sub)
             }
         created: list[str] = []
-        child_warning = None
         for sub in sorted(subfolders):
             child_folder = f"{prefix}{sub}"
             if not self._has_index(child_folder):
@@ -307,7 +289,6 @@ class OkfMigrationManager:
                 created += ([child.path] if child.path not in skipped else []) + list(
                     child.created
                 )
-                child_warning = child_warning or child.warning
         entries = note_entries + [
             (f"{sub}/", f"/{prefix}{sub}/index.md", None)
             for sub in sorted(subfolders)
@@ -315,35 +296,30 @@ class OkfMigrationManager:
         ]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
-        existing = self._doc_mgr.read(index_path)
-        heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
-        body = build_index_markdown(heading, entries)
-        reason = self._doc_mgr.protection_reason(
-            index_path, allow_protected=allow_protected, allow_designated=True
-        )
-        preserved = False
-        if reason:
-            skipped[index_path] = reason
-        else:
-            with okf_write_suppressed():
-                preserved = self._doc_mgr.replace_body(
-                    index_path,
-                    existing.content if existing is not None else None,
-                    body,
-                    allow_protected=allow_protected,
-                    allow_designated=True,
-                )
+        with self._doc_mgr.write_scope():
+            existing = self._doc_mgr.read(index_path)
+            heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
+            body = build_index_markdown(heading, entries)
+            reason = self._doc_mgr.protection_reason(
+                index_path, allow_protected=allow_protected, allow_designated=True
+            )
+            preserved = False
+            if reason:
+                skipped[index_path] = reason
+            else:
+                with okf_write_suppressed():
+                    preserved = self._doc_mgr.replace_body(
+                        index_path,
+                        existing.content if existing is not None else None,
+                        body,
+                        allow_protected=allow_protected,
+                        allow_designated=True,
+                    )
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),
             frontmatter_preserved=preserved,
             created=tuple(created),
-            warning=(
-                self._index_warning(existing.frontmatter if existing else {})
-                if not reason
-                else None
-            )
-            or child_warning,
         )
 
     def _has_index(self, folder: str) -> bool:
@@ -405,6 +381,4 @@ class OkfMigrationManager:
         body, commits, dates = build_log_markdown(history)
         with okf_write_suppressed():
             self._doc_mgr.write(log_path, body, allow_protected=allow_protected)
-        return OkfLogResult(
-            path=log_path, commits=commits, dates=dates, warning=self._index_warning({})
-        )
+        return OkfLogResult(path=log_path, commits=commits, dates=dates)

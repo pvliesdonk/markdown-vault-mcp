@@ -332,6 +332,44 @@ class TestGenerateIndex:
         assert vault.reader.read("kept/index.md").content == "# Hand-written\n"
         assert vault.graph.get_broken_links() == []
 
+    def test_concurrent_creator_keeps_header(
+        self, vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        from markdown_vault_mcp.managers import okf_migrate
+
+        header = '---\nokf_version: "0.2" # retained\ncustom: retained\n---\n'
+        attempted, finished = threading.Event(), threading.Event()
+        errors: list[Exception] = []
+
+        def create() -> None:
+            attempted.set()
+            try:
+                vault._doc_mgr.write("index.md", header + "# Created\n")
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        thread = threading.Thread(target=create)
+        build = okf_migrate.build_index_markdown
+
+        def at_snapshot(*args: object, **kwargs: object) -> str:
+            thread.start()
+            assert attempted.wait(2)
+            finished.wait(0.3)
+            return build(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(okf_migrate, "build_index_markdown", at_snapshot)
+        try:
+            vault.writer.okf_generate_index()
+        finally:
+            thread.join(2)
+        assert not thread.is_alive()
+        assert not errors
+        assert (vault.source_dir / "index.md").read_text().startswith(header)
+
     def test_refreshing_an_existing_index_creates_nothing(self, vault: Vault) -> None:
         _write(vault, "guides/one.md", "# One\n")
         vault.writer.okf_generate_index()
@@ -471,12 +509,8 @@ def gated_vault(source_dir: Path) -> Iterator[Vault]:
         col.close()
 
 
-def _indexed_paths(vault: Vault) -> set[str]:
-    return {note.path for note in vault.reader.list_documents()}
-
-
 class TestReservedFilesUnderRequiredFrontmatter:
-    """Reserved files remain indexed without concept fields in an OKF vault."""
+    """Generated files have no new frontmatter and retain existing headers."""
 
     def test_generators_write_body_only(self, gated_vault: Vault) -> None:
         _write(gated_vault, "guides/one.md", "---\ntitle: One\n---\n# One\n")
@@ -490,22 +524,32 @@ class TestReservedFilesUnderRequiredFrontmatter:
         assert not (gated_vault.source_dir / "log.md").read_bytes().startswith(b"---")
 
     @pytest.mark.parametrize(
-        "header",
+        "original,prefix,preserved",
         [
-            b'---\nokf_version: "0.2"\n---\n',
-            b"---\n---\n",
-            b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n',
+            (
+                b'---\nokf_version: "0.2"\n---\n# Old\n',
+                b'---\nokf_version: "0.2"\n---\n',
+                True,
+            ),
+            (b"---\n---\n# Old\n", b"---\n---\n", True),
+            (
+                b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n# Old\r\n',
+                b'\xef\xbb\xbf---\r\nokf_version: "0.2" # declaration\r\ntitle: Legacy\r\n---\r\n',
+                True,
+            ),
+            (b"", b"# Index\n", False),
+            (b"---\ntitle: Legacy\n---", b"---\ntitle: Legacy\n---\n# Index", True),
         ],
     )
     def test_regeneration_preserves_header_bytes(
-        self, gated_vault: Vault, header: bytes
+        self, gated_vault: Vault, original: bytes, prefix: bytes, preserved: bool
     ) -> None:
         path = gated_vault.source_dir / "index.md"
-        path.write_bytes(header + b"# Old\n")
+        path.write_bytes(original)
         result = gated_vault.writer.okf_generate_index()
-        assert result.frontmatter_preserved is True
-        assert path.read_bytes().startswith(header)
-        if b"title: Legacy" in header:
+        assert result.frontmatter_preserved is preserved
+        assert path.read_bytes().startswith(prefix)
+        if b"title: Legacy" in original:
             assert gated_vault.reader.okf_validate().index_frontmatter.examples == (
                 "index.md",
             )
@@ -534,70 +578,3 @@ class TestUnreadableReservedFiles:
         with pytest.raises(DocumentUnreadableError):
             vault.writer.okf_generate_index(folder="guides")
         assert (source_dir / "guides" / "index.md").read_bytes() == _UNREADABLE
-
-
-class TestReservedGenerationWarnings:
-    @pytest.mark.parametrize(
-        "mode,required,warning",
-        [("auto", ["title"], True), ("on", ["title"], False), ("auto", [], False)],
-    )
-    def test_generated_files_report_inactive_gate(
-        self, tmp_path: Path, mode: str, required: list[str], warning: bool
-    ) -> None:
-        col = Vault(
-            source_dir=tmp_path,
-            settings=VaultSettings(
-                read_only=False, okf_mode=mode, required_frontmatter=required
-            ),
-        )
-        try:
-            col.index.build_index()
-            index = col.writer.okf_generate_index()
-            log = col.writer.okf_seed_log()
-            assert bool(index.warning) is warning
-            assert bool(log.warning) is warning
-            if warning:
-                assert "not indexed" in index.warning
-                assert "OKF" in log.warning
-        finally:
-            col.close()
-
-    def test_complete_existing_header_needs_no_warning(self, tmp_path: Path) -> None:
-        (tmp_path / "index.md").write_text("---\ntitle: Existing\n---\n# Old\n")
-        col = Vault(
-            source_dir=tmp_path,
-            settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
-        )
-        try:
-            col.index.build_index()
-            assert col.writer.okf_generate_index().warning is None
-        finally:
-            col.close()
-
-    def test_excluded_created_child_warns_when_parent_satisfies_gate(
-        self, tmp_path: Path
-    ) -> None:
-        (tmp_path / "index.md").write_text("---\ntitle: Root\n---\n# Old\n")
-        (tmp_path / "guides").mkdir()
-        (tmp_path / "guides" / "note.md").write_text("---\ntitle: Note\n---\n# Note\n")
-        col = Vault(
-            source_dir=tmp_path,
-            settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
-        )
-        try:
-            col.index.build_index()
-            result = col.writer.okf_generate_index()
-            assert result.created == ("guides/index.md",)
-            assert result.warning and "not indexed" in result.warning
-        finally:
-            col.close()
-
-    def test_scope_probe_error_is_not_inactive(
-        self, gated_vault: Vault, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def unreadable() -> bool | None:
-            raise OSError("unreadable")
-
-        monkeypatch.setattr(gated_vault, "_reserved_exempt", unreadable)
-        assert gated_vault.writer.okf_generate_index().warning is None
-        assert gated_vault.writer.okf_seed_log().warning is None

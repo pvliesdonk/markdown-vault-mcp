@@ -543,10 +543,7 @@ and forced-on mode is unaffected.
 Generators create `index.md` and `log.md` without frontmatter, regardless of
 required concept fields. Regeneration retains existing headers byte-for-byte,
 including a root `okf_version` and legacy seeded fields, and adds no keys. The
-audit still reports disallowed index frontmatter (#1396). Generator results warn
-when the scope is confirmed inactive and generated files lack required fields;
-unknown scope produces no exclusion claim. A parent index result also reports
-any warning from its automatically generated descendants. Log maintenance edits
+audit still reports disallowed index frontmatter (#1396). Log maintenance edits
 the body through `DocumentManager.edit`, which retains the stored header bytes
 and avoids stacking frontmatter blocks (#1391).
 

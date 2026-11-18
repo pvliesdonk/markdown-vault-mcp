@@ -384,10 +384,10 @@ class TestConventionMaintenanceIntegration:
             col.close()
 
 
-class TestUpkeepUnderRequiredFrontmatter:
-    """Generated navigation and history remain indexed without concept fields."""
+class TestLogUpkeep:
+    """Log upkeep writes body-only files and preserves existing headers."""
 
-    def test_maintained_reserved_files_are_indexed(self, tmp_path: Path) -> None:
+    def test_maintained_log_is_body_only(self, tmp_path: Path) -> None:
         root = tmp_path / "gated_vault"
         (root / "guides").mkdir(parents=True)
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")

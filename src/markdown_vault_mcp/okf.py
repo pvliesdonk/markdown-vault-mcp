@@ -903,7 +903,6 @@ class OkfIndexResult:
         entries: Notes and sub-folder pointers listed.
         frontmatter_preserved: Whether an existing frontmatter block, including
             an empty one, was carried over. A new body-only file reports False.
-        warning: Actionable indexing notice, or None when not applicable.
         created: Subfolder ``index.md`` files written because the listing
             points at them and they did not exist (#1647), outermost first.
     """
@@ -912,7 +911,6 @@ class OkfIndexResult:
     entries: int
     frontmatter_preserved: bool
     created: tuple[str, ...] = ()
-    warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -923,13 +921,11 @@ class OkfLogResult:
         path: Vault-relative path of the generated log.
         commits: Number of commits included.
         dates: Number of dates represented.
-        warning: Actionable indexing notice, or None when not applicable.
     """
 
     path: str
     commits: int
     dates: int
-    warning: str | None = None
 
 
 def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int, int]:
