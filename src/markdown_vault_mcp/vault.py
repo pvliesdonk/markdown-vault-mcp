@@ -1076,6 +1076,7 @@ class Vault:
             )
             failed = pending
         self._git_strategy.retry_generated_indexes(failed)
+        self._write_callback.drain()
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.

@@ -1181,18 +1181,10 @@ class GitWriteStrategy:
         generated: list[tuple[str, str]] = []
         authored: list[tuple[str, str]] = []
         for item in saved:
-            try:
-                is_generated = (
-                    self._generated_index_policy is not None
-                    and self._generated_index_policy(git_root / item[0])
-                )
-            except Exception:
-                logger.warning(
-                    "git_conflict_policy_failed path=%s action=keep_sibling",
-                    item[0],
-                    exc_info=True,
-                )
-                is_generated = False
+            is_generated = (
+                self._generated_index_policy is not None
+                and self._generated_index_policy(git_root / item[0])
+            )
             (generated if is_generated else authored).append(item)
         if rebase_in_progress:
             authored = conflict.restore_upstream_paths(
@@ -1201,7 +1193,11 @@ class GitWriteStrategy:
         else:
             self._pending_generated.update(git_root / p for p, _ in generated)
         if not authored:
-            if not rebase_in_progress and self.head_sha(git_root) != from_sha:
+            if (
+                generated
+                and not rebase_in_progress
+                and self.head_sha(git_root) != from_sha
+            ):
                 return self._build_pull_result_advanced(
                     git_root, env, from_sha=from_sha, reason=PULL_REASON_REBASED
                 ), []

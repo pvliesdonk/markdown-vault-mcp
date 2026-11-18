@@ -7046,7 +7046,10 @@ index reconcile. Failed regeneration is logged and retried on every later
 reconcile; the pull result remains `rebased`. The in-memory pending record is
 lost on restart; the next write into the folder or `okf_generate_index` heals
 the listing. An aborted rebase keeps the local index and the next pull retries.
-A regenerated index's commit failure follows the ordinary write path. Reserved
+After regeneration, the write callback is drained before reconciliation returns,
+so a subsequent push in the same `git_sync` includes the commit. A callback
+timeout or commit failure follows the ordinary write path, without a commit
+confirmation guarantee. Reserved
 siblings stay indexed concepts until reconciled by hand. A generated-only
 conflict returns `rebased` without siblings. The upstream root `okf_version`
 wins; a local-only change to it is not carried forward.

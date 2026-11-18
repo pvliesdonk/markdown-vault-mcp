@@ -22,10 +22,7 @@ if TYPE_CHECKING:
 
 @pytest.mark.parametrize(
     ("name", "authority"),
-    [
-        ("index.md", a)
-        for a in ("disabled", "outside", "inactive", "readonly", "raising")
-    ]
+    [("index.md", a) for a in ("disabled", "outside", "inactive", "readonly")]
     + [("log.md", "enabled")],
 )
 def test_reserved_conflict_preserves_both_versions(
@@ -62,12 +59,6 @@ def test_reserved_conflict_preserves_both_versions(
     _run_git(root, "commit", "-m", "local")
     strategy, instance = recovery_vault(vault, authority=authority)
     try:
-        if authority == "raising":
-
-            def fail_policy(_path: object) -> bool:
-                raise RuntimeError("synthetic policy failure")
-
-            strategy.set_generated_index_policy(fail_policy)
         result = strategy.force_pull()
         assert result.reason == "conflicts_resolved_with_siblings"
         assert len(result.conflict_files) == len(names)
@@ -255,3 +246,33 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
     finally:
         vault.close()
         instances.close()
+
+
+def test_sync_publishes_recovered_index_inside_commit_scope(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    import asyncio
+    from typing import Any
+
+    from markdown_vault_mcp._commit_scope import bound_commit_scope
+    from markdown_vault_mcp._tools.git import _run_pull_leg, _run_push_leg
+
+    _, root, _index = _setup_generated_conflict(git_repo_pair, False)
+    strategy, vault = recovery_vault(root, build=True)
+    try:
+
+        async def both() -> tuple[dict[str, Any], dict[str, Any]]:
+            pull = await _run_pull_leg(strategy, vault, dry_run=False)
+            push = await _run_push_leg(strategy, dry_run=False)
+            return pull, push
+
+        with bound_commit_scope("git_sync") as scope:
+            pull, push = asyncio.run(both())
+            assert pull["applied"] and push["applied"]
+            remote_index = _run_git(git_repo_pair.remote_path, "show", "main:index.md")
+            vault.end_commit_scope(scope)
+            assert "local.md" in remote_index and "remote.md" in remote_index
+        assert vault._write_callback.drain(timeout=5)
+    finally:
+        vault.close()
+        strategy.close()

@@ -416,7 +416,9 @@ commits) reports `would_apply=false`. The push leg has no safe local
     retried on each later reconcile; the pull result stays `rebased`. A restart
     loses the pending retry; a later write into the folder or `okf_generate_index`
     heals the listing. An aborted rebase keeps the local index and the next pull
-    retries. A regenerated index commit failure follows the ordinary write path.
+    retries. The server drains regenerated writes before a following push in
+    the same `git_sync`. A callback timeout or commit failure follows the
+    ordinary write path; the drain does not confirm commit success.
     Preserved siblings appear in search and generated listings until manually
     reconciled and deleted. They can also produce `missing_type` validation findings;
     a root index sibling carrying `okf_version` can produce `misplaced_okf_version`.

@@ -109,3 +109,91 @@ def test_new_conflict_for_same_path_survives_old_recovery(git_repo: Path) -> Non
         assert strategy.take_generated_indexes() == [index]
     finally:
         strategy.close()
+
+
+def test_local_delete_upstream_modify_concept_keeps_failure_outcome(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    import subprocess
+
+    from tests.fixtures.git import _run_git
+
+    root = git_repo_pair.local_path
+    (root / "c.md").write_text("base\n")
+    _run_git(root, "add", "c.md")
+    _run_git(root, "commit", "-m", "seed")
+    _run_git(root, "push", "origin", "main")
+    other = root.parent / "other"
+    subprocess.run(
+        ["git", "clone", str(git_repo_pair.remote_path), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _run_git(other, "config", "user.email", "other@example.com")
+    _run_git(other, "config", "user.name", "Other")
+    (other / "c.md").write_text("remote edit\n")
+    _run_git(other, "add", "c.md")
+    _run_git(other, "commit", "-m", "remote")
+    _run_git(other, "push", "origin", "main")
+    _run_git(root, "rm", "c.md")
+    _run_git(root, "commit", "-m", "local delete")
+    strategy, vault = recovery_vault(root)
+    try:
+        result = strategy.force_pull()
+        assert result.reason == "conflict_resolution_failed"
+        assert not result.applied
+        assert (root / "c.md").read_text() == "remote edit\n"
+        assert not list(root.glob("c.conflict-mcp-*.md"))
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_unexpected_refresh_failure_retries_then_empty_reconcile_noops(
+    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.fixtures.conflict_recovery import _setup_generated_conflict
+
+    _root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
+    strategy, vault = recovery_vault(vault_root, build=True)
+    assert vault._okf_convention is not None
+
+    calls: list[list[Path]] = []
+
+    def fail(paths: list[Path]) -> list[Path]:
+        calls.append(paths)
+        raise RuntimeError("unexpected refresh error")
+
+    try:
+        assert strategy.force_pull().reason == "rebased"
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._okf_convention, "refresh_generated", fail)
+            vault.reconcile_index_with_head(source="git_sync")
+        assert "local.md" not in index.read_text()
+        vault.reconcile_index_with_head(source="git_sync")
+        assert "local.md" in index.read_text()
+        assert vault._write_callback.drain(timeout=5)
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._okf_convention, "refresh_generated", fail)
+            vault.reconcile_index_with_head(source="git_sync")
+        assert len(calls) == 1
+        assert strategy.take_generated_indexes() == []
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_generated_index_refuses_path_outside_vault(git_repo_pair: GitRepoPair) -> None:
+    root = git_repo_pair.local_path
+    outside = root.parent / "outside" / "index.md"
+    outside.parent.mkdir()
+    outside.write_text("authored\n")
+    strategy, vault = recovery_vault(root, build=True)
+    try:
+        assert vault._okf_convention is not None
+        assert not vault._okf_convention.generated_index(outside)
+        assert vault._okf_convention.refresh_generated([outside]) == []
+        assert outside.read_text() == "authored\n"
+    finally:
+        vault.close()
+        strategy.close()
