@@ -149,3 +149,65 @@ def test_bundle_reads_attachment_without_encoding(
     result = build_okf_bundle(vault, config, folder="")
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("pic.png") == b"\x89PNGDATA"
+
+
+def test_inventory_membership_and_report(source_dir: Path) -> None:
+    (source_dir / "typed.md").write_text("---\ntype: Note\nx-extra: yes\n---\ntext\n")
+    (source_dir / "excluded.md").write_text("# excluded\n")
+    (source_dir / ".hidden.md").write_text("# hidden\n")
+    settings = VaultSettings(
+        read_only=False,
+        attachment_extensions=["png"],
+        required_frontmatter=["title"],
+        exclude_patterns=["excluded.md", ".hidden.md"],
+    )
+    config = ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
+    vault = Vault(source_dir=source_dir, settings=settings)
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(vault, config)
+        members = _members(result.data)
+        assert "typed.md" in members and "b.md" in members
+        assert "excluded.md" not in members and ".hidden.md" not in members
+        assert "typed.md" in result.report.local_policy.non_admitted
+        assert "typed.md" not in {
+            finding.path for finding in result.report.format_findings
+        }
+        assert "b.md" in {finding.path for finding in result.report.format_findings}
+        assert result.report.omitted["index_excluded"] == 3
+        assert result.report.omitted["hidden"] == 1
+        assert result.report.omitted["conventions"] == 1
+        assert result.report.omitted["templates"] == 1
+        both = build_okf_bundle(
+            vault, config, include_index_excluded=True, include_hidden=True
+        )
+        assert {"excluded.md", ".hidden.md"} <= _members(both.data)
+        assert ".hidden.md" not in _members(
+            build_okf_bundle(vault, config, include_hidden=True).data
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("typed.md") == (source_dir / "typed.md").read_bytes()
+    finally:
+        vault.close()
+
+
+def test_large_note_and_symlink_are_reported(source_dir: Path, tmp_path: Path) -> None:
+    (source_dir / "large.md").write_text("---\ntype: Note\n---\n" + "x" * 70000)
+    outside = tmp_path / "outside.md"
+    outside.write_text("private")
+    (source_dir / "escape.md").symlink_to(outside)
+    vault = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
+    )
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
+        )
+        assert "large.md" in _members(result.data)
+        assert result.report.uninspected["large.md"] == "note_limit"
+        assert "escape.md" not in _members(result.data)
+        assert result.report.uninspected["escape.md"] == "symlink"
+    finally:
+        vault.close()

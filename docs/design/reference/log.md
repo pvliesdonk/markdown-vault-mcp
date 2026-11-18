@@ -5,6 +5,8 @@
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
   observed `next` URL host for #1853, from a full pagination of both sources.
   Other claims and review date unchanged.
+- Rechecked the OKF sources: the neutral repository now publishes a v0.3 draft; the project retains its published v0.2 baseline. See [OKF v0.2](okf-v0.2.md).
+
 - Updated: [File creation permissions and default ACLs](file-creation-permissions.md),
   for #2054. Rechecked acl(5)'s permission-bit correspondence for a default
   ACL without a mask; the runtime now reads the default-ACL xattr instead of

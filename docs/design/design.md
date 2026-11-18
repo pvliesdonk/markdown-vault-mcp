@@ -2125,7 +2125,11 @@ the spec itself says, dated and sourced, in
   fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
-  gated out when ``OKF_MODE=off``). Residual gaps stay with ``okf_validate``.
+  gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
+  independent of search admission. The library result reports omitted classes,
+  local admission, partial v0.2 format findings and incomplete observations;
+  it does not claim conformance. Descriptor-relative no-follow raw reads protect
+  notes and attachments after inventory (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX
   paths. Detection, admission, authorship and maintenance remain separate.

@@ -223,6 +223,12 @@ OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) method
 
 When you want a copy to share or hand to other OKF tooling, download one through the standard `create_download_link` tool with a bundle reference rather than a file path:
 
+Bundle export uses the live inventory, including notes search did not admit.
+It omits index-excluded and hidden paths, convention files and templates by
+default. Internal state and inaccessible paths are never exported. Library
+callers can select index-excluded and hidden paths separately and inspect the
+partial v0.2 report returned by `build_okf_bundle`.
+
 - `create_download_link` with `ref="okf-bundle"` returns a one-time URL for a zip of the whole vault.
 - `create_download_link` with `ref="okf-bundle:guides"` scopes the zip to a folder subtree.
 
