@@ -1108,6 +1108,43 @@ class TestContentChars:
 class TestStripFrontmatterBlock:
     """The read side of a ``write(body, frontmatter=...)`` round-trip (#1391)."""
 
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            (
+                '--- \r\nokf_version: "0.2"\r\n--- \r\n\r\n  # Heading  \r\n\t\r\n',
+                "\r\n  # Heading  \r\n\t\r\n",
+            ),
+            (
+                '-----\r\nokf_version: "0.2"\r\n------\r\n\r\n  # Heading  \r\n\t\r\n',
+                "\r\n  # Heading  \r\n\t\r\n",
+            ),
+            (
+                " \r\n  --- \r\nkey: value\r\n--- \r\n\r\n  Body\t\r\n",
+                "\r\n  Body\t\r\n",
+            ),
+            ("---\n\nIntro\n\n---\n\nBody\n", "---\n\nIntro\n\n---\n\nBody\n"),
+            ("---\ntype: [\n---\nBody\n", "---\ntype: [\n---\nBody\n"),
+            ('{\n"title": "Index"\n}\n\nBody\n', "\nBody\n"),
+            ("---\nkey: value\n---", ""),
+            ("---\nkey: value\n", "---\nkey: value\n"),
+        ],
+    )
+    def test_preserve_body(self, text: str, expected: str) -> None:
+        assert strip_frontmatter_block(text, preserve_body=True) == expected
+
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("---\n---\n# Authored\n", "# Authored\n"),
+            ("---\r\n  # comment\r\n\r\n---\r\n\r\n  Body\t\r\n", "\r\n  Body\t\r\n"),
+            ("---\nnull\n---\nBody\n", "---\nnull\n---\nBody\n"),
+            ("---\n~\n---\nBody\n", "---\n~\n---\nBody\n"),
+        ],
+    )
+    def test_empty_metadata_and_explicit_null(self, text: str, expected: str) -> None:
+        assert strip_frontmatter_block(text, preserve_body=True) == expected
+
     def test_the_opening_block_comes_off_with_its_separator(self) -> None:
         assert strip_frontmatter_block("---\ntitle: Log\n---\n\n# Log\n") == "# Log\n"
 

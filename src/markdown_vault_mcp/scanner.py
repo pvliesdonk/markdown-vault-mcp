@@ -821,7 +821,7 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
         raise MalformedFrontmatterError(str(exc)) from exc
 
 
-def strip_frontmatter_block(text: str) -> str:
+def strip_frontmatter_block(text: str, *, preserve_body: bool = False) -> str:
     """Return *text* without its leading frontmatter block, body verbatim.
 
     The counterpart of a ``write(body, frontmatter=...)``: a read-modify-write
@@ -843,10 +843,13 @@ def strip_frontmatter_block(text: str) -> str:
 
     Args:
         text: Raw markdown file text (frontmatter included).
+        preserve_body: Keep body whitespace; strip a mapping or empty/comment-only YAML.
 
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
+    if preserve_body:
+        return _frontmatter_body_verbatim(text)
     candidate = text.lstrip()
     handler = frontmatter.detect_format(candidate, frontmatter.handlers)
     if handler is None:
@@ -858,6 +861,33 @@ def strip_frontmatter_block(text: str) -> str:
         # frontmatter, and so does the indexer that calls it.
         return text
     return body.lstrip("\n")
+
+
+def _frontmatter_body_verbatim(text: str) -> str:
+    """Strip a mapping or empty/comment-only YAML, preserving the body suffix."""
+    candidate = text.lstrip()
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None or handler.FM_BOUNDARY is None:
+        return text
+    opening = handler.FM_BOUNDARY.match(candidate)
+    if opening is None:
+        return text
+    closing = handler.FM_BOUNDARY.search(candidate, opening.end())
+    if closing is None:
+        return text
+    try:
+        metadata, _ = handler.split(candidate)
+        parsed = handler.load(metadata)
+        if not isinstance(parsed, dict) and not (
+            isinstance(handler, frontmatter.default_handlers.YAMLHandler)
+            and parsed is None
+            and yaml.compose(metadata) is None
+        ):
+            return text
+    except (ValueError, TypeError, yaml.YAMLError):
+        return text
+    end = candidate.find("\n", closing.start())
+    return candidate[end + 1 :] if end >= 0 else ""
 
 
 def _restore_first_indent(text: str, stripped: str) -> str:

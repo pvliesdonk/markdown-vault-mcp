@@ -76,7 +76,7 @@ src/markdown_vault_mcp/
     donor.py           -- Donor: a read-only store whose compatible vectors a full build copies by embedding input, refusing an unknown or other identity (#1505)
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
-    reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
+    reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604), folder navigation (#1442)
     writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604)
     graph.py           -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
     index.py           -- IndexFacet: build/reindex/embeddings, readiness, writer + embeddings status (#604)
@@ -155,7 +155,7 @@ src/markdown_vault_mcp/
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
-    okf_inventory.py   -- bounded read-only bundle inventory tool
+    okf_inventory.py   -- bounded read-only bundle inventory and navigation tools
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
     transactions.py    -- MCP transaction tools and explicit write binding (#1677)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)

@@ -757,6 +757,37 @@ To find untyped candidates under `knowledge`, call:
 Continue with the returned `next_cursor`, even if this page has no entries.
 <!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
+## `okf_navigation`
+
+**Read Folder Navigation.** Read-only. Idempotent.
+
+Read a folder's authored or synthesized navigation and its source.
+
+Use `okf_inventory` to page through a bundle subtree. Synthesis covers
+immediate children only. Each entry's link text is the child's name with
+backslash, [ and ] backslash-escaped; remove those backslashes and join
+the name to folder to read a note or list a child. A folder entry is
+followed by the word folder.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `folder` | `string` | `""` | Vault-relative folder; empty selects the vault root. |
+| `entry_limit` | `integer` | `100` | Maximum entries observed per page, from 1 to 1000; some may not render (index, log, attachments). |
+| `cursor` | `string \| null` | `null` | Pass `next_cursor` from the previous page with the same folder to continue, even if that page was empty. |
+
+**Returns**
+
+Navigation body, source, scope and enumeration observations.
+
+<!-- DOMAIN-EXAMPLE-okf_navigation-START -->
+
+For a folder named `guides`, call `okf_navigation` with `folder="guides"`. The result contains its authored index body when present; otherwise it contains a synthesized page and an enumeration state. Repeat the call with the returned `next_cursor` as `cursor` until it is null, even if a page is empty.
+
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_navigation-END -->
+
 ## `query_documents`
 
 **Query Notes.** Read-only. Idempotent.
