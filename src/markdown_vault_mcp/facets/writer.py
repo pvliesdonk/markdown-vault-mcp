@@ -199,6 +199,45 @@ class WriterFacet:
         """
         return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
 
+    def okf_author(
+        self,
+        path: str,
+        *,
+        if_match: str,
+        fields: dict[str, Any],
+        producer: str | None = None,
+    ) -> WriteResult:
+        """Apply named OKF fields to an existing, etag-guarded concept.
+
+        Args:
+            path: Vault-relative note path.
+            if_match: Etag of the note read by the caller.
+            fields: Editorial fields to set.
+            producer: Explicit OKF actor, or None to leave generation unchanged.
+
+        Returns:
+            The write result.
+        """
+        from markdown_vault_mcp._okf_author import author_text
+        from markdown_vault_mcp._okf_write import okf_write_suppressed
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        if not if_match:
+            raise InvalidRequestError("if_match is required")
+        self._doc_mgr.ensure_writable()
+        with self._doc_mgr.write_scope():
+            canonical, original = self._doc_mgr._okf_author_snapshot(path)
+            if is_okf_reserved_file(canonical):
+                raise InvalidRequestError(
+                    "Cannot author a reserved OKF file as a concept"
+                )
+            content = author_text(original, fields, producer)
+            with okf_write_suppressed(), self._doc_mgr.exact_byte_writes():
+                result = self.write(canonical, content, if_match=if_match)
+            if self._convention_maintainer is not None:
+                self._convention_maintainer.maintain(canonical, "write")
+            return result
+
     def write(
         self,
         path: str,

@@ -149,7 +149,7 @@ placement in `config.py`, wizard metadata via field
 | `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
 | `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
 | `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | folder globs | `.` | Designates folders for automatic maintenance; `*` matches one level and `**` spans levels. Leading `./` or `/` and trailing `/` are ignored. |
-| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Reserves authority for the future explicit authoring tool; it does not enable stamping. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Enables explicit concept authoring on an active writable bundle; it does not enable stamping. |
 
 ### Detection
 
@@ -479,6 +479,10 @@ Tool tags following switches: #1412.
   body also invalidate (the spec ties verification to the concept, not the
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
+- **`okf_author` tool** (gated by `OKF_AUTHOR`): updates selected editorial
+  fields under an etag and records a producer only when supplied. It preserves
+  omitted metadata, reviews and body bytes, and suppresses legacy stamping for
+  its own write while retaining the authenticated commit principal.
 - **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 

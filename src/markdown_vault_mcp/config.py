@@ -1334,7 +1334,7 @@ class ProjectConfig:
     okf_author: bool | None = field(
         default=None,
         metadata={
-            "help": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+            "help": "Enable explicit OKF concept authoring on an active writable vault; defaults to false.",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

@@ -32,9 +32,17 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check the current state through `config://vault`, the `stats` tool, or `markdown-vault-mcp stats --json`. The resource's `okf_capabilities` and `stats.okf.capabilities` carry the same configured values, effective true/false values, reasons and folder scope, even when OKF is inactive. Reasons follow this order: `read_only` applies to every capability on a read-only vault, including disabled ones. On a writable vault a disabled capability has no reason. For enabled capabilities, `okf_inactive` comes next, except that legacy verification can remain effective in an undeclared vault when `OKF_WRITE` is enabled. Then `not_implemented` applies to authoring, event logging, and unrecognized library-supplied verify or log modes; finally, `not_designated` applies to index and write logging with an empty folder scope supplied through the library. Effective describes vault-level authority; identity, elicitation and etag checks still apply to individual calls. An effective index or write-log capability applies only within the reported folder scope; a nonempty scope does not mean every path is designated.
+Check the current state through `config://vault`, the `stats` tool, or `markdown-vault-mcp stats --json`. The resource's `okf_capabilities` and `stats.okf.capabilities` carry the same configured values, effective true/false values, reasons and folder scope, even when OKF is inactive. Reasons follow this order: `read_only` applies to every capability on a read-only vault, including disabled ones. On a writable vault a disabled capability has no reason. For enabled capabilities, `okf_inactive` comes next, except that legacy verification can remain effective in an undeclared vault when `OKF_WRITE` is enabled. Then `not_implemented` applies to event logging, and unrecognized library-supplied verify or log modes; finally, `not_designated` applies to index and write logging with an empty folder scope supplied through the library. Effective describes vault-level authority; identity, elicitation and etag checks still apply to individual calls. An effective index or write-log capability applies only within the reported folder scope; a nonempty scope does not mean every path is designated.
 
 The resource's `okf_write_configured` and `okf_write_effective` report the legacy stamping layer; active `stats.okf` reports them as `write_configured` and `write_effective`. The layer is effective when configured, OKF is active, and the vault is not read-only. When inactive, `stats.okf` contains only `capabilities`. Detection reflects changes to the declaration on the next call.
+
+## Authoring a concept
+
+Enable `MARKDOWN_VAULT_MCP_OKF_AUTHOR=true` on a writable, active OKF vault to expose [`okf_author`](../reference/tools/writer.md#okf_author). Read the concept first and pass its `etag` as `if_match`, together with the editorial `fields` to change. The operation keeps the body, reviews, and fields omitted from the request. An explicit `producer` records `generated.by` and a server-generated UTC timestamp; omit it to leave existing generation metadata unchanged. Authentication identifies the caller for commits and does not identify the content producer.
+
+In auto mode, list tools again after adding or removing the root bundle declaration to see the current authoring availability.
+
+Fields and `generated` children omitted from the request retain their original text, including comments and formatting. Edited lists use flow form; comments inside an edited field move below it. Supply non-empty strings for `type`, `title`, and `description`, a list of strings for `tags`, and source entries with a non-empty `resource` string. `status` accepts `draft`, `stable`, or `deprecated`, and `stale_after` accepts an ISO date or offset datetime. Empty requests, invalid values, non-YAML or ambiguous frontmatter, and edits that cannot preserve the reader’s view are refused.
 
 ## What the metadata means
 
@@ -243,9 +251,10 @@ skipped. The refusal repeats until the operator converts the protected notes or
 changes the setting; see [protected paths](../reference/configuration.md).
 Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
 the client write guard.
-The independent `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
-settings control review and maintenance. `OKF_AUTHOR` is reserved for a
-future authoring tool and does not enable implicit stamping. `OKF_WRITE=true` retains the
+
+The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
+settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
+implicit stamping. `OKF_WRITE=true` retains the
 existing behavior and logs a deprecation notice; explicit settings override
 its resolved defaults. See the [configuration reference](../reference/configuration.md).
 

@@ -110,6 +110,7 @@ src/markdown_vault_mcp/
   _cli_bundle.py       -- CLI adapter for bounded OKF inventory
   bundle_inventory.py -- Bounded selected-directory and pageable subtree observations, independent of index admission (#1442)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
+  _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)

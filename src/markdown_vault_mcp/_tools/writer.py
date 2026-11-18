@@ -63,7 +63,7 @@ from .._okf_write import (
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
-from ._common import attach_conventions, attach_remote_health
+from ._common import attach_conventions, attach_remote_health, okf_active
 
 logger = logging.getLogger(__name__)
 
@@ -1154,6 +1154,58 @@ def register(mcp: FastMCP) -> None:
             result = await asyncio.to_thread(vault.writer.okf_seed_log, folder=folder)
         except FileExistsError as exc:
             raise ToolError(str(exc), log_level=logging.INFO) from exc
+        return attach_remote_health(vault, asdict(result))
+
+    @mcp.tool(
+        tags={"okf", "write", "okf-author"},
+        icons=_TOOL_ICONS["okf_author"],
+        annotations={
+            "title": "OKF: Author Concept",
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def okf_author(
+        path: str,
+        if_match: str,
+        fields: dict[str, Any],
+        producer: str | None = None,
+        config: ProjectConfig = Depends(get_config),
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Set selected editorial fields on an existing OKF concept.
+
+        Args:
+            path: Concept path in the vault.
+            if_match: Etag from a recent read of the concept.
+            fields: Non-empty type, title and description strings; tags as a list
+                of strings; status as draft, stable or deprecated; stale_after
+                as an ISO date or offset datetime; sources as a list of mappings
+                with a non-empty resource string. Omitted fields are preserved.
+            producer: Explicit producer actor: <producer>/<version>, process:<id>
+                or human:<id>, such as codex/6.1 or process:importer; omit to
+                leave generation metadata unchanged.
+
+        Returns:
+            The written path and previous revision when available.
+            Read the note again to obtain a fresh etag.
+        """
+        if not config.content.okf_capabilities.author or not await okf_active(vault):
+            raise ToolError(
+                "OKF authoring is not active for this vault. Ask the operator to enable authoring on an active bundle.",
+                log_level=logging.INFO,
+            )
+        with write_identity_scope(okf_intent=False):
+            result = await asyncio.to_thread(
+                vault.writer.okf_author,
+                path,
+                if_match=if_match,
+                fields=fields,
+                producer=producer,
+            )
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(

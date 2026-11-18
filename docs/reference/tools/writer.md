@@ -10,7 +10,7 @@ kind: reference
 <!-- DOMAIN-INTRO-START -->
 Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
 
-Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs review enabled.
+Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, `okf_verify` needs review enabled, and `okf_author` needs authoring enabled and an active bundle.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
@@ -519,6 +519,30 @@ distinct days), plus:
 - **Start guides** (0c9d8e7)
 ```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
+
+## `okf_author`
+
+**OKF: Author Concept.** Changes state, not destructive. Tags: `okf`, `okf-author`, `write`.
+
+Set selected editorial fields on an existing OKF concept.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Concept path in the vault. |
+| `if_match` | `string` | required | Etag from a recent read of the concept. |
+| `fields` | `object` | required | Non-empty type, title and description strings; tags as a list of strings; status as draft, stable or deprecated; `stale_after` as an ISO date or offset datetime; sources as a list of mappings with a non-empty resource string. Omitted fields are preserved. |
+| `producer` | `string \| null` | `null` | Explicit producer actor: <producer>/<version>, process:<id> or human:<id>, such as codex/6.1 or process:importer; omit to leave generation metadata unchanged. |
+
+**Returns**
+
+The written path and previous revision when available.
+Read the note again to obtain a fresh etag.
+
+<!-- DOMAIN-EXAMPLE-okf_author-START -->
+Read a concept, then pass its `etag` as `if_match` and the fields to change, such as `fields={"tags": ["guide"]}`. Fields and generation children omitted from the request retain their text; edited lists use flow form and comments inside edited fields move below them. Invalid values, ambiguous frontmatter and edits that cannot preserve the reader’s view are refused. See [authoring a concept](../../use/okf.md#authoring-a-concept).
+<!-- DOMAIN-EXAMPLE-okf_author-END -->
 
 ## `okf_verify`
 
