@@ -12,8 +12,11 @@ with no back-reference to :class:`Vault`. Sibling to
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -28,11 +31,10 @@ from markdown_vault_mcp.utils import (
     validate_history_dir,
     validate_history_path,
 )
-from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file, path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from markdown_vault_mcp.git import HistorySource
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
@@ -47,6 +49,100 @@ logger = logging.getLogger(__name__)
 #: there (#1284).  The check exists to keep caller input out of the git argv,
 #: not to prove the object exists — git reports an unknown ref itself.
 _SHA_RE = r"[0-9a-f]{4,64}"
+
+
+@dataclass(frozen=True)
+class GitExportSnapshot:
+    """Immutable Git tree selected for a vault export."""
+
+    commit: str
+    entries: dict[str, tuple[str, str]]
+    changed: set[str]
+    root: Path
+
+    def read(self, path: str, limit: int = 0) -> bytes:
+        """Read a selected tree blob without interpreting its path as a revision."""
+        raw = _export_git(self.root, "cat-file", "blob", self.entries[path][1]).stdout
+        return raw[:limit] if limit else raw
+
+
+def _export_git(
+    root: Path, *args: str, check: bool = True
+) -> subprocess.CompletedProcess[bytes]:
+    # The executable is the configured Git CLI and arguments are never interpreted by a shell.
+    return subprocess.run(  # noqa: S603, RUF100
+        ["git", "-C", str(root), *args],  # noqa: S607, RUF100
+        capture_output=True,
+        check=check,
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"},
+    )
+
+
+def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
+    """Pin a vault's Git commit and enumerate its blobs and working changes.
+
+    Args:
+        source: Vault root, which may be nested within a repository.
+
+    Returns:
+        Commit and vault-relative tree entries, or None outside a Git worktree.
+
+    Raises:
+        ValueError: If a repository exists but its snapshot cannot be read.
+    """
+    try:
+        probe = _export_git(source, "rev-parse", "--show-toplevel", check=False)
+    except FileNotFoundError as exc:
+        if any(path_exists(parent / ".git") for parent in (source, *source.parents)):
+            raise ValueError("Git is required to export a Git snapshot") from exc
+        return None
+    if probe.returncode:
+        if b"not a git repository" in probe.stderr:
+            return None
+        raise ValueError("Cannot locate Git worktree for export")
+    root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
+    prefix = source.resolve().relative_to(root.resolve()).as_posix()
+    prefix = "" if prefix == "." else prefix + "/"
+    try:
+        commit = (
+            _export_git(root, "rev-parse", "--verify", "HEAD^{commit}")
+            .stdout.decode("ascii")
+            .strip()
+        )
+        tree = _export_git(root, "ls-tree", "--full-tree", "-r", "-z", commit).stdout
+        entries: dict[str, tuple[str, str]] = {}
+        for record in tree.split(b"\0"):
+            if not record:
+                continue
+            info, name = record.split(b"\t", 1)
+            mode, kind, oid = info.split(b" ")
+            path = os.fsdecode(name)
+            if path.startswith(prefix) and kind in {b"blob", b"commit"}:
+                entries[path[len(prefix) :]] = (
+                    mode.decode("ascii"),
+                    oid.decode("ascii"),
+                )
+        diff = _export_git(
+            source,
+            "diff",
+            "--no-ext-diff",
+            "--no-renames",
+            "--relative",
+            "--name-only",
+            "-z",
+            commit,
+            "--",
+            ".",
+        ).stdout
+        untracked = _export_git(
+            source, "ls-files", "--others", "--exclude-standard", "-z", "--", "."
+        ).stdout
+        changed = {
+            os.fsdecode(name) for name in (diff + untracked).split(b"\0") if name
+        }
+        return GitExportSnapshot(commit, entries, changed, root)
+    except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
+        raise ValueError("Cannot read Git snapshot for export") from exc
 
 
 def _reject_nul_date(name: str, value: str | None) -> None:

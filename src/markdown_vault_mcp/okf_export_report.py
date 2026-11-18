@@ -37,6 +37,19 @@ class Dependency:
 
 
 @dataclass
+class ExportSnapshot:
+    """Snapshot identity and paths whose working state needs attention.
+
+    Paths are relative to the vault root. A commit identifies a Git snapshot;
+    inconsistent paths identify files changed or unreadable after capture.
+    """
+
+    commit: str | None = None
+    uncommitted_paths: list[str] = field(default_factory=list)
+    inconsistent_paths: list[str] = field(default_factory=list)
+
+
+@dataclass
 class OkfExportReport:
     """Artifact format verdict, omissions and separate export observations.
 
@@ -62,3 +75,4 @@ class OkfExportReport:
     unchecked: dict[str, list[str]] = field(default_factory=dict)
     optional_metadata: list[str] = field(default_factory=list)
     broken_links: list[Dependency] = field(default_factory=list)
+    snapshot: ExportSnapshot = field(default_factory=ExportSnapshot)

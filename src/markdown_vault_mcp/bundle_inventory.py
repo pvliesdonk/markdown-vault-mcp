@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from markdown_vault_mcp.managers.git_query import GitExportSnapshot
+
 ScopeState = Literal["inspected", "missing", "unavailable"]
 EntryState = Literal["inspected", "missing", "not_inspected", "unavailable"]
 Role = Literal[
@@ -110,6 +112,7 @@ class BundleTreeRequest(BundleInspectionRequest):
     """
 
     cursor: str | None = None
+    snapshot: GitExportSnapshot | None = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -170,6 +173,7 @@ class BundleInspection:
     search_state: Literal["not_evaluated"] = "not_evaluated"
     interpretation: Literal["caller_selected"] = "caller_selected"
     next_cursor: str | None = None
+    uncommitted: tuple[str, ...] = ()
 
 
 _SKIP_STATE: dict[str, SearchState] = {
@@ -440,6 +444,27 @@ class BundleInspector:
             return True
         return any(_vector_matrix(candidate, base) for base in self._vector_bases)
 
+    @staticmethod
+    def _check_snapshot_access(root: Path, parts: tuple[str, ...]) -> None:
+        """Check existing components without following symlinks; absent is allowed."""
+        try:
+            with open_directory_nofollow(
+                root, parts[:-1], source_resolved=True
+            ) as parent:
+                try:
+                    mode = os.stat(
+                        parts[-1], dir_fd=parent, follow_symlinks=False
+                    ).st_mode
+                except FileNotFoundError:
+                    return
+                if not stat.S_ISREG(mode):
+                    raise OSError("Snapshot path is not a regular file")
+                read_regular_nofollow(parent, parts[-1], 0)
+        except FileNotFoundError:
+            # A removed directory has no live permissions to bypass; its nearest
+            # existing ancestors were opened without following links.
+            return
+
     def inspect(self, request: BundleInspectionRequest) -> BundleInspection:
         """Observe one directory independently of index admission.
 
@@ -461,6 +486,8 @@ class BundleInspector:
                 self._internal("/".join(parts[:i])) for i in range(0, len(parts) + 1)
             ):
                 return BundleInspection(request, "unavailable")
+            if isinstance(request, BundleTreeRequest) and request.snapshot is not None:
+                return self._snapshot_page(request, scope)
             with open_directory_nofollow(root, parts, source_resolved=True) as parent:
                 if isinstance(request, BundleTreeRequest):
                     return self._walk_page(parent, request, scope)
@@ -469,6 +496,85 @@ class BundleInspector:
             return BundleInspection(
                 request, "missing" if _missing(exc) else "unavailable"
             )
+
+    def _snapshot_page(
+        self, request: BundleTreeRequest, scope: str
+    ) -> BundleInspection:
+        snapshot = request.snapshot
+        if snapshot is None:
+            raise ValueError("Snapshot page requires a snapshot")
+        if scope and not any(path.startswith(scope + "/") for path in snapshot.entries):
+            return BundleInspection(request, "missing")
+        entries: list[BundleEntry] = []
+        remaining = 1024 * 1024
+        enumeration: Enumeration = "complete"
+        for path, (mode, _) in sorted(snapshot.entries.items()):
+            if scope and not path.startswith(scope + "/"):
+                continue
+            if request.cursor is not None and path <= request.cursor:
+                continue
+            if entries and is_note(path) and remaining < self._note_limit + 1:
+                enumeration = "entry_limit"
+                break
+            entry, consumed = self._snapshot_entry(snapshot, path, mode, remaining)
+            if entry is None:
+                continue
+            remaining -= consumed
+            entries.append(self._labelled(entry, path))
+            if len(entries) == request.entry_limit:
+                enumeration = "entry_limit"
+                break
+        return BundleInspection(
+            request,
+            "inspected",
+            enumeration,
+            tuple(entries),
+            next_cursor=entries[-1].path
+            if entries and enumeration == "entry_limit"
+            else None,
+            uncommitted=self._snapshot_dirty(snapshot.changed, scope)
+            if request.cursor is None
+            else (),
+        )
+
+    def _snapshot_entry(
+        self, snapshot: GitExportSnapshot, path: str, mode: str, remaining: int
+    ) -> tuple[BundleEntry | None, int]:
+        parts = _components(path)
+        if any(self._internal("/".join(parts[:i])) for i in range(1, len(parts) + 1)):
+            return None, 0
+        if len(parts) > 32:
+            raise OSError("Snapshot traversal depth exceeded")
+        if not self._visible_file(path):
+            return None, 0
+        if mode not in {"100644", "100755"}:
+            return BundleEntry(path, state="unavailable", reason="symlink"), 0
+        self._check_snapshot_access(self._absolute_source, parts)
+        if not is_note(path):
+            return BundleEntry(path, "supporting", reason="supporting"), 0
+        role = _role(parts[-1], self._policy.conventions_file)
+        raw = snapshot.read(path, min(self._note_limit + 1, remaining))
+        if len(raw) > self._note_limit:
+            return BundleEntry(path, role, reason="note_limit"), len(raw)
+        return _parsed(path, role, raw), len(raw)
+
+    def _snapshot_dirty(self, changed: set[str], scope: str) -> tuple[str, ...]:
+        visible = []
+        for path in sorted(changed):
+            if scope and not path.startswith(scope + "/"):
+                continue
+            try:
+                parts = _components(path)
+                if not self._visible_file(path) or any(
+                    self._internal("/".join(parts[:i]))
+                    for i in range(1, len(parts) + 1)
+                ):
+                    continue
+                self._check_snapshot_access(self._absolute_source, parts)
+            except (OSError, ValueError):
+                continue
+            visible.append(path)
+        return tuple(visible)
 
     def _walk_page(
         self, parent: int, request: BundleTreeRequest, scope: str

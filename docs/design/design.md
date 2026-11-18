@@ -2122,8 +2122,8 @@ the spec itself says, dated and sourced, in
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
   ref on pvl-core's ``create_download_link`` and generates the archive at
-  fetch time via ``okf_bundle.build_okf_bundle`` (searchable wikilinks use the
-  potentially stale index graph; subtree exports also resolve remaining named
+  fetch time via ``okf_bundle.build_okf_bundle`` (Git exports resolve wikilinks from their pinned commit; non-Git
+  searchable wikilinks use the potentially stale index graph; subtree exports also resolve remaining named
   wikilinks by exact selected filename or a lazily loaded whole-vault inventory,
   excluding alias-only and case-insensitive matches. Unmatched names stay raw
   and are reported even with ``external_base``. Wiki-looking text inside
@@ -2154,8 +2154,11 @@ the spec itself says, dated and sourced, in
   verdict is `conformant`, `nonconformant`, or `incomplete` when a required
   check cannot run, even if findings are present. Admission, recommended
   metadata and broken links are separate observations and do not affect it.
-  Descriptor-relative no-follow raw reads protect
-  notes and attachments after inventory (#1448, #2167).
+  Git exports pin one commit for inventory, link resolution and blob bytes,
+  and report policy-visible uncommitted paths. Non-Git exports digest each
+  selected file and recheck it after packing, reporting changed or unreadable
+  paths without claiming an atomic live inventory or graph. Descriptor-relative
+  no-follow raw reads protect notes and attachments (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX
   paths. Detection, admission, authorship and maintenance remain separate.

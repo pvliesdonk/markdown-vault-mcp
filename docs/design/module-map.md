@@ -39,7 +39,7 @@ src/markdown_vault_mcp/
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
-    git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
+    git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137); commit-pinned tree and blob reads for OKF export
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
@@ -106,8 +106,8 @@ src/markdown_vault_mcp/
   exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
-  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442)
-  okf_bundle.py        -- OKF bundle-zip export from live inventory, served via an okf-bundle download ref (#963)
+  bundle_inventory.py -- Bounded live and commit-backed subtree observations with optional index-state projection (#1442)
+  okf_bundle.py        -- OKF bundle-zip export from a Git snapshot or digest-checked live inventory, served via an okf-bundle download ref (#963)
   okf_export_paths.py  -- subtree export relocation and shared artifact link observation (#1448)
   okf_export_conformance.py -- final ZIP artifact v0.2 format audit (#1448)
   okf_export_report.py -- artifact verdict, local policy and omission observations for bundle export (#1448)

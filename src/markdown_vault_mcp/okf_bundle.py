@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import os
@@ -12,15 +13,23 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
+from markdown_vault_mcp.managers.git_query import git_export_snapshot
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import OkfExportReport
-from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.scanner import (
+    extract_links,
+    parse_frontmatter,
+    strip_frontmatter_block,
+)
+from markdown_vault_mcp.types import OutlinkInfo
 from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
@@ -137,6 +146,7 @@ def _note_bytes(
     vault: Vault,
     paths: ExportPaths,
     report: OkfExportReport,
+    snapshot_links: Callable[[str, str], list[OutlinkInfo]] | None = None,
 ) -> bytes:
     """Convert graph links and relocate body and frontmatter paths."""
     item, name = selection
@@ -149,8 +159,17 @@ def _note_bytes(
         return raw
     body = strip_frontmatter_block(content.removeprefix("\ufeff"))
     prefix = content[: len(content) - len(body)]
-    if item.search_state == "searchable":
-        outlinks = vault.graph.get_outlinks(item.path)
+    searchable = (
+        item.search_state == "searchable"
+        if snapshot_links is None
+        else (item.visibility == "visible" and item.parse_state == "valid")
+    )
+    if searchable:
+        outlinks = (
+            snapshot_links(body, item.path)
+            if snapshot_links is not None
+            else vault.graph.get_outlinks(item.path)
+        )
         if paths.scope:
             body = convert_body_wikilinks(body, outlinks)
         else:
@@ -161,6 +180,53 @@ def _note_bytes(
     result = (prefix + body).encode("utf-8", "surrogateescape")
     if result != raw:
         report.transformed.append(name)
+    return result
+
+
+def _snapshot_outlinks(
+    body: str,
+    source: str,
+    notes: dict[str, bytes],
+    extensions: frozenset[str],
+) -> list[OutlinkInfo]:
+    aliases: dict[str, list[str]] = {}
+    for path, raw in notes.items():
+        try:
+            metadata = parse_frontmatter(raw.decode("utf-8")).metadata
+        except (UnicodeError, ValueError):
+            continue
+        value = metadata.get("aliases") or metadata.get("alias")
+        values = (
+            [value]
+            if isinstance(value, str)
+            else value
+            if isinstance(value, list)
+            else []
+        )
+        for alias in values:
+            if isinstance(alias, (str, int, float)) and str(alias).strip():
+                aliases.setdefault(str(alias).strip().lower(), []).append(path)
+    result = []
+    for link in extract_links(body, source, attachment_extensions=extensions):
+        if link.link_type != "wikilink":
+            continue
+        target = link.target_path
+        if not link.raw_target.startswith(("./", "../")) and target not in notes:
+            choices = [path for path in notes if path.endswith("/" + target)]
+            if not choices:
+                choices = aliases.get(link.raw_target.split("#", 1)[0].lower(), [])
+            if choices:
+                target = _pick_wikilink_candidate(choices, source)
+        result.append(
+            OutlinkInfo(
+                target,
+                link.link_text,
+                "wikilink",
+                link.fragment,
+                link.raw_target,
+                target in notes,
+            )
+        )
     return result
 
 
@@ -196,6 +262,9 @@ def build_okf_bundle(
     """
     folder = _scope(folder)
     report = OkfExportReport()
+    snapshot = git_export_snapshot(vault.source_dir)
+    if snapshot is not None:
+        report.snapshot.commit = snapshot.commit
     buf = io.BytesIO()
     notes = attachments = excluded = 0
     cursor = None
@@ -203,9 +272,13 @@ def build_okf_bundle(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         while True:
             page = vault.reader.inspect_bundle_tree(
-                BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
+                BundleTreeRequest(
+                    root=folder, entry_limit=1000, cursor=cursor, snapshot=snapshot
+                )
             )
             _require_complete(page, folder)
+            if cursor is None:
+                report.snapshot.uncommitted_paths.extend(page.uncommitted)
             for item in page.entries:
                 if item.role == "directory":
                     continue
@@ -234,7 +307,9 @@ def build_okf_bundle(
             candidates: set[str] = set()
             while True:
                 page = vault.reader.inspect_bundle_tree(
-                    BundleTreeRequest(root="", entry_limit=1000, cursor=cursor)
+                    BundleTreeRequest(
+                        root="", entry_limit=1000, cursor=cursor, snapshot=snapshot
+                    )
                 )
                 _require_complete(page, "")
                 candidates.update(
@@ -255,16 +330,77 @@ def build_okf_bundle(
             inventory,
             extensions,
         )
+        snapshot_notes: dict[str, bytes] | None = None
+
+        def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
+            nonlocal snapshot_notes
+            if "[[" not in body:
+                return []
+            if snapshot_notes is None:
+                snapshot_notes = {}
+                next_cursor = None
+                while True:
+                    page = vault.reader.inspect_bundle_tree(
+                        BundleTreeRequest(
+                            root="",
+                            entry_limit=1000,
+                            cursor=next_cursor,
+                            snapshot=snapshot,
+                        )
+                    )
+                    _require_complete(page, "")
+                    for entry in page.entries:
+                        if (
+                            entry.path.endswith(".md")
+                            and entry.visibility == "visible"
+                            and entry.parse_state == "valid"
+                        ):
+                            if snapshot is None:
+                                raise ValueError(
+                                    "Snapshot links require a Git snapshot"
+                                )
+                            snapshot_notes[entry.path] = snapshot.read(entry.path)
+                    if page.next_cursor is None:
+                        break
+                    next_cursor = page.next_cursor
+            return _snapshot_outlinks(body, source, snapshot_notes, extensions)
+
+        digests: dict[str, bytes] = {}
         for item in selected:
-            raw = _read_safe(vault.source_dir, item.path)
+            raw = (
+                snapshot.read(item.path)
+                if snapshot
+                else _read_safe(vault.source_dir, item.path)
+            )
+            if snapshot is None:
+                digests[item.path] = hashlib.sha256(raw).digest()
             name = item.path[len(folder) + 1 :] if folder else item.path
             if item.role == "supporting":
                 _write(zf, name, raw)
                 attachments += 1
             else:
                 _observe_export(item, report)
-                _write(zf, name, _note_bytes(raw, (item, name), vault, paths, report))
+                _write(
+                    zf,
+                    name,
+                    _note_bytes(
+                        raw,
+                        (item, name),
+                        vault,
+                        paths,
+                        report,
+                        snapshot_links if snapshot else None,
+                    ),
+                )
                 notes += 1
+    for path, digest in digests.items():
+        try:
+            current = hashlib.sha256(_read_safe(vault.source_dir, path)).digest()
+        except OSError:
+            report.snapshot.inconsistent_paths.append(path)
+        else:
+            if current != digest:
+                report.snapshot.inconsistent_paths.append(path)
     logger.info(
         "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d",
         folder or "(root)",
