@@ -3,6 +3,8 @@
 Handles all read/write/edit/append/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
 and no back-reference to :class:`Vault`.
+
+Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -22,7 +24,10 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
-from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
+from markdown_vault_mcp._commit_scope import (
+    auxiliary_commit_writes,
+    current_commit_scope,
+)
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
     LogRepairInterrupted,
@@ -868,7 +873,8 @@ class DocumentManager:
         """Create or overwrite a document.
 
         Creates intermediate directories as needed.  If *frontmatter* is
-        provided, it is serialised as a YAML header at the top of the file.
+        provided, it is serialised as a YAML header in mapping insertion order,
+        including nested mappings. YAML comments and formatting are not retained.
 
         Args:
             path: Relative document path.
@@ -911,7 +917,7 @@ class DocumentManager:
 
             if frontmatter is not None:
                 post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post)
+                file_content = fm.dumps(post, sort_keys=False)
             else:
                 file_content = content
 
@@ -1963,6 +1969,11 @@ class DocumentManager:
                 move_dirty.extend(md_map.values())  # new paths -> reparsed
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
+
+            scope = current_commit_scope()
+            if scope is not None:
+                # All queued callbacks share this scope; set it before firing any.
+                scope.folder_move = (old_abs, new_abs)
 
             # 7. Callbacks: rename for every moved file, edit for every
             #    rewritten source (minus intra-subtree dupes).
