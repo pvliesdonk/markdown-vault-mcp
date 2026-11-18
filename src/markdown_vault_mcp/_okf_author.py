@@ -8,7 +8,7 @@ from typing import Any
 
 import frontmatter
 import yaml
-from yaml.nodes import MappingNode
+from yaml.nodes import MappingNode, SequenceNode
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
@@ -85,7 +85,7 @@ def _render(value: Any) -> str:
 
 
 def _flow_insertion(
-    source: str, node: MappingNode, additions: list[str]
+    source: str, node: MappingNode | SequenceNode, additions: list[str]
 ) -> tuple[int, int, str]:
     position = node.end_mark.index - 1
     tokens = [

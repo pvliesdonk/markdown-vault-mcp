@@ -13,6 +13,14 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: neutral-v03-draft
+    title: Open Knowledge Format v0.3 draft at commit 9506f310
+    resource: https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md
+    accessed: 2026-11-18
+  - id: spec-current
+    title: Open Knowledge Format v0.2, current canonical specification, section 5.1
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md
+    accessed: 2026-11-15
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a0954/okf/SPEC.md
@@ -32,6 +40,8 @@ sources:
 ---
 
 # Open Knowledge Format v0.2
+
+On 2026-11-18, sections 5, 8, 9 and 11 of the public [neutral repository v0.3 draft](https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md) were rechecked. Its verification events do not bind a snapshot or check kind (§5.2). [source: neutral-v03-draft] This project retains the v0.2 baseline below; its snapshot digest is a project extension.
 
 What the OKF specification (`okf/SPEC.md` in
 `GoogleCloudPlatform/knowledge-catalog`) requires of a bundle and of a
@@ -177,8 +187,9 @@ months, not twelve.
   search hits. [source: spec] (§5.1)
   [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
 - Per-claim attribution is a markdown footnote whose label is a
-  `sources[].id`, "keyed rather than positional". Nothing here depends on
-  it. [source: spec] (§5.1)
+  `sources[].id`, "keyed rather than positional". The [bounded citation
+  inspector](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  implements this literal join. [source: spec] (§5.1)
 
 ### Links and paths (§6)
 
@@ -275,3 +286,14 @@ tree, 2026-09-07].
   (`usage_count`, `usage_window`): nothing here reads or writes them.
 - The v0.1 fallbacks (`timestamp`, `# Citations`): the server neither reads
   nor migrates them, and no test covers a v0.1 bundle.
+
+## Citation joins (checked 2026-11-15)
+
+- [source: spec-current] Section 5.1 makes `id` optional and `resource` required
+  within each source entry; a resource may describe a population rather than
+  something followable. [pins: tests/test_citations.py::test_literal_join_and_stable_ids]
+- [source: spec-current] Claim-level footnote labels key into `sources` entries;
+  footnote definition prose is not that entry. [pins: tests/test_citations.py::test_non_citation_contexts]
+- [source: spec-current] Source signals record attribution, not a stored
+  credibility verdict. The [bounded inspection design](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  therefore reports literal joins without evaluating support.

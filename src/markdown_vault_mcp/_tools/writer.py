@@ -9,10 +9,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 from dataclasses import asdict
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -38,15 +38,10 @@ from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
-    DocumentNotFoundError,
     EditConflictError,
     FolderMoveInterruptedError,
     InvalidRequestError,
-)
-from markdown_vault_mcp.okf import (
-    _HUMAN_ACTOR_PREFIX,
-    append_okf_verification,
-    verified_entries,
+    StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.text import decode_utf8
@@ -54,13 +49,14 @@ from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
 from .._identity import bound_principal, resolve_mcp_principal
+from .._okf_receipts import ReceiptNotRecordedError
 from .._okf_write import (
-    okf_write_suppressed,
     resolve_human_subject,
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
 from ._common import attach_conventions, attach_remote_health, okf_active
+from .transactions import run_in_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +84,10 @@ def write_identity_scope() -> Iterator[None]:
 # bound no real download can reach.
 _FETCH_UNCAPPED_BYTES = 2**63 - 1
 
-_REVIEW_RESPONSE_KEY = "review_confirmed"
+_RECEIPT_STATE_UNUSABLE = (
+    "Local review receipt state is corrupt or from a newer server version, so "
+    "nothing was written. Ask the operator to check the server's local state."
+)
 
 
 async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
@@ -104,21 +103,22 @@ async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None
         )
 
 
-def _review_message(path: str) -> str:
+def _review_message(path: str, digest: str, check: str) -> str:
     """Build the human-review confirmation prompt for *path*."""
     return (
-        f"Confirm you have personally reviewed {path!r} and want to attest it "
+        f"Confirm you have personally reviewed {path!r}, snapshot {digest[:12]}, "
+        f"check {check}, and want to attest it "
         "as human-reviewed. This records a verification in the note's OKF "
         "frontmatter and promotes its trust tier."
     )
 
 
-def _review_input_required(path: str) -> InputRequiredResult:
+def _review_input_required(path: str, digest: str, check: str) -> InputRequiredResult:
     """Build the modern-protocol review request for *path*."""
     request = ElicitRequest(
         method="elicitation/create",
         params=ElicitRequestFormParams(
-            message=_review_message(path),
+            message=_review_message(path, digest, check),
             requested_schema={
                 "type": "object",
                 "properties": {
@@ -133,11 +133,13 @@ def _review_input_required(path: str) -> InputRequiredResult:
     )
     return InputRequiredResult(
         result_type="input_required",
-        input_requests={_REVIEW_RESPONSE_KEY: request},
+        input_requests={json.dumps([path, digest, check]): request},
     )
 
 
-def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | None:
+def _require_modern_review(
+    ctx: Context, path: str, digest: str, check: str
+) -> InputRequiredResult | None:
     """Return a review request or validate its modern-protocol response.
 
     Raises:
@@ -145,8 +147,8 @@ def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | Non
     """
     responses = ctx.input_responses
     if responses is None:
-        return _review_input_required(path)
-    answer = responses.get(_REVIEW_RESPONSE_KEY)
+        return _review_input_required(path, digest, check)
+    answer = responses.get(json.dumps([path, digest, check]))
     if (
         isinstance(answer, ElicitResult)
         and answer.action == "accept"
@@ -187,7 +189,9 @@ def _remote_status_error(exc: httpx.HTTPStatusError) -> ToolError | None:
     )
 
 
-async def _require_review_elicitation(ctx: Context, path: str) -> None:
+async def _require_review_elicitation(
+    ctx: Context, path: str, digest: str, check: str
+) -> None:
     """Gate okf_verify's ``elicit`` mode on an affirmative human elicitation.
 
     Fails **closed**: raises :class:`ToolError` (writing nothing) when the client
@@ -205,7 +209,9 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
     try:
         # A scalar bool wraps into a single-field object schema; an affirmative
         # reply deconstructs back to True.
-        result = await ctx.elicit(_review_message(path), response_type=bool)
+        result = await ctx.elicit(
+            _review_message(path, digest, check), response_type=bool
+        )
     except MCPError as exc:
         logger.info("okf_verify_elicitation_unsupported path=%s", path)
         raise ToolError(
@@ -223,7 +229,7 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
 
 
 async def _resolve_verify_mode_subject(
-    *, mode: str, ctx: Context, path: str
+    *, mode: str, ctx: Context, path: str, snapshot: dict[str, str], check: str
 ) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
@@ -250,11 +256,11 @@ async def _resolve_verify_mode_subject(
         request_context is not None
         and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
     ):
-        request = _require_modern_review(ctx, path)
+        request = _require_modern_review(ctx, path, snapshot["digest"], check)
         if request is not None:
             return request
     else:
-        await _require_review_elicitation(ctx, path)
+        await _require_review_elicitation(ctx, path, snapshot["digest"], check)
     return resolve_verify_subject()
 
 
@@ -304,6 +310,7 @@ def register(mcp: FastMCP) -> None:
         frontmatter: dict[str, Any] | None = None,
         content_base64: str = "",
         if_match: str | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Create a note or attachment, or replace one whole; returns its path and
@@ -321,6 +328,7 @@ def register(mcp: FastMCP) -> None:
             content_base64: An attachment's bytes, base64-encoded; for paths not ending
                 in .md.
             if_match: Etag from read, to replace an existing file; omit for a new file.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with path (str) and created (bool: true if new file,
@@ -385,14 +393,21 @@ def register(mcp: FastMCP) -> None:
             # Attachments carry no OKF frontmatter; bind only the principal
             # so the git commit is attributed to the caller (#1218).
             with write_identity_scope():
-                result = await asyncio.to_thread(
-                    vault.writer.write_attachment, path, raw_bytes, if_match=if_match
+                result = await run_in_transaction(
+                    vault,
+                    transaction,
+                    vault.writer.write_attachment,
+                    path,
+                    raw_bytes,
+                    if_match=if_match,
                 )
             return attach_remote_health(vault, _write_payload(result))
         # Bind the caller for commit attribution across the worker boundary.
         report = vault.report_unresolved_links
         with write_identity_scope():
-            result = await asyncio.to_thread(
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.write,
                 path,
                 content,
@@ -424,6 +439,7 @@ def register(mcp: FastMCP) -> None:
         if_match: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Replace text in an existing note, chosen by an exact old_text, by a range of
@@ -444,6 +460,7 @@ def register(mcp: FastMCP) -> None:
             line_start: First line to replace, counting from 1 over the content read
                 returns, frontmatter included; pass with line_end.
             line_end: Last line to replace, inclusive; pass with line_start.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             - **path** (str): path of the edited document.
@@ -478,7 +495,9 @@ def register(mcp: FastMCP) -> None:
         report = vault.report_unresolved_links
         try:
             with write_identity_scope():
-                result = await asyncio.to_thread(
+                result = await run_in_transaction(
+                    vault,
+                    transaction,
                     vault.writer.edit,
                     path,
                     old_text=old_text,
@@ -521,6 +540,7 @@ def register(mcp: FastMCP) -> None:
         content: str,
         if_match: str | None = None,
         create_if_missing: bool = False,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Add text to the end of an existing note without reading it first.
@@ -536,6 +556,7 @@ def register(mcp: FastMCP) -> None:
                 to append regardless.
             create_if_missing: Create the note with content as its body when path does
                 not exist. Default false, so a mistyped path creates nothing.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             - **path** (str): path of the document.
@@ -566,7 +587,9 @@ def register(mcp: FastMCP) -> None:
         """
         report = vault.report_unresolved_links
         with write_identity_scope():
-            result = await asyncio.to_thread(
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.append,
                 path,
                 content,
@@ -594,6 +617,7 @@ def register(mcp: FastMCP) -> None:
     async def delete(
         path: str,
         if_match: str | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Permanently delete a note or attachment; only git history can bring it back.
@@ -602,6 +626,7 @@ def register(mcp: FastMCP) -> None:
             path: Path of the note or attachment.
             if_match: Etag from read; the file is then deleted only as that version.
                 Omit to delete it as it is.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with path (str) of the deleted file.
@@ -616,10 +641,11 @@ def register(mcp: FastMCP) -> None:
             `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        # Bind the caller's Principal so the delete commit is attributed (#1218).
+        # Bind the caller's Principal so the delete commit is attributed
+        # (#1218); the OKF enricher never runs for deletes, so no intent.
         with write_identity_scope():
-            result = await asyncio.to_thread(
-                vault.writer.delete, path, if_match=if_match
+            result = await run_in_transaction(
+                vault, transaction, vault.writer.delete, path, if_match=if_match
             )
         return attach_remote_health(vault, asdict(result))
 
@@ -640,6 +666,7 @@ def register(mcp: FastMCP) -> None:
         new_path: str,
         if_match: str | None = None,
         update_links: bool = False,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Rename or move a note or attachment; with update_links, links to it in other
@@ -655,6 +682,7 @@ def register(mcp: FastMCP) -> None:
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
                 true for every note.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with old_path (str), new_path (str), and updated_links (int)
@@ -685,9 +713,12 @@ def register(mcp: FastMCP) -> None:
                 failed; nothing is changed.
         """
         # Bind the caller's Principal so the rename commit (and any link-
-        # rewrite commits) are attributed (#1218).
+        # rewrite commits) are attributed (#1218); no OKF intent — the
+        # enricher's actor for link rewrites stays the tool actor, as before.
         with write_identity_scope():
-            result = await asyncio.to_thread(
+            result = await run_in_transaction(
+                vault,
+                transaction,
                 vault.writer.rename,
                 old_path,
                 new_path,
@@ -722,6 +753,7 @@ def register(mcp: FastMCP) -> None:
     async def move_folder(
         old_dir: str,
         new_dir: str,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Move a folder and everything under it to a new location, rewriting every link
@@ -733,6 +765,7 @@ def register(mcp: FastMCP) -> None:
             old_dir: Folder to move, such as `"drafts"`.
             new_dir: Destination folder, such as `"archive/2026"`; an existing folder is
                 merged into.
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with old_dir (str), new_dir (str), files_moved (int) and
@@ -763,8 +796,8 @@ def register(mcp: FastMCP) -> None:
         # attributed (#1218).
         with write_identity_scope():
             try:
-                result = await asyncio.to_thread(
-                    vault.writer.move_folder, old_dir, new_dir
+                result = await run_in_transaction(
+                    vault, transaction, vault.writer.move_folder, old_dir, new_dir
                 )
             except FolderMoveInterruptedError as exc:
                 # A file error while moving can leave the subtree part-moved
@@ -1196,19 +1229,21 @@ def register(mcp: FastMCP) -> None:
     @library_outcomes
     async def okf_verify(
         path: str,
+        reviewed_snapshot: dict[str, str],
+        check: Literal["human-review"] = "human-review",
         ctx: Context = CurrentContext(),
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any] | InputRequiredResult:
-        """Record that a person reviewed a note, raising its Open Knowledge Format trust
-        tier to human-reviewed; returns the verifier recorded.
+        """Record a review of a note snapshot; returns the verifier recorded.
 
-        The user may be asked to confirm the review. The record means a person looked,
-        not that the content is correct. A retained review may describe an older
-        version of the note; it is not bound to the current content.
+        Reviews apply to YAML-frontmatter or body-only notes. The snapshot excludes
+        verified and x-mvmcp. The user may be asked to confirm the review.
 
         Args:
             path: Path of the note the user reviewed.
+            reviewed_snapshot: Snapshot from the whole-note read that was reviewed.
+            check: Review performed; defaults to human-review.
 
         Returns:
             On the modern protocol's first round, an input request asking the
@@ -1224,8 +1259,8 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             ToolError: If the mode's confirmation gate is not met, or the note
-                changed since it was read; call okf_verify again to attest the
-                current text. Under `elicit` the gate needs a client that can
+                changed since it was read; read and review the current text before
+                calling okf_verify again. Under `elicit` the gate needs a client that can
                 ask the user, and the user's confirmation; under `trust-auth`,
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
@@ -1233,40 +1268,56 @@ def register(mcp: FastMCP) -> None:
         """
         await _require_review_authority(config, vault)
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
+        try:
+            await asyncio.to_thread(
+                vault.writer.require_reviewable, path, reviewed_snapshot
+            )
+        except StoreUnsupportedSchemaError as exc:
+            raise ToolError(_RECEIPT_STATE_UNUSABLE) from exc
+        except OSError as exc:
+            raise ToolError(
+                f"Could not read note {path!r} or the local review receipt state, "
+                "so nothing was written. Ask the operator to check the server's files."
+            ) from exc
         subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
+            mode=config.content.okf_capabilities.verify,
+            ctx=ctx,
+            path=path,
+            snapshot=reviewed_snapshot,
+            check=check,
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
-        subject = subject_or_request
-        note = await asyncio.to_thread(vault.reader.read, path)
-        if note is None:
-            raise DocumentNotFoundError.note(path)
-        verified_count = len(verified_entries(note.frontmatter)) + 1
-        new_text = append_okf_verification(
-            note.content, subject=subject, now=datetime.now(UTC)
-        )
-        # Verification attests to a specific set of bytes, so the read-modify-
-        # write must be atomic: pass the read's etag as if_match so a concurrent
-        # write/edit/delete in the window fails the attestation instead of
-        # silently clobbering it or resurrecting a deleted note (#964).
         await _require_review_authority(config, vault)
         try:
-            with okf_write_suppressed():
-                await asyncio.to_thread(
-                    vault.writer.write, path, new_text, if_match=note.etag
+            with write_identity_scope():
+                result = await asyncio.to_thread(
+                    vault.writer.okf_verify,
+                    path,
+                    subject_or_request,
+                    reviewed_snapshot,
+                    check,
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(
                 f"Note {path!r} changed while it was being verified, so nothing "
-                "was written. Call okf_verify again to attest the current text.",
+                "was written. Read and review the current text before retrying.",
                 log_level=logging.INFO,
             ) from exc
-        return attach_remote_health(
-            vault,
-            {
-                "path": path,
-                "verifier": f"{_HUMAN_ACTOR_PREFIX}{subject}",
-                "verified_count": verified_count,
-            },
-        )
+        except StoreUnsupportedSchemaError as exc:
+            raise ToolError(_RECEIPT_STATE_UNUSABLE) from exc
+        except ReceiptNotRecordedError as exc:
+            raise ToolError(
+                f"The review was recorded in note {path!r}, but no local receipt "
+                "was saved, so this server holds no local evidence of it. Do not "
+                "call okf_verify again for this review; ask the operator to check "
+                "the server's local state."
+            ) from exc
+        except OSError as exc:
+            raise ToolError(
+                f"Writing the review to note {path!r} failed with an I/O error; "
+                "the note may already hold it, and no local receipt was saved. "
+                "Read the note again before deciding whether to call okf_verify "
+                "again."
+            ) from exc
+        return attach_remote_health(vault, result)

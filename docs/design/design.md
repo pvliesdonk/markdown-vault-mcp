@@ -236,7 +236,7 @@ The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
 gives O(1) indexed lookup without `json_extract()` performance problems.
 
-**Filter semantics**: `filters` is `dict[str, str]`. Each key-value pair is
+**Filter semantics**: `filters` maps keys to strings. On an active OKF bundle, `type: null` selects indexed non-reserved notes without a non-empty string type, including non-string values; it is evaluated after admission and does not change indexed rows. Each key-value pair is
 ANDed. Example: `filters={"cluster": "fiction", "genre": "horror"}` returns
 documents tagged with both `cluster=fiction` AND `genre=horror`. Multi-valued
 OR queries within a single key are not supported in Phase 1; use multiple
@@ -1971,11 +1971,62 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Reverse citation lookup (#1446)
+
+`find_citing_notes(resource)` reads persisted citation edges derived from one
+normalized note snapshot. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
+each distinct resource declared by that note. The result is unbounded. Reserved
+files are excluded only while OKF is active. Navigation links do not create edges.
+On the first writer startup after upgrading from index semantics version 12,
+the index rebuilds. A lookup reports `unconverted_notes` for retained indexed
+notes not yet re-read with compatible citation rules; they are omitted until
+re-read. If ordinary reindex leaves the count above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild. Incompatible or missing schema is unavailable rather than empty. No resource is fetched and attribution
+does not establish support.
+
+### Exact-note citation inspection (#1446, bounded slice)
+
+`ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
+tool inspect one explicitly selected `.md` note through the existing whole-note
+reader. There is no index-readiness requirement, bundle declaration gate or
+change to OKF annotations. `okf.py`, link scanning and graph navigation are
+unchanged. This is not a vault-wide evidence audit.
+
+`citations.inspect_citation_text` takes only the returned content string. It
+parses its metadata and body together, never using `NoteContent.frontmatter` or
+`etag`: `DocumentManager.read` currently obtains those from a separate disk read.
+The SHA-256 covers LF-normalized returned text encoded as UTF-8, explicitly not
+raw file identity or an optimistic-concurrency token. A newer malformed
+frontmatter snapshot raises `DocumentUnreadableError`, not an empty report.
+
+A direct `markdown-it-py` dependency supplies CommonMark block/inline contexts.
+The narrow extension recognizes literal non-whitespace footnote labels, excludes
+navigation links/images/wikilinks, and omits definition blocks rather than
+interpreting their prose as provenance. Exact IDs join to source-list positions;
+duplicate IDs stay ambiguous even when records are identical. Source metadata
+and extension keys remain literal parsed values; optional absent IDs are listed
+as unkeyed, while malformed shapes are separate observations. Citation IDs remain
+stable under source reordering; response-local list indices do not.
+
+Scope and syntax limits accompany every result. Nothing fetches sources,
+traverses another note, infers evidentiary support or truth, writes metadata,
+or widens access. Source strings are data, not instructions.
+The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
+syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
+records the current source/footnote distinction.
 ### Explicit OKF concept authoring
 
 `WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes preserve supplied provenance and reviews. The request principal remains available for commit attribution; enabled index and log maintenance runs after authoring.
 
 Each MCP tool listing checks the live bundle state for authoring visibility, so a declaration added or removed during a session takes effect on the next listing. Invocation checks the state again to cover changes after discovery.
+
+### Concept snapshot identity (#1445)
+
+Live whole-note OKF reads expose `mvmcp-concept-v1`: SHA-256 of compact ASCII JSON `[metadata, body]`. YAML scalars encode as `[tag, text]`, sequences as `[tag, items]`, and mappings as `[tag, pairs]`; mappings keep the last parser-equal key and sort surviving pairs by encoded key. JSON uses `object`, `array`, `number`, and Python scalar type tags with sorted object pairs and last-wins duplicate keys. Root `verified` and `x-mvmcp` are excluded. The body uses LF line endings, retains whitespace before the fence and after it, and excludes the frontmatter block. Resolved YAML scalar text, including boolean and null spellings, and JSON number spellings count. YAML string quoting style does not count. Optional TOML uses its handler's parsed values and thus its numeric and timestamp precision.
+
+The legacy verifier may rewrite the body or other metadata and change the digest; D3 owns snapshot-preserving review recording. The digest is not a review binding.
 
 ### OKF Read Semantics (phase 1, #960)
 
@@ -2033,8 +2084,15 @@ the spec itself says, dated and sourced, in
   breakdowns, stale count — aggregated from the same `documents` rows
   `stats` already reads, minus the reserved files, which are counted
   apart as `reserved_count` so the histograms cover the same note
-  population `okf_validate` audits). The section remains absent when OKF is
-  inactive. `config://vault` reports `okf_mode` /
+  population `okf_validate` audits). Its `write_configured` reports the
+  vault's configured `OKF_WRITE` flag and `write_effective` is true only
+  when that flag is enabled, OKF detection is active, and the vault is not
+  read-only. The section always carries `capabilities`; when OKF is inactive,
+  it contains only that block. `capabilities` reports configured and effective
+  authority, reasons and folder scope, as does `config://vault` under
+  `okf_capabilities` (see `okf.md` §2).
+  `config://vault` reports those same values as `okf_write_configured` and
+  `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
   both enabled, startup logs INFO `okf_write_inert` (#1434). The default
   server instructions gain an OKF guidance sentence whenever the mode permits
@@ -2686,6 +2744,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- producer semantics for citation rows
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2734,6 +2793,21 @@ CREATE INDEX IF NOT EXISTS idx_tags_kv
 
 CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
+
+-- Citation attribution rows are separate from navigation links (#1446).
+-- This additive table keeps schema_version at 1. Per note: one status
+-- 'declared' row per valid source resource, one row per matched label under
+-- its resource, and one row per other label under resource '' (diagnostic for
+-- each declared resource of that note), so rows grow linearly with the note.
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 -- Links: inter-document references extracted from markdown content
 CREATE TABLE IF NOT EXISTS links (
@@ -5764,7 +5838,7 @@ to avoid shadowing Python's built-in `list`. The underlying
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: the write tools (`write`, `edit`, `append`,
+**Tag-based visibility**: the write tools (`begin_transaction`, `end_transaction`, `write`, `edit`, `append`,
 `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
 `create_upload_link`) are registered with ``tags={"write"}``. When
 ``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide
@@ -6825,6 +6899,48 @@ subject of the form `<tool>: N files` — or the single-file `<operation>: <path
 subject when the call staged exactly one path. Folder moves name their source
 and destination instead.
 
+An internal commit group binds a persistent scope to an opaque, server-minted
+handle. The dispatcher provides `open_group`, `bind_group`, and `close_group`
+for this internal API. It buffers writes across calls and closes the group with
+its description as the Git subject. One principal may hold several groups;
+nested binding and closing a group with active writes are refused. A close while
+a timed-out dispatcher shutdown is still running refuses because the result is
+unavailable. The result reports `committed`, `failed`,
+or `no_changes`: a commit was made, a flush failed, or no commit was needed.
+An interrupted group callback records `failed` before the worker exits; other
+queued groups or close markers can remain unresolved after worker death. Failure
+remains sticky across flushes. It reports a SHA when available and the
+number of paths in the commit (a rename counts both paths), or zero when the
+count is unknown. Untracked ignored writes are skipped; tracked updates are
+committed even when they match an ignore rule. A failed flush consumes
+its buffer without rollback or retry; staged work remains for the operator.
+A group closes automatically after 300 seconds idle or 3600 seconds from
+opening, whichever comes first. Both bounds are configurable and positive. The
+maximum age closes the buffered group even if a write is active. Later callbacks
+from that binding use the ordinary commit path under the opener's identity. Git
+stages current on-disk content, which can include a write whose callback is
+still pending. Automatic results remain available to the owner until the
+server process exits. Timers stop when the dispatcher closes.
+
+Ordinary scopes keep their per-call behavior. A drain flushes open groups before
+a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
+deferral. The result carries the last SHA and summed path counts. Writes remain
+immediately readable, and indexing proceeds independently of the commit.
+Callbacks that do not opt into groups flush ordinary batches or individual
+writes and report `no_changes`. MCP clients open a group with `begin_transaction`,
+pass its handle to supported write calls, and close it with `end_transaction`.
+A cancelled request does not stop a write worker already running. While its group
+remains open, end and sync refuse until that worker completes; cancellation does
+not roll back its writes.
+A real `git_sync` closes its caller's open groups and waits for pending closes,
+including manual and automatic ones. A supplied handle is validated, including a
+retained auto-close result; a failed commit stops the sync. Omitted handles do
+not scan completed historical auto-close results. End and sync wait up to 30
+seconds; a timeout leaves the commit running and no sync leg runs. A dry run
+leaves groups open and refuses a supplied handle. Other write tools, including uploads,
+stay outside the group. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
+in a Git command argument.
+
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each
@@ -6852,12 +6968,22 @@ committing all moved and derived files. Unusual roots are quoted and escaped
 on one line. Other batch callbacks keep their existing contract
 (#2139).
 
-Three properties this depends on:
+Properties this depends on:
 
-- **The scope is captured in `fire`.** `fire` runs on the request's
-  `to_thread` worker, whose copied context carries the contextvar. The
-  dispatcher thread has no request context; it binds only the captured folder
-  roots while invoking the batch callback and resets them afterward (#1218).
+- **A writing call waits for its callback attempt (#2128).** The server
+  awaits a per-scope marker without occupying an executor thread or flushing other
+  open scopes. Empty scopes return immediately. The wait is bounded at 30
+  seconds; a timeout is logged and the result returns best
+  effort, with a commit possibly landing later. Callback failure is also logged;
+  completion does not guarantee Git succeeded. Concurrent calls share FIFO
+  latency but are not isolated from each other's filesystem changes. Library
+  scope closing remains nonblocking, and non-batch callbacks retain
+  their asynchronous per-write timing. Push remains deferred.
+- **The scope is read in `fire`, never on the worker.** `fire` runs on the
+  request's `to_thread` worker, whose copied context carries the contextvar;
+  the dispatcher thread has no request context, so reading there would always
+  see `None`. The dispatcher binds the captured folder roots only while invoking
+  the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
@@ -7797,3 +7923,15 @@ may not. `Vault.force_pull()` sweeps after successful Git work without itself
 reconciling search. If the sweep fails, the Git side effect has already happened
 and the error propagates; a webhook returns a retryable failure. Sweep origin is
 unknown; observation does not write author metadata or log entries.
+
+### OKF capability transition
+
+The configuration resolves independent author, verify, index, log and folder
+capabilities. Unset capabilities grant no semantic writes. The deprecated
+`OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
+resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
+remains tied to `OKF_WRITE`.
+
+### Bundle inventory surfaces
+
+The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. Search admission remains an observation and can be unknown without an index. The local CLI uses a usable configured index only when the selected source resolves to the configured vault. An unusable or unsupported optional index leaves search state unknown without modifying the store.

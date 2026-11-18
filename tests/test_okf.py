@@ -461,6 +461,12 @@ def test_parse_stale_filter_rejects_garbage() -> None:
 @pytest.mark.parametrize(
     ("metadata", "okf_filters", "expected"),
     [
+        ({}, {"type": None}, True),
+        ({"type": None}, {"type": None}, True),
+        ({"type": ""}, {"type": None}, True),
+        ({"type": "  "}, {"type": None}, True),
+        ({"type": 42}, {"type": None}, True),
+        ({"type": "Playbook"}, {"type": None}, False),
         ({}, {"status": "stable"}, True),  # absent status means stable
         ({"status": "draft"}, {"status": "stable"}, False),
         ({"status": "deprecated"}, {"status": "deprecated"}, True),
@@ -488,7 +494,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
     ],
 )
 def test_matches_okf_filters(
-    metadata: dict, okf_filters: dict[str, str], expected: bool
+    metadata: dict, okf_filters: dict[str, str | None], expected: bool
 ) -> None:
     from markdown_vault_mcp.okf import matches_okf_filters
 

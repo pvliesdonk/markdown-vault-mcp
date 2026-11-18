@@ -9,9 +9,29 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from dataclasses import replace
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from markdown_vault_mcp.okf import is_okf_reserved_file
+import yaml
+
+from markdown_vault_mcp._okf_receipts import ReceiptNotRecordedError
+from markdown_vault_mcp._okf_review import concept_snapshot
+from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+    StoreUnsupportedSchemaError,
+)
+from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.okf import (
+    append_okf_verification,
+    is_okf_reserved_file,
+    okf_timestamp,
+    verified_entries,
+)
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -23,6 +43,7 @@ if TYPE_CHECKING:
         LogRepairPreview,
         LogRepairResult,
     )
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -35,17 +56,39 @@ if TYPE_CHECKING:
         DeleteResult,
         EditResult,
         MoveFolderResult,
+        NoteContent,
         RenameResult,
         WriteResult,
     )
 
 _R = TypeVar("_R", "WriteResult", "EditResult")
 
+_STALE_SNAPSHOT = (
+    "The reviewed snapshot is invalid or no longer current. Read the full "
+    "note, review it, and pass its snapshot to okf_verify."
+)
+
+
+def _from_one_read(note: NoteContent, raw: str) -> NoteContent:
+    """Rebuild *note* from one read of the file, so text, metadata and etag agree."""
+    text = raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        metadata = parse_frontmatter(text).metadata
+    except yaml.YAMLError as exc:  # the file changed after its first read
+        raise DocumentUnreadableError(note.path, str(exc)) from exc
+    return replace(
+        note,
+        content=text,
+        frontmatter=metadata,
+        etag=compute_etag(raw.encode("utf-8")),
+    )
+
 
 class WriterFacet:
     """Document-mutation operations, backed by :class:`DocumentManager`."""
 
-    def __init__(
+    # The facet receives independent write collaborators from the vault.
+    def __init__(  # noqa: PLR0913, RUF100
         self,
         doc_mgr: DocumentManager,
         *,
@@ -53,6 +96,7 @@ class WriterFacet:
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
+        receipt_store: ReceiptStore | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -73,6 +117,7 @@ class WriterFacet:
                 write path (OKF link conversion rewrites thousands of notes in
                 one call), and a git probe per file there would spend several
                 subprocesses each on a result nobody reads.
+            receipt_store: Supplies local storage for recorded review receipts.
             link_reporter: Answers ``report_unresolved_links=True`` on
                 :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
                 ``None`` (the default) makes such a call raise
@@ -83,6 +128,118 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+        self._receipt_store = receipt_store
+
+    def _current_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Read *path*, refuse a stale snapshot and check receipt storage."""
+        with self._doc_mgr.write_scope():
+            note = self._doc_mgr.read(path)
+            if note is None:
+                raise DocumentNotFoundError.note(path)
+            note = _from_one_read(note, self._doc_mgr._okf_author_snapshot(path)[1])
+        if concept_snapshot(note.content) != snapshot:
+            raise InvalidRequestError(_STALE_SNAPSHOT)
+        if self._receipt_store is None:
+            raise InvalidRequestError("Local review receipt storage is not configured")
+        self._receipt_store.check()
+        return note
+
+    def require_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Check that a review of *snapshot* can be recorded, before confirmation.
+
+        Runs the review transform on the current text without writing, so an
+        unsupported header is refused before the user is asked.
+
+        Args:
+            path: Vault-relative note path.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+
+        Returns:
+            The current note.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is not configured or lies inside the vault, or the
+                note's header cannot take a review.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer.
+            OSError: If the note or receipt state cannot be read.
+        """
+        note = self._current_reviewable(path, snapshot)
+        append_okf_verification(
+            note.content,
+            subject="local",
+            now=datetime.now(UTC),
+            reviewed_snapshot=snapshot,
+        )
+        return note
+
+    def okf_verify(
+        self,
+        path: str,
+        subject: str,
+        snapshot: dict[str, str],
+        check: str = "human-review",
+    ) -> dict[str, Any]:
+        """Write a review of *snapshot* into the note, then its local receipt.
+
+        The receipt is evidence of a completed write, so it is appended only
+        after the guarded note write succeeds.
+
+        Args:
+            path: Vault-relative note path.
+            subject: Reviewer identity, recorded as ``human:<subject>``.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+            check: Kind of review performed.
+
+        Returns:
+            The note path, the recorded verifier and the number of ``verified``
+            entries the note now holds.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is unusable, or the header cannot take the review
+                losslessly; nothing was written.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer;
+                nothing was written.
+            ConcurrentModificationError: If the note changed after it was read;
+                nothing was written.
+            OSError: If writing the note, or a callback after it, failed; the
+                note may already hold the review, and no receipt was recorded.
+            ReceiptNotRecordedError: If the note holds the review but its
+                local receipt could not be saved.
+        """
+        note = self._current_reviewable(path, snapshot)
+        now = datetime.now(UTC)
+        text = append_okf_verification(
+            note.content,
+            subject=subject,
+            now=now,
+            reviewed_snapshot=snapshot,
+            check=check,
+        )
+        with okf_write_suppressed():
+            self.write(path, text, if_match=note.etag)
+        actor = f"human:{subject}"
+        try:
+            cast("ReceiptStore", self._receipt_store).append(
+                {
+                    "path": note.path,
+                    "by": actor,
+                    "at": okf_timestamp(now),
+                    "check": check,
+                    "snapshot": dict(snapshot),
+                    "recorded_at": okf_timestamp(datetime.now(UTC)),
+                }
+            )
+        except (OSError, StoreUnsupportedSchemaError) as exc:
+            raise ReceiptNotRecordedError(path) from exc
+        return {
+            "path": path,
+            "verifier": actor,
+            "verified_count": len(verified_entries(note.frontmatter)) + 1,
+        }
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]

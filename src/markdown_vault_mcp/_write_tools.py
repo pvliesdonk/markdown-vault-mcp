@@ -29,6 +29,8 @@ from __future__ import annotations
 #: ``create_upload_link`` (registered by fastmcp-pvl-core's transfer
 #: routes) additionally requires an HTTP transport.
 WRITE_TOOL_NAMES: tuple[str, ...] = (
+    "begin_transaction",
+    "end_transaction",
     "write",
     "edit",
     "append",

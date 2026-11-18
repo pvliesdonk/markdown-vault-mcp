@@ -3,9 +3,9 @@
 A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
-Methods delegate to :class:`SearchManager`, :class:`DocumentManager`, or
-:class:`GitQueryManager`; OKF stats also include the vault's write-state
-projection. The bucket-3 methods
+Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
+:class:`GitQueryManager`; citation inspection analyzes one returned note-text
+snapshot. OKF stats include the vault's write-state projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -14,17 +14,34 @@ the ``Vault.reader`` accessor.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+import yaml
+
+from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+)
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.utils.content_kind import is_note
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from typing import Any, Literal
 
     from markdown_vault_mcp.bundle_inventory import (
+        BundleEntry,
         BundleInspection,
         BundleInspectionRequest,
         BundleTreeRequest,
+        ParseState,
+        SearchState,
+        TypeState,
     )
+    from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -55,6 +72,30 @@ if TYPE_CHECKING:
     )
 
 
+def _selected(
+    entry: BundleEntry,
+    type_state: TypeState | None,
+    parse_state: ParseState | None,
+    search_state: SearchState | None,
+) -> bool:
+    if entry.role == "directory" and entry.state in {"unavailable", "missing"}:
+        return True
+    if entry.path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+        return False
+    if entry.state in {"unavailable", "missing"}:
+        return (
+            entry.role in {"unknown", "concept_candidate"}
+            and is_note(entry.path)
+            and (search_state is None or entry.search_state == search_state)
+        )
+    return (
+        entry.role == "concept_candidate"
+        and (type_state is None or entry.type_state in {type_state, "not_inspected"})
+        and (parse_state is None or entry.parse_state in {parse_state, "not_inspected"})
+        and (search_state is None or entry.search_state == search_state)
+    )
+
+
 class ReaderFacet:
     """Read-only queries over the shared managers."""
 
@@ -65,6 +106,7 @@ class ReaderFacet:
         doc_mgr: DocumentManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        citation_mgr: CitationManager | None = None,
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
@@ -76,10 +118,12 @@ class ReaderFacet:
             doc_mgr: Document and attachment reads, table-of-contents.
             git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
+            citation_mgr: Reverse citation lookup manager, when wired.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
         """
+        self._citation_mgr = citation_mgr
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
@@ -108,6 +152,48 @@ class ReaderFacet:
             Live observations and an optional continuation cursor.
         """
         return self._doc_mgr.inspect_bundle(request)
+
+    def okf_inventory(
+        self,
+        request: BundleTreeRequest,
+        *,
+        type_state: TypeState | None = None,
+        parse_state: ParseState | None = None,
+        search_state: SearchState | None = None,
+    ) -> BundleInspection:
+        """Inspect one page of concept candidates without building an index.
+
+        Unknown type or parse state does not rule out a match. Search-state
+        filters match exactly, except directory boundaries needed to continue.
+
+        Args:
+            request: Explicit root, page limit and optional continuation.
+            type_state: Filter by observed type presence.
+            parse_state: Filter by metadata parsing outcome.
+            search_state: Filter by observed index admission.
+
+        Returns:
+            The bounded page with matching concepts and the original continuation.
+        """
+        page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
+        matching = tuple(
+            entry
+            for entry in page.entries
+            if _selected(entry, type_state, parse_state, search_state)
+        )
+        truncated = len(matching) > request.entry_limit
+        entries = matching[: request.entry_limit]
+        return replace(
+            page,
+            request=request,
+            entries=entries,
+            next_cursor=entries[-1].path if truncated else page.next_cursor,
+            enumeration=(
+                "entry_limit"
+                if truncated and page.enumeration != "unavailable"
+                else page.enumeration
+            ),
+        )
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -184,7 +270,7 @@ class ReaderFacet:
         *,
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
@@ -248,6 +334,54 @@ class ReaderFacet:
         """
         return self._doc_mgr.read(path, section=section)
 
+    def find_citing_notes(self, resource: str) -> dict[str, Any]:
+        """Find indexed notes citing an exact resource.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citing notes and unresolved label diagnostics.
+        """
+        self._require_built()
+        if self._citation_mgr is None:
+            raise RuntimeError("Citation manager is not wired")
+        return self._citation_mgr.find_citing(resource)
+
+    def inspect_citations(self, path: str) -> CitationReport:
+        """Inspect exact source attribution in one whole-note text snapshot.
+
+        Args:
+            path: Exact vault-relative .md note path.
+
+        Returns:
+            Literal sources, label joins and explicit syntax limits. This reads
+            no source resources and makes no claim about evidentiary support.
+
+        Raises:
+            InvalidRequestError: If the path is not a .md note or exceeds the
+                existing whole-note read limit.
+            DocumentNotFoundError: If the existing reader finds no note.
+            DocumentUnreadableError: If the existing reader cannot read it.
+        """
+        if not is_note(path):
+            raise InvalidRequestError(
+                f"path {path!r} is not a .md note. Call inspect_citations with "
+                "a .md path from search or list_documents."
+            )
+        note = self.read(path)
+        if note is None:
+            raise DocumentNotFoundError(
+                f"No note at path {path!r}. Find a path with search or list_documents "
+                "and pass it to inspect_citations."
+            )
+        # read() may carry metadata/hash from an earlier disk read. Only this
+        # one returned content string is allowed to supply the join and digest.
+        try:
+            return inspect_citation_text(path, note.content)
+        except yaml.YAMLError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+
     def read_revision(
         self, path: str, revision: str, *, section: str | None = None
     ) -> RevisionContent:
@@ -308,7 +442,7 @@ class ReaderFacet:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 

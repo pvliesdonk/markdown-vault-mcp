@@ -45,7 +45,7 @@ def register(mcp: FastMCP) -> None:
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
         folder: str | None = None,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         wait_for_pending_writes: _WaitForPendingWrites = False,
@@ -70,7 +70,8 @@ def register(mcp: FastMCP) -> None:
                 matches when it holds the value. On an OKF bundle, status (draft, stable
                 or deprecated; stable includes notes with none), stale (`"true"` or
                 `"false"`) and trust_tier (unverified, machine-confirmed or
-                human-reviewed) filter too.
+                human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes
+                without a non-empty string type, excluding reserved files.
             chunks_per_file: Maximum sections per note, at least 1; omit for the server
                 default.
             snippet_words: Snippet width in words; omit for the server default, 0 for
@@ -191,8 +192,8 @@ def register(mcp: FastMCP) -> None:
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
             an 'okf' dict (type, status, stale, trust_tier, freshness, review,
-            review_applicability, recorded, and the note's 'sources' list when
-            present). Review applicability reports whether a snapshot binding is
+            review_applicability, recorded, snapshot {algo, digest}, and the note's 'sources'
+            list when present). Review applicability reports whether a snapshot binding is
             available, independently of freshness and recorded claims. Section reads omit
             it because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
@@ -227,6 +228,78 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Inspect Note Citations",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def inspect_citations(
+        path: str,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Join a note's literal footnote labels to its source records.
+
+        Use this for attribution in one known note, not navigation or evidence
+        verification. Reports unmatched labels and duplicate-ID ambiguity without
+        opening source resources; syntax coverage is limited and reported.
+
+        Args:
+            path: Exact case-sensitive .md note path from search or list_documents.
+
+        Returns:
+            Literal sources, citation IDs with occurrence counts and zero-based
+            source indices, source-shape issues, duplicate IDs, and indices of source
+            entries without IDs. Matched means one exact ID, not that the source supports a
+            claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+            fields describe coverage. returned_text_sha256 hashes the LF-normalized
+            returned text encoded as UTF-8; it is not a raw-file etag, a portable
+            identity or a value to use for if_match.
+        """
+        report = await asyncio.to_thread(vault.reader.inspect_citations, path)
+        return asdict(report)
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Find Citing Notes",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    @needs_queryable()
+    async def find_citing_notes(
+        resource: str,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Find indexed notes citing an exact source resource and unresolved labels.
+
+        Args:
+            resource: Exact source resource string from a note's sources.
+            wait_for_pending_writes: Wait for pending writes to reach the index.
+
+        Returns:
+            Citing notes with labels and counts, unresolved diagnostics, and
+            unconverted_notes: indexed notes not yet re-read for citations.
+        """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "find_citing_notes"
+        )
+        gen_before = vault.index.write_generation()
+        result = await asyncio.to_thread(vault.reader.find_citing_notes, resource)
+        return _staleness_result(
+            vault, result, drained_on_request=drained, gen_before=gen_before
+        )
+
+    @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",
@@ -241,7 +314,7 @@ def register(mcp: FastMCP) -> None:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
@@ -262,7 +335,8 @@ def register(mcp: FastMCP) -> None:
                 attachments never match. On an OKF bundle, status (draft, stable or
                 deprecated; stable includes notes with none), stale (`"true"` or `"false"`)
                 and trust_tier (unverified, machine-confirmed or human-reviewed) filter
-                too.
+                too. Use `{"type": null}` on an active OKF bundle for searchable notes without
+                a non-empty string type, excluding reserved files.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -470,8 +544,11 @@ def register(mcp: FastMCP) -> None:
               Call 'get_broken_links' if non-zero.
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
-            - okf (dict, optional): Present only when the vault is an active
-              OKF (Open Knowledge Format) bundle. Carries mode,
+            - okf (dict): Always includes capabilities with configured values,
+              effective true/false values, reasons and folder scope. Reasons are
+              read_only, okf_inactive, not_implemented or not_designated;
+              null means no reason. When OKF is inactive, capabilities is
+              the only field. An active OKF bundle also carries mode,
               declared_version, a per-`type` histogram plus untyped_count,
               status and recorded-review trust-tier breakdowns, and stale_count.
               These counts cover the note population 'okf_validate' audits;
@@ -491,9 +568,7 @@ def register(mcp: FastMCP) -> None:
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
         payload = asdict(result)
-        okf_section = await asyncio.to_thread(vault.reader.okf_stats)
-        if okf_section is not None:
-            payload["okf"] = okf_section
+        payload["okf"] = await asyncio.to_thread(vault.okf_stats_report)
         return _staleness_result(
             vault, payload, drained_on_request=drained, gen_before=gen_before
         )

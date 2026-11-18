@@ -13,6 +13,8 @@ kind: how-to
 !!! tip "Example pack"
     The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) directory ships a declaration index, typed note templates (`Concept`, `Capture`), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.
 
+Live whole-note structured reads in an active bundle, or an undeclared vault with the legacy review alias enabled, include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and frontmatter except `verified` and `x-mvmcp`; resolved YAML scalar text, including spellings of true and null, and JSON number spellings count; YAML string quoting style does not. Converting a header between YAML and JSON can change the snapshot. Optional TOML uses the numeric and timestamp precision of its parser. The etag distinguishes raw bytes. Pass this snapshot as `reviewed_snapshot` to `okf_verify` after reviewing the note. The digest alone does not prove who recorded a review. Historical and section reads and search hits omit it. In the CLI, use `--json` or `--agent` to see the snapshot.
+
 ## How the server recognises a bundle
 
 The server treats a vault as an OKF bundle when the root `index.md` declares a version in its frontmatter:
@@ -32,7 +34,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check detection through the `config://vault` resource. The `stats` tool includes an `okf` section when detection is active. Detection reflects changes to the declaration on the next call.
+Check the current state through `config://vault`, the `stats` tool, or `markdown-vault-mcp stats --json`. The resource's `okf_capabilities` and `stats.okf.capabilities` carry the same configured values, effective true/false values, reasons and folder scope, even when OKF is inactive. Reasons follow this order: `read_only` applies to every capability on a read-only vault, including disabled ones. On a writable vault a disabled capability has no reason. For enabled capabilities, `okf_inactive` comes next, except that legacy verification can remain effective in an undeclared vault when `OKF_WRITE` is enabled. Then `not_implemented` applies to event logging, and unrecognized library-supplied verify or log modes; finally, `not_designated` applies to index and write logging with an empty folder scope supplied through the library. Effective describes vault-level authority; identity, elicitation and etag checks still apply to individual calls. An effective index or write-log capability applies only within the reported folder scope; a nonempty scope does not mean every path is designated.
+
+The resource's `okf_write_configured` and `okf_write_effective` report the legacy stamping layer; active `stats.okf` reports them as `write_configured` and `write_effective`. The layer is effective when configured, OKF is active, and the vault is not read-only. When inactive, `stats.okf` contains only `capabilities`. Detection reflects changes to the declaration on the next call.
 
 ## Authoring a concept
 
@@ -50,12 +54,12 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
 - **Recorded review tier**: `trust_tier` describes supplied review claims. A record with a usable `human:<id>` actor and an offset-aware `at` gives `human-reviewed`; otherwise, usable records give `machine-confirmed`, and no usable record gives `unverified`. Malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision.
 - **Evidence**: `freshness.state` distinguishes `missing`, `malformed`, `unexpired`, and `expired`. `review` separates recorded and malformed entry counts. Whole reads include the parsed values under `recorded`; compact results keep the summary. `stale: false` includes absent or malformed expiry, so it does not establish freshness.
-- **Review applicability**: `review_applicability` reports `snapshot: unbound` and `basis: no_snapshot_binding` for supplied entries, including malformed entries. This describes the absence of a binding; `review` reports entry validity. No timestamp or extension establishes coverage of the current content. Absent or empty reviews report `review: none`; malformed outer values report `review: unknown`. This assessment is separate from freshness and the recorded review tier.
+- **Review applicability**: `review_applicability` reports `snapshot: unbound` and `basis: no_snapshot_binding` for supplied entries, including malformed entries. Reads do not evaluate saved binding claims yet; `review` reports entry validity. No timestamp or extension establishes coverage of the current content in this assessment. Absent or empty reviews report `review: none`; malformed outer values report `review: unknown`. This assessment is separate from freshness and the recorded review tier.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 
 The CLI labels recorded review metadata and unknown applicability in human-readable search output. For whole-note text reads, it sends that notice to `stderr`, leaving the note content on `stdout` unchanged. The app's note and context views show the same uncertainty beside any supplied `verified` field, including empty or malformed values; the original metadata stays available. These notices change only the human-readable presentation. JSON and agent output retain their existing payloads.
 
-You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
+You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. On an active OKF bundle, use `{"type": null}` with `search` or `list_documents` to find searchable notes without a non-empty string type; reserved `index.md` and `log.md` files are excluded. Non-string values such as `type: 42` count as missing a usable type, while the existing string equality filter `{"type": "42"}` still matches that value. The filter judges indexed metadata: an unquoted date such as `type: 2026-11-17` is indexed as the string `"2026-11-17"` and does not match null. The null selector is available only to `search` and `list_documents`; CLI and exact query filters accept strings. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
 ## Frontmatter fields
 
@@ -77,6 +81,65 @@ verified:
     at: "2026-08-01T09:14:00Z"
 ---
 ```
+
+## Inspect citations in one note
+
+Call `inspect_citations(path="research/note.md")` for an exact path you found with
+`search` or `list_documents`. The library equivalent is
+`vault.reader.inspect_citations("research/note.md")`. This opt-in read works
+without a bundle declaration, including when OKF annotations are off.
+
+It joins body markers such as `[^handbook]` to frontmatter `sources` entries whose
+`id` is exactly `handbook`. The result includes the literal parsed source records,
+unknown fields included. `source_indices` identifies matching records by their
+zero-based positions in that response. Those positions can change when sources
+are reordered; the exact string `id` is the stable key. Labels are not trimmed,
+case-folded or coerced from numbers.
+
+- `matched`: exactly one source entry has the label's ID, even if that entry has
+  a separately reported source-shape issue.
+- `ambiguous`: multiple entries have that ID, even if their resources are equal.
+- `unmatched`: no entry has that ID. This may be an ordinary explanatory footnote,
+  not a broken citation.
+
+The report also lists duplicate IDs whether cited or not, entries without IDs,
+and source-shape issues. An ID is optional; an entry without one is not invalid.
+A resource may describe a scope rather than a location. URLs and paths are also
+accepted. The inspector does not open resources or check whether they exist. It
+does not assess whether a source supports a claim or whether the claim is true.
+
+### Find notes citing a source
+
+Call `find_citing_notes(resource="https://example.org/source")` to find indexed
+notes with literal footnote labels matching a source record for that
+exact resource. The result includes label occurrence counts and unresolved or
+ambiguous labels, plus labels whose matched source has no valid resource, in notes
+declaring the resource. Results are unbounded. When OKF is active, reserved
+`index.md` and `log.md` files are excluded. Body links alone do not count.
+On the first writer startup after upgrading from index semantics version 12, the
+index rebuilds. `unconverted_notes` counts indexed notes that could not be re-read
+with compatible citation rules. If ordinary reindex leaves the count above zero,
+call the MCP tool `reindex(force=True)` or the library method
+`build_index(force=True)` for a full rebuild.
+The lookup does not fetch resources or assess whether they support a claim.
+
+### Syntax coverage
+
+The reader uses CommonMark block and inline parsing with a small literal marker
+extension. It recognizes single-line labels with no whitespace, brackets or
+backslashes. It skips code spans and fences, escaped markers, HTML blocks and
+attributes, navigation links, images, wikilinks, and footnote definition blocks.
+A citation beside inline code or a navigation link is still recognized. Footnote
+definition prose never supplies the source join. Other Markdown dialect
+extensions are not interpreted; an empty result is not an exhaustive citation
+audit. The response's `syntax` and `scope` fields retain these limits.
+
+The existing whole-note read limits apply. The source list and body are parsed
+from one returned content string. `returned_text_sha256` hashes that complete
+string after line endings are normalized to LF and it is encoded as UTF-8. It
+is not the file's raw-byte etag or a portable file identity, and cannot be used
+as `if_match`. No index refresh, traversal, metadata write or permission change
+is part of this call. See the [tool reference](../reference/tools/reader.md#inspect_citations).
 
 ## Migrating an existing vault
 
@@ -137,7 +200,7 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 
 The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 
-A `verified` entry records a review claim at a time without identifying the reviewed snapshot. Server writes and external edits leave it in place. Neither the tier nor `generated.at` establishes which content was reviewed.
+A `verified` entry records the reviewer and time in the portable format. `okf_verify` also appends a claim in `x-mvmcp.reviews` with the reviewed snapshot and check (default `human-review`). Its confirmation shows the path, digest prefix and check; a stale snapshot or an edit detected before the write is refused. Read the note again and review the current content before retrying. Other editors can supply or alter `x-mvmcp`, so the claim alone does not prove a local action. The server also stores a matching local receipt beside its observation ledger, outside the bundle. With in-memory state the receipt is lost on restart. Bound reviews require YAML frontmatter or a body-only note; convert JSON or TOML frontmatter to YAML before reviewing. The snapshot excludes `verified` and `x-mvmcp`. Review writes use the existing whole-note read, which normalizes line endings to LF. Receipt storage must be outside the vault. Back up the `.receipts.json` sibling of the configured state file with the observation ledger; each receipt retains the path at recording time, even if the note is later renamed. A receipt failure after the note write leaves the claim without local evidence; read the note before taking further action. Later edits retain the review; the tier does not establish that it covers current content.
 
 ### Keeping `log.md` and `index.md` current
 
@@ -311,3 +374,17 @@ even if search refuses to prune its own rows for an empty root.
 The library's `Vault.force_pull()` sweeps after Git succeeds but does not
 reconcile search. If the sweep fails, Git may already have changed the working
 tree; the error propagates. A webhook reports failure so the delivery can be retried.
+
+The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
+settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
+implicit stamping. `OKF_WRITE=true` retains the
+existing behavior and logs a deprecation notice; explicit settings override
+its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+## Inspecting bundle inventory
+
+Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates. A blank, null or non-string `type` has `type_state="invalid"`, not `absent`.
+
+Pass `next_cursor` into the next call, including after an empty filtered page. Each call scans up to 1,000 observations before filtering and returns at most the requested limit. A `not_evaluated` search state means the index was not available, not that a note is excluded. The read-only `okf-inventory` CLI command accepts the same selection and `--json` returns the structured report. Neither interface builds an index for inventory. The local CLI uses a usable configured index when the selected source resolves to the configured vault; otherwise search state is `not_evaluated`. An unusable or unsupported optional index also leaves search state `not_evaluated`; the index is not changed. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly.
+
+An unavailable directory boundary with reason `depth_limit` remains in filtered results. Select its path as the root of another inventory call to inspect deeper entries.

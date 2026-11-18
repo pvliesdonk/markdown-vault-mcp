@@ -28,6 +28,7 @@ from tests.conftest import (
     _parse_tool_data,
     wait_for_mcp_writer_drain,
 )
+from tests.fixtures.review_binding import review_args
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -352,7 +353,7 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="no human identity"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
 
     async def test_appends_verification_when_authed(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -362,7 +363,7 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         payload = _parse_tool_data(result)
@@ -385,7 +386,7 @@ class TestOkfVerifyTrustAuth:
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": subject})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("read", {"path": "guides/playbook.md"})
         annotation = _parse_tool_data(result)["okf"]
@@ -401,32 +402,31 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="Document not found"):
-                await client.call_tool("okf_verify", {"path": "nope.md"})
+                await client.call_tool(
+                    "okf_verify", {"path": "nope.md", "reviewed_snapshot": {}}
+                )
 
     async def test_aborts_on_concurrent_modification(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # okf_verify reads then writes with if_match=note.etag. Simulate a
-        # concurrent write landing in that window by mutating the file from
-        # inside the transform (which runs after the read); the etag no longer
-        # matches, so the write is refused rather than clobbering the change.
+        # Edit after the facet's read but before the guarded note write.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        import markdown_vault_mcp._tools.writer as writer_mod
+        import markdown_vault_mcp.facets.writer as writer_mod
 
-        real_append = writer_mod.append_okf_verification
+        real_write = writer_mod.WriterFacet.write
 
-        def racing_append(text: str, *, subject: str, now: Any) -> str:
+        def racing_write(self: Any, *args: Any, **kwargs: Any) -> Any:
             (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
-            return real_append(text, subject=subject, now=now)
+            return real_write(self, *args, **kwargs)
 
-        monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
+        monkeypatch.setattr(writer_mod.WriterFacet, "write", racing_write)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="changed while it was being verified"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
 
     async def test_counts_a_bare_mapping_as_one(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -442,7 +442,7 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verified_count"] == 2
@@ -458,7 +458,7 @@ class TestOkfVerifyElicit:
             make_server(), mode="legacy", elicitation_handler=_accept_review
         ) as client:
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verifier"] == "human:local"
@@ -473,7 +473,7 @@ class TestOkfVerifyElicit:
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         payload = _parse_tool_data(result)
@@ -489,7 +489,7 @@ class TestOkfVerifyElicit:
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verifier"] == "human:local"
@@ -502,7 +502,7 @@ class TestOkfVerifyElicit:
         async with Client(make_server(), elicitation_handler=_decline_review) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
@@ -517,7 +517,7 @@ class TestOkfVerifyElicit:
         ) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
@@ -531,8 +531,19 @@ class TestOkfVerifyElicit:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(MCPError, match="Elicitation not supported"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
+
+    async def test_unsupported_legacy_client_fails_closed(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+        async with Client(make_server(), mode="legacy") as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match=r"client.*cannot ask"):
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
 
@@ -594,7 +605,7 @@ class TestServiceTokenOkf:
         before = path.read_bytes()
         async with Client(make_server()) as client:
             with pytest.raises(ToolError, match="no human identity"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert path.read_bytes() == before
 
@@ -608,7 +619,7 @@ class TestServiceTokenOkf:
             elicitation_handler=_accept_review,
         ) as client:
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verifier"] == "human:local"
@@ -618,7 +629,7 @@ class TestServiceTokenOkf:
     async def test_elicit_decline_does_not_verify(self, okf_alias_env: Path) -> None:
         async with Client(make_server(), elicitation_handler=_decline_review) as client:
             with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
@@ -653,6 +664,6 @@ async def test_protected_verify_precedes_elicitation(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
         with pytest.raises(ToolError, match="PROTECTED_PATHS"):
-            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+            await client.call_tool("okf_verify", review_args("_conventions.md"))
     assert calls == 0
     assert path.read_text() == "original"

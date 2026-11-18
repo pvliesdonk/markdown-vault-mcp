@@ -26,6 +26,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
+    citations.py       -- reverse citation attribution and scoped diagnostics (#1446)
     _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
@@ -93,7 +94,7 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
@@ -106,10 +107,14 @@ src/markdown_vault_mcp/
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
+  citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442); descriptor-relative full observation traversal
   okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
+  _cli_bundle.py       -- CLI adapter for bounded OKF inventory
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
+  _okf_review.py       -- versioned concept snapshot digest and lossless YAML review binding
+  _okf_receipts.py     -- versioned local JSON receipts for snapshot-bound reviews
   _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
   _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _okf_write.py        -- review subject resolution and maintenance suppression context
@@ -119,6 +124,7 @@ src/markdown_vault_mcp/
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
+  _commit_groups.py    -- Internal commit-group handles and accumulated status, SHA, and path counts (#1677)
   _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
   _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)
@@ -149,7 +155,9 @@ src/markdown_vault_mcp/
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
+    okf_inventory.py   -- bounded read-only bundle inventory tool
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
+    transactions.py    -- MCP transaction tools and explicit write binding (#1677)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations
     index.py           -- index/reindex/embeddings-status tool registrations

@@ -520,7 +520,7 @@
       "label": "Read Only",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_READ_ONLY",
-      "help": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault."
+      "help": "Set to true to hide the write tools (begin_transaction, end_transaction, write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault."
     },
     {
       "id": "write_protect_existing",
@@ -965,6 +965,22 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S",
       "help": "Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull.",
+      "advancedGroup": "Git sync"
+    },
+    {
+      "id": "git_group_idle_s",
+      "label": "Git Group Idle S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S",
+      "help": "Seconds of group inactivity before automatic close.",
+      "advancedGroup": "Git sync"
+    },
+    {
+      "id": "git_group_max_age_s",
+      "label": "Git Group Max Age S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S",
+      "help": "Maximum group age in seconds before automatic close.",
       "advancedGroup": "Git sync"
     },
     {

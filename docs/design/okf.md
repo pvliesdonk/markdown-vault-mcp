@@ -157,8 +157,9 @@ placement in `config.py`, wizard metadata via field
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
 the clone happens inside the server lifespan). `config://vault` reports the
-mode, declared version and active state. The `stats.okf` section is absent
-when detection is inactive.
+mode, declared version and active state, as well as `okf_write_configured`
+and `okf_write_effective`. Active `stats.okf` reports the configured and
+effective write layer as `write_configured` and `write_effective`. Effective means `OKF_WRITE` is enabled, OKF is active, and the vault is not read-only. The resource also reports `okf_capabilities`; `stats.okf.capabilities` and the CLI carry the same configured values, effective true/false values, reasons and folder scope, including when detection is inactive. See [capability reporting](../use/okf.md) for the reason precedence.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -226,7 +227,9 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
    Whole reads also carry `recorded` with supplied `stale_after` and
    `verified` values as parsed, including null/malformed values and extensions;
    missing keys stay absent. Compact results omit these potentially large
-   records. Values use the existing metadata serialization, not original YAML
+   records. Live whole-note structured reads also carry `snapshot` with its
+   algorithm and digest; section, historical, search and context results omit it.
+   Values use the existing metadata serialization, not original YAML
    spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
@@ -281,7 +284,7 @@ is disk-based rather than index-based, and the tool is hidden under
 `search` and `list_documents` accept OKF filter dimensions, implemented on the
 existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 
-- `type=<value>` — direct tag lookup.
+- `type=<value>` — direct tag lookup. `type=null` post-filters admitted notes without a non-empty string type, excluding reserved files. Non-string types match this selector as well as their existing string equality filter.
 - `status=<value>` — tag lookup with the documented caveat that absent
   `status` means `stable` (the filter for `stable` must match
   absent-or-stable; this is the one filter that cannot be a pure tag lookup
@@ -368,7 +371,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
 
 - **Provenance preservation**: ordinary writes, edits, appends, uploads and link rewrites preserve supplied `generated` and `verified`. Body-only changes retain the frontmatter bytes. The authenticated principal remains commit context and does not establish authorship. Explicit `okf_author` records a producer only when supplied. `OKF_WRITE` enables `OKF_AUTHOR` unless explicitly overridden; it never stamps or clears metadata.
 - **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
-  promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
+  promoting the note's tier. The required `reviewed_snapshot` must match before confirmation. The write appends a snapshot and check claim under `x-mvmcp.reviews` and a matching instance-local receipt. The facet rechecks the snapshot after confirmation and an etag guards the final write. Reads currently report unbound applicability without evaluating these claims. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
   human reviewed the note. In an agentic session the model wields the human's
@@ -687,3 +690,7 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+
+### Snapshot-bound review recording
+
+`okf_verify` validates the reviewed snapshot before confirmation and again after confirmation, then uses the fresh read etag for the write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. Bound reviews require YAML frontmatter (or no frontmatter); JSON and TOML must be converted to YAML. The snapshot excludes `verified` and `x-mvmcp`. Receipts must be outside the vault, and last only for the process without a state path. A receipt failure after the note write leaves the claim without local evidence and raises an error identifying the partial outcome. Review applicability presentation remains separate work.
