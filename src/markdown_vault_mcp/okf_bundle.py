@@ -200,13 +200,6 @@ def build_okf_bundle(
                 if reasons:
                     excluded += 1
                     continue
-                if item.state == "unavailable" and item.reason in {
-                    "symlink",
-                    "hidden_symlink",
-                    "nonregular",
-                }:
-                    report.uninspected[item.path] = item.reason
-                    continue
                 if item.state in {"unavailable", "missing"}:
                     raise OSError(
                         f"Cannot export {item.path}: {item.reason or item.state}"

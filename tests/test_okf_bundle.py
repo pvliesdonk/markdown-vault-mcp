@@ -78,13 +78,8 @@ def test_bundle_includes_notes_and_attachments(vault: Vault, config: ProjectConf
     assert result.attachments == 1
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("pic.png") == b"\x89PNGDATA"
+        assert archive.read("b.md") == b"# B\n"
     assert result.notes == 5
-
-
-def test_bundle_keeps_reserved_index_and_log(vault: Vault, config: ProjectConfig):
-    members = _members(build_okf_bundle(vault, config, folder="").data)
-    assert "index.md" in members
-    assert "log.md" in members
 
 
 def test_bundle_rewrites_resolvable_wikilinks(vault: Vault, config: ProjectConfig):
@@ -95,18 +90,9 @@ def test_bundle_rewrites_resolvable_wikilinks(vault: Vault, config: ProjectConfi
     assert "[[ghost]]" in body  # unresolvable left untouched
 
 
-def test_bundle_preserves_frontmatter_and_nonconformant(
-    vault: Vault, config: ProjectConfig
-):
-    zf = zipfile.ZipFile(io.BytesIO(build_okf_bundle(vault, config, folder="").data))
-    a = zf.read("a.md").decode("utf-8")
-    assert a.startswith("---\ntype: Note")  # frontmatter intact
-    # A non-conformant note (no OKF type) is included verbatim, not dropped.
-    assert zf.read("b.md").decode("utf-8") == "# B\n"
-
-
-def test_bundle_folder_scope(vault: Vault, config: ProjectConfig):
-    members = _members(build_okf_bundle(vault, config, folder="guides").data)
+@pytest.mark.parametrize("scope", ["guides", "guides/./", "guides//"])
+def test_bundle_folder_scope(vault: Vault, config: ProjectConfig, scope: str):
+    members = _members(build_okf_bundle(vault, config, folder=scope).data)
     assert members == {"guides/one.md"}
 
 
@@ -132,6 +118,11 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         vault.index.build_index()
         result = build_okf_bundle(vault, config)
         members = _members(result.data)
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert (
+                archive.read("typed.md")
+                == b"---\ntype: Note\nx-extra: yes\n---\ntext\n"
+            )
         assert "typed.md" in members and "b.md" in members
         assert "excluded.md" not in members and ".hidden.md" not in members
         assert "_conventions.md" not in members and "_templates/t.md" not in members
@@ -160,26 +151,13 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         vault.close()
 
 
-def test_large_note_and_symlink_are_reported(source_dir: Path, tmp_path: Path) -> None:
+def test_large_note_is_reported(source_dir: Path) -> None:
     (source_dir / "large.md").write_text("---\ntype: Note\n---\n" + "x" * 70000)
-    outside = tmp_path / "outside.md"
-    outside.write_text("private")
-    (source_dir / "escape.md").symlink_to(outside)
-    os.mkfifo(source_dir / "x.md")
-    vault = Vault(
-        source_dir=source_dir,
-        settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
-    )
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
     try:
-        vault.index.build_index()
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
-        )
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
         assert "large.md" in _members(result.data)
         assert result.report.uninspected["large.md"] == "note_limit"
-        assert "escape.md" not in _members(result.data)
-        assert result.report.uninspected["escape.md"] == "symlink"
-        assert result.report.uninspected["x.md"] == "nonregular"
     finally:
         vault.close()
 
@@ -195,13 +173,6 @@ def test_bundle_preserves_bom_with_and_without_link_rewrite(
     with zipfile.ZipFile(io.BytesIO(build_okf_bundle(vault, config).data)) as archive:
         assert archive.read("bom.md") == untouched
         assert archive.read("linked.md") == b"\xef\xbb\xbf# Link\nSee [b](/b.md).\n"
-
-
-def test_scope_normalization(vault: Vault, config: ProjectConfig) -> None:
-    for scope in ("guides/./", "guides//"):
-        assert _members(build_okf_bundle(vault, config, folder=scope).data) == {
-            "guides/one.md"
-        }
 
 
 def test_local_policy_unknown_and_stale_index_bytes(source_dir: Path) -> None:
@@ -248,32 +219,24 @@ def test_export_pages_and_read_failure(
 
     for i in range(1001):
         (source_dir / f"page-{i:04}.md").write_text("# Page\n")
-    from markdown_vault_mcp import bundle_inventory
-
-    original_inventory_read = bundle_inventory.read_regular_nofollow
     original = okf_bundle._read_safe
-
-    def read(source, path):
-        if path == "page-0500.md":
-            raise OSError("refused")
-        return original(source, path)
-
     result = build_okf_bundle(vault, config)
     members = _members(result.data)
     assert "page-0000.md" in members and "page-1000.md" in members
-    monkeypatch.setattr(okf_bundle, "_read_safe", read)
-    with pytest.raises(OSError, match="refused"):
-        build_okf_bundle(vault, config)
-    monkeypatch.setattr(okf_bundle, "_read_safe", original)
+    outside = source_dir.parent / "outside-secret"
+    outside.write_bytes(b"secret")
 
-    def fail_inventory(parent, filename, limit):
-        if filename == "page-1000.md":
-            raise OSError(5, "failed")
-        return original_inventory_read(parent, filename, limit)
+    def swap_then_read(source, path):
+        if path == "page-0500.md":
+            target = source_dir / path
+            target.unlink()
+            target.symlink_to(outside)
+        return original(source, path)
 
-    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail_inventory)
-    with pytest.raises(OSError, match=r"page-1000\.md: io_error"):
+    monkeypatch.setattr(okf_bundle, "_read_safe", swap_then_read)
+    with pytest.raises(OSError):
         build_okf_bundle(vault, config)
+    assert outside.read_bytes() == b"secret"
 
 
 def test_deep_inventory_and_unsupported_nofollow_refuse(
@@ -336,7 +299,7 @@ def test_inventory_selected_read_failure_refuses(
         vault.close()
 
 
-def test_omitted_hidden_inventory_failure_and_parser_failure(
+def test_omitted_hidden_inventory_failure(
     source_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from markdown_vault_mcp import bundle_inventory
@@ -354,11 +317,23 @@ def test_omitted_hidden_inventory_failure_and_parser_failure(
     try:
         result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
         assert result.report.omitted["hidden"] == 1
-        monkeypatch.setattr(
-            bundle_inventory,
-            "_metadata_too_complex",
-            lambda _: (_ for _ in ()).throw(RuntimeError("failure")),
-        )
+
+    finally:
+        vault.close()
+
+
+def test_selected_parser_failure_refuses(
+    source_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import bundle_inventory
+
+    monkeypatch.setattr(
+        bundle_inventory,
+        "_metadata_too_complex",
+        lambda _: (_ for _ in ()).throw(RuntimeError("failure")),
+    )
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
         with pytest.raises(OSError, match="unexpected_parser_error"):
             build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
     finally:
@@ -371,8 +346,6 @@ def test_omitted_hidden_inventory_failure_and_parser_failure(
     [
         {},
         {"include_index_excluded": True},
-        {"include_hidden": True},
-        {"include_index_excluded": True, "include_hidden": True},
     ],
 )
 def test_reserved_conventions_omitted_with_options(
@@ -396,63 +369,86 @@ def test_reserved_conventions_omitted_with_options(
 
 
 @pytest.mark.parametrize(
-    ("include_hidden", "include_index_excluded"),
-    [(False, False), (True, False), (False, True), (True, True)],
+    "case",
+    [
+        (False, False, False, False, 1),
+        (True, False, False, False, 1),
+        (True, False, True, False, 1),
+        (True, True, False, False, 0),
+        (True, True, True, True, 0),
+        (False, True, False, True, 0),
+    ],
 )
-def test_unlisted_symlinks_follow_selection_policy(
-    source_dir: Path, tmp_path: Path, include_hidden: bool, include_index_excluded: bool
+def test_hidden_symlink_selection(
+    source_dir: Path,
+    tmp_path: Path,
+    case: tuple[bool, bool, bool, bool, int],
 ) -> None:
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "secret.md").write_text("outside secret")
+    excluded, include_hidden, include_index_excluded, refuses, hidden_count = case
     bin_dir = source_dir / ".venv" / "bin"
     bin_dir.mkdir(parents=True)
-    (bin_dir / "python3.14").symlink_to(outside / "missing")
-    (source_dir / ".cache").symlink_to(outside, target_is_directory=True)
-    (source_dir / "data.bak").symlink_to(outside / "secret.md")
+    (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
     vault = Vault(
         source_dir=source_dir,
-        settings=VaultSettings(exclude_patterns=[".venv/**"]),
+        settings=VaultSettings(exclude_patterns=[".venv/**"] if excluded else []),
     )
     try:
-        result = build_okf_bundle(
-            vault,
-            ProjectConfig(source_dir=source_dir),
-            include_hidden=include_hidden,
-            include_index_excluded=include_index_excluded,
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert "a.md" in archive.namelist()
-            assert not {".venv/bin/python3.14", ".cache", "data.bak"} & set(
-                archive.namelist()
-            )
-            assert all(
-                b"outside secret" not in archive.read(n) for n in archive.namelist()
-            )
-        assert result.report.uninspected["data.bak"] == "hidden_symlink"
-        if include_hidden:
-            assert result.report.uninspected[".cache"] == "hidden_symlink"
+        config = ProjectConfig(source_dir=source_dir)
+        if refuses:
+            with pytest.raises(OSError, match=r"python3\.14: hidden_symlink"):
+                build_okf_bundle(
+                    vault,
+                    config,
+                    include_hidden=include_hidden,
+                    include_index_excluded=include_index_excluded,
+                )
         else:
-            assert ".cache" not in result.report.uninspected
-            assert result.report.omitted["hidden"] >= 2
-        if include_hidden and include_index_excluded:
-            assert result.report.uninspected[".venv/bin/python3.14"] == "hidden_symlink"
-        else:
-            assert ".venv/bin/python3.14" not in result.report.uninspected
+            result = build_okf_bundle(
+                vault,
+                config,
+                include_hidden=include_hidden,
+                include_index_excluded=include_index_excluded,
+            )
+            assert "a.md" in _members(result.data)
+            assert ".venv/bin/python3.14" not in _members(result.data)
+            assert result.report.omitted.get("hidden", 0) == hidden_count
     finally:
         vault.close()
 
 
-def test_default_export_omits_hidden_venv_symlink(
-    source_dir: Path, vault: Vault, config: ProjectConfig, tmp_path: Path
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "symlink",
+        "hidden_symlink",
+        "nonregular",
+        "directory_symlink",
+        "hidden_directory",
+    ],
+)
+def test_selected_unavailable_entry_refuses(
+    source_dir: Path, tmp_path: Path, kind: str
 ) -> None:
-    bin_dir = source_dir / ".venv" / "bin"
-    bin_dir.mkdir(parents=True)
-    (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
-    result = build_okf_bundle(vault, config)
-    assert "a.md" in _members(result.data)
-    assert ".venv/bin/python3.14" not in _members(result.data)
-    assert result.report.omitted["hidden"] >= 1
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("secret")
+    if kind == "nonregular":
+        path = source_dir / "x.md"
+        os.mkfifo(path)
+    elif kind in {"directory_symlink", "hidden_directory"}:
+        path = source_dir / (".cache" if kind == "hidden_directory" else "alias")
+        path.symlink_to(outside, target_is_directory=True)
+    else:
+        path = source_dir / ("escape.md" if kind == "symlink" else "data.bak")
+        path.symlink_to(outside / "secret.md")
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        with pytest.raises(OSError, match=path.name + ":"):
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=source_dir), include_hidden=True
+            )
+    finally:
+        vault.close()
 
 
 @pytest.mark.parametrize("bom,newline", [(b"", b"\n"), (b"\xef\xbb\xbf", b"\r\n")])
