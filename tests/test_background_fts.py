@@ -1018,7 +1018,7 @@ def test_synchronous_build_index_clears_prior_background_error(
 def test_build_index_async_warm_restart_short_circuit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Warm builds reuse FTS while the writer completes an observation sweep."""
+    """Warm builds reuse FTS."""
     vault = _vault(tmp_path)
     _seed(vault)
     index_path = tmp_path / "fts.db"

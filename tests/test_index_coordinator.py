@@ -149,17 +149,6 @@ def test_wait_until_queryable_build_failed_when_error(tmp_path: Path) -> None:
         coord.close(timeout=5)
 
 
-def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
-    coord = make_coordinator(tmp_path)
-    try:
-        coord.build_index()  # populate + set sentinel
-        fut = coord.build_index_async()  # warm: no FTS rebuild
-        fut.result(timeout=5)
-        assert coord.is_queryable() is True
-    finally:
-        coord.close(timeout=5)
-
-
 # --- #649: model/cap-change rejects warm restart -> cold rebuild ------------
 
 

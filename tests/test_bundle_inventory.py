@@ -1372,3 +1372,44 @@ def test_reader_denied_opens_do_not_consume_note_budget(
         assert result.entries[0].type_state == "present"
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"---\ntitle: A\n---",
+        b"---\ntitle: [\n---\nbody",
+        "---\ntitle: A\n---\u00a0\nbody".encode(),
+        b"---\ntitle: A\n" + b"-" * 65536,
+        b"---\n" + b"key: value\n" * 30000 + b"---\nbody",
+        b"---\ntitle: A\nunterminated",
+        b"plain note",
+        b"\xffbad",
+        b"\xef\xbb\xbf---\r\ntitle: A\r\n---\r\nbody",
+        b'{\n"a": 1\n}\n\nbody',
+    ],
+)
+def test_digest_uses_parser_boundary_and_full_content(raw: bytes) -> None:
+    import hashlib
+    import io
+
+    from markdown_vault_mcp.bundle_inventory import _observation_digests
+    from markdown_vault_mcp.scanner import strip_frontmatter_block
+    from markdown_vault_mcp.utils.text import decode_utf8
+
+    class Limited(io.BytesIO):
+        def read(self, size=-1):
+            assert 0 < size <= 65536
+            return super().read(size)
+
+    digest, header = _observation_digests(Limited(raw))
+    assert digest == hashlib.sha256(raw).hexdigest()
+    try:
+        text = decode_utf8(raw)
+    except UnicodeDecodeError:
+        expected = None
+    else:
+        body = strip_frontmatter_block(text)
+        block = text[: len(text) - len(body)].strip() if body != text else None
+        expected = hashlib.sha256(block.encode()).hexdigest() if block else None
+    assert header == expected

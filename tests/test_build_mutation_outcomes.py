@@ -250,8 +250,7 @@ def test_warm_check_preserves_queryability_until_reuse_is_confirmed(
             assert vault.index.is_queryable()
             release.set()
             future = build.result(5)
-        future.result(5)
-        assert future.result().chunks_indexed == 0
+        assert future.result(timeout=5).chunks_indexed == 0
         assert vault.index.is_queryable()
     finally:
         release.set()
