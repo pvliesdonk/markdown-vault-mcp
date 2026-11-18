@@ -7557,3 +7557,5 @@ capabilities. Unset capabilities grant no semantic writes. The deprecated
 `OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
 resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
 remains tied to `OKF_WRITE`.
+
+Designated generated OKF indexes have no vectors while OKF is active; keyword indexing remains in place, and a declaration transition reconciles their vectors. Authored indexes outside the designated folders and all logs keep their vectors (#1498).

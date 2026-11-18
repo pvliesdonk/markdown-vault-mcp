@@ -608,18 +608,13 @@ class Vault:
             or ContentConfig(okf_write=settings.okf_write).okf_capabilities
         )
 
-        def skip_generated_index(path: str) -> bool:
+        def is_generated_index(path: str) -> bool:
             parent, _, name = path.rpartition("/")
-            if not (
+            return (
                 capabilities.index
                 and name == "index.md"
                 and folder_is_designated(parent, capabilities.folders)
-            ):
-                return False
-            state = self._okf.state()
-            if state.probe_error:
-                raise OSError("OKF scope probe failed")
-            return state.active
+            )
 
         self._index_mgr = IndexManager(
             fts=self._fts,
@@ -631,7 +626,8 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
             okf_admission_active=self._reserved_exempt,
-            skip_embedding=skip_generated_index,
+            skip_embedding=is_generated_index,
+            embedding_scope=lambda: capabilities.index and self._okf.state().active,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,

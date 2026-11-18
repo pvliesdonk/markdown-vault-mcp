@@ -5,17 +5,8 @@ from pathlib import Path
 from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.embedding_providers import CountingProvider
 from tests.fixtures.vectors import metadata_by_path
-
-
-class CountingProvider(MockEmbeddingProvider):
-    def __init__(self) -> None:
-        super().__init__()
-        self.texts: list[str] = []
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        self.texts.extend(texts)
-        return super().embed(texts)
 
 
 def test_generated_index_is_excluded_from_cold_build(tmp_path: Path) -> None:
@@ -211,17 +202,16 @@ def test_meaning_search_reaches_authored_content_and_listed_concepts(
         vault.close()
 
 
-def test_unreadable_okf_declaration_does_not_reembed_index(
+def test_unreadable_declaration_does_not_block_other_notes(
     tmp_path: Path, monkeypatch
 ) -> None:
     from types import SimpleNamespace
 
-    import pytest
-
     root = tmp_path / "vault"
     (root / "generated").mkdir(parents=True)
     (root / "generated/index.md").write_text("# Listing\n\ncontents\n")
-    (root / "generated/note.md").write_text("# Note\n\nconcept\n")
+    note = root / "generated/note.md"
+    note.write_text("# Note\n\nconcept\n")
     provider = CountingProvider()
     vault = _persistent_vault(root, tmp_path, provider, enabled=True)
     try:
@@ -231,10 +221,14 @@ def test_unreadable_okf_declaration_does_not_reembed_index(
         monkeypatch.setattr(
             vault._okf, "state", lambda: SimpleNamespace(active=False, probe_error=True)
         )
-        with pytest.raises(OSError, match="OKF scope probe failed"):
-            vault.index.build_embeddings()
-        assert not provider.texts
-        assert "generated/index.md" not in _paths(vault)
+        note.write_text("# Note\n\nchanged concept\n")
+        vault._index_mgr.process_dirty_paths(
+            {"generated/note.md", "generated/index.md"}
+        )
+        vault._index_mgr.flush_dirty_embeddings(
+            {"generated/note.md", "generated/index.md"}
+        )
+        assert any("changed concept" in text for text in provider.texts)
     finally:
         vault.close()
 
@@ -278,5 +272,74 @@ def test_reindex_does_not_embed_changed_designated_index(tmp_path: Path) -> None
         vault.index.reindex()
         assert "generated/index.md" not in _paths(vault)
         assert not any("changed listing" in text for text in provider.texts)
+    finally:
+        vault.close()
+
+
+def test_declaration_transition_reconciles_other_indexes(tmp_path: Path) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    root = tmp_path / "vault"
+    (root / "generated").mkdir(parents=True)
+    declaration = root / "index.md"
+    declaration.write_text("# Root\n")
+    (root / "generated/index.md").write_text(
+        "# Navigation\n\nmeaningful indexed text\n"
+    )
+    provider = CountingProvider()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False, okf_mode="auto", okf_capabilities=_capabilities(True)
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert "generated/index.md" in _paths(vault)
+        vault.writer.write("index.md", '---\nokf_version: "0.2"\n---\n# Root changed\n')
+        wait_for_writer_drain(vault)
+        assert "generated/index.md" not in _paths(vault)
+        declaration.write_text("# Root external\n")
+        vault.index.reindex()
+        assert "generated/index.md" in _paths(vault)
+        declaration.write_text('---\nokf_version: "0.2"\n---\n# Root external\n')
+        vault.index.reindex()
+        assert "generated/index.md" not in _paths(vault)
+        vault.writer.write("index.md", "# Root changed again\n")
+        wait_for_writer_drain(vault)
+        assert "generated/index.md" in _paths(vault)
+    finally:
+        vault.close()
+
+
+def test_scope_detection_is_not_repeated_per_index(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    for number in range(12):
+        folder = root / f"folder-{number}"
+        folder.mkdir()
+        (folder / "index.md").write_text(f"# Index {number}\n\ncontents\n")
+    provider = CountingProvider()
+    caps = _capabilities(True, ("**",))
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        original = vault._okf.state
+        calls = 0
+
+        def state():
+            nonlocal calls
+            calls += 1
+            return original()
+
+        monkeypatch.setattr(vault._okf, "state", state)
+        vault.index.build_embeddings()
+        assert calls == 1
     finally:
         vault.close()
