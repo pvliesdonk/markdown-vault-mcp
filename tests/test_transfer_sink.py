@@ -495,3 +495,30 @@ async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None
         assert (tmp_path / "guard.md").read_text() == "original"
     finally:
         vault.close()
+
+
+async def test_unborn_bundle_is_retryable(
+    sink: VaultTransferSink, source_dir: Path, monkeypatch
+) -> None:
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(source_dir), *args], check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    with pytest.raises(TransferUnavailableError, match="commit"):
+        await sink.read("okf-bundle")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    git("add", ".")
+    git("commit", "-qm", "first")
+    assert (await sink.read("okf-bundle")).filename == "okf-bundle.zip"
+
+    def collision(*_args, **_kwargs):
+        raise ValueError("collision")
+
+    monkeypatch.setattr("markdown_vault_mcp._transfer_sink.build_okf_bundle", collision)
+    with pytest.raises(ValueError, match="collision"):
+        await sink.read("okf-bundle")

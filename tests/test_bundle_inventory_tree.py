@@ -1,5 +1,7 @@
 """Regression tests for pageable bundle-tree inspection."""
 
+import pytest
+
 from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
 
 
@@ -395,3 +397,46 @@ def test_cursor_stat_race(tmp_path, monkeypatch):
     page = inspector.inspect(BundleTreeRequest("bundle", cursor="bundle/a.md"))
     assert page.enumeration == "unavailable"
     assert [entry.path for entry in page.entries] == ["bundle/z.md"]
+
+
+@pytest.mark.parametrize("kind", ["symlink", "submodule"])
+def test_git_snapshot_nonregular_modes_are_unavailable(tmp_path, kind):
+    import subprocess
+
+    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (tmp_path / "target.md").write_text("target")
+    git("add", "target.md")
+    git("commit", "-qm", "initial")
+    if kind == "symlink":
+        (tmp_path / "link.unsupported").symlink_to("target.md")
+        git("add", "link.unsupported")
+        path = "link.unsupported"
+    else:
+        git(
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"160000,{git('rev-parse', 'HEAD')},nested",
+        )
+        path = "nested"
+    git("commit", "-qm", "nonregular")
+    snapshot = git_export_snapshot(tmp_path)
+    assert snapshot is not None
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    page = inspector.inspect(BundleTreeRequest(root="", snapshot=snapshot))
+    assert (path, "unavailable", kind) in [
+        (e.path, e.state, e.reason) for e in page.entries
+    ]
+    snapshot.close()

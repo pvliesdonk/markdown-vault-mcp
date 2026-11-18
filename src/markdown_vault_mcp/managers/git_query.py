@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 _SHA_RE = r"[0-9a-f]{4,64}"
 
 
+class GitSnapshotUnavailableError(ValueError):
+    """A Git repository has no commit available for export."""
+
+
 @dataclass(frozen=True)
 class GitExportSnapshot:
     """Immutable Git tree selected for a vault export."""
@@ -60,17 +64,56 @@ class GitExportSnapshot:
     changed: set[str]
     root: Path
     sizes: dict[str, int]
+    flagged: dict[str, bool] = field(default_factory=dict)
     _cache: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
+    _process: list[subprocess.Popen[bytes]] = field(
+        default_factory=list, repr=False, compare=False
+    )
 
     def read(self, path: str) -> bytes:
         """Read a selected tree blob without interpreting its path as a revision."""
         oid = self.entries[path][1]
         raw = self._cache.get(oid)
         if raw is None:
-            raw = _export_git(self.root, "cat-file", "blob", oid).stdout
+            raw = self._read_blob(oid)
             if len(raw) <= 1024 * 1024:
                 self._cache[oid] = raw
         return raw
+
+    def _read_blob(self, oid: str) -> bytes:
+        if not self._process:
+            # Only Git-generated object IDs are sent over the batch protocol.
+            self._process.append(
+                subprocess.Popen(  # noqa: S603, RUF100
+                    ["git", "-C", str(self.root), "cat-file", "--batch"],  # noqa: S607, RUF100
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+            )
+        process = self._process[0]
+        if process.stdin is None or process.stdout is None:
+            raise OSError("Git batch stream unavailable")
+        process.stdin.write(oid.encode("ascii") + b"\n")
+        process.stdin.flush()
+        header = process.stdout.readline().split()
+        if len(header) != 3 or header[1] != b"blob":
+            raise ValueError("Git snapshot blob unavailable")
+        size = int(header[2])
+        raw = process.stdout.read(size)
+        if len(raw) != size or process.stdout.read(1) != b"\n":
+            raise OSError("Git snapshot blob stream ended early")
+        return raw
+
+    def close(self) -> None:
+        """Close the batch reader, if started."""
+        if self._process:
+            process = self._process.pop()
+            if process.stdin is not None:
+                process.stdin.close()
+            if process.stdout is not None:
+                process.stdout.close()
+            process.wait()
 
 
 def _export_git(
@@ -85,7 +128,8 @@ def _export_git(
     )
 
 
-def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
+# Discovery distinguishes absent Git, unsafe worktrees, and unavailable commits.
+def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901, RUF100
     """Pin a vault's Git commit and enumerate its blobs and working changes.
 
     Args:
@@ -111,7 +155,13 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
     root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
     prefix = source.resolve().relative_to(root.resolve()).as_posix()
     prefix = "" if prefix == "." else prefix + "/"
-    head = _export_git(root, "rev-parse", "--verify", "HEAD^{commit}", check=False)
+    head = _export_git(
+        root, "rev-parse", "--verify", "-q", "HEAD^{commit}", check=False
+    )
+    if head.returncode == 1:
+        raise GitSnapshotUnavailableError(
+            "Git snapshot has no readable commit; if the repository has no commits, create one with git commit."
+        )
     if head.returncode:
         reason = head.stderr.decode("utf-8", errors="replace").strip()
         raise ValueError(
@@ -137,40 +187,28 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
                     oid.decode("ascii"),
                 )
                 sizes[path[len(prefix) :]] = int(size) if size != b"-" else 0
-        diff = _export_git(
-            source,
-            "diff",
-            "--no-ext-diff",
-            "--no-renames",
-            "--relative",
-            "--name-only",
-            "-z",
-            commit,
-            "--",
-            ".",
-        ).stdout
-        staged = _export_git(
-            source,
-            "diff",
-            "--cached",
-            "--no-ext-diff",
-            "--no-renames",
-            "--relative",
-            "--name-only",
-            "-z",
-            commit,
-            "--",
-            ".",
-        ).stdout
-        untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
-        changed = {
-            os.fsdecode(name)
-            for name in (diff + staged + untracked).split(b"\0")
-            if name
-        }
-        return GitExportSnapshot(commit, entries, changed, root, sizes)
+        changed, flagged = git_snapshot_changes(source, commit)
+        return GitExportSnapshot(commit, entries, changed, root, sizes, flagged)
     except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
+
+
+def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
+    """Observe changed and index-flagged names against a pinned commit."""
+    options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
+    diff = _export_git(source, "diff", *options, commit, "--", ".").stdout
+    staged = _export_git(source, "diff", "--cached", *options, commit, "--", ".").stdout
+    untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
+    flagged_raw = _export_git(source, "ls-files", "-v", "-z", "--", ".").stdout
+    changed = {
+        os.fsdecode(name) for name in (diff + staged + untracked).split(b"\0") if name
+    }
+    flagged = {
+        os.fsdecode(row[2:]): row[:1] in {b"S", b"s"}
+        for row in flagged_raw.split(b"\0")
+        if row[:1] in {b"h", b"S", b"s"}
+    }
+    return changed, flagged
 
 
 def _reject_nul_date(name: str, value: str | None) -> None:

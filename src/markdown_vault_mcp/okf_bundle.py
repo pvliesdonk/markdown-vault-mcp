@@ -8,13 +8,17 @@ import logging
 import os
 import stat
 import zipfile
-from dataclasses import dataclass
+from contextlib import closing, nullcontext
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
-from markdown_vault_mcp.managers.git_query import git_export_snapshot
+from markdown_vault_mcp.managers.git_query import (
+    git_export_snapshot,
+    git_snapshot_changes,
+)
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
@@ -27,6 +31,7 @@ from markdown_vault_mcp.scanner import (
 from markdown_vault_mcp.types import OutlinkInfo
 from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -34,6 +39,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.managers.git_query import GitExportSnapshot
     from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -186,7 +192,7 @@ def _snapshot_link_index(notes: dict[str, bytes]) -> _SnapshotLinks:
     for path, raw in notes.items():
         names.setdefault(path.rpartition("/")[2], []).append(path)
         try:
-            metadata = parse_frontmatter(raw.decode("utf-8")).metadata
+            metadata = parse_frontmatter(decode_utf8(raw)).metadata
         except (UnicodeError, ValueError):
             continue
         value = metadata.get("aliases") or metadata.get("alias")
@@ -242,7 +248,14 @@ def _snapshot_outlinks(
     return result
 
 
-def build_okf_bundle(
+def _snapshot_searchable(entry: BundleEntry) -> bool:
+    return entry.visibility == "visible" and (
+        entry.parse_state == "valid" or entry.reason == "note_limit"
+    )
+
+
+# The public API keeps its established explicit options.
+def build_okf_bundle(  # noqa: PLR0913, RUF100
     vault: Vault,
     config: ProjectConfig,
     *,
@@ -273,9 +286,29 @@ def build_okf_bundle(
             snapshot cannot be read.
         OSError: If a selected file cannot be read.
     """
+    snapshot = git_export_snapshot(vault.source_dir)
+    with closing(snapshot) if snapshot is not None else nullcontext():
+        return _build_okf_bundle(
+            vault,
+            config,
+            snapshot,
+            (folder, include_index_excluded, include_hidden, external_base),
+        )
+
+
+# The established export workflow shares one pinned snapshot and policy.
+def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
+    vault: Vault,
+    config: ProjectConfig,
+    snapshot: GitExportSnapshot | None,
+    options: tuple[str, bool, bool, str | None],
+) -> OkfBundleResult:
+    folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
     report = OkfExportReport()
-    snapshot = git_export_snapshot(vault.source_dir)
+    inspection_snapshot = (
+        replace(snapshot, changed=set(), flagged={}) if snapshot else None
+    )
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
     buf = io.BytesIO()
@@ -286,11 +319,13 @@ def build_okf_bundle(
         while True:
             page = vault.reader.inspect_bundle_tree(
                 BundleTreeRequest(
-                    root=folder, entry_limit=1000, cursor=cursor, snapshot=snapshot
+                    root=folder,
+                    entry_limit=1000,
+                    cursor=cursor,
+                    snapshot=inspection_snapshot,
                 )
             )
             _require_complete(page, folder)
-            report.snapshot.uncommitted_paths.extend(page.uncommitted)
             for item in page.entries:
                 if item.role == "directory":
                     continue
@@ -324,7 +359,10 @@ def build_okf_bundle(
                 while True:
                     page = vault.reader.inspect_bundle_tree(
                         BundleTreeRequest(
-                            root="", entry_limit=1000, cursor=cursor, snapshot=snapshot
+                            root="",
+                            entry_limit=1000,
+                            cursor=cursor,
+                            snapshot=inspection_snapshot,
                         )
                     )
                     _require_complete(page, "")
@@ -362,9 +400,7 @@ def build_okf_bundle(
                 snapshot_notes = {
                     entry.path: snapshot.read(entry.path)
                     for entry in root_inventory()
-                    if entry.path.endswith(".md")
-                    and entry.visibility == "visible"
-                    and entry.parse_state == "valid"
+                    if entry.path.endswith(".md") and _snapshot_searchable(entry)
                 }
                 snapshot_index = _snapshot_link_index(snapshot_notes)
             return _snapshot_outlinks(body, source, snapshot_index, extensions)
@@ -388,7 +424,7 @@ def build_okf_bundle(
             else:
                 _observe_export(item, report)
                 searchable = (
-                    item.visibility == "visible" and item.parse_state == "valid"
+                    _snapshot_searchable(item)
                     if snapshot is not None
                     else item.search_state == "searchable"
                 )
@@ -409,6 +445,17 @@ def build_okf_bundle(
                     ),
                 )
                 notes += 1
+    if snapshot is not None:
+        changed, flagged = git_snapshot_changes(vault.source_dir, snapshot.commit)
+        page = vault.reader.inspect_bundle_tree(
+            BundleTreeRequest(
+                root=folder,
+                entry_limit=1,
+                snapshot=replace(snapshot, changed=changed, flagged=flagged),
+            )
+        )
+        _require_complete(page, folder)
+        report.snapshot.uncommitted_paths.extend(page.uncommitted)
     for path, digest in digests.items():
         try:
             current = hashlib.sha256(_read_safe(vault.source_dir, path)).digest()
@@ -417,33 +464,13 @@ def build_okf_bundle(
         else:
             if current != digest:
                 report.snapshot.inconsistent_paths.append(path)
-    commit = (report.snapshot.commit or "none")[:12]
-    uncommitted = len(report.snapshot.uncommitted_paths)
-    inconsistent = len(report.snapshot.inconsistent_paths)
-    if uncommitted or inconsistent:
-        logger.warning(
-            "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d "
-            "commit=%s uncommitted=%d inconsistent=%d",
-            folder or "(root)",
-            notes,
-            attachments,
-            excluded,
-            commit,
-            uncommitted,
-            inconsistent,
-        )
-    else:
-        logger.info(
-            "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d "
-            "commit=%s uncommitted=%d inconsistent=%d",
-            folder or "(root)",
-            notes,
-            attachments,
-            excluded,
-            commit,
-            uncommitted,
-            inconsistent,
-        )
+    logger.info(
+        "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d",
+        folder or "(root)",
+        notes,
+        attachments,
+        excluded,
+    )
     data = buf.getvalue()
     audit_export(data, report, extensions)
     return OkfBundleResult(data, notes, attachments, excluded, report)

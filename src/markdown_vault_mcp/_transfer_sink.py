@@ -44,6 +44,7 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
     SubmodulePathError,
 )
+from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -382,7 +383,7 @@ class VaultTransferSink:
     async def _read_bundle(self, scope: str) -> TransferReadResult:
         """Generate and serve an OKF bundle zip for a bundle-ref download.
 
-        The bundle is built from live vault state (never mutating it); a large
+        The bundle is built from a Git commit or live vault (never mutating it); a large
         vault runs off the event loop via :func:`asyncio.to_thread`.
 
         Args:
@@ -392,7 +393,8 @@ class VaultTransferSink:
             A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the zip.
 
         Raises:
-            TransferUnavailableError: The vault is being torn down (retryable 503).
+            TransferUnavailableError: The vault is unavailable or has no readable Git
+                commit (retryable 503).
             TransferResourceGoneError: A folder scope validated at mint time has
                 since been removed (410 Gone), mirroring the single-file path
                 rather than serving an empty archive.
@@ -403,9 +405,18 @@ class VaultTransferSink:
             raise TransferResourceGoneError(
                 f"bundle folder no longer available: {scope}"
             )
-        result = await asyncio.to_thread(
-            build_okf_bundle, vault, self._config, folder=scope
-        )
+        try:
+            result = await asyncio.to_thread(
+                build_okf_bundle, vault, self._config, folder=scope
+            )
+        except GitSnapshotUnavailableError as exc:
+            logger.info(
+                "transfer_download_bundle_refused reason=no_commit scope=%s",
+                scope or "(root)",
+            )
+            raise TransferUnavailableError(
+                "vault has no commit to export; commit once and retry"
+            ) from exc
         stem = scope.rsplit("/", 1)[-1] if scope else _OKF_BUNDLE_REF
         logger.info(
             "transfer_download_bundle scope=%s notes=%d attachments=%d bytes=%d",

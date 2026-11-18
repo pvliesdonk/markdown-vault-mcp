@@ -445,7 +445,9 @@ class BundleInspector:
         return any(_vector_matrix(candidate, base) for base in self._vector_bases)
 
     @staticmethod
-    def _check_snapshot_access(root: Path, parts: tuple[str, ...]) -> None:
+    def _check_snapshot_access(
+        root: Path, parts: tuple[str, ...], limit: int = 0
+    ) -> bytes | None:
         """Check existing components without following symlinks; absent is allowed."""
         try:
             with open_directory_nofollow(
@@ -456,14 +458,14 @@ class BundleInspector:
                         parts[-1], dir_fd=parent, follow_symlinks=False
                     ).st_mode
                 except FileNotFoundError:
-                    return
+                    return None
                 if not stat.S_ISREG(mode):
                     raise OSError("Snapshot path is not a regular file")
-                read_regular_nofollow(parent, parts[-1], 0)
+                return read_regular_nofollow(parent, parts[-1], limit)
         except FileNotFoundError:
             # A removed directory has no live permissions to bypass; its nearest
             # existing ancestors were opened without following links.
-            return
+            return None
 
     def inspect(self, request: BundleInspectionRequest) -> BundleInspection:
         """Observe one directory independently of index admission.
@@ -529,9 +531,7 @@ class BundleInspector:
             next_cursor=entries[-1].path
             if entries and enumeration == "entry_limit"
             else None,
-            uncommitted=self._snapshot_dirty(snapshot.changed, scope)
-            if request.cursor is None
-            else (),
+            uncommitted=self._snapshot_dirty(snapshot, scope),
         )
 
     def _snapshot_entry(
@@ -558,9 +558,11 @@ class BundleInspector:
         raw = snapshot.read(path)
         return _parsed(path, role, raw), len(raw)
 
-    def _snapshot_dirty(self, changed: set[str], scope: str) -> tuple[str, ...]:
+    def _snapshot_dirty(
+        self, snapshot: GitExportSnapshot, scope: str
+    ) -> tuple[str, ...]:
         visible = []
-        for path in sorted(changed):
+        for path in sorted(snapshot.changed | snapshot.flagged.keys()):
             if scope and not path.startswith(scope + "/"):
                 continue
             try:
@@ -570,7 +572,23 @@ class BundleInspector:
                     for i in range(1, len(parts) + 1)
                 ):
                     continue
-                self._check_snapshot_access(self._absolute_source, parts)
+                if path in snapshot.changed:
+                    self._check_snapshot_access(self._absolute_source, parts)
+                elif path in snapshot.entries:
+                    size = snapshot.sizes[path]
+                    raw = self._check_snapshot_access(
+                        self._absolute_source, parts, size + 1
+                    )
+                    if raw is None and snapshot.flagged[path]:
+                        continue
+                    if (
+                        raw is not None
+                        and len(raw) == size
+                        and raw == snapshot.read(path)
+                    ):
+                        continue
+                else:
+                    continue
             except (OSError, ValueError):
                 continue
             visible.append(path)

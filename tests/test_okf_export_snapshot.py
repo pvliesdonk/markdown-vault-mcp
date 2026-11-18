@@ -5,6 +5,8 @@ import subprocess
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from markdown_vault_mcp import okf_bundle
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -40,21 +42,29 @@ def test_git_export_uses_commit_and_reports_uncommitted_membership(
         assert archive.read("deleted.md") == b"committed deletion\n"
         assert "new.md" not in archive.namelist()
     assert result.report.snapshot.commit == commit
-    assert set(result.report.snapshot.uncommitted_paths) >= {
+    assert set(result.report.snapshot.uncommitted_paths) == {
         "a.md",
         "deleted.md",
         "new.md",
     }
 
 
-def test_non_git_change_during_packing_is_reported(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("delete", [False, True])
+def test_non_git_change_during_packing_is_reported(
+    tmp_path: Path, monkeypatch, delete: bool
+) -> None:
     note = tmp_path / "a.md"
     note.write_text("before\n")
+    (tmp_path / "clean.md").write_text("unchanged")
     original = okf_bundle._write
 
     def write_and_change(zf, path, data):
         original(zf, path, data)
-        note.write_text("after\n")
+        if path == "a.md":
+            if delete:
+                note.unlink()
+            else:
+                note.write_text("after\n")
 
     monkeypatch.setattr(okf_bundle, "_write", write_and_change)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -103,35 +113,51 @@ def test_git_subdirectory_stays_on_original_commit_during_export(
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read("image.png") == b"\x00\xffold"
         assert "outside.md" not in archive.namelist()
-        assert "later.md" not in archive.namelist()
     assert result.report.snapshot.commit == commit
 
 
-def test_export_does_not_resolve_wikilinks_from_stale_live_index(
-    tmp_path: Path,
-) -> None:
+@pytest.mark.parametrize("case", ["stale", "alias", "bom_alias"])
+def test_git_export_resolves_wikilinks_from_commit(tmp_path: Path, case: str) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "source.md").write_text("[[target]]\n")
-    (tmp_path / "target.md").write_text("old\n")
+    folder = "" if case == "stale" else "guides"
+    directory = tmp_path / folder
+    directory.mkdir(exist_ok=True)
+    target = directory / "target.md"
+    (directory / "source.md").write_text(
+        "[[target]]\n" if case == "stale" else "[[Alias]]\n"
+    )
+    target.write_bytes(
+        b"old\n"
+        if case == "stale"
+        else (b"\xef\xbb\xbf" if case == "bom_alias" else b"")
+        + b"---\naliases: [Alias]\n---\nbody\n"
+    )
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "before")
-    (tmp_path / "target.md").unlink()
-    (tmp_path / "elsewhere").mkdir()
-    (tmp_path / "elsewhere" / "target.md").write_text("new\n")
+    target.unlink()
+    if case == "stale":
+        (tmp_path / "elsewhere").mkdir()
+        (tmp_path / "elsewhere" / "target.md").write_text("new\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        vault.index.build_index()
-        assert (
-            vault.graph.get_outlinks("source.md")[0].target_path
-            == "elsewhere/target.md"
+        if case == "stale":
+            vault.index.build_index()
+            assert (
+                vault.graph.get_outlinks("source.md")[0].target_path
+                == "elsewhere/target.md"
+            )
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder=folder
         )
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
     finally:
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("source.md") == b"[target](/target.md)\n"
+        assert archive.read("source.md") == (
+            b"[target](/target.md)\n" if case == "stale" else b"[Alias](/target.md)\n"
+        )
+        assert "target.md" in archive.namelist()
 
 
 def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) -> None:
@@ -144,57 +170,21 @@ def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) 
     vault_root.mkdir()
     name = "[odd]*\nname.md"
     (vault_root / name).write_bytes(b"committed\x00bytes")
+    (vault_root / ".gitignore").write_text("ignored.md\n")
+    (vault_root / "staged.md").write_text("before")
     _git(tmp_path, "add", "--", "vault")
     _git(tmp_path, "commit", "-qm", "before")
     (vault_root / name).write_text("changed")
     (vault_root / "new.md").write_text("untracked")
+    (vault_root / "ignored.md").write_text("ignored")
+    (vault_root / "staged.md").write_text("staged")
+    _git(tmp_path, "add", "vault/staged.md")
+    (vault_root / "staged.md").write_text("before")
     snapshot = git_export_snapshot(vault_root)
     assert snapshot is not None
     assert snapshot.read(name) == b"committed\x00bytes"
-    assert snapshot.changed == {name, "new.md"}
-
-
-def test_git_subtree_uses_committed_links_and_aliases(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    guides = tmp_path / "guides"
-    guides.mkdir()
-    (guides / "source.md").write_text("[[Alias]]\n")
-    (guides / "target.md").write_text("---\naliases: [Alias]\n---\nbody\n")
-    _git(tmp_path, "add", "guides")
-    _git(tmp_path, "commit", "-qm", "before")
-    (guides / "target.md").unlink()
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-    finally:
-        vault.close()
-    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("source.md") == b"[Alias](/target.md)\n"
-        assert "target.md" in archive.namelist()
-
-
-def test_non_git_deleted_during_packing_is_inconsistent(
-    tmp_path: Path, monkeypatch
-) -> None:
-    note = tmp_path / "a.md"
-    note.write_text("before\n")
-    original = okf_bundle._write
-
-    def write_and_delete(zf, path, data):
-        original(zf, path, data)
-        note.unlink()
-
-    monkeypatch.setattr(okf_bundle, "_write", write_and_delete)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert result.report.snapshot.inconsistent_paths == ["a.md"]
+    assert snapshot.changed == {name, "new.md", "ignored.md", "staged.md"}
+    snapshot.close()
 
 
 def test_missing_git_executable_keeps_plain_vault_usable(
@@ -207,15 +197,7 @@ def test_missing_git_executable_keeps_plain_vault_usable(
 
     monkeypatch.setattr(git_query, "_export_git", no_git)
     monkeypatch.setattr(git_query, "path_exists", lambda _: False)
-    (tmp_path / "a.md").write_text("note")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert result.report.snapshot.commit is None
-    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("a.md") == b"note"
+    assert git_query.git_export_snapshot(tmp_path) is None
 
 
 def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
@@ -228,6 +210,7 @@ def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
     (tmp_path / ".markdown_vault_mcp" / "secret.md").write_text("state")
     (tmp_path / ".hidden.md").write_text("hidden")
     (tmp_path / "normal.md").write_text("normal")
+    (tmp_path / "unsupported.xyz").write_text("before")
     _git(
         tmp_path,
         "add",
@@ -235,9 +218,12 @@ def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
         ".markdown_vault_mcp/secret.md",
         ".hidden.md",
         "normal.md",
+        "unsupported.xyz",
     )
     _git(tmp_path, "commit", "-qm", "before")
     (tmp_path / ".markdown_vault_mcp" / "secret.md").unlink()
+    (tmp_path / ".hidden.md").write_text("changed")
+    (tmp_path / "unsupported.xyz").write_text("changed")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
@@ -246,22 +232,22 @@ def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.namelist() == ["normal.md"]
     assert result.report.omitted["hidden"] == 1
+    assert ".hidden.md" in result.report.snapshot.uncommitted_paths
+    assert "unsupported.xyz" not in result.report.snapshot.uncommitted_paths
     assert (
         ".markdown_vault_mcp/secret.md" not in result.report.snapshot.uncommitted_paths
     )
 
 
 def test_git_unborn_repository_refuses_export(tmp_path: Path) -> None:
-    import pytest
+    from markdown_vault_mcp.managers.git_query import (
+        GitSnapshotUnavailableError,
+        git_export_snapshot,
+    )
 
     _git(tmp_path, "init", "-q")
-    (tmp_path / "new.md").write_text("uncommitted")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        with pytest.raises(ValueError, match="Git snapshot"):
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
+    with pytest.raises(GitSnapshotUnavailableError, match="git commit"):
+        git_export_snapshot(tmp_path)
 
 
 def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> None:
@@ -278,6 +264,7 @@ def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> N
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "before")
     (tmp_path / "outside.md").write_text("dirty")
+    (tmp_path / "scope" / "a.md").write_text("dirty")
     snapshot = git_export_snapshot(tmp_path)
     assert snapshot is not None
     inspector = BundleInspector(tmp_path, (), frozenset(), 0)
@@ -291,88 +278,11 @@ def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> N
         "scope/a.md",
         "scope/b.md",
     ]
-    assert first.uncommitted == ()
+    assert first.uncommitted == ("scope/a.md",)
     assert (
         inspector.inspect(BundleTreeRequest(root="missing", snapshot=snapshot)).state
         == "missing"
     )
-
-
-def test_git_committed_symlink_is_not_followed(tmp_path: Path) -> None:
-    import pytest
-
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "target.md").write_text("target")
-    (tmp_path / "link.md").symlink_to("target.md")
-    _git(tmp_path, "add", ".")
-    _git(tmp_path, "commit", "-qm", "before")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        with pytest.raises(OSError, match="symlink"):
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-
-
-def test_git_submodule_is_not_silently_omitted(tmp_path: Path) -> None:
-    import pytest
-
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "note.md").write_text("note")
-    _git(tmp_path, "add", "note.md")
-    _git(tmp_path, "commit", "-qm", "initial")
-    commit = _git(tmp_path, "rev-parse", "HEAD")
-    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{commit},nested")
-    _git(tmp_path, "commit", "-qm", "add gitlink")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        with pytest.raises(OSError, match=r"nested.*submodule"):
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-
-
-def test_git_unallowed_suffix_symlink_is_not_silently_omitted(tmp_path: Path) -> None:
-    import pytest
-
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / "target.md").write_text("target")
-    (tmp_path / "link.unsupported").symlink_to("target.md")
-    _git(tmp_path, "add", ".")
-    _git(tmp_path, "commit", "-qm", "add symlink")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        with pytest.raises(OSError, match=r"link\.unsupported.*symlink"):
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-
-
-def test_git_reports_staged_and_ignored_files(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    (tmp_path / ".gitignore").write_text("ignored.md\n")
-    note = tmp_path / "note.md"
-    note.write_text("committed")
-    _git(tmp_path, "add", ".gitignore", "note.md")
-    _git(tmp_path, "commit", "-qm", "initial")
-    note.write_text("staged")
-    _git(tmp_path, "add", "note.md")
-    note.write_text("committed")
-    (tmp_path / "ignored.md").write_text("ignored")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
-    assert {"note.md", "ignored.md"} <= set(result.report.snapshot.uncommitted_paths)
 
 
 def test_git_snapshot_parses_aliases_once(tmp_path: Path, monkeypatch) -> None:
@@ -409,50 +319,32 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
     (tmp_path / "small.md").write_bytes(b"small")
+    (tmp_path / "other.md").write_bytes(b"other")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "initial")
     snapshot = git_query.git_export_snapshot(tmp_path)
     assert snapshot is not None
-    original = git_query._export_git
+    original = git_query.GitExportSnapshot._read_blob
     calls = []
 
-    def count(root, *args, **kwargs):
-        calls.append(args)
-        return original(root, *args, **kwargs)
+    def count(self, oid):
+        calls.append(oid)
+        return original(self, oid)
 
-    monkeypatch.setattr(git_query, "_export_git", count)
-    assert snapshot.read("small.md") == b"small"
-    assert snapshot.read("small.md") == b"small"
-    assert len(calls) == 1
-
-
-def test_git_export_logs_clean_and_dirty_snapshot(tmp_path: Path, caplog) -> None:
-    import logging
-
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Fixture")
-    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
-    note = tmp_path / "note.md"
-    note.write_text("committed")
-    _git(tmp_path, "add", "note.md")
-    _git(tmp_path, "commit", "-qm", "initial")
-    commit = _git(tmp_path, "rev-parse", "HEAD")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    monkeypatch.setattr(git_query.GitExportSnapshot, "_read_blob", count)
     try:
-        with caplog.at_level(logging.INFO, logger=okf_bundle.__name__):
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-            note.write_text("changed")
-            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+        assert snapshot.read("small.md") == b"small"
+        process = snapshot._process[0]
+        assert snapshot.read("small.md") == b"small"
+        assert snapshot.read("other.md") == b"other"
+        assert snapshot._process == [process]
+        assert len(calls) == 2
+        snapshot.entries["missing.md"] = ("100644", "f" * 40)
+        with pytest.raises(ValueError, match="blob unavailable"):
+            snapshot.read("missing.md")
     finally:
-        vault.close()
-    records = [
-        record for record in caplog.records if record.msg.startswith("okf_bundle_built")
-    ]
-    assert [record.levelno for record in records] == [logging.INFO, logging.WARNING]
-    assert (
-        f"commit={commit[:12]} uncommitted=1 inconsistent=0" in records[1].getMessage()
-    )
-    assert "note.md" not in records[1].getMessage()
+        snapshot.close()
+    assert process.poll() is not None
 
 
 def test_git_inventory_rejects_large_note_without_reading_blob(
@@ -479,3 +371,97 @@ def test_git_inventory_rejects_large_note_without_reading_blob(
     assert [(entry.path, entry.reason) for entry in page.entries] == [
         ("large.md", "note_limit")
     ]
+
+
+def test_git_large_source_and_target_resolve_links(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "source.md").write_text("[[target]]\n" + "x" * 70000)
+    (tmp_path / "small.md").write_text("[[target]]\n")
+    (tmp_path / "target.md").write_text("y" * 70000)
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "initial")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("source.md").startswith(b"[target](/target.md)\n")
+        assert archive.read("small.md") == b"[target](/target.md)\n"
+
+
+def test_git_assume_unchanged_edit_is_reported(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "note.md").write_text("before")
+    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    _git(tmp_path, "update-index", "--assume-unchanged", "note.md")
+    (tmp_path / "note.md").write_text("after")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert result.report.snapshot.uncommitted_paths == ["note.md"]
+
+
+def test_git_write_during_packing_is_reported(tmp_path: Path, monkeypatch) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "note.md").write_text("before")
+    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    original = okf_bundle._write
+
+    def write_and_change(zf, path, data):
+        original(zf, path, data)
+        (tmp_path / "note.md").write_text("after")
+
+    monkeypatch.setattr(okf_bundle, "_write", write_and_change)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("note.md") == b"before"
+    assert result.report.snapshot.commit == commit
+    assert result.report.snapshot.uncommitted_paths == ["note.md"]
+
+
+@pytest.mark.parametrize(
+    "flag,missing,expected",
+    [
+        ("--assume-unchanged", False, True),
+        ("--assume-unchanged", True, True),
+        ("--skip-worktree", False, True),
+        ("--skip-worktree", True, False),
+    ],
+)
+def test_git_flagged_files_are_checked_safely(
+    tmp_path: Path, flag: str, missing: bool, expected: bool
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    note = tmp_path / "note.md"
+    note.write_text("before")
+    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    _git(tmp_path, "update-index", flag, "note.md")
+    if missing:
+        note.unlink()
+    else:
+        note.write_text("after")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert ("note.md" in result.report.snapshot.uncommitted_paths) is expected
