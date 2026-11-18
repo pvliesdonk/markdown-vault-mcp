@@ -7690,7 +7690,10 @@ and report protected paths they skipped.
 **Designated indexes.** In an active OKF vault, the index capability reserves
 `index.md` in designated folders against ordinary mutations, including resolved
 aliases and secondary writes. Generation and maintenance bypass this designation
-only; explicit protected paths remain enforced. Library callers retain the
+only; explicit protected paths remain enforced. Name variants follow the disk’s
+case and Unicode identity, observed at the nearest existing folder. When no
+entry establishes it, a hidden scratch directory is created there and removed
+immediately; an unwritable folder is refused. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.
 
 ### OKF capability transition
