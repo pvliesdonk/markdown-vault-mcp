@@ -5,7 +5,7 @@ Templates and prompts for authoring an [Open Knowledge Format](https://github.co
 and prompt folders; nothing here is loaded automatically.
 
 See the [OKF guide](../../docs/use/okf.md) for the full picture (detection,
-the trust model, the migration ratchet, the enforced write layer, and export).
+the trust model, the migration ratchet, authoring, review, and export).
 
 ## What OKF is, in one paragraph
 
@@ -25,10 +25,9 @@ how to organize your vault, so it composes with methods like
    them without a declaration, or `off` to disable them entirely.)
 2. Author notes from `templates/`. Every template already carries a non-empty
    `type`, so a vault built from them passes `okf_validate` from the first note.
-3. Optional: enable the enforced write layer with
-   `MARKDOWN_VAULT_MCP_OKF_WRITE=true` so the server stamps `generated`
-   provenance, invalidates `verified` on content changes, exposes the
-   `okf_verify` tool, and keeps each folder's `log.md` / `index.md` current.
+3. Optional: enable `MARKDOWN_VAULT_MCP_OKF_WRITE=true` for explicit
+   authoring and review, and folder `log.md` / `index.md` maintenance.
+   Ordinary writes preserve provenance and review records.
 
 ## Templates
 

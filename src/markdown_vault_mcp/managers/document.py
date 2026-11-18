@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import posixpath
 import shutil
 import sqlite3
@@ -98,9 +97,6 @@ from markdown_vault_mcp.utils.links import (
 )
 from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
-)
-from markdown_vault_mcp.utils.text import (
-    decode_utf8 as _decode_utf8,
 )
 from markdown_vault_mcp.utils.text import (
     find_closest_match as _find_closest_match,
@@ -239,9 +235,7 @@ class DocumentManager:
         self._sync_index = sync_index
         self._submodule_guard = submodule_guard
         self._title_field = title_field
-        # OKF enforced-write hook (#964): transforms the final note text
-        # (stamp `generated`, clear `verified`) before it lands. None when
-        # OKF_WRITE is off — zero overhead on the write path.
+        # Optional caller-supplied content transformation.
         self._okf_write_enrich = okf_write_enrich
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
@@ -986,7 +980,7 @@ class DocumentManager:
     ) -> None:
         """Run the shared tail of every content write.
 
-        Enriches *content* through the OKF enforced-write hook (when wired),
+        Transforms *content* through the optional caller-supplied hook,
         writes it atomically, marks the path dirty for the index writer, and
         fires the write callback.  Must be called with ``_file_write_lock``
         held.
@@ -998,30 +992,9 @@ class DocumentManager:
             operation: The write operation reported to the enricher and the
                 write callback.
 
-        Raises:
-            InvalidRequestError: The enforced-write layer is on and a *write*'s
-                content opens with a frontmatter block it cannot parse.
-            ValueError: The same for an edit or append, whose block may be the
-                stored note's (a fault, #1608).
         """
         if self._okf_write_enrich is not None:
-            try:
-                content = self._okf_write_enrich(content, operation)
-            except yaml.YAMLError as exc:
-                # The stamp is written *into* the note's frontmatter, so a
-                # block the parser cannot read leaves the enforced-write layer
-                # nothing to stamp and the write is refused. The parser's own
-                # exception named no path and reached the client looking like a
-                # server fault, so it is restated as the refusal it is (#1454).
-                # A write's frontmatter is the caller's own content; for an
-                # edit or append it may be the stored note's, so that stays a
-                # fault until the edit path can tell which (#1608).
-                error = InvalidRequestError if operation == "write" else ValueError
-                raise error(
-                    f"Cannot {operation} {path}: its frontmatter block is not "
-                    f"parseable, so the OKF enforced-write layer cannot stamp "
-                    f"provenance on it — {exc}"
-                ) from exc
+            content = self._okf_write_enrich(content, operation)
         atomic_write(abs_path, self._staged(content))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
@@ -1041,10 +1014,8 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content.  Like every content write,
-        the file is persisted in the vault's normalized form (UTF-8, no
-        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
-        first append.
+        directly after the existing content. Existing bytes, including the
+        frontmatter and line endings, are preserved.
 
         Args:
             path: Relative document path.
@@ -1085,16 +1056,16 @@ class DocumentManager:
             check_if_match(abs_path, path, if_match)
 
             if existed:
-                file_content = _read_text_utf8(abs_path)
+                file_content = abs_path.read_bytes().decode("utf-8")
                 needs_newline = bool(file_content) and not file_content.endswith("\n")
                 new_content = file_content + ("\n" if needs_newline else "") + content
             else:
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 new_content = content
 
-            # An append is a content edit for the enforced-write layer and
-            # the git commit callback alike.
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            # An append is a content edit for the commit callback.
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
             result = WriteResult(path=path, created=not existed)
 
         return result
@@ -1220,7 +1191,7 @@ class DocumentManager:
 
             check_if_match(abs_path, path, if_match)
 
-            file_content = _read_text_utf8(abs_path)
+            file_content = abs_path.read_bytes().decode("utf-8")
 
             if has_lines:
                 assert line_start is not None and line_end is not None
@@ -1238,7 +1209,8 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 
@@ -1593,11 +1565,9 @@ class DocumentManager:
             count, write back or announce such a source: it still names the
             old target, and saying otherwise is what made #1521 silent.
         """
-        # One read, hashed as is: a second read could see an external edit
-        # the ledger would then vouch for (#1492). Newlines are normalised
-        # as Path.read_text would, which the rewrite has always relied on.
+        # Hash the same bytes that are rewritten, preserving line endings and BOM.
         raw = source_abs.read_bytes()
-        original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
+        original = raw.decode("utf-8")
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
@@ -1620,9 +1590,8 @@ class DocumentManager:
                 len(rewrites),
             )
             return None
-        # The bytes a text-mode write would produce, encoded here so the
-        # ledger records the hash of exactly what landed.
-        encoded = content.replace("\n", os.linesep).encode("utf-8")
+        # Record the hash of exactly the bytes written.
+        encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
         self._link_rewrites.record(
             source_path, compute_etag(raw), compute_etag(encoded)

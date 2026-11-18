@@ -101,7 +101,7 @@ months, not twelve.
 - Producers "MAY include any additional keys"; consumers "SHOULD preserve
   unknown keys when round-tripping and MUST NOT reject documents with
   unrecognized fields". [source: spec] (§4.1)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf.py::TestOkfAudit::test_mixed_vault_report]
+  [pins: tests/test_okf_write.py::test_ordinary_write_preserves_supplied_provenance, tests/test_okf.py::TestOkfAudit::test_mixed_vault_report]
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3, §7)
 
@@ -109,7 +109,7 @@ months, not twelve.
   `generated.by` is required within `generated` and is an actor;
   `generated.at` is "an ISO 8601 datetime marking the content's last
   meaningful change". [source: spec] (§5.2) [source: spec-july] (§5.2)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_stamps_generated_on_a_note_without_frontmatter, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_a_local_offset_instant_is_written_as_utc]
+  [pins: tests/test_okf_author.py]
 - `verified` is "a list of verification events, each with `by` (an actor)
   and `at` (an ISO 8601 datetime)"; it "is independent of `generated.at`:
   content can change without re-confirmation, and facts can be re-confirmed
@@ -128,7 +128,7 @@ months, not twelve.
   person, `process:<id>` for an automated process; "producers MUST use
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
-  [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
+  [pins: tests/test_okf_author.py]
 - The spec says nothing about a tier for a malformed `verified` entry.
   The server formerly promoted any mapping, including `{}`; #1444 follows
   the adopted north star instead, counting only usable actor/timestamp
@@ -167,7 +167,7 @@ months, not twelve.
   form a `str`; python-frontmatter uses the same loader] The server's own
   stamps are therefore written as strings, UTC with `Z`, the spec's example
   form (#1372).
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp]
+  [pins: tests/test_okf_author.py]
 
 ### Provenance: `sources` (§5.1)
 
@@ -233,12 +233,10 @@ tree, 2026-09-07].
   datetime *without* an offset — allowed by neither text — is ignored.
   Decided in `docs/design/okf.md` § 3 (#1373).
   [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
-- **`verified` is cleared on a content-changing write.** The spec keeps
-  `verified` "independent of `generated.at`: content can change without
-  re-confirmation"; the server's enforced write layer clears it so an
-  attestation cannot outlive the bytes it attested. Deliberate; decided in
-  `docs/design/okf.md` § 6.
-  [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
+- **`verified` survives content changes.** The spec keeps `verified`
+  "independent of `generated.at`: content can change without re-confirmation".
+  Ordinary writes preserve the record; applicability remains unbound.
+  [pins: tests/test_okf_write.py::TestProvenancePreservation::test_supplied_claims_survive]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
   frontmatter block". §8 allows an index file none beyond the root's

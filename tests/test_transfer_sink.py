@@ -284,7 +284,7 @@ async def test_write_note_invalid_utf8_is_415(
     assert not (source_dir / "bad.md").exists()
 
 
-async def test_write_note_refused_by_vault_is_422(
+async def test_upload_preserves_provenance_with_okf_alias(
     config: ProjectConfig, source_dir: Path
 ) -> None:
     (source_dir / "index.md").write_text(
@@ -292,15 +292,13 @@ async def test_write_note_refused_by_vault_is_422(
     )
     config = replace(config, okf_mode="on", okf_write=True)
     vault = Vault(
-        source_dir=config.source_dir,
-        settings=VaultSettings.from_project_config(config),
+        source_dir=source_dir, settings=VaultSettings.from_project_config(config)
     )
+    content = b"---\ngenerated: {by: agent}\nverified: [{by: human:peter}]\n---\n# x\n"
     try:
         sink = VaultTransferSink(config, vault_provider=lambda: vault)
-        with pytest.raises(TransferSinkError) as exc:
-            await sink.write("broken.md", b"---\ntitle: [unclosed\n---\n# x\n")
-        assert exc.value.status_code == 422
-        assert not (source_dir / "broken.md").exists()
+        await sink.write("uploaded.md", content)
+        assert (source_dir / "uploaded.md").read_bytes() == content
     finally:
         vault.close()
 

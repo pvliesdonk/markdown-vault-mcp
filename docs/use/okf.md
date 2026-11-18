@@ -34,7 +34,7 @@ This declaration travels with the vault, so the same bundle behaves the same way
 
 Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
 
-The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
+The effective write state reports whether the legacy alias is configured and active on a writable bundle. Explicit capability settings may override its defaults, so it does not report individual tool availability.
 
 ## Authoring a concept
 
@@ -119,26 +119,13 @@ If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any liste
 
 Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
 
-## The enforced write layer
+## Writing and provenance
 
-The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
-
-Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification invalidation, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
-
-With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
-
-- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
-- **Clears recorded reviews.** The server clears `verified` on any content-changing write, including an edit that touches only a frontmatter line. A change alone does not establish that an earlier review is invalid or whether it applies to the current content. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
-
-Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.
-
-The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
-
-The stamp goes into the note's own frontmatter, so the layer refuses a write whose frontmatter cannot be parsed: there is nowhere to record the provenance it promises. The error names the note and the reason, and nothing is written. Fix the block and write again. With the layer off the write goes through, and the note is left out of the index until its frontmatter parses.
+Ordinary writes preserve supplied `generated` and `verified` fields. Body-only edits and appends preserve the frontmatter bytes, including comments and line endings. A caller's credentials do not establish who authored a note. Use [`okf_author`](../reference/tools/writer.md#okf_author) with an explicit producer to record authorship. The deprecated `OKF_WRITE` alias enables authoring, review, index and log maintenance; explicit individual settings override it. See the [migration guide](okf-provenance-migration.md).
 
 ### Recording a human review
 
-Enabling review with `MARKDOWN_VAULT_MCP_OKF_VERIFY=elicit` or `trust-auth` exposes the [`okf_verify`](../reference/tools/writer.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. When legacy stamping is enabled, the verification write is exempt from its invalidation, so the new attestation remains. Independent review requires an active bundle; the legacy alias also permits review of an undeclared vault in auto mode.
+Enabling review with `MARKDOWN_VAULT_MCP_OKF_VERIFY=elicit` or `trust-auth` exposes the [`okf_verify`](../reference/tools/writer.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Independent review requires an active bundle; the legacy alias also permits review of an undeclared vault in auto mode.
 
 One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It can be configured independently of `OKF_WRITE`. Unset resolves to `off`, or to `elicit` when `OKF_WRITE` is enabled. Explicit `elicit` or `trust-auth` with `OKF_MODE=off` is a configuration error, including for configurations that previously accepted explicit `elicit`.
 
@@ -150,7 +137,7 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 
 The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 
-A `verified` entry records a review claim at a time without identifying the reviewed snapshot. Only the deprecated `OKF_WRITE` alias clears it on server writes; other edits leave it in place. Neither the tier nor `generated.at` establishes which content was reviewed.
+A `verified` entry records a review claim at a time without identifying the reviewed snapshot. Server writes and external edits leave it in place. Neither the tier nor `generated.at` establishes which content was reviewed.
 
 ### Keeping `log.md` and `index.md` current
 
@@ -246,6 +233,4 @@ Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` 
 
 The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
 settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
-implicit stamping. `OKF_WRITE=true` retains the
-existing behavior and logs a deprecation notice; explicit settings override
-its resolved defaults. See the [configuration reference](../reference/configuration.md).
+implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprecation notice; explicit settings override its resolved defaults. See the [configuration reference](../reference/configuration.md).

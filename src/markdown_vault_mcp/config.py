@@ -439,13 +439,10 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "Deprecated alias for the OKF (Open Knowledge Format) enforced write layer. When true on "
-                "an OKF-active vault, the server stamps generated provenance on "
-                "each write and clears any verified attestation when a note's "
-                "content changes. It also keeps each written folder's log.md and "
-                "index.md current, and exposes the okf_verify tool. Requires "
-                "OKF_MODE to be auto or on (a true value with OKF_MODE=off is a "
-                "config error). Off by default."
+                "Deprecated alias enabling OKF authoring, review, index and log "
+                "maintenance. Explicit individual settings take precedence. Ordinary "
+                "writes preserve provenance and review records. Requires OKF_MODE "
+                "to be auto or on. Off by default."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -481,8 +478,7 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Comma-separated token sub values that belong to applications, "
-                "not people. A caller whose sub is listed is a service: its OKF "
-                "writes stamp the tool actor instead of human:<sub>, and "
+                "not people. A caller whose sub is listed is a service: "
                 "okf_verify records its review as local (elicit) or refuses it "
                 "(trust-auth). Entries match the token's sub exactly. Use it "
                 "for issuers whose "
@@ -1306,7 +1302,7 @@ class ProjectConfig:
     okf_author: bool | None = field(
         default=None,
         metadata={
-            "help": "Enable explicit OKF concept authoring on an active writable vault; defaults to false.",
+            "help": "Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE.",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

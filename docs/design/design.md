@@ -176,12 +176,11 @@ indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
 Content writes serialize supplied frontmatter in caller insertion order,
-including nested mappings and mappings inside lists. Edit, append, OKF
-verification and git conflict marking retain surviving fields in their
-existing order when they serialize a header. This preserves mapping order and
-values, not comments, quoting, whitespace or arbitrary exact formatting. Every
-frontmatter dump (the document writer, the two OKF transforms and the two
-conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+including nested mappings and mappings inside lists. Body-only edits and
+appends preserve the original frontmatter bytes, including comments, quoting,
+BOM and line endings. Verification and git conflict marking serialize headers
+and retain surviving fields in order; their serialization can change formatting.
+The pinned dependency behavior is recorded in
 [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
 **The body the index reads (#2036)**: `scanner.note_body` returns
@@ -1972,7 +1971,7 @@ ones).
 
 ### Explicit OKF concept authoring
 
-`WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes retain their existing semantics. The operation suppresses legacy stamping only for its own write while retaining the request principal for commit attribution; enabled index and log maintenance runs after suppression ends.
+`WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes preserve supplied provenance and reviews. The request principal remains available for commit attribution; enabled index and log maintenance runs after authoring.
 
 Each MCP tool listing checks the live bundle state for authoring visibility, so a declaration added or removed during a session takes effect on the next listing. Invocation checks the state again to cover changes after discovery.
 
@@ -2363,8 +2362,7 @@ The rest of an upload the uploader must change answers 4xx too (#1696), so a
 client's mistake never reads as a server fault: a note body that is not UTF-8
 is **415 Unsupported Media Type** (RFC 9110 §15.5.16 covers a format problem
 found "as a result of inspecting the data directly"), and an
-`InvalidRequestError` from the write path, such as a frontmatter block the OKF
-enforced-write layer cannot parse, is **422 Unprocessable Content**. pvl-core's
+`InvalidRequestError` from the write path is **422 Unprocessable Content**. pvl-core's
 route logs only the status and class, so the sink logs the reason itself
 (`transfer_upload_refused`, INFO).
 The route releases the token reservation on these errors without extending its
@@ -4180,7 +4178,7 @@ an intentionally static author identity.
 (#1231, #1463). A usable token `sub` retains `human:<subject>` attribution
 unless the issuer marks the token as an application's (below);
 a subject obtained only from the client-ID fallback is a `service` principal
-that retains its identifier but stamps the tool actor. This covers single,
+that retains its identifier for identity context. This covers single,
 custom and mapped bearer credentials, including their use alongside OIDC.
 Without an attributable token the principal is `local` with no subject.
 A real token `sub` spelled `local` is distinct from the no-auth sentinel.
@@ -4201,13 +4199,12 @@ to a service account with no marker, and those are recorded as human unless
 listed. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
-with that branch: since #1160 the write tools stamp
-`principal.okf_actor(...)` directly. Registering the claim keys likewise
+with that branch; write identity no longer supplies provenance. Registering the claim keys likewise
 moved out of the git-strategy builder into `to_vault_instances`, so
 configuring identity is not the git builder's job.
 Background paths without an acting person — the pull-loop conflict commits,
 the webhook, the transfer-route uploads — carry no Principal and use the
-static identity / tool actor, as before.
+static commit identity.
 
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
@@ -5677,7 +5674,7 @@ already end with one. `create_if_missing` (default `false`) opts into
 creating a missing note instead of raising `DocumentNotFoundError`, so a
 mistyped path fails loudly by default. The operation flows through
 `DocumentManager.append` and is treated as an `edit` `WriteOperation` for
-the OKF enforced-write enricher, folder-convention maintenance, and the git
+folder-convention maintenance and the git
 commit callback; it returns a `WriteResult` (`created` is `true` only when
 `create_if_missing` created the file).
 
@@ -7634,6 +7631,4 @@ Later decisions (2026-10-22, #1505):
 
 The configuration resolves independent author, verify, index, log and folder
 capabilities. Unset capabilities grant no semantic writes. The deprecated
-`OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
-resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
-remains tied to `OKF_WRITE`.
+`OKF_WRITE` alias supplies defaults for the resolved capabilities, including authoring; explicit settings take precedence. Ordinary writes preserve provenance and review records.

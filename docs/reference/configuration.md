@@ -235,7 +235,7 @@ The interaction subsections below follow the order of the variable tables after 
 `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
 
 On a read-only server, `OKF_WRITE` is valid but inactive; see the
-[OKF write layer](../use/okf.md#the-enforced-write-layer) for the startup
+[OKF writing and provenance](../use/okf.md#writing-and-provenance) for the startup
 diagnostic and affected operations.
 
 Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
@@ -290,9 +290,8 @@ on the next startup.
 #### Content {#content-and-transfer}
 
 Folder convention files guide clients before writes. OKF read semantics can be
-auto-detected from a root `index.md`; the separately gated OKF write layer adds
-provenance, clears recorded verification, and maintains `log.md` and
-`index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
+auto-detected from a root `index.md`; independent settings enable explicit authoring and review and maintain `log.md` and
+`index.md`. Ordinary writes preserve provenance and reviews. See the [OKF guide](../use/okf.md) for the trust and verification
 model.
 
 Attachments in hidden or excluded directories are never listed. Full note
@@ -416,12 +415,12 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
 | `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` | No | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode. |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | Deprecated alias for the OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default. |
-| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | (none) | No | Enable explicit OKF concept authoring on an active writable vault; defaults to false. |
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | Deprecated alias enabling OKF authoring, review, index and log maintenance. Explicit individual settings take precedence. Ordinary writes preserve provenance and review records. Requires OKF_MODE to be auto or on. Off by default. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | (none) | No | Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE. |
 | `MARKDOWN_VAULT_MCP_OKF_INDEX` | (none) | No | Enable automatic index maintenance in designated folders; defaults to false. |
 | `MARKDOWN_VAULT_MCP_OKF_LOG` | (none) | No | OKF log authority: off (default), events, or writes. Writes appends an entry on each server write. |
 | `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | (none) | No | Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored. |
-| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:<sub>, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
+| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
 | `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once. |
 | `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
 | `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |

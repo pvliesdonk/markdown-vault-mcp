@@ -1199,43 +1199,6 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
-    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
-
-    The enforced-write layer's core transform (design §6). Operates on the final
-    file text (frontmatter plus body), so it is uniform across the ``write``
-    (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten with the instant of this write —
-    "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
-    Surviving fields retain their mapping order, including nested mappings;
-    a new ``generated`` field appends, while replacing it retains its slot.
-    YAML comments and formatting are not retained on serialization.
-
-    Args:
-        text: The full note file text (frontmatter and body).
-        actor: The provenance actor resolved by the caller — ``human:<subject>``
-            for human attribution, else a tool actor such as
-            ``markdown-vault-mcp/<version>``.
-        now: The instant of the write, timezone-aware (spelled by
-            :func:`okf_timestamp`).
-
-    Returns:
-        The stamped file text, or *text* unchanged when the resulting frontmatter
-        is identical (the same actor and instant, no ``verified``) — so a
-        repeated stamp keeps the note's exact bytes and YAML formatting.
-    """
-    post = parse_frontmatter(text)
-    meta: dict[str, Any] = dict(post.metadata)
-    new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
-    new_meta.pop("verified", None)
-    if new_meta == meta:
-        return text
-    return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)
-
-
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
     """Append a ``human:<subject>`` entry to a note's ``verified`` list.
 

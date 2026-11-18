@@ -686,23 +686,7 @@ class Vault:
             )
 
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
-        from markdown_vault_mcp._okf_write import (
-            build_okf_write_enrich,
-            package_version,
-        )
-
-        # OKF enforced-write enrichment (#964): None (zero overhead) unless
-        # OKF_WRITE is on; when on, it stamps provenance and clears verification
-        # for write/edit on an OKF-active vault.
-        self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=(
-                settings.okf_capabilities.legacy_stamping
-                if settings.okf_capabilities is not None
-                else settings.okf_write
-            ),
-            detector=self._okf,
-            version=package_version(),
-        )
+        self._okf_write_configured = settings.okf_write
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -717,7 +701,6 @@ class Vault:
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
             sync_index=self._coordinator.prepare_index_read,
             title_field=self._title_field,
-            okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
         )
 
@@ -912,7 +895,7 @@ class Vault:
         Returns:
             Configured OKF write flag and whether the layer is effective.
         """
-        configured = self._okf_write_enrich is not None
+        configured = self._okf_write_configured
         return configured, configured and active and not self._read_only
 
     def _okf_audit(self) -> OkfAuditReport:

@@ -43,7 +43,7 @@ def test_alias_and_explicit_overrides():
         caps.log,
         caps.folders,
         caps.legacy_stamping,
-    ) == (True, "off", False, "events", ("projects/*",), True)
+    ) == (True, "off", False, "events", ("projects/*",), False)
     assert ContentConfig(okf_verify="elicit").okf_capabilities.verify == "elicit"
     assert (
         ContentConfig(okf_verify="trust-auth").okf_capabilities.verify == "trust-auth"
@@ -56,7 +56,7 @@ def test_alias_and_explicit_overrides():
         legacy.log,
         legacy.folders,
         legacy.legacy_stamping,
-    ) == (False, "elicit", True, "writes", ("**",), True)
+    ) == (True, "elicit", True, "writes", ("**",), False)
 
 
 @pytest.mark.parametrize(

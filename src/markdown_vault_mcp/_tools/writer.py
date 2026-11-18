@@ -55,10 +55,7 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._identity import bound_principal, resolve_mcp_principal
 from .._okf_write import (
-    OkfWriteIntent,
-    okf_write_intent,
     okf_write_suppressed,
-    package_version,
     resolve_human_subject,
     resolve_verify_subject,
 )
@@ -69,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
-def write_identity_scope(*, okf_intent: bool = True) -> Iterator[None]:
+def write_identity_scope() -> Iterator[None]:
     """Resolve the caller's identity once and bind it for a write (#1160).
 
     Resolves a :class:`~markdown_vault_mcp._identity.Principal` from the MCP
@@ -79,20 +76,10 @@ def write_identity_scope(*, okf_intent: bool = True) -> Iterator[None]:
     **before** the ``asyncio.to_thread`` call so the copied worker context
     carries the binding.
 
-    Args:
-        okf_intent: Also bind an :class:`~markdown_vault_mcp._okf_write.
-            OkfWriteIntent` whose actor derives from the same principal —
-            for the content writes the OKF enforced-write enricher stamps
-            (``write``/``edit`` operations). ``False`` for operations the
-            enricher never stamps (delete, rename, move_folder, attachments),
-            which bind only the principal for git-commit attribution.
     """
     principal = resolve_mcp_principal()
     with contextlib.ExitStack() as stack:
         stack.enter_context(bound_principal(principal))
-        if okf_intent:
-            actor = principal.okf_actor(package_version())
-            stack.enter_context(okf_write_intent(OkfWriteIntent(actor=actor)))
         yield
 
 
@@ -396,16 +383,12 @@ def register(mcp: FastMCP) -> None:
                 )
             # Attachments carry no OKF frontmatter; bind only the principal
             # so the git commit is attributed to the caller (#1218).
-            with write_identity_scope(okf_intent=False):
+            with write_identity_scope():
                 result = await asyncio.to_thread(
                     vault.writer.write_attachment, path, raw_bytes, if_match=if_match
                 )
             return attach_remote_health(vault, _write_payload(result))
-        # Bind the caller's Principal plus the OKF provenance actor for the
-        # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
-        # OKF_WRITE is on; both values ride contextvars into the to_thread
-        # worker, where the enricher runs and the dispatcher snapshots the
-        # principal for the git commit.
+        # Bind the caller for commit attribution across the worker boundary.
         report = vault.report_unresolved_links
         with write_identity_scope():
             result = await asyncio.to_thread(
@@ -631,7 +614,7 @@ def register(mcp: FastMCP) -> None:
         """
         # Bind the caller's Principal so the delete commit is attributed
         # (#1218); the OKF enricher never runs for deletes, so no intent.
-        with write_identity_scope(okf_intent=False):
+        with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.delete, path, if_match=if_match
             )
@@ -700,7 +683,7 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so the rename commit (and any link-
         # rewrite commits) are attributed (#1218); no OKF intent — the
         # enricher's actor for link rewrites stays the tool actor, as before.
-        with write_identity_scope(okf_intent=False):
+        with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.rename,
                 old_path,
@@ -774,7 +757,7 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so every per-file commit of the move is
         # attributed (#1218); no OKF intent — the enricher's actor for the
         # link-rewrite edits stays the tool actor, as before.
-        with write_identity_scope(okf_intent=False):
+        with write_identity_scope():
             try:
                 result = await asyncio.to_thread(
                     vault.writer.move_folder, old_dir, new_dir
@@ -972,7 +955,7 @@ def register(mcp: FastMCP) -> None:
             # Attachments never carry OKF frontmatter and go through
             # write_attachment, which the enricher does not touch — bind only
             # the principal for git-commit attribution (#1218).
-            with write_identity_scope(okf_intent=False):
+            with write_identity_scope():
                 result = await asyncio.to_thread(
                     vault.writer.write_attachment,
                     path,
@@ -1183,7 +1166,7 @@ def register(mcp: FastMCP) -> None:
                 "OKF authoring is not active for this vault. Ask the operator to enable authoring on an active bundle.",
                 log_level=logging.INFO,
             )
-        with write_identity_scope(okf_intent=False):
+        with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.okf_author,
                 path,
@@ -1258,8 +1241,7 @@ def register(mcp: FastMCP) -> None:
         # Verification attests to a specific set of bytes, so the read-modify-
         # write must be atomic: pass the read's etag as if_match so a concurrent
         # write/edit/delete in the window fails the attestation instead of
-        # silently clobbering it or resurrecting a deleted note (#964). Suppress
-        # the enricher so it does not clear the verification just added.
+        # silently clobbering it or resurrecting a deleted note (#964).
         await _require_review_authority(config, vault)
         try:
             with okf_write_suppressed():
