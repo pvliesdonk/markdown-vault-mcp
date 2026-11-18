@@ -240,13 +240,6 @@ def test_automatic_results_survive_many_later_groups(
         dispatcher.close()
 
 
-def test_dispatcher_rejects_invalid_group_timeout() -> None:
-    from markdown_vault_mcp.exceptions import ConfigurationError
-
-    with pytest.raises(ConfigurationError, match="group_idle_s"):
-        WriteCallbackDispatcher(None, group_idle_s=0)
-
-
 def test_vault_passes_group_timeouts_to_dispatcher(git_repo: Path) -> None:
     from markdown_vault_mcp.config_sections import VaultSettings
     from markdown_vault_mcp.vault import Vault

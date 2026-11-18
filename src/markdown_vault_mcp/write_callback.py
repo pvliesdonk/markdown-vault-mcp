@@ -50,7 +50,6 @@ from markdown_vault_mcp._commit_scope import (
     is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._identity import current_principal
-from markdown_vault_mcp.config_sections.git import validate_group_timeouts
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
@@ -142,7 +141,6 @@ class WriteCallbackDispatcher:
             group_idle_s: Idle seconds before closing a group.
             group_max_age_s: Maximum group age in seconds.
         """
-        validate_group_timeouts(group_idle_s, group_max_age_s)
         self._on_write = on_write
         self._groups: dict[str, CommitGroup] = {}
         self._group_lock = threading.RLock()
