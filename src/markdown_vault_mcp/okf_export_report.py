@@ -1,11 +1,11 @@
-"""Partial OKF v0.2 export observations, not a conformance verdict."""
+"""OKF v0.2 artifact conformance and export observations."""
 
 from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class FormatFinding:
-    """A format observation for an exported concept candidate."""
+    """A format finding for an archive member."""
 
     path: str
     reason: str
@@ -35,7 +35,7 @@ class Dependency:
 
 @dataclass
 class OkfExportReport:
-    """Omissions and partial v0.2 format observations for an export.
+    """Artifact format verdict, omissions and separate export observations.
 
     Counts overlap when a path has more than one omission reason. Uninspected
     paths include inventory observations such as aliases and inspection bounds,
@@ -43,8 +43,8 @@ class OkfExportReport:
     transformed; neither observation identifies which fields changed. Selected
     inventory failures refuse export.
     Transformed paths and dependency sources are archive paths; other path
-    observations retain vault-relative paths. These observations do not establish
-    conformance.
+    observations retain vault-relative paths. Format findings and unchecked
+    checks refer to final archive paths and determine the format verdict.
     """
 
     transformed: list[str] = field(default_factory=list)
@@ -54,3 +54,7 @@ class OkfExportReport:
     local_policy: LocalPolicy = field(default_factory=LocalPolicy)
     format_findings: list[FormatFinding] = field(default_factory=list)
     uninspected: dict[str, str] = field(default_factory=dict)
+    verdict: str = "incomplete"
+    unchecked: dict[str, list[str]] = field(default_factory=dict)
+    optional_metadata: list[str] = field(default_factory=list)
+    broken_links: list[Dependency] = field(default_factory=list)

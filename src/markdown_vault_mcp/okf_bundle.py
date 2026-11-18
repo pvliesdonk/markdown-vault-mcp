@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
-from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
+from markdown_vault_mcp.okf_export_report import OkfExportReport
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
 from markdown_vault_mcp.utils.fs import open_directory_nofollow
@@ -42,7 +43,7 @@ class OkfBundleResult:
         notes: Number of notes written into the bundle.
         attachments: Number of attachments written into the bundle.
         excluded: Number of files omitted by selection policy, counted once.
-        report: Partial v0.2 format, admission and omission observations.
+        report: Artifact format verdict, admission and omission observations.
     """
 
     data: bytes
@@ -95,12 +96,6 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
         report.local_policy.non_admitted.append(item.path)
     elif item.search_state != "searchable":
         report.local_policy.unknown.append(item.path)
-    if item.parse_state in {"invalid_encoding", "malformed_metadata"}:
-        report.format_findings.append(FormatFinding(item.path, item.parse_state))
-    elif item.parse_state == "valid" and item.type_state in {"absent", "invalid"}:
-        report.format_findings.append(
-            FormatFinding(item.path, "missing_or_invalid_type")
-        )
 
 
 def _scope(folder: str) -> str:
@@ -178,7 +173,7 @@ def build_okf_bundle(
     include_hidden: bool = False,
     external_base: str | None = None,
 ) -> OkfBundleResult:
-    """Export the selected inventory with partial OKF v0.2 observations.
+    """Export the selected inventory and assess the final OKF v0.2 artifact.
 
     Args:
         vault: Live vault supplying the inventory and link graph.
@@ -190,7 +185,7 @@ def build_okf_bundle(
             for body and frontmatter destinations outside the selection.
 
     Returns:
-        Archive bytes, counts, and a partial report; no conformance verdict.
+        Archive bytes, counts, and an artifact conformance report.
 
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it,
@@ -276,7 +271,9 @@ def build_okf_bundle(
         attachments,
         excluded,
     )
-    return OkfBundleResult(buf.getvalue(), notes, attachments, excluded, report)
+    data = buf.getvalue()
+    audit_export(data, report)
+    return OkfBundleResult(data, notes, attachments, excluded, report)
 
 
 def _write(zf: zipfile.ZipFile, path: str, data: bytes) -> None:
