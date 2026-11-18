@@ -1142,6 +1142,56 @@ def register(mcp: FastMCP) -> None:
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
+        tags={"okf", "write", "okf-author"},
+        icons=_TOOL_ICONS["okf_author"],
+        annotations={
+            "title": "OKF: Author Concept",
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def okf_author(
+        path: str,
+        if_match: str,
+        fields: dict[str, Any],
+        producer: str | None = None,
+        config: ProjectConfig = Depends(get_config),
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Set selected editorial fields on an existing OKF concept.
+
+        Args:
+            path: Concept path in the vault.
+            if_match: Etag from a recent read of the concept.
+            fields: Fields to set: type, title, description, tags, status,
+                stale_after or sources. Omitted fields are preserved.
+            producer: Explicit producer actor, such as codex/6.1 or human:alex;
+                omit to leave generation metadata unchanged.
+
+        Returns:
+            The written path and whether it was created.
+        """
+        if (
+            not config.content.okf_capabilities.author
+            or not (await asyncio.to_thread(vault.okf.state)).active
+        ):
+            raise ToolError(
+                "OKF authoring is not active for this vault.", log_level=logging.INFO
+            )
+        with write_identity_scope(okf_intent=False):
+            result = await asyncio.to_thread(
+                vault.writer.okf_author,
+                path,
+                if_match=if_match,
+                fields=fields,
+                producer=producer,
+            )
+        return attach_remote_health(vault, asdict(result))
+
+    @mcp.tool(
         tags={"okf", "write", "okf-enforce"},
         icons=_TOOL_ICONS["okf_verify"],
         annotations={

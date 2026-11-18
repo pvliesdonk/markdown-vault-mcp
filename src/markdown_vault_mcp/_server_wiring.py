@@ -280,6 +280,8 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
         # OKF semantics vetoed by the operator: hide the OKF tool surface
         # entirely (same pattern as the apps-ui toggle).
         mcp.disable(tags={"okf"})
+    if not config.content.okf_capabilities.author:
+        mcp.disable(tags={"okf-author"})
     if config.content.okf_capabilities.verify == "off":
         # Verification is independently configurable from legacy stamping.
         mcp.disable(tags={"okf-enforce"})
