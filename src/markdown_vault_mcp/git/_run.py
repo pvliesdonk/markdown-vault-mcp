@@ -34,7 +34,7 @@ def _commit_message_with_trailers(
     """Append descriptive server metadata to a Git commit message."""
     separator = "\n" if existing_trailers else "\n\n"
     return (
-        f"{message.rstrip()}{separator}Vault-Tool: {tool}\n"
+        f"{message}{separator}Vault-Tool: {tool}\n"
         f"Vault-Server: markdown-vault-mcp/{__version__}"
     )
 

@@ -2,7 +2,7 @@
 
 ## 2026-11-18
 
-- Added Git trailer syntax and parsing to [Git staging, commits and rebase state](git-staging-and-commits.md), sourced from the Git manual; checked `commit --trailer` version availability and configuration when addressing #1415.
+- Added Git trailer syntax and parsing to [Git staging, commits and rebase state](git-staging-and-commits.md), sourced from the Git manual; checked `commit --trailer` version availability and configuration when addressing #1415; observed the `strip` cleanup and `V` comment-character collision on Git 2.56.1.
 
 - [Git staging and commits](git-staging-and-commits.md): checked the index stage
   records for an upstream delete during rebase against `git-ls-files(1)` and

@@ -7,7 +7,17 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    "mode", ["single", "batch", "group", "ai", "multiline", "divider", "ai_divider"]
+    "mode",
+    [
+        "single",
+        "batch",
+        "group",
+        "ai",
+        "multiline",
+        "divider",
+        "ai_divider",
+        "verbatim",
+    ],
 )
 def test_server_commit_trailers(tmp_path: Path, mode: str, isolated_git: None) -> None:
     """Git parses attribution on every commit path without changing its subject."""
@@ -19,6 +29,8 @@ def test_server_commit_trailers(tmp_path: Path, mode: str, isolated_git: None) -
 
     del isolated_git
     git(tmp_path, "init", "-q")
+    if mode == "verbatim":
+        git(tmp_path, "config", "commit.cleanup", "verbatim")
 
     fake = FakeSummarizer("Update note")
     strategy = GitWriteStrategy(
@@ -32,13 +44,22 @@ def test_server_commit_trailers(tmp_path: Path, mode: str, isolated_git: None) -
         if mode == "multiline"
         else "part\n---\nnote.md"
         if mode in {"divider", "ai_divider"}
+        else "note.md "
+        if mode == "verbatim"
         else "a.md"
     )
     first = tmp_path / filename
     second = tmp_path / "b.md"
     first.write_text("one", encoding="utf-8")
     try:
-        if mode in {"single", "ai", "multiline", "divider", "ai_divider"}:
+        if mode in {
+            "single",
+            "ai",
+            "multiline",
+            "divider",
+            "ai_divider",
+            "verbatim",
+        }:
             tool = "convert" if mode == "single" else "write"
             strategy.on_write_batch([(first, "write", None, None)], tool)
             subject = (
@@ -61,7 +82,9 @@ def test_server_commit_trailers(tmp_path: Path, mode: str, isolated_git: None) -
             text=True,
             check=True,
         ).stdout
-        if mode == "multiline":
+        if mode == "verbatim":
+            assert message.splitlines()[0] == "write: note.md "
+        elif mode == "multiline":
             assert message.startswith(f"{subject}\n")
         elif mode in {"divider", "ai_divider"}:
             assert (

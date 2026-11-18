@@ -101,7 +101,8 @@ they do not authenticate the author or grant authority. Group commits use
 `write_group` as the tool value, including when automatically closed. Background
 or library writes outside a tool call use their operation name. Conflict-save
 commits use `sync_conflict`. Trailers can be copied by amend, squash, or
-cherry-pick, so their presence alone does not prove who made a commit.
+cherry-pick, so their presence alone does not prove who made a commit. Git
+removes these trailers when `commit.cleanup=strip` and `core.commentChar=V`.
 
 ## Model-written auto-commit subjects
 
