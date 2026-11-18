@@ -2134,7 +2134,7 @@ the spec itself says, dated and sourced, in
   non-conformant notes included, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
-  last-observed index admission, partial v0.2 format findings and uninspected
+  last-observed index admission, artifact v0.2 format findings and uninspected
   content or metadata (including metadata of files included in the archive).
   Subtree frontmatter path fields are relocated with the same outside-path rules.
   Non-slash, non-dot values are reported as ambiguous. Field values are URI
@@ -2148,8 +2148,12 @@ the spec itself says, dated and sourced, in
   Incomplete inventory enumeration refuses export, even under default-omitted
   hidden paths. Reports and selection options are library-only; the download
   ref exposes neither. Subtree links in
-  unindexed notes are handled independently of index admission; the report
-  does not claim conformance. Descriptor-relative no-follow raw reads protect
+  unindexed notes are handled independently of index admission. The final ZIP
+  is audited for parseable YAML and non-empty type on nonreserved Markdown,
+  index frontmatter and entry structure, and ISO log date headings. The format
+  verdict is `conformant`, `nonconformant`, or `incomplete` when a required
+  check cannot run, even if findings are present. Admission, recommended
+  metadata and broken links are separate observations and do not affect it. Descriptor-relative no-follow raw reads protect
   notes and attachments after inventory (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX

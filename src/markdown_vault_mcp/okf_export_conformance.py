@@ -105,27 +105,48 @@ def _inspect_reserved(
         report.format_findings.append(FormatFinding(path, "log_heading_shape"))
 
 
+def _checks_for(path: str) -> list[str]:
+    name = PurePosixPath(path).name
+    if name == "index.md":
+        return ["index_frontmatter", "index_entry_shape"]
+    if name == "log.md":
+        return ["log_date_headings"]
+    return ["yaml_frontmatter", "type"]
+
+
 def _inspect(path: str, raw: bytes, report: OkfExportReport, members: set[str]) -> None:
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         report.format_findings.append(FormatFinding(path, "invalid_encoding"))
-        report.unchecked[path] = ["frontmatter", "reserved_structure"]
+        report.unchecked[path] = _checks_for(path)
         return
     reserved = is_okf_reserved_file(path)
     body = strip_frontmatter_block(text)
+    if PurePosixPath(path).name == "log.md":
+        _inspect_reserved(path, text, body, {}, report)
+        _find_broken_links(path, body, members, report)
+        return
     try:
         post = parse_frontmatter(text)
     except (yaml.YAMLError, ValueError):
         report.format_findings.append(FormatFinding(path, "malformed_frontmatter"))
         if reserved:
-            report.unchecked[path] = ["reserved_structure"]
+            report.unchecked[path] = ["index_frontmatter"]
+            if not _index_body_conforms(body):
+                report.format_findings.append(FormatFinding(path, "index_entry_shape"))
         return
     metadata = dict(post.metadata)
     if reserved:
         _inspect_reserved(path, text, body, metadata, report)
     else:
         _inspect_concept(path, text, body, metadata, report)
+    _find_broken_links(path, body, members, report)
+
+
+def _find_broken_links(
+    path: str, body: str, members: set[str], report: OkfExportReport
+) -> None:
     for link in extract_links(body, path):
         if link.target_path not in members:
             report.broken_links.append(Dependency(path, link.target_path))
@@ -146,7 +167,7 @@ def audit_export(data: bytes, report: OkfExportReport) -> None:
             try:
                 raw = archive.read(path)
             except (OSError, zipfile.BadZipFile, RuntimeError):
-                report.unchecked[path] = ["frontmatter", "reserved_structure"]
+                report.unchecked[path] = _checks_for(path)
                 continue
             _inspect(path, raw, report, members)
     report.verdict = (

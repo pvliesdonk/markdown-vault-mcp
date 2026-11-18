@@ -124,3 +124,70 @@ def test_scope_index_is_checked_at_archive_root(tmp_path: Path) -> None:
     finally:
         vault.close()
     assert result.report.verdict == "conformant"
+
+
+def test_log_frontmatter_does_not_define_format_policy() -> None:
+    report = _audit({"log.md": b"---\nbroken: [\n---\n# Log\n## 2026-11-18\n"})
+    assert report.verdict == "conformant"
+
+
+def test_artifact_bytes_override_stale_inventory_state(tmp_path: Path) -> None:
+    path = tmp_path / "note.md"
+    path.write_text("# Untyped\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        path.write_text("---\ntype: Thing\n---\n# Typed\n")
+        report = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path)).report
+    finally:
+        vault.close()
+    assert report.verdict == "conformant"
+    assert not report.format_findings
+
+
+def test_nested_index_list_and_unparseable_index_are_reported() -> None:
+    report = _audit({"index.md": b"# Index\n- [A](a.md)\n  - [B](b.md)\n"})
+    assert report.verdict == "nonconformant"
+    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n"})
+    assert report.verdict == "incomplete"
+    assert report.unchecked["index.md"] == ["index_frontmatter"]
+
+
+def test_unreadable_archive_member_names_the_unchecked_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import zipfile
+
+    def fail_read(_self: zipfile.ZipFile, *_args: object, **_kwargs: object) -> bytes:
+        raise zipfile.BadZipFile("corrupt member")
+
+    monkeypatch.setattr(zipfile.ZipFile, "read", fail_read)
+    report = _audit({"note.md": b"---\ntype: Thing\n---\n"})
+    assert report.verdict == "incomplete"
+    assert report.unchecked["note.md"] == ["yaml_frontmatter", "type"]
+
+
+@pytest.mark.parametrize(
+    ("name", "checks"),
+    [
+        ("index.md", ["index_frontmatter", "index_entry_shape"]),
+        ("log.md", ["log_date_headings"]),
+    ],
+)
+def test_unreadable_reserved_file_names_its_checks(
+    name: str, checks: list[str]
+) -> None:
+    report = _audit({name: b"\xff"})
+    assert report.verdict == "incomplete"
+    assert report.unchecked[name] == checks
+
+
+def test_unparseable_index_still_checks_body() -> None:
+    report = _audit({"index.md": b"---\ninvalid: [\n---\n# Index\n* broken\n"})
+    assert report.verdict == "incomplete"
+    assert any(f.reason == "index_entry_shape" for f in report.format_findings)
+
+
+def test_empty_index_link_is_not_an_entry() -> None:
+    report = _audit({"index.md": b"# Index\n* [](a.md)\n"})
+    assert report.verdict == "nonconformant"
