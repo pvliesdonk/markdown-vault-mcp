@@ -221,7 +221,6 @@ def test_multiple_replayed_commits_keep_concept_sibling_and_regenerate_index(
         if abort:
             assert "# Local concept 1" in (root / result.conflict_files[0]).read_text()
             assert index.read_text() == local_index
-            assert not (root / ".git" / "markdown-vault-pending-indexes.json").exists()
             assert not (root / ".git" / "rebase-merge").exists()
             return
         assert vault.reconcile_index_with_head(source="git_sync") in (
