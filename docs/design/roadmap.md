@@ -516,8 +516,9 @@ a mandatory parent or a release promise.
 
 ## Packages
 
-`stated` — **010 template-detach** and **015 pvl-core-fold** come before every
-other open package (18 November 2026).
+`stated` — **[010 template-detach](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/35)** and
+**[015 pvl-core-fold](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/36)** come before every other open package
+(18 November 2026).
 
 `evidenced` — A closed package's title gives up its ordinal for the release
 version at the cut (`v6.0.0 incremental-embeddings`), so the shipped
@@ -539,9 +540,10 @@ the known unknown about pvl-core types in the public library interface.
 
 `derived` — Because the release workflow closes the lowest open package at a
 stable cut, `010` and then `015` are what the next stable cuts consume. A
-stable release cut before either is complete unassigns its open members, so
-putting this work first also means holding stable cuts until each package is
-done, or re-committing the leftovers by hand.
+stable release cut before either is complete unassigns its open members.
+
+`stated` — Stable releases pause until these packages ship: "This is the plan"
+(18 November 2026).
 
 `derived` — **[010 reliable-vault](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/12)
 (major)** is the first cut: carry the adopted
@@ -1169,7 +1171,8 @@ answered the known unknown on template-coupled tests, so its row is removed.
 ### 18 November 2026 — put the independence work first
 
 `stated` — The owner placed the template part as package `010` and the pvl-core
-part as `015`, ahead of every other open package (§ Packages).
+part as `015`, ahead of every other open package, and paused stable releases
+until they ship (§ Packages).
 
 `derived` — `024` and later keep their relative order behind them.
 
