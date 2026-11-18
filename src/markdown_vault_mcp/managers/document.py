@@ -362,6 +362,17 @@ class DocumentManager:
         """
         return validate_path(path, self._source_dir)
 
+    def _okf_author_snapshot(self, path: str) -> tuple[str, str]:
+        """Read exact note bytes and its resolved vault-relative identity under write_scope."""
+        target = self._validate_path(path)
+        canonical = target.relative_to(self._source_dir.resolve()).as_posix()
+        if self.read(path) is None:
+            raise DocumentNotFoundError.note(path)
+        try:
+            return canonical, target.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.
 

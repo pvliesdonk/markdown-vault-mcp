@@ -176,7 +176,8 @@ def test_author_keeps_comments_inside_replaced_block(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "producer", ["", "human:", "process:", "/1", "agent/", "bad", " a/1"]
+    "producer",
+    ["", "human:", "process:", "/1", "agent/", "bad", " a/1", "a\nb/1", "human:a\nb"],
 )
 def test_invalid_actor_refused_without_write(tmp_path: Path, producer: str) -> None:
     (tmp_path / "note.md").write_text("# Body\n")
@@ -318,3 +319,267 @@ def test_generated_block_value_keeps_comment_and_neighbor() -> None:
     result = author_text(text, {}, "new/1")
     assert "# earlier" in result
     assert frontmatter.loads(result).metadata["generated"]["custom"] == "keep"
+
+
+@pytest.mark.parametrize(
+    ("text", "fields", "producer"),
+    [
+        (
+            "---\ntype:\nverified: [{by: human:alice}]\n---\nBody\n",
+            {"type": "Concept"},
+            None,
+        ),
+        ("---\ntype: Concept\n...\n---\nBody\n", {"title": "Hello"}, None),
+        (
+            "---\ntype: Concept\ngenerated: {by: old/1, # keep\n  custom: retained}\n---\nBody\n",
+            {},
+            "new/1",
+        ),
+        (
+            "---\r\ntype: Concept\r\nverified: [{by: human:alice}]\r\n---\r\nBody\r\n",
+            {"title": "Hello"},
+            None,
+        ),
+        (
+            "---\nx-template: &custom retained\nx-copy: *custom\n---\nBody\n",
+            {"type": "Guide"},
+            None,
+        ),
+        ("---\ngenerated:\n  by:\n  custom: keep\n---\nBody\n", {}, "new/1"),
+    ],
+)
+def test_roundtrip_review_cases(
+    tmp_path: Path, text: str, fields: dict[str, object], producer: str | None
+) -> None:
+    path = tmp_path / "note.md"
+    path.write_bytes(text.encode())
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("note.md")
+        assert note is not None
+        vault.writer.okf_author(
+            "note.md", if_match=note.etag, fields=fields, producer=producer
+        )
+        result = path.read_bytes().decode()
+        parsed = frontmatter.loads(result).metadata
+        for key, value in fields.items():
+            assert parsed[key] == value
+        if producer:
+            assert parsed["generated"]["by"] == producer
+        if "# keep" in text:
+            assert "# keep" in result and "custom: retained" in result
+        if "verified:" in text:
+            assert (
+                text[
+                    text.index("verified:") : text.index("verified:")
+                    + len("verified: [{by: human:alice}]")
+                ]
+                in result
+            )
+        if "\r\n" in text:
+            assert result.count("\n") == result.count("\r\n")
+            assert result.endswith("Body\r\n")
+        if "&custom" in text:
+            assert "x-template: &custom retained\nx-copy: *custom" in result
+    finally:
+        vault.close()
+
+
+def test_author_refuses_resolved_reserved_alias(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text("# Navigation\n")
+    (tmp_path / "alias.md").symlink_to("index.md")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("alias.md")
+        assert note is not None
+        with pytest.raises(InvalidRequestError):
+            vault.writer.okf_author(
+                "alias.md", if_match=note.etag, fields={"type": "Guide"}
+            )
+        assert (tmp_path / "index.md").read_text() == "# Navigation\n"
+    finally:
+        vault.close()
+
+
+def test_author_updates_index_and_log(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("note.md", "---\ntitle: Before\n---\nBody\n")
+        old_log = (tmp_path / "log.md").read_text()
+        note = vault.reader.read("note.md")
+        assert note is not None
+        vault.writer.okf_author(
+            "note.md", if_match=note.etag, fields={"title": "After"}
+        )
+        assert "After" in (tmp_path / "index.md").read_text()
+        assert (tmp_path / "log.md").read_text() != old_log
+    finally:
+        vault.close()
+
+
+def test_flow_generated_keeps_unrelated_anchor_and_comment() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    text = "---\nx: &shared keep\ngenerated: {by: old/1, custom: *shared # keep\n}\n---\nBody\n"
+    result = author_text(text, {}, "new/1")
+    assert "custom: *shared # keep\n" in result
+    assert frontmatter.loads(result).metadata["generated"]["custom"] == "keep"
+    assert frontmatter.loads(result).metadata["generated"]["by"] == "new/1"
+
+
+def test_splice_validation_refuses_before_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import _okf_author
+
+    original = "---\ntype: old\nverified: [{by: human:a}]\n---\nBody\n"
+    (tmp_path / "note.md").write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("note.md")
+        assert note is not None
+        monkeypatch.setattr(_okf_author, "_render", lambda _value: "wrong")
+        with pytest.raises(InvalidRequestError, match="safely"):
+            vault.writer.okf_author(
+                "note.md", if_match=note.etag, fields={"type": "new"}
+            )
+        assert (tmp_path / "note.md").read_text() == original
+    finally:
+        vault.close()
+
+
+@pytest.mark.anyio
+async def test_mcp_invalid_producer_leaves_original(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    from tests.conftest import _parse_tool_data
+    from tests.server_factory import make_server
+
+    original = "---\ntype: Guide\nverified: [{by: human:a}]\n---\nBody\n"
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "note.md").write_text(original)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_AUTHOR", "true")
+    async with Client(make_server()) as client:
+        etag = _parse_tool_data(await client.call_tool("read", {"path": "note.md"}))[
+            "etag"
+        ]
+        with pytest.raises(ToolError):
+            await client.call_tool(
+                "okf_author",
+                {
+                    "path": "note.md",
+                    "if_match": etag,
+                    "fields": {"title": "New"},
+                    "producer": "a\nb/1",
+                },
+            )
+    assert (tmp_path / "note.md").read_text() == original
+
+
+def test_empty_final_generated_by() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    text = "---\ngenerated:\n  by:\n---\nBody\n"
+    result = author_text(text, {}, "new/1")
+    assert frontmatter.loads(result).metadata["generated"]["by"] == "new/1"
+
+
+def test_replacing_anchored_or_aliased_field_is_refused() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    for text, fields, producer in [
+        ("---\ntitle: &v value\nx-copy: *v\n---\nBody\n", {"title": "new"}, None),
+        ("---\nx: &v {by: old/1}\ngenerated: *v\n---\nBody\n", {}, "new/1"),
+    ]:
+        with pytest.raises(InvalidRequestError):
+            author_text(text, fields, producer)
+
+
+def test_invalid_splice_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import _okf_author
+
+    original = "---\ntype: old\n---\nBody\n"
+    (tmp_path / "note.md").write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("note.md")
+        assert note is not None
+        monkeypatch.setattr(_okf_author, "_render", lambda _value: "[")
+        with pytest.raises(InvalidRequestError, match="safely"):
+            vault.writer.okf_author(
+                "note.md", if_match=note.etag, fields={"type": "new"}
+            )
+        assert (tmp_path / "note.md").read_text() == original
+    finally:
+        vault.close()
+
+
+def test_author_snapshot_read_failure_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+
+    (tmp_path / "note.md").write_text("# Body\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("note.md")
+        assert note is not None
+        monkeypatch.setattr(vault.writer._doc_mgr, "read", lambda _path: note)
+
+        def fail_read(_path: Path) -> bytes:
+            raise OSError("fixture read failure")
+
+        monkeypatch.setattr(Path, "read_bytes", fail_read)
+        with pytest.raises(DocumentUnreadableError):
+            vault.writer.okf_author(
+                "note.md", if_match=note.etag, fields={"title": "New"}
+            )
+    finally:
+        vault.close()
+
+
+def test_empty_generated_placeholder_accepts_producer() -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    result = author_text(
+        "---\ngenerated:\nverified: [{by: human:a}]\n---\nBody\n", {}, "new/1"
+    )
+    assert frontmatter.loads(result).metadata["generated"]["by"] == "new/1"
+    assert "verified: [{by: human:a}]" in result
+
+
+def test_invalid_new_field_is_refused_before_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp import _okf_author
+
+    original = "---\ntype: old\n---\nBody\n"
+    (tmp_path / "note.md").write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        note = vault.reader.read("note.md")
+        assert note is not None
+        monkeypatch.setattr(_okf_author, "_render", lambda _value: "[")
+        with pytest.raises(InvalidRequestError, match="safely"):
+            vault.writer.okf_author(
+                "note.md", if_match=note.etag, fields={"type": "new", "title": "new"}
+            )
+        assert (tmp_path / "note.md").read_text() == original
+    finally:
+        vault.close()

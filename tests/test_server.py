@@ -803,6 +803,7 @@ class TestToolManifest:
             "list_folders",
             "list_tags",
             "move_folder",
+            "okf_author",
             "okf_convert_links",
             "okf_generate_index",
             "okf_seed_log",
@@ -867,6 +868,7 @@ class TestToolAnnotations:
         for name in (
             "delete",
             "move_folder",
+            "okf_author",
             "okf_convert_links",
             "okf_generate_index",
         ):
