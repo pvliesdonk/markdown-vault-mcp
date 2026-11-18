@@ -58,6 +58,7 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils import effective_attachment_extensions
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -295,9 +296,8 @@ class Vault:
     job to the single-owner
     :class:`~markdown_vault_mcp.indexing.IndexWriter` via
     :meth:`IndexFacet.build_index_async` and yields immediately. On a warm
-    restart the persisted FTS completeness sentinel (PR #526) causes
-    :meth:`IndexFacet.build_index_async` to return an already-resolved
-    ``Future`` in O(1) without touching the writer queue. On a cold
+    restart the persisted FTS completeness sentinel (PR #526) avoids an FTS
+    rebuild; the writer still runs an observation sweep. On a cold
     restart the writer thread runs the job asynchronously while the
     lifespan yields; bucket-3/4 MCP tool *clients* block on the
     :class:`markdown_vault_mcp._server_queryable.needs_queryable`
@@ -606,7 +606,32 @@ class Vault:
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
 
+        from markdown_vault_mcp.bundle_inventory import BundleInspector
+        from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+        observation_path = (
+            self._state_path.with_name(self._state_path.name + ".observations.json")
+            if self._state_path is not None
+            else None
+        )
+        policy = InspectionPolicy(
+            settings.conventions_file,
+            tuple(p for p in (self._state_path, observation_path) if p is not None),
+            self._embeddings_path,
+            self._index_path,
+        )
+        observations = ObservationLedger(
+            observation_path,
+            BundleInspector(
+                self._source_dir,
+                self._exclude_patterns or [],
+                effective_attachment_extensions(self._attachment_extensions),
+                self._max_note_read_bytes,
+                policy,
+            ),
+        )
         self._index_mgr = IndexManager(
+            observations=observations,
             fts=self._fts,
             tracker=self._tracker,
             source_dir=self._source_dir,
@@ -720,12 +745,7 @@ class Vault:
             title_field=self._title_field,
             submodule_guard=self._build_submodule_guard(),
             inventory_ready=self._coordinator.is_queryable,
-            inspection_policy=InspectionPolicy(
-                settings.conventions_file,
-                () if self._state_path is None else (self._state_path,),
-                self._embeddings_path,
-                self._index_path,
-            ),
+            inspection_policy=policy,
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:

@@ -86,6 +86,7 @@ class BuildAttempt:
 @dataclass(frozen=True)
 class _BuildCommand(BuildIndex):
     attempt: BuildAttempt = field(kw_only=True)
+    warm: bool = False
 
 
 class BuildLifecycle:
@@ -114,14 +115,16 @@ class BuildLifecycle:
         self._pending: set[BuildAttempt] = set()
 
     def submit(self, writer: IndexWriter, *, force: bool = False) -> Future[IndexStats]:
-        """Schedule a complete build; an idle warm restart resolves immediately."""
+        """Schedule a build or a warm observation sweep on the writer."""
         with self._lock:
             active = any(not pending.future.done() for pending in self._pending)
             attempt = BuildAttempt()
             self._latest = attempt
             attempt.future.add_done_callback(lambda _: self._on_cancelled(attempt))
             try:
-                if not active and not force and self._is_warm():
+                warm = not active and not force and self._is_warm()
+                manager = getattr(writer._ctx, "index_manager", None)
+                if warm and getattr(manager, "observations", None) is None:
                     stats = IndexStats(
                         documents_indexed=self._fts.count_documents(),
                         chunks_indexed=0,
@@ -129,15 +132,18 @@ class BuildLifecycle:
                     )
                     attempt.future.set_running_or_notify_cancel()
                     self._finish(attempt, _Succeeded(stats))
-                else:
+                    return attempt.future
+                if not warm:
                     self._readiness.begin_sync_build()
-                    self._pending.add(attempt)
-                    if self._on_scan is not None:
-                        self._on_scan(attempt.future)
-                    queued = writer.submit(_BuildCommand(force=force, attempt=attempt))
-                    queued.add_done_callback(
-                        lambda future: self._on_dispatch_done(attempt, future)
-                    )
+                self._pending.add(attempt)
+                if not warm and self._on_scan is not None:
+                    self._on_scan(attempt.future)
+                queued = writer.submit(
+                    _BuildCommand(force=force, attempt=attempt, warm=warm)
+                )
+                queued.add_done_callback(
+                    lambda future: self._on_dispatch_done(attempt, future)
+                )
             except BaseException as exc:
                 self._pending.discard(attempt)
                 self._readiness.begin_sync_build()
@@ -172,9 +178,20 @@ class BuildLifecycle:
         if not attempt.future.set_running_or_notify_cancel():
             return None
         scanning = True
+        stats: IndexStats
         try:
+            if job.warm:
+                if ctx.index_manager.observations is not None:
+                    ctx.index_manager.observations.sweep()
+                stats = IndexStats(
+                    documents_indexed=self._fts.count_documents(),
+                    chunks_indexed=0,
+                    skipped=0,
+                )
+                self._finish(attempt, _Succeeded(stats))
+                return stats
             self._fts.clear_build_completed()
-            stats: IndexStats = run_build_index(job, ctx)
+            stats = run_build_index(job, ctx)
             scanning = False
             self._fts.set_build_completed(walk_complete=stats.walk_complete)
             if not stats.walk_complete:

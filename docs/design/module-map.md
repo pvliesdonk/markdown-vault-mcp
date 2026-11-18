@@ -63,6 +63,7 @@ src/markdown_vault_mcp/
     sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
+    observations.py    -- instance-local versioned observation ledger and sweep reconciliation
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: query-readiness projection and compatibility transitions (#576, #1483)
     build_lifecycle.py -- BuildLifecycle: scheduling, per-attempt outcomes, marker writes and readiness publication; shared by sync/async/legacy entry points (#1483)
@@ -106,7 +107,7 @@ src/markdown_vault_mcp/
   exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
-  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442)
+  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442); descriptor-relative full observation traversal
   okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter

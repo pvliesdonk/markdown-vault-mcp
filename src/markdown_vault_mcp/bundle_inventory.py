@@ -470,6 +470,72 @@ class BundleInspector:
                 request, "missing" if _missing(exc) else "unavailable"
             )
 
+    def observe_files(self, visit: Callable[[str, Role, bytes], None]) -> bool:
+        """Visit readable Markdown files within the inventory boundary.
+
+        Args:
+            visit: Consume each file's path, role and bytes before the next read.
+
+        Returns:
+            Whether the entire scope was visible.
+        """
+        try:
+            root = self._source.resolve(strict=True)
+            self._prepare_policy(root)
+            with open_directory_nofollow(root, (), source_resolved=True) as fd:
+                complete = self._observe_tree(fd, "", visit)
+        except (OSError, RuntimeError):
+            return False
+        return complete
+
+    def is_internal_path(self, path: str) -> bool:
+        """Return whether the last prepared policy hides a vault-relative path."""
+        return any(
+            self._internal("/".join(_components(path)[:i]))
+            for i in range(1, len(_components(path)) + 1)
+        )
+
+    def _observe_tree(
+        self, fd: int, directory: str, visit: Callable[[str, Role, bytes], None]
+    ) -> bool:
+        if len(_components(directory)) >= 32:
+            return False
+        complete = True
+        selected = self._absolute_source.joinpath(*_components(directory))
+        if any(path.parent == selected for path in self._unavailable_policy_paths):
+            complete = False
+        try:
+            with os.scandir(fd) as children:
+                names = [child.name for child in children]
+        except OSError:
+            return False
+        for name in names:
+            if "\\" in name:
+                complete = False
+                continue
+            path = f"{directory}/{name}" if directory else name
+            if self._internal(path):
+                continue
+            try:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    child = open_child_directory(fd, name)
+                    try:
+                        complete = self._observe_tree(child, path, visit) and complete
+                    finally:
+                        os.close(child)
+                elif stat.S_ISREG(info.st_mode) and is_note(path):
+                    raw = read_regular_nofollow(fd, name, info.st_size + 1)
+                    if len(raw) > info.st_size:
+                        complete = False
+                    else:
+                        visit(path, _role(name, self._policy.conventions_file), raw)
+                elif stat.S_ISLNK(info.st_mode) or is_note(path):
+                    complete = False
+            except OSError:
+                complete = False
+        return complete
+
     def _walk_page(
         self, parent: int, request: BundleTreeRequest, scope: str
     ) -> BundleInspection:

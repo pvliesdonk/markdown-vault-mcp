@@ -141,7 +141,7 @@ class IndexFacet:
         """Scan source_dir and build the FTS index.
 
         A warm restart (a complete, populated index whose provenance still
-        matches, ``force=False``) is an O(1) no-op keyed on FTS state. An
+        matches, ``force=False``) reuses FTS and sweeps observation state. An
         index that cannot be reused (changed provenance, or no completion
         sentinel) gets a full build that drops the rows its walk did not find
         (#1965). ``force=True`` drops and rebuilds unconditionally.
@@ -182,11 +182,10 @@ class IndexFacet:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Submit a full FTS index build and return the Future.
 
-        Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
-        short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`IndexFacet.build_index`. The Future includes the
-        completion-marker write and readiness publication; failure in either
-        fails the build. Pending work can be cancelled before execution begins.
+        Caller may ``.result()`` to wait or fire-and-forget. A warm build
+        queues an observation sweep without rebuilding FTS. The Future includes
+        the sweep, completion-marker write and readiness publication; failure
+        in any of them fails the build. Pending work can be cancelled before execution begins.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

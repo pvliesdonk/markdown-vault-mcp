@@ -7742,3 +7742,15 @@ the NFC-normalized folder spelling; the guard does not expand a folder into
 decomposed spellings for glob matching. A leaf symlink to an authored note is editable, while an alias
 to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.
+
+
+### Local observation ledger
+
+The inventory boundary also supplies a descriptor-relative full sweep of readable
+Markdown to an instance-local, versioned ledger beside the tracker. It stores
+path, role, content and frontmatter digests, first and last change observation
+times, presence, removal time and origin. Builds (including warm builds),
+reindexes and post-pull reindexes reconcile state. Unchanged rows remain stable;
+incomplete traversal and policy-hidden paths do not establish removal. A missing
+or corrupt ledger starts new history, while a newer schema is refused. Sweep
+origin is unknown; observation does not write author metadata or log entries.

@@ -247,3 +247,19 @@ skipped. The refusal repeats until the operator converts the protected notes or
 changes the setting; see [protected paths](../reference/configuration.md).
 Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
 the client write guard.
+
+### Local observation state
+
+A build or reindex records the latest observed state of Markdown files in the
+inventory scope, including readable hidden paths and files excluded from search.
+Internal server state, Git directories and inaccessible paths are outside that
+scope. The ledger is instance-local state beside the change tracker; with an
+in-memory index and no configured state path it stays in memory. Back it up to
+retain its observation history. If it is missing or corrupt, the next sweep
+starts a new history from the files it can read. A newer ledger schema is
+refused rather than overwritten.
+
+The ledger compares states; it does not record an event for each edit, identify
+an author, or change frontmatter or `log.md`. In this release, external edits
+are observed at the next build, reindex, or post-pull reindex. A warm build also
+sweeps; the file watcher does not yet update this ledger on every save.

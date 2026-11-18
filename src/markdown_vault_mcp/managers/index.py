@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -188,7 +189,9 @@ class IndexManager:
         vector_slot: VectorStoreSlot | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
         scratch_dir: Path | None = None,
+        observations: ObservationLedger | None = None,
     ) -> None:
+        self.observations = observations
         self._fts = fts
         self._tracker = tracker
         self._source_dir = source_dir
@@ -682,6 +685,8 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
+        if self.observations is not None:
+            self.observations.sweep()
         exempt = self._admission_snapshot()
         if exempt is not None:
             self._store_exempt(None)
@@ -907,6 +912,8 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
             of changes applied.
         """
+        if self.observations is not None:
+            self.observations.sweep()
         # Phase 1: scan filesystem (read-only walk + hashing). Excluded
         # subtrees are filtered before hashing so they neither churn the
         # tracker nor get reported as changes (#257).
