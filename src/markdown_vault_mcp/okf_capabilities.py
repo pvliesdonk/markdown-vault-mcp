@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import lru_cache, partial
 from pathlib import Path
-from unicodedata import combining, normalize
+from unicodedata import normalize
 
 
 class DefaultVerify(str):
@@ -42,34 +42,31 @@ def _witnesses(unicode: bool) -> dict[str, tuple[str, ...]]:
     return {key: tuple(value) for key, value in result.items()}
 
 
-@lru_cache(maxsize=1)
-def _longest_decomposition() -> int:
-    return max(map(len, _witnesses(True)), default=1)
-
-
-def _ordered_tokens(pattern: str, unicode: bool) -> list[str]:
-    tokens = re.findall(r"\[!?\]?[^\]]*\]|.", pattern, re.S)
-    if unicode:
-        start = 0
-        while start < len(tokens):
-            end = start
-            while (
-                end < len(tokens) and len(tokens[end]) == 1 and combining(tokens[end])
-            ):
-                end += 1
-            if end > start:
-                tokens[start:end] = sorted(tokens[start:end], key=combining)
-            start = max(start + 1, end)
-    return tokens
+def _advance(tokens: list[str], positions: set[int], text: str) -> set[int]:
+    """Advance the existing glob automaton through one spelling witness."""
+    current = positions.copy()
+    for char in text:
+        for pos in range(len(tokens)):
+            if pos in current and tokens[pos] == "*":
+                current.add(pos + 1)
+        current = {
+            pos if tokens[pos] == "*" else pos + 1
+            for pos in current
+            if pos < len(tokens) and fnmatchcase(char, tokens[pos])
+        }
+    return current
 
 
 def _equivalent(name: str, pattern: str, case: bool, unicode: bool) -> bool:
     """Match an original glob against measured equivalent segment spellings."""
-    tokens = _ordered_tokens(pattern, unicode)
+    tokens = re.findall(r"\[!?\]?[^\]]*\]|.", pattern, re.S)
     base = normalize("NFD", name) if unicode else name
     decompositions = _witnesses(True) if unicode else {}
     cases = _witnesses(False) if case else {}
-    longest = _longest_decomposition() if unicode else 1
+    longest = max(
+        max(map(len, decompositions), default=1) if unicode else 1,
+        max(map(len, cases), default=1),
+    )
     states: list[set[int]] = [set() for _ in range(len(base) + 1)]
     states[0].add(0)
     for offset, positions in enumerate(states):
@@ -82,18 +79,15 @@ def _equivalent(name: str, pattern: str, case: bool, unicode: bool) -> bool:
                 *((unit,) if length == 1 else ()),
                 *decompositions.get(unit, ()),
             )
+            variants = set(cases.get(unit.casefold(), ())) if case else set()
             for original in originals:
-                folded = original.casefold()
-                variants = (original, *cases.get(folded, ())) if case else (original,)
-                if case and len(folded) == 1:
-                    variants += (folded,)
-                for pos in positions:
-                    if pos < len(tokens) and any(
-                        fnmatchcase(v, tokens[pos]) for v in variants
-                    ):
-                        states[offset + length].add(
-                            pos if tokens[pos] == "*" else pos + 1
-                        )
+                variants.add(original)
+                if case:
+                    folded = original.casefold()
+                    variants.update(cases.get(folded, ()))
+                    variants.add(folded)
+            for variant in variants:
+                states[offset + length].update(_advance(tokens, positions, variant))
     return len(tokens) in states[-1]
 
 
