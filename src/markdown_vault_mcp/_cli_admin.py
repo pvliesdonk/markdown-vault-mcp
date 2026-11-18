@@ -65,11 +65,6 @@ def strip_seeded_frontmatter(
         finally:
             built.close()
     except (MarkdownMCPError, OSError) as exc:
-        if apply:
-            typer.echo(
-                "This batch has no rollback; inspect the vault before retrying.",
-                err=True,
-            )
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
 

@@ -10,7 +10,7 @@ import yaml
 from yaml.nodes import MappingNode, ScalarNode
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.okf import OKF_LOG_TITLE, OKF_ROOT_INDEX_TITLE
 
@@ -31,6 +31,13 @@ class ReservedRepair:
     path: str
     keys: tuple[str, ...]
     skip_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _PendingRepair:
+    result: ReservedRepair
+    text: str
+    etag: str
 
 
 def _strip(
@@ -152,10 +159,19 @@ class ReservedFrontmatterRepair:
             raise InvalidRequestError("An active, readable OKF vault is required")
         if apply:
             vault._doc_mgr.ensure_writable()
-        result: list[ReservedRepair] = []
+        pending = self._discover()
+        if apply:
+            return [self._apply(item, allow_protected) for item in pending]
+        return [
+            item.result if isinstance(item, _PendingRepair) else item
+            for item in pending
+        ]
+
+    def _discover(self) -> list[_PendingRepair | ReservedRepair]:
+        result: list[_PendingRepair | ReservedRepair] = []
         cursor = None
         while True:
-            page = vault.reader.inspect_bundle_tree(
+            page = self._vault.reader.inspect_bundle_tree(
                 BundleTreeRequest(root="", entry_limit=1000, cursor=cursor)
             )
             if page.state != "inspected":
@@ -163,11 +179,10 @@ class ReservedFrontmatterRepair:
                     "Bundle inventory is incomplete; repair stopped"
                 )
             for entry in page.entries:
+                candidate: _PendingRepair | ReservedRepair | None
                 try:
-                    candidate = self._inspect_entry(
-                        entry, apply=apply, allow_protected=allow_protected
-                    )
-                except InvalidRequestError as exc:
+                    candidate = self._inspect_entry(entry)
+                except (MarkdownMCPError, OSError, UnicodeError) as exc:
                     candidate = ReservedRepair(entry.path, (), str(exc))
                 if candidate:
                     result.append(candidate)
@@ -179,9 +194,7 @@ class ReservedFrontmatterRepair:
             if cursor is None:
                 return result
 
-    def _inspect_entry(
-        self, entry: BundleEntry, *, apply: bool, allow_protected: bool
-    ) -> ReservedRepair | None:
+    def _inspect_entry(self, entry: BundleEntry) -> _PendingRepair | None:
         name = entry.path.rsplit("/", 1)[-1]
         if entry.role == "directory" and entry.state == "unavailable":
             raise InvalidRequestError(
@@ -203,11 +216,9 @@ class ReservedFrontmatterRepair:
             raise InvalidRequestError(
                 f"Cannot inspect reserved file {entry.path!r}: {entry.reason}"
             )
-        return self._one(entry.path, apply=apply, allow_protected=allow_protected)
+        return self._one(entry.path)
 
-    def _one(
-        self, path: str, *, apply: bool, allow_protected: bool
-    ) -> ReservedRepair | None:
+    def _one(self, path: str) -> _PendingRepair | None:
         vault = self._vault
         doc = vault._doc_mgr
         note = doc.read(path)
@@ -236,13 +247,24 @@ class ReservedFrontmatterRepair:
             raise InvalidRequestError(f"{path!r}: {exc}") from exc
         if not keys:
             return None
-        if apply:
+        return _PendingRepair(ReservedRepair(path, keys), text, etag)
+
+    def _apply(
+        self, item: _PendingRepair | ReservedRepair, allow_protected: bool
+    ) -> ReservedRepair:
+        if isinstance(item, ReservedRepair):
+            return item
+        doc = self._vault._doc_mgr
+        try:
             with doc.exact_byte_writes():
                 doc.write(
-                    path,
-                    text,
-                    if_match=etag,
+                    item.result.path,
+                    item.text,
+                    if_match=item.etag,
                     allow_overwrite=True,
                     allow_protected=allow_protected,
+                    allow_designated=True,
                 )
-        return ReservedRepair(path, keys)
+        except (MarkdownMCPError, OSError, UnicodeError) as exc:
+            return ReservedRepair(item.result.path, (), str(exc))
+        return item.result

@@ -130,8 +130,6 @@ def test_apply_designated_index_preserves_other_bytes(tmp_path: Path) -> None:
 def test_custom_title_and_concurrent_edit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from markdown_vault_mcp.exceptions import ConcurrentModificationError
-
     (tmp_path / "guides").mkdir()
     path = tmp_path / "guides" / "index.md"
     path.write_text("---\nname: guides\ntitle: null\n---\nbody\n")
@@ -154,8 +152,7 @@ def test_custom_title_and_concurrent_edit(
             return write(*args, **kwargs)
 
         monkeypatch.setattr(vault._doc_mgr, "write", concurrent)
-        with pytest.raises(ConcurrentModificationError):
-            repair.run(apply=True)
+        assert repair.run(apply=True)[0].skip_reason
         assert path.read_text() == "new content\n"
     finally:
         vault.close()
@@ -299,8 +296,13 @@ def test_cli_read_only_reports_nontransactional_batch(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert result.exit_code == 1
-    assert "no rollback" in result.stderr and "read-only" in result.stderr
+    assert "no rollback" not in result.stderr and "read-only" in result.stderr
     assert "Earlier files" not in result.stderr
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
+    result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert result.exit_code == 1 and "ERROR:" in result.stderr
+    assert "no rollback" not in result.stderr
 
 
 def test_batch_reports_skips_and_continues(
@@ -348,3 +350,132 @@ def test_multiline_titles_preserve_remaining_header(header: str, title: str) -> 
         "---\nkeep: 1\n---\nbody\n",
         ("title",),
     )
+
+
+def test_unreadable_batch_continues_in_preview_and_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for folder in ("a", "b", "c", "d"):
+        (tmp_path / folder).mkdir()
+    for folder in ("a", "d"):
+        (tmp_path / folder / "log.md").write_text("---\ntitle: Log\n---\nbody\n")
+    bad_yaml = tmp_path / "b" / "log.md"
+    bad_utf8 = tmp_path / "c" / "log.md"
+    bad_yaml.write_bytes(b"---\ntitle: [\n---\nbody\n")
+    bad_utf8.write_bytes(b"---\ntitle: Log\n---\n\xff\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    for options, action in [([], "Would remove"), (["--apply"], "Removed")]:
+        result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", *options])
+        assert result.exit_code == 1
+        for folder in ("a", "d"):
+            assert f"{action} {folder}/log.md: title" in result.stdout
+        for folder in ("b", "c"):
+            assert f"Skipped {folder}/log.md:" in result.stdout
+    assert bad_yaml.read_bytes() == b"---\ntitle: [\n---\nbody\n"
+    assert bad_utf8.read_bytes() == b"---\ntitle: Log\n---\n\xff\n"
+    assert (tmp_path / "d" / "log.md").read_text() == "body\n"
+
+
+def test_designated_index_respects_operator_protection(tmp_path: Path) -> None:
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
+
+    path = tmp_path / "index.md"
+    path.write_text("---\ntitle: Index\n---\nbody\n")
+    caps = OkfCapabilities(
+        author=False, verify="off", index=True, log="off", folders=(".",)
+    )
+    settings = VaultSettings(
+        read_only=False,
+        okf_mode="on",
+        required_frontmatter=["title"],
+        okf_capabilities=caps,
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        assert ReservedFrontmatterRepair(vault).run(apply=True)[0].keys == ("title",)
+        assert path.read_text() == "body\n"
+    finally:
+        vault.close()
+    path.write_text("---\ntitle: Index\n---\nbody\n")
+    settings = VaultSettings(
+        read_only=False,
+        okf_mode="on",
+        required_frontmatter=["title"],
+        protected_paths=["index.md"],
+        okf_capabilities=caps,
+    )
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        repair = ReservedFrontmatterRepair(vault)
+        assert repair.run(apply=True)[0].skip_reason
+        assert "title: Index" in path.read_text()
+        assert repair.run(apply=True, allow_protected=True)[0].keys == ("title",)
+    finally:
+        vault.close()
+
+
+def test_inventory_failure_precedes_all_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    path = tmp_path / "log.md"
+    original = "---\ntitle: Log\n---\nbody\n"
+    path.write_text(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", required_frontmatter=["title"]
+        ),
+    )
+    try:
+        real = vault.reader.inspect_bundle_tree
+
+        def pages(request: object) -> object:
+            page = real(request)
+            return SimpleNamespace(
+                state=page.state,
+                entries=page.entries,
+                enumeration="unavailable",
+                next_cursor=None,
+            )
+
+        monkeypatch.setattr(vault.reader, "inspect_bundle_tree", pages)
+        with pytest.raises(InvalidRequestError, match="inventory is incomplete"):
+            ReservedFrontmatterRepair(vault).run(apply=True)
+        assert path.read_text() == original
+    finally:
+        vault.close()
+
+
+def test_cli_reports_completed_writes_and_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.managers.document import DocumentManager
+
+    for folder in ("a", "b", "c"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "log.md").write_text("---\ntitle: Log\n---\nbody\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    write = DocumentManager.write
+
+    def conflict(
+        self: DocumentManager, path: str, *args: object, **kwargs: object
+    ) -> object:
+        if path == "b/log.md":
+            (tmp_path / path).write_text("concurrent edit\n")
+        return write(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(DocumentManager, "write", conflict)
+    result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
+    assert result.exit_code == 1
+    assert "Removed a/log.md: title" in result.stdout
+    assert "Skipped b/log.md:" in result.stdout
+    assert "Removed c/log.md: title" in result.stdout
+    assert (tmp_path / "b" / "log.md").read_text() == "concurrent edit\n"

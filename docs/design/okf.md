@@ -552,7 +552,7 @@ through the deliberate operation below.
 
 ### Deliberate placeholder repair (#1438)
 
-`ReservedFrontmatterRepair` inventories reserved files independently of index admission. It previews fields matching the historical seeder using the current required-fields configuration. Matching does not prove origin. Applying re-evaluates current files and uses the guarded write path with an etag; unmatched fields and remaining bytes are preserved. The `okf strip-seeded-frontmatter` CLI exposes this migration. Ambiguous or unsafe candidates require manual inspection.
+`ReservedFrontmatterRepair` inventories reserved files independently of index admission. It previews fields matching the historical seeder using the current required-fields configuration. Matching does not prove origin. Applying re-evaluates current files and uses the guarded write path with an etag; unmatched fields and remaining bytes are preserved. The `okf strip-seeded-frontmatter` CLI exposes this migration. Per-file inspection and write failures are reported while other candidates continue; ambiguous or unsafe candidates require manual inspection.
 
 ### Deliberate legacy log repair (#1403)
 
