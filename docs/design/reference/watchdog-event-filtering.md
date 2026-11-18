@@ -34,6 +34,10 @@ sources:
     title: Watchdog 4.0.1 FSEvents schedule override
     resource: https://github.com/gorakhargosh/watchdog/blob/v4.0.1/src/watchdog/observers/fsevents.py
     accessed: 2026-11-14
+  - id: fs7
+    title: Watchdog 7.1.0 FSEvents emitter
+    resource: https://github.com/gorakhargosh/watchdog/blob/v7.1.0/src/watchdog/observers/fsevents.py
+    accessed: 2026-11-18
   - id: fs402
     title: Watchdog 4.0.2 FSEvents schedule override
     resource: https://github.com/gorakhargosh/watchdog/blob/v4.0.2/src/watchdog/observers/fsevents.py
@@ -106,6 +110,10 @@ or recursive exclusion policy.
   frequency have not been reproduced; a synthetic overflow experiment would be
   needed to quantify them.
 
+- In inspected FSEvents 7.1, a combined modification and metadata flag is
+  delivered as a modification; the metadata branch covers inode, extended
+  attribute and owner changes. [source: fs7]
+
 ## Refutation pass
 
 Comparing the three FSEvents overrides refutes the tempting >=4.0.0 floor;
@@ -131,11 +139,19 @@ deletion and recreation of its root. A later nested `.git` creation was
 delivered to its recursive observation watch. A probe of 400 non-recursive
 registrations added 400 emitter threads; the source for the inspected inotify
 emitter creates an instance per emitter. These probes do not establish native
-Linux behavior. [source: ino7] Non-recursive FSEvents registrations still use
+Linux behavior, including native move-self delivery. [source: ino7] A replaced
+search root is registered for observation only until restart. With the source
+floor off, new, recreated or moved top-level roots rely on a later scan.
+Non-recursive FSEvents registrations still use
 recursive native streams, so the internal-directory boundary applies to
 registrations. [source: fs402] The
 search handler retains root-relative hidden-path checks; see
-the [watcher design](../design.md). The scheduling pin covers recursive visible
+the [watcher design](../design.md). For observation, an adjacent parent notice
+after create, delete or move is absorbed before checking the directory mode and
+change time. Reordered or coalesced non-note events can still cost a sweep per
+changed signature. An access change merged into an adjacent notice is recovered
+by a later sweep or standalone notice; explicit attribute events remain
+deliverable. The scheduling pin covers recursive visible
 and dot-roots, the optional floor, excluded children and protected state paths.
 [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]
 

@@ -1546,12 +1546,19 @@ including nested internal directories, whose events are ignored. On macOS a
 non-recursive watchdog registration still uses a recursive native stream; the
 internal-directory guarantee concerns registrations, not the native stream.
 The root floor discovers new top-level observation roots. Without that floor,
-root-level files and newly created top-level directories wait for startup, pull
-or reindex. A new top-level root is observation-only until restart; search
-reindexes on creation but does not watch later edits there. Search and
+root-level files and new, recreated or moved top-level directories rely on
+startup, pull or reindex; native Linux move-self behavior remains unverified.
+A new or replaced top-level root is observation-only until restart; search
+may reindex on creation but does not watch later edits there. Search and
 observation events share one debounce: reindex sweeps the ledger, with a
 standalone sweep if reindex fails. Inventory enforces access and internal-path
-boundaries during each sweep.
+boundaries during each sweep. Attribute events request observation, while
+legacy directory modifications compare mode and change time. An adjacent parent
+notice after a child create, delete or move is absorbed without advancing that
+signature. Reordered or coalesced non-note changes may cost a sweep per changed
+directory signature. A simultaneous access change indistinguishable from an
+adjacent notice is seen by a later sweep; the next standalone notice can still
+trigger one. Explicit attribute events are not absorbed.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a

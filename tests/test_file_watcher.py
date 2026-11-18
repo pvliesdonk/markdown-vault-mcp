@@ -1239,8 +1239,11 @@ def test_new_indexable_root_only_watches_observations(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
 @pytest.mark.parametrize("remove", ["delete", "move"])
-def test_recreated_excluded_root_is_watched(tmp_path: Path, remove: str) -> None:
+def test_recreated_excluded_root_is_watched(
+    tmp_path: Path, remove: str, kind: str
+) -> None:
     """A replacement directory receives a fresh native subscription."""
     import asyncio
     import hashlib
@@ -1248,7 +1251,7 @@ def test_recreated_excluded_root_is_watched(tmp_path: Path, remove: str) -> None
 
     from markdown_vault_mcp.config import ProjectConfig
 
-    folder = tmp_path / "excluded"
+    folder = tmp_path / kind
     folder.mkdir()
     (folder / "note.md").write_text("before")
     config = ProjectConfig(
@@ -1271,10 +1274,10 @@ def test_recreated_excluded_root_is_watched(tmp_path: Path, remove: str) -> None
             (folder / "note.md").write_text("replacement")
             expected = hashlib.sha256(b"replacement").hexdigest()
             for _ in range(100):
-                if ledger.rows()["excluded/note.md"].content_digest == expected:
+                if ledger.rows()[f"{kind}/note.md"].content_digest == expected:
                     break
                 await asyncio.sleep(0.05)
-            assert ledger.rows()["excluded/note.md"].content_digest == expected
+            assert ledger.rows()[f"{kind}/note.md"].content_digest == expected
 
     asyncio.run(run())
 
@@ -2159,8 +2162,8 @@ def test_observation_metadata_events_route_without_search(tmp_path: Path) -> Non
     assert calls == ["observe", "observe", "observe"]
 
 
-def test_search_root_self_move_keeps_search_subscription(tmp_path: Path) -> None:
-    """A search watch is not rebuilt as observation-only after a self move."""
+def test_search_root_self_move_is_replaced_observation_only(tmp_path: Path) -> None:
+    """A self move retires the old watch and adopts an observation-only root."""
     root = tmp_path / "visible"
     root.mkdir()
     watcher = VaultFileWatcher(tmp_path, lambda: None, on_observation=lambda: None)
@@ -2172,7 +2175,8 @@ def test_search_root_self_move_keeps_search_subscription(tmp_path: Path) -> None
             if Path(c.args[1]) == root
         )
         handler.on_any_event(DirMovedEvent(str(root), str(tmp_path / "moved")))
-        assert watcher._watches[root][0].search
+        assert not watcher._watches[root][0].search
+        assert factory.return_value.unschedule.called
         watcher.stop()
 
 
@@ -2205,9 +2209,10 @@ def test_directory_metadata_without_mode_change_triggers_observation(
     assert calls == [1]
 
 
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
 @pytest.mark.parametrize("event_kind", ["file_attrib", "dir_attrib", "dir_modified"])
 def test_metadata_queue_reconciles_ledger_without_search(
-    tmp_path: Path, event_kind: str
+    tmp_path: Path, event_kind: str, kind: str
 ) -> None:
     """Backend metadata deliveries reach inventory through the real event filter."""
     import watchdog.events as events
@@ -2218,7 +2223,7 @@ def test_metadata_queue_reconciles_ledger_without_search(
     if event_kind.endswith("attrib") and not hasattr(events, "FileAttribEvent"):
         pytest.skip("watchdog before attribute event classes")
     source = tmp_path / "vault"
-    folder = source / "excluded"
+    folder = source / kind
     folder.mkdir(parents=True)
     vault = Vault(
         source_dir=source,
@@ -2241,6 +2246,7 @@ def test_metadata_queue_reconciles_ledger_without_search(
         debounce_s=0.01,
         exclude_patterns=["excluded/**"],
         on_observation=observe,
+        root_floor=False,
     )
     try:
         with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
@@ -2269,7 +2275,7 @@ def test_metadata_queue_reconciles_ledger_without_search(
             queued, _ = queue.get_nowait()
             handler.on_any_event(queued)
             assert swept.wait(3)
-            assert "excluded/note.md" in ledger.rows()
+            assert f"{kind}/note.md" in ledger.rows()
             assert not searches
             watcher.stop()
     finally:
@@ -2277,17 +2283,18 @@ def test_metadata_queue_reconciles_ledger_without_search(
         vault.close()
 
 
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
 @pytest.mark.parametrize("locked", ["file", "directory"])
 def test_native_permission_restoration_observes_note(
-    tmp_path: Path, locked: str
+    tmp_path: Path, locked: str, kind: str
 ) -> None:
-    """A native permission restoration makes an excluded note observable."""
+    """A native permission restoration makes a note observable."""
     import os
 
     from markdown_vault_mcp.vault import Vault, VaultSettings
 
     source = tmp_path / "vault"
-    folder = source / "excluded"
+    folder = source / kind
     folder.mkdir(parents=True)
     note = folder / "note.md"
     note.write_text("visible after chmod")
@@ -2304,7 +2311,7 @@ def test_native_permission_restoration_observes_note(
     )
     watcher = VaultFileWatcher(
         source,
-        lambda: None,
+        vault._index_mgr.observations.sweep,
         debounce_s=0.05,
         exclude_patterns=["excluded/**"],
         on_observation=vault._index_mgr.observations.sweep,
@@ -2312,14 +2319,155 @@ def test_native_permission_restoration_observes_note(
     try:
         vault.index.build_index()
         ledger = vault._index_mgr.observations
-        assert "excluded/note.md" not in ledger.rows()
+        assert f"{kind}/note.md" not in ledger.rows()
         watcher.start()
         target.chmod(0o755 if locked == "directory" else 0o644)
         deadline = time.monotonic() + 5
-        while "excluded/note.md" not in ledger.rows() and time.monotonic() < deadline:
+        while f"{kind}/note.md" not in ledger.rows() and time.monotonic() < deadline:
             time.sleep(0.05)
-        assert "excluded/note.md" in ledger.rows()
+        assert f"{kind}/note.md" in ledger.rows()
     finally:
         target.chmod(0o755 if locked == "directory" else 0o644)
         watcher.stop()
         vault.close()
+
+
+def test_non_note_churn_sweeps_at_most_once(tmp_path: Path) -> None:
+    """Derived directory notices do not turn attachment churn into sweeps."""
+    folder = tmp_path / "priv"
+    sub = folder / "sub"
+    sub.mkdir(parents=True)
+    observed = threading.Event()
+    calls: list[int] = []
+
+    def observe() -> None:
+        calls.append(1)
+        observed.set()
+
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,
+        debounce_s=0.05,
+        exclude_patterns=["priv/**"],
+        on_observation=observe,
+    )
+    watcher.start()
+    try:
+        for name in ("a.png", "b.png", "c.png", ".DS_Store", "state.tmp"):
+            (sub / name).write_text("x")
+            observed.wait(0.3)
+            observed.clear()
+        (sub / "state.tmp").rename(sub / "state.json")
+        observed.wait(0.5)
+        assert len(calls) <= 1
+        before = len(calls)
+        observed.clear()
+        sub.chmod(0o700)
+        assert observed.wait(3) and len(calls) > before
+        before = len(calls)
+        observed.clear()
+        (sub / "note.md").write_text("note")
+        assert observed.wait(3) and len(calls) > before
+    finally:
+        watcher.stop()
+
+
+def test_recreated_indexed_root_immediately_is_watched(tmp_path: Path) -> None:
+    """An immediate replacement is adopted before subsequent note edits."""
+    import asyncio
+    import hashlib
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            watcher = ctx["service"]._file_watcher
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            shutil.rmtree(folder)
+            folder.mkdir()
+            for _ in range(100):
+                entry = watcher._watches.get(folder.resolve())
+                if entry and not entry[0].search:
+                    break
+                await asyncio.sleep(0.05)
+            assert entry and not entry[0].search
+            (folder / "note.md").write_text("replacement")
+            ledger = vault._index_mgr.observations
+            expected = hashlib.sha256(b"replacement").hexdigest()
+            for _ in range(100):
+                row = ledger.rows().get("docs/note.md")
+                if row and row.content_digest == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert row and row.content_digest == expected
+
+    asyncio.run(run())
+
+
+def test_floor_off_search_root_delete_records_removal(tmp_path: Path) -> None:
+    """The opt-out retains no source watch but records a watched root deletion."""
+    import asyncio
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(
+        source_dir=tmp_path, file_watcher_root_floor=False, file_watcher_debounce_s=0.08
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            watcher = ctx["service"]._file_watcher
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            assert tmp_path.resolve() not in watcher._watches
+            ledger = vault._index_mgr.observations
+            shutil.rmtree(folder)
+            for _ in range(100):
+                if ledger.rows()["docs/note.md"].presence == "removed":
+                    break
+                await asyncio.sleep(0.05)
+            assert ledger.rows()["docs/note.md"].presence == "removed"
+            assert tmp_path.resolve() not in watcher._watches
+
+    asyncio.run(run())
+
+
+def test_derived_directory_notice_is_absorbed_once(tmp_path: Path) -> None:
+    """An absorbed notice leaves the signature for the next standalone notice."""
+    directory = tmp_path / "folder"
+    directory.mkdir()
+    calls: list[int] = []
+    handler = _VaultEventHandler(
+        lambda: None,
+        tmp_path,
+        observe=lambda: calls.append(1),
+        root_info=_WatchRoot(tmp_path, True, False),
+        sync=lambda _path, _rebuild: False,
+    )
+    handler.on_any_event(DirModifiedEvent(str(directory)))
+    calls.clear()
+    (directory / "image.png").write_text("x")
+    handler.on_any_event(FileCreatedEvent(str(directory / "image.png")))
+    handler.on_any_event(DirModifiedEvent(str(directory)))
+    assert calls == []
+    handler.on_any_event(DirModifiedEvent(str(directory)))
+    assert calls == [1]
+    handler.on_any_event(DirModifiedEvent(str(directory)))
+    assert calls == [1]
+    import watchdog.events as events
+
+    if hasattr(events, "DirAttribEvent"):
+        handler.on_any_event(FileCreatedEvent(str(directory / "other.png")))
+        handler.on_any_event(events.DirAttribEvent(str(directory)))
+        assert calls == [1, 1]
