@@ -2128,7 +2128,8 @@ the spec itself says, dated and sourced, in
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
-  local admission, partial v0.2 format findings and uninspected files;
+  last-observed index admission, partial v0.2 format findings and uninspected
+  content or metadata (including metadata of files included in the archive);
   incomplete inventory enumeration refuses export. Reports and selection options
   are library-only; the download ref exposes neither. Unindexed notes retain
   raw links and bytes, and the report does not identify those links;

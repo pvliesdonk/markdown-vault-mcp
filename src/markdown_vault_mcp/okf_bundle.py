@@ -87,6 +87,8 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
         return
     if item.search_state == "non_admitted":
         report.local_policy.non_admitted.append(item.path)
+    elif item.search_state != "searchable":
+        report.local_policy.unknown.append(item.path)
     if item.parse_state in {"invalid_encoding", "malformed_metadata"}:
         report.format_findings.append(FormatFinding(item.path, item.parse_state))
     elif item.parse_state == "valid" and item.type_state in {"absent", "invalid"}:
@@ -128,7 +130,8 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
             else (page.state if page.state != "inspected" else page.enumeration)
         )
         raise ValueError(
-            f"Cannot export scope {folder or '(root)'}: inventory unavailable at {path}: {reason}"
+            f"Cannot export scope {folder or '(root)'}: inventory unavailable at {path}: {reason}. "
+            "Check entry permissions, symlinks of unknown kind, and unavailable state paths."
         )
 
 

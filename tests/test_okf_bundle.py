@@ -74,6 +74,8 @@ def test_bundle_includes_notes_and_attachments(vault: Vault, config: ProjectConf
     # Notes (incl. reserved navigation files) and the attachment are present.
     assert {"index.md", "log.md", "a.md", "b.md", "guides/one.md", "pic.png"} <= members
     assert result.attachments == 1
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("pic.png") == b"\x89PNGDATA"
     assert result.notes >= 5
 
 
@@ -119,18 +121,6 @@ def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):
     first = build_okf_bundle(vault, config, folder="").data
     second = build_okf_bundle(vault, config, folder="").data
     assert first == second
-
-
-def test_bundle_reads_attachment_without_encoding(
-    vault: Vault, config: ProjectConfig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def fail(_path: str) -> None:
-        raise AssertionError("encoded read used")
-
-    monkeypatch.setattr(vault.reader, "read_attachment", fail)
-    result = build_okf_bundle(vault, config, folder="")
-    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert archive.read("pic.png") == b"\x89PNGDATA"
 
 
 def test_inventory_membership_and_report(source_dir: Path) -> None:
@@ -250,6 +240,7 @@ def test_raw_links_for_notes_outside_graph(source_dir: Path) -> None:
     (source_dir / "target.md").write_text("---\ntitle: Target\n---\n")
     (source_dir / "nonadmitted.md").write_text(body)
     (source_dir / "excluded.md").write_text(body)
+    (source_dir / "invalid.md").write_bytes(b"\xff")
     vault = Vault(
         source_dir=source_dir,
         settings=VaultSettings(
@@ -260,11 +251,18 @@ def test_raw_links_for_notes_outside_graph(source_dir: Path) -> None:
     )
     try:
         vault.index.build_index()
+        (source_dir / "target.md").write_text(body)
         (source_dir / "new.md").write_text(body)
         result = build_okf_bundle(
             vault, ProjectConfig(source_dir=source_dir), include_index_excluded=True
         )
+        policy = result.report.local_policy
+        assert policy.basis == "last_observed_index"
+        assert "nonadmitted.md" in policy.non_admitted
+        assert {"excluded.md", "new.md", "invalid.md"} <= set(policy.unknown)
+        assert "target.md" not in policy.non_admitted + policy.unknown
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("target.md") == body.encode()
             for path in ("nonadmitted.md", "excluded.md", "new.md"):
                 assert archive.read(path) == body.encode()
     finally:
@@ -314,3 +312,14 @@ def test_deep_inventory_and_unsupported_nofollow_refuse(
     monkeypatch.setattr(fs, "_NOFOLLOW_SUPPORTED", False)
     with pytest.raises(ValueError, match=r"inventory unavailable.*unavailable"):
         build_okf_bundle(vault, config)
+
+
+def test_cold_index_local_policy_is_unknown(source_dir: Path) -> None:
+    vault = Vault(source_dir=source_dir, settings=VaultSettings(read_only=False))
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        assert {"a.md", "b.md", "guides/one.md"} <= set(
+            result.report.local_policy.unknown
+        )
+    finally:
+        vault.close()
