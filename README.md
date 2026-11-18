@@ -89,6 +89,8 @@ The Docker image, the `.mcpb` bundle and the Claude Code plugin already include 
 For VS Code or Goose Desktop, use the
 [remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)
 or the [local Goose configuration](docs/get-started/installation.md#goose-desktop-local-vault).
+
+When watching is active, external saves that replace a note from a hidden temporary file also trigger reindexing.
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration
