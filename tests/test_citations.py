@@ -255,7 +255,7 @@ def test_definition_interrupts_paragraph_without_becoming_a_marker() -> None:
     assert [citation.id for citation in report.citations] == ["a"]
 
 
-def test_unmatched_labels_fan_out_to_declared_resources() -> None:
+def test_unresolved_labels_are_stored_once_per_note() -> None:
     from markdown_vault_mcp.citations import citation_edges
 
     multi = _note(
@@ -267,12 +267,13 @@ def test_unmatched_labels_fan_out_to_declared_resources() -> None:
         "[^a] [^missing]",
     )
     assert [(e.label, e.status, e.resource) for e in citation_edges(multi)] == [
+        ("", "declared", "urn:one"),
+        ("", "declared", "urn:two"),
         ("a", "matched", "urn:one"),
-        ("missing", "unmatched", "urn:one"),
-        ("missing", "unmatched", "urn:two"),
+        ("missing", "unmatched", ""),
     ]
 
-    # Each declared resource receives diagnostics; invalid source entries do not.
+    # Invalid source entries declare nothing; unresolved labels keep no resource.
     sources = [
         False,
         {"id": "a", "resource": "urn:s"},
@@ -282,17 +283,45 @@ def test_unmatched_labels_fan_out_to_declared_resources() -> None:
     ]
     edges = citation_edges(_note(sources, "[^a] [^unknown] [^missing] [^blank]"))
     assert [(e.label, e.status, e.resource) for e in edges] == [
-        ("a", "ambiguous", "urn:s"),
-        ("unknown", "unmatched", "urn:s"),
-        ("missing", "invalid_resource", "urn:s"),
-        ("blank", "invalid_resource", "urn:s"),
+        ("", "declared", "urn:s"),
+        ("a", "ambiguous", ""),
+        ("unknown", "unmatched", ""),
+        ("missing", "invalid_resource", ""),
+        ("blank", "invalid_resource", ""),
     ]
     assert (
         citation_edges(_note({"bad": {"id": "a", "resource": "urn:s"}}, "[^a]")) == []
     )
     text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n"
     for newline in ("\r", "\r\n"):
-        assert citation_edges(text.replace("\n", newline))[0].resource == "urn:s"
+        assert citation_edges(text.replace("\n", newline))[1].resource == "urn:s"
+
+
+def test_unresolved_rows_are_linear_and_reach_each_declared_resource(
+    tmp_path: Path,
+) -> None:
+    resources = [f"urn:source:{n}" for n in range(250)]
+    sources = [
+        {"id": f"source{n}", "resource": resource}
+        for n, resource in enumerate(resources)
+    ]
+    sources[1]["id"] = "a"
+    body = "[^a] " + " ".join(f"[^{n}]" for n in range(250))
+    (tmp_path / "one.md").write_text(_note(sources, body), encoding="utf-8")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        first = vault.reader.find_citing_notes(resources[0])
+        second = vault.reader.find_citing_notes(resources[1])
+        assert [r["path"] for r in first["citing"]] == []
+        assert len(first["diagnostics"]) == len(second["diagnostics"]) == 250
+        assert [(r["path"], r["labels"][0]["label"]) for r in second["citing"]] == [
+            ("one.md", "a")
+        ]
+        count = vault._fts._conn().execute("SELECT count(*) FROM citations")
+        assert count.fetchone()[0] == len(resources) + 251
+    finally:
+        vault.close()
 
 
 def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:

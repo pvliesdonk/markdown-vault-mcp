@@ -2749,7 +2749,10 @@ CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
 
 -- Citation attribution rows are separate from navigation links (#1446).
--- This additive table keeps schema_version at 1.
+-- This additive table keeps schema_version at 1. Per note: one status
+-- 'declared' row per valid source resource, one row per matched label under
+-- its resource, and one row per other label under resource '' (diagnostic for
+-- each declared resource of that note), so rows grow linearly with the note.
 CREATE TABLE IF NOT EXISTS citations (
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     label TEXT NOT NULL,

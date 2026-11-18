@@ -267,6 +267,18 @@ _DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
     "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
 )
 
+# Citation rows of one resource: its ``declared`` rows select the notes; each
+# note contributes the labels matched to that resource and its unresolved
+# labels, stored once with resource ``""``.
+_CITATION_ROWS_SQL = """
+SELECT d.path, d.title, c.label, c.status, c.occurrences
+FROM citations x
+JOIN documents d ON d.id = x.document_id AND d.citations_derived = ?
+JOIN citations c ON c.document_id = x.document_id AND c.status != 'declared'
+ AND c.resource IN (x.resource, '')
+WHERE x.status = 'declared' AND x.resource = ?
+ORDER BY d.path, c.label"""
+
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
 # ``documents`` row presence would otherwise treat a partial index (left
@@ -1492,10 +1504,7 @@ class FTSIndex:
                 reason="never_built",
             )
         rows = conn.execute(
-            """SELECT d.path, d.title, c.label, c.status, c.occurrences
-               FROM citations c JOIN documents d ON d.id=c.document_id
-               WHERE c.resource=? AND d.citations_derived=? ORDER BY d.path, c.label""",
-            (resource, INDEX_SEMANTICS_VERSION),
+            _CITATION_ROWS_SQL, (INDEX_SEMANTICS_VERSION, resource)
         ).fetchall()
         count = conn.execute(
             "SELECT count(*) FROM documents_live WHERE citations_derived != ?",

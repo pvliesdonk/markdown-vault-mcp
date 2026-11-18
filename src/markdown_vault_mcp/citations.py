@@ -39,11 +39,15 @@ class Citation:
 
 @dataclass(frozen=True)
 class CitationEdge:
-    """A label attributed to or diagnosed under one declared resource."""
+    """A resource declared by a note, or one of its labels.
+
+    A matched label carries its resource; every other label carries ``""`` and
+    belongs to each ``declared`` resource of the same note.
+    """
 
     resource: str
     label: str
-    status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"]
+    status: Literal["matched", "unmatched", "ambiguous", "invalid_resource", "declared"]
     occurrences: int
 
 
@@ -220,7 +224,8 @@ def citation_edges(text: str) -> list[CitationEdge]:
         text: Full decoded note text.
 
     Returns:
-        Literal labels, statuses, counts and uniquely matched resources.
+        One ``declared`` edge per distinct valid resource, then one edge per
+        label: a matched label under its resource, any other under ``""``.
     """
     if "[^" not in text:
         return []
@@ -229,30 +234,26 @@ def citation_edges(text: str) -> list[CitationEdge]:
     if not isinstance(sources, list):
         return []
     ids, _, _ = _source_ids(sources)
-    citations = _join(_markers(strip_frontmatter_block(text)), ids)
-    declared = list(
-        dict.fromkeys(
-            source["resource"]
-            for source in sources
-            if isinstance(source, dict)
-            and isinstance(source.get("resource"), str)
-            and source["resource"].strip()
-        )
+    declared = dict.fromkeys(
+        source["resource"]
+        for source in sources
+        if isinstance(source, dict)
+        and isinstance(source.get("resource"), str)
+        and source["resource"].strip()
     )
-    edges = []
-    for citation in citations:
-        resource = None
+    if not declared:
+        return []
+    edges = [CitationEdge(resource, "", "declared", 0) for resource in declared]
+    for citation in _join(_markers(strip_frontmatter_block(text)), ids):
+        resource = ""
         if citation.status == "matched":
             value = sources[citation.source_indices[0]].get("resource")
             if isinstance(value, str) and value.strip():
                 resource = value
-        status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"] = (
-            citation.status
-        )
-        if status == "matched" and resource is None:
+        status: Literal[
+            "matched", "unmatched", "ambiguous", "invalid_resource", "declared"
+        ] = citation.status
+        if status == "matched" and not resource:
             status = "invalid_resource"
-        for target in [resource] if resource is not None else declared:
-            edges.append(
-                CitationEdge(target, citation.id, status, citation.occurrences)
-            )
+        edges.append(CitationEdge(resource, citation.id, status, citation.occurrences))
     return edges
