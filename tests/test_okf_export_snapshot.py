@@ -326,10 +326,13 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
     assert snapshot is not None
     original = git_query.GitExportSnapshot._read_blob
     calls = []
+    readers = []
 
     def count(self, oid):
         calls.append(oid)
-        return original(self, oid)
+        result = original(self, oid)
+        readers.append(self._process[0])
+        return result
 
     monkeypatch.setattr(git_query.GitExportSnapshot, "_read_blob", count)
     try:
@@ -345,6 +348,28 @@ def test_git_snapshot_caches_blob_reads(tmp_path: Path, monkeypatch) -> None:
     finally:
         snapshot.close()
     assert process.poll() is not None
+
+    # Only the post-pack flag comparison reads this omitted oversized note.
+    root = tmp_path / "only"
+    root.mkdir()
+    _git(root, "init", "-q")
+    _git(root, "config", "user.name", "Fixture")
+    _git(root, "config", "user.email", "fixture@example.invalid")
+    hidden = root / ".hidden.md"
+    hidden.write_bytes(b"a" * 70000)
+    _git(root, "add", ".hidden.md")
+    _git(root, "commit", "-qm", "initial")
+    _git(root, "update-index", "--assume-unchanged", ".hidden.md")
+    hidden.write_bytes(b"b" * 70000)
+    readers.clear()
+    vault = Vault(source_dir=root, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=root))
+    finally:
+        vault.close()
+    assert result.report.snapshot.uncommitted_paths == [".hidden.md"]
+    assert len(readers) == 1
+    assert readers[0].poll() is not None
 
 
 def test_git_inventory_rejects_large_note_without_reading_blob(
