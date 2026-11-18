@@ -32,21 +32,11 @@ def test_synthesis_includes_live_candidates_and_does_not_write(tmp_path):
     try:
         result = vault.reader.okf_navigation("")
         assert result.source == "synthesized"
-        assert {e.path for e in result.entries} >= {
-            "untyped.md",
-            "bad.md",
-            "a[b].md",
-            ".hidden.md",
-            "child",
-        }
         assert "[untyped.md](/untyped.md)" in result.body
+        assert "[bad.md](/bad.md)" in result.body
+        assert "[.hidden.md](/.hidden.md)" in result.body
         assert "[child](/child/)" in result.body
         assert r"[a\[b\].md]" in result.body
-        assert (
-            next(e for e in result.entries if e.path == "bad.md").parse_state
-            == "malformed_metadata"
-        )
-        assert next(e for e in result.entries if e.path == ".hidden.md").hidden_path
         assert {p.name: p.stat().st_mtime_ns for p in tmp_path.iterdir()} == before
     finally:
         vault.close()
@@ -61,7 +51,6 @@ def test_authored_precedes_bounded_inventory(tmp_path):
         assert result.source == "authored"
         assert result.body == "  authored\n"
         assert result.enumeration == "not_inspected"
-        assert result.entries == ()
     finally:
         vault.close()
 
@@ -80,8 +69,6 @@ def test_unreadable_authored_is_not_replaced(tmp_path, kind, reason):
         path.symlink_to(tmp_path / "missing")
     elif kind == "nonregular":
         path.mkdir()
-    elif kind == "oversize":
-        path.write_bytes(b"x" * 65537)
     else:
         path.write_bytes(b"\xff")
     vault = Vault(source_dir=tmp_path)
@@ -167,7 +154,7 @@ def test_partial_synthesis_and_io_error(tmp_path, monkeypatch):
         result = vault.reader.okf_navigation("", entry_limit=1)
         assert result.source == "synthesized"
         assert result.enumeration == "entry_limit"
-        assert len(result.entries) == 1
+        assert result.body.count("- [") == 1
 
         def fail(*_args):
             raise PermissionError("denied")
@@ -211,7 +198,12 @@ def test_synthesis_includes_non_admitted_after_index_build(tmp_path):
     try:
         vault.index.build_index()
         result = vault.reader.okf_navigation("")
-        entry = next(entry for entry in result.entries if entry.path == "missing.md")
+        from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
+
+        inspection = vault.reader.inspect_bundle(BundleInspectionRequest(""))
+        entry = next(
+            entry for entry in inspection.entries if entry.path == "missing.md"
+        )
         assert entry.search_state == "non_admitted"
         assert "[missing.md](/missing.md)" in result.body
     finally:
@@ -271,20 +263,6 @@ def test_authored_full_note_limit(tmp_path, limit, size, expected):
         assert result.reason == (None if expected else "note_limit")
     finally:
         vault.close()
-
-
-@pytest.mark.parametrize("value", [True, "2"])
-async def test_tool_rejects_coerced_limit(tmp_path, monkeypatch, value):
-    from fastmcp import Client
-    from fastmcp.exceptions import ToolError
-
-    from tests.server_factory import make_server
-
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    async with Client(make_server()) as client:
-        with pytest.raises(ToolError):
-            await client.call_tool("okf_navigation", {"entry_limit": value})
 
 
 async def test_invalid_folder_error_explains_root(tmp_path, monkeypatch):

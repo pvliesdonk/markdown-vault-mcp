@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from markdown_vault_mcp.okf import OKF_ROOT_INDEX_TITLE, build_index_markdown
-from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import open_directory_nofollow, read_regular_nofollow
 from markdown_vault_mcp.utils.text import decode_utf8
 
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.bundle_inventory import (
-        BundleEntry,
         BundleInspection,
         Enumeration,
         ScopeState,
@@ -24,7 +22,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FolderNavigation:
-    """A folder's navigation body and the observations supporting it."""
+    """A folder's navigation body, source and enumeration state."""
 
     folder: str
     state: ScopeState
@@ -32,20 +30,7 @@ class FolderNavigation:
     body: str | None
     index_path: str
     reason: str | None
-    entries: tuple[BundleEntry, ...]
     enumeration: Enumeration
-
-
-def authored_body(text: str) -> str:
-    """Remove a leading frontmatter block while preserving the body verbatim.
-
-    Args:
-        text: Complete decoded index text.
-
-    Returns:
-        The body, or the original text when no complete block leads it.
-    """
-    return strip_frontmatter_block(text, preserve_body=True)
 
 
 def read_authored(

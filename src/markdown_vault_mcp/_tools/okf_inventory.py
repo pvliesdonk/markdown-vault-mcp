@@ -5,13 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import asdict
-from typing import Annotated, Any
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import tool_boundary
-from pydantic import Field
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
 from markdown_vault_mcp._tools._outcomes import library_outcomes
@@ -97,7 +96,7 @@ def register(mcp: FastMCP) -> None:
     @library_outcomes
     async def okf_navigation(
         folder: str = "",
-        entry_limit: Annotated[int, Field(strict=True)] = 100,
+        entry_limit: int = 100,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Read a folder's authored or synthesized navigation and its source.

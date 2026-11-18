@@ -21,10 +21,10 @@ from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest, BundleI
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.okf_navigation import (
     FolderNavigation,
-    authored_body,
     read_authored,
     synthesize,
 )
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils.content_kind import is_note
 
 if TYPE_CHECKING:
@@ -159,7 +159,6 @@ class ReaderFacet:
             None,
             index_path,
             None,
-            (),
             inspection.enumeration,
         )
         if inspection.state != "inspected":
@@ -187,14 +186,13 @@ class ReaderFacet:
             return replace(
                 result,
                 source="authored",
-                body=authored_body(text),
+                body=strip_frontmatter_block(text, preserve_body=True),
                 enumeration="not_inspected",
             )
         return replace(
             result,
             source="synthesized",
             body=synthesize(folder, inspection),
-            entries=inspection.entries,
         )
 
     def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
