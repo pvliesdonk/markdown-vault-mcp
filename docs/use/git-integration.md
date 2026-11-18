@@ -385,15 +385,20 @@ commits) reports `would_apply=false`. The push leg has no safe local
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
-      path; their vault-relative paths are listed in
-      `pull.conflict_files`.
+      path; their repository-relative paths are listed in
+      `pull.conflict_files`. The `conflict_with` frontmatter paths are also
+      repository-relative.
     - `pull.commits_pulled` is `0` on this path because the rebase
       replays your local commits *on top of* the remote tip — the
       counting model only reports linear-history catch-ups.
 
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
-    `delete` the sibling once merged.
+    `delete` the sibling once merged. If the vault is a subdirectory, strip
+    the repository-to-vault prefix from these paths before passing them to
+    vault read or delete tools. For example, use `note.conflict-mcp-….md`
+    for a returned path of `vault/note.conflict-mcp-….md` when the vault is
+    `vault/`.
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is

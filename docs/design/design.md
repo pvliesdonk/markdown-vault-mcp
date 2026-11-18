@@ -6876,8 +6876,9 @@ ff-only merge → rebase →
 Syncthing-style sibling conflict resolution → LFS pull). `force_pull` returns
 the pipeline's structured `PullResult` directly. It resolves the enclosing
 Git working-tree root first, so repository-relative conflict paths work when
-the vault is a subdirectory; if discovery fails, Git reports the original
-configured path error. `sync_once` adapts the result to its
+the vault is a subdirectory. Returned `conflict_files` and `conflict_with`
+metadata use repository-relative paths; vault tools take vault-relative paths.
+If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
 so a remoteless checkout skips quietly at INFO level, and maps
 `FileNotFoundError` / `CalledProcessError` to the loop's log-and-return-False
