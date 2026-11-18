@@ -352,3 +352,133 @@ def test_git_unallowed_suffix_symlink_is_not_silently_omitted(tmp_path: Path) ->
             okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
     finally:
         vault.close()
+
+
+def test_git_reports_staged_and_ignored_files(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / ".gitignore").write_text("ignored.md\n")
+    note = tmp_path / "note.md"
+    note.write_text("committed")
+    _git(tmp_path, "add", ".gitignore", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    note.write_text("staged")
+    _git(tmp_path, "add", "note.md")
+    note.write_text("committed")
+    (tmp_path / "ignored.md").write_text("ignored")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert {"note.md", "ignored.md"} <= set(result.report.snapshot.uncommitted_paths)
+
+
+def test_git_snapshot_parses_aliases_once(tmp_path: Path, monkeypatch) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    for index in range(8):
+        (tmp_path / f"{index}.md").write_text(
+            f"---\naliases: [alias{index}]\n---\n[[alias0]]\n"
+        )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "initial")
+    original = okf_bundle.parse_frontmatter
+    calls = 0
+
+    def count(text):
+        nonlocal calls
+        calls += 1
+        return original(text)
+
+    monkeypatch.setattr(okf_bundle, "parse_frontmatter", count)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert calls <= 8
+
+
+def test_git_snapshot_bounded_reads_and_cache(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.managers import git_query
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "large.md").write_bytes(b"x" * 200000)
+    (tmp_path / "small.md").write_bytes(b"small")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "initial")
+    snapshot = git_query.git_export_snapshot(tmp_path)
+    assert snapshot is not None
+    original = git_query._export_git
+    calls = []
+
+    def count(root, *args, **kwargs):
+        calls.append(args)
+        return original(root, *args, **kwargs)
+
+    monkeypatch.setattr(git_query, "_export_git", count)
+    assert snapshot.read("large.md", 12) == b"x" * 12
+    assert not calls
+    assert snapshot.read("small.md") == b"small"
+    assert snapshot.read("small.md") == b"small"
+    assert len(calls) == 1
+
+
+def test_git_export_logs_clean_and_dirty_snapshot(tmp_path: Path, caplog) -> None:
+    import logging
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    note = tmp_path / "note.md"
+    note.write_text("committed")
+    _git(tmp_path, "add", "note.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with caplog.at_level(logging.INFO, logger=okf_bundle.__name__):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+            note.write_text("changed")
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    records = [
+        record for record in caplog.records if record.msg.startswith("okf_bundle_built")
+    ]
+    assert [record.levelno for record in records] == [logging.INFO, logging.WARNING]
+    assert (
+        f"commit={commit[:12]} uncommitted=1 inconsistent=0" in records[1].getMessage()
+    )
+    assert "note.md" not in records[1].getMessage()
+
+
+def test_git_inventory_rejects_large_note_without_reading_blob(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
+    from markdown_vault_mcp.managers import git_query
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "large.md").write_bytes(b"x" * 100)
+    _git(tmp_path, "add", "large.md")
+    _git(tmp_path, "commit", "-qm", "initial")
+    snapshot = git_query.git_export_snapshot(tmp_path)
+    assert snapshot is not None
+
+    def unexpected_read(*_args, **_kwargs):
+        raise AssertionError("oversized blob was read")
+
+    monkeypatch.setattr(git_query.GitExportSnapshot, "read", unexpected_read)
+    inspector = BundleInspector(tmp_path, (), frozenset(), 10)
+    page = inspector.inspect(BundleTreeRequest(root="", snapshot=snapshot))
+    assert [(entry.path, entry.reason) for entry in page.entries] == [
+        ("large.md", "note_limit")
+    ]

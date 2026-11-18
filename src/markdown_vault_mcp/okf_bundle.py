@@ -173,14 +173,18 @@ def _note_bytes(
     return result
 
 
-def _snapshot_outlinks(
-    body: str,
-    source: str,
-    notes: dict[str, bytes],
-    extensions: frozenset[str],
-) -> list[OutlinkInfo]:
+@dataclass
+class _SnapshotLinks:
+    members: set[str]
+    names: dict[str, list[str]]
+    aliases: dict[str, list[str]]
+
+
+def _snapshot_link_index(notes: dict[str, bytes]) -> _SnapshotLinks:
     aliases: dict[str, list[str]] = {}
+    names: dict[str, list[str]] = {}
     for path, raw in notes.items():
+        names.setdefault(path.rpartition("/")[2], []).append(path)
         try:
             metadata = parse_frontmatter(raw.decode("utf-8")).metadata
         except (UnicodeError, ValueError):
@@ -196,15 +200,33 @@ def _snapshot_outlinks(
         for alias in values:
             if isinstance(alias, (str, int, float)) and str(alias).strip():
                 aliases.setdefault(str(alias).strip().lower(), []).append(path)
+    return _SnapshotLinks(set(notes), names, aliases)
+
+
+def _snapshot_outlinks(
+    body: str,
+    source: str,
+    index: _SnapshotLinks,
+    extensions: frozenset[str],
+) -> list[OutlinkInfo]:
     result = []
     for link in extract_links(body, source, attachment_extensions=extensions):
         if link.link_type != "wikilink":
             continue
         target = link.target_path
-        if not link.raw_target.startswith(("./", "../")) and target not in notes:
-            choices = [path for path in notes if path.endswith("/" + target)]
+        if (
+            not link.raw_target.startswith(("./", "../"))
+            and target not in index.members
+        ):
+            choices = [
+                path
+                for path in index.names.get(target.rpartition("/")[2], [])
+                if path.endswith("/" + target)
+            ]
             if not choices:
-                choices = aliases.get(link.raw_target.split("#", 1)[0].lower(), [])
+                choices = index.aliases.get(
+                    link.raw_target.split("#", 1)[0].lower(), []
+                )
             if choices:
                 target = _pick_wikilink_candidate(choices, source)
         result.append(
@@ -214,7 +236,7 @@ def _snapshot_outlinks(
                 "wikilink",
                 link.fragment,
                 link.raw_target,
-                target in notes,
+                target in index.members,
             )
         )
     return result
@@ -320,14 +342,14 @@ def build_okf_bundle(
             inventory,
             extensions,
         )
-        snapshot_notes: dict[str, bytes] | None = None
+        snapshot_index: _SnapshotLinks | None = None
 
         def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
-            nonlocal snapshot_notes
+            nonlocal snapshot_index
             if "[[" not in body:
                 return []
-            if snapshot_notes is None:
-                snapshot_notes = {}
+            if snapshot_index is None:
+                snapshot_notes: dict[str, bytes] = {}
                 next_cursor = None
                 while True:
                     page = vault.reader.inspect_bundle_tree(
@@ -353,7 +375,8 @@ def build_okf_bundle(
                     if page.next_cursor is None:
                         break
                     next_cursor = page.next_cursor
-            return _snapshot_outlinks(body, source, snapshot_notes, extensions)
+                snapshot_index = _snapshot_link_index(snapshot_notes)
+            return _snapshot_outlinks(body, source, snapshot_index, extensions)
 
         def graph_links(_body: str, source: str) -> list[OutlinkInfo]:
             return vault.graph.get_outlinks(source)
@@ -403,13 +426,33 @@ def build_okf_bundle(
         else:
             if current != digest:
                 report.snapshot.inconsistent_paths.append(path)
-    logger.info(
-        "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d",
-        folder or "(root)",
-        notes,
-        attachments,
-        excluded,
-    )
+    commit = (report.snapshot.commit or "none")[:12]
+    uncommitted = len(report.snapshot.uncommitted_paths)
+    inconsistent = len(report.snapshot.inconsistent_paths)
+    if uncommitted or inconsistent:
+        logger.warning(
+            "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d "
+            "commit=%s uncommitted=%d inconsistent=%d",
+            folder or "(root)",
+            notes,
+            attachments,
+            excluded,
+            commit,
+            uncommitted,
+            inconsistent,
+        )
+    else:
+        logger.info(
+            "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d "
+            "commit=%s uncommitted=%d inconsistent=%d",
+            folder or "(root)",
+            notes,
+            attachments,
+            excluded,
+            commit,
+            uncommitted,
+            inconsistent,
+        )
     data = buf.getvalue()
     audit_export(data, report, extensions)
     return OkfBundleResult(data, notes, attachments, excluded, report)

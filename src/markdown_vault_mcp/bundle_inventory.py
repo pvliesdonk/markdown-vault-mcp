@@ -554,9 +554,11 @@ class BundleInspector:
         if not is_note(path):
             return BundleEntry(path, "supporting", reason="supporting"), 0
         role = _role(parts[-1], self._policy.conventions_file)
-        raw = snapshot.read(path, min(self._note_limit + 1, remaining))
-        if len(raw) > self._note_limit:
-            return BundleEntry(path, role, reason="note_limit"), len(raw)
+        limit = min(self._note_limit + 1, remaining)
+        size = snapshot.sizes[path]
+        if size > self._note_limit:
+            return BundleEntry(path, role, reason="note_limit"), min(size, limit)
+        raw = snapshot.read(path, limit)
         return _parsed(path, role, raw), len(raw)
 
     def _snapshot_dirty(self, changed: set[str], scope: str) -> tuple[str, ...]:

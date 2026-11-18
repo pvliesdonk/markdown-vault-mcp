@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -59,11 +59,39 @@ class GitExportSnapshot:
     entries: dict[str, tuple[str, str]]
     changed: set[str]
     root: Path
+    sizes: dict[str, int]
+    _cache: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
 
     def read(self, path: str, limit: int = 0) -> bytes:
         """Read a selected tree blob without interpreting its path as a revision."""
-        raw = _export_git(self.root, "cat-file", "blob", self.entries[path][1]).stdout
+        oid = self.entries[path][1]
+        raw = self._cache.get(oid)
+        if raw is None and limit and self.sizes[path] > limit:
+            return self._read_prefix(oid, limit)
+        if raw is None:
+            raw = _export_git(self.root, "cat-file", "blob", oid).stdout
+            if len(raw) <= 1024 * 1024:
+                self._cache[oid] = raw
         return raw[:limit] if limit else raw
+
+    def _read_prefix(self, oid: str, limit: int) -> bytes:
+        # Only an internally obtained object ID reaches this argument vector.
+        process = subprocess.Popen(  # noqa: S603, RUF100
+            ["git", "-C", str(self.root), "cat-file", "blob", oid],  # noqa: S607, RUF100
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            if process.stdout is None:
+                raise OSError("Git blob stream unavailable")
+            raw = process.stdout.read(limit)
+            if len(raw) != limit:
+                raise OSError("Git blob stream ended early")
+            return raw
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            process.wait()
 
 
 def _export_git(
@@ -99,29 +127,37 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
     if probe.returncode:
         if b"not a git repository" in probe.stderr:
             return None
-        raise ValueError("Cannot locate Git worktree for export")
+        reason = probe.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"Cannot locate Git worktree for export: {reason}")
     root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
     prefix = source.resolve().relative_to(root.resolve()).as_posix()
     prefix = "" if prefix == "." else prefix + "/"
-    try:
-        commit = (
-            _export_git(root, "rev-parse", "--verify", "HEAD^{commit}")
-            .stdout.decode("ascii")
-            .strip()
+    head = _export_git(root, "rev-parse", "--verify", "HEAD^{commit}", check=False)
+    if head.returncode:
+        reason = head.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(
+            f"Cannot resolve Git snapshot HEAD for export: {reason}. "
+            "If the repository has no commits, create one with git commit."
         )
-        tree = _export_git(root, "ls-tree", "--full-tree", "-r", "-z", commit).stdout
+    try:
+        commit = head.stdout.decode("ascii").strip()
+        tree = _export_git(
+            root, "ls-tree", "--full-tree", "-r", "-l", "-z", commit
+        ).stdout
         entries: dict[str, tuple[str, str]] = {}
+        sizes: dict[str, int] = {}
         for record in tree.split(b"\0"):
             if not record:
                 continue
             info, name = record.split(b"\t", 1)
-            mode, kind, oid = info.split(b" ")
+            mode, kind, oid, size = info.split()
             path = os.fsdecode(name)
             if path.startswith(prefix) and kind in {b"blob", b"commit"}:
                 entries[path[len(prefix) :]] = (
                     mode.decode("ascii"),
                     oid.decode("ascii"),
                 )
+                sizes[path[len(prefix) :]] = int(size) if size != b"-" else 0
         diff = _export_git(
             source,
             "diff",
@@ -134,13 +170,26 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:
             "--",
             ".",
         ).stdout
-        untracked = _export_git(
-            source, "ls-files", "--others", "--exclude-standard", "-z", "--", "."
+        staged = _export_git(
+            source,
+            "diff",
+            "--cached",
+            "--no-ext-diff",
+            "--no-renames",
+            "--relative",
+            "--name-only",
+            "-z",
+            commit,
+            "--",
+            ".",
         ).stdout
+        untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
         changed = {
-            os.fsdecode(name) for name in (diff + untracked).split(b"\0") if name
+            os.fsdecode(name)
+            for name in (diff + staged + untracked).split(b"\0")
+            if name
         }
-        return GitExportSnapshot(commit, entries, changed, root)
+        return GitExportSnapshot(commit, entries, changed, root, sizes)
     except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
 
