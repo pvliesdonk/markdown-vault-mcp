@@ -58,32 +58,6 @@ def test_idle_group_commits_as_opener_and_late_close_returns_result(
         strategy.close()
 
 
-def test_maximum_age_closes_busy_group(git_repo: Path) -> None:
-    strategy = GitWriteStrategy(
-        token=None,
-        repo_url=None,
-        managed=False,
-        enable_pull=False,
-        enable_push=False,
-        repo_path=git_repo,
-    )
-    dispatcher = WriteCallbackDispatcher(
-        strategy, group_idle_s=30, group_max_age_s=0.15
-    )
-    try:
-        group = dispatcher.open_group("Busy group", None)
-        path = git_repo / "busy.md"
-        for i in range(3):
-            path.write_text(str(i), encoding="utf-8")
-            with dispatcher.bind_group(group.handle, None):
-                dispatcher.fire(path, str(i), "write")
-            time.sleep(0.05)
-        _wait_for_subject(git_repo, "Busy group")
-    finally:
-        dispatcher.close()
-        strategy.close()
-
-
 def test_pending_expiry_does_not_close_group_after_shutdown() -> None:
     from markdown_vault_mcp._commit_groups import CommitGroupError
 
@@ -135,8 +109,10 @@ def test_auto_closed_result_is_only_available_to_owner() -> None:
         dispatcher.close()
 
 
+@pytest.mark.parametrize("idle_s", [0.05, 30])
 def test_max_age_commits_during_active_binding_and_later_write_is_not_lost(
     git_repo: Path,
+    idle_s: float,
 ) -> None:
     strategy = GitWriteStrategy(
         token=None,
@@ -147,7 +123,7 @@ def test_max_age_commits_during_active_binding_and_later_write_is_not_lost(
         repo_path=git_repo,
     )
     dispatcher = WriteCallbackDispatcher(
-        strategy, group_idle_s=0.05, group_max_age_s=0.12
+        strategy, group_idle_s=idle_s, group_max_age_s=0.12
     )
     alice = Principal("alice", "Alice", "alice@example.com", "human")
     try:
@@ -304,6 +280,59 @@ def test_failed_timer_replacement_preserves_original_deadline(
         _wait_for_subject(git_repo, "Preserve deadline")
         assert (
             dispatcher.close_group(group.handle, None).result(timeout=2).status
+            == "committed"
+        )
+    finally:
+        dispatcher.close()
+        strategy.close()
+
+
+def test_expired_group_keeps_followup_multifile_call_in_one_commit(
+    git_repo: Path,
+) -> None:
+    from markdown_vault_mcp._commit_scope import bound_commit_scope
+
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    dispatcher = WriteCallbackDispatcher(strategy, group_idle_s=1, group_max_age_s=0.15)
+    alice = Principal("alice", "Alice", "alice@example.com", "human")
+    try:
+        group = dispatcher.open_group("Group work", alice)
+        with (
+            bound_commit_scope("write") as scope,
+            dispatcher.bind_group(group.handle, alice),
+        ):
+            first = git_repo / "first.md"
+            first.write_text("first", encoding="utf-8")
+            dispatcher.fire(first, "first", "write")
+            _wait_for_subject(git_repo, "Group work")
+            for name in ("second.md", "third.md"):
+                path = git_repo / name
+                path.write_text(name, encoding="utf-8")
+                dispatcher.fire(path, name, "write")
+        dispatcher.end_scope(scope)
+        _wait_for_subject(git_repo, "write: 2 files")
+        assert _run_git(git_repo, "log", "-2", "--format=%s").splitlines() == [
+            "write: 2 files",
+            "Group work",
+        ]
+        assert set(
+            _run_git(
+                git_repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"
+            ).splitlines()
+        ) == {"second.md", "third.md"}
+        assert (
+            _run_git(git_repo, "log", "-1", "--format=%an|%ae").strip()
+            == "Alice|alice@example.com"
+        )
+        assert (
+            dispatcher.close_group(group.handle, alice).result(timeout=2).status
             == "committed"
         )
     finally:

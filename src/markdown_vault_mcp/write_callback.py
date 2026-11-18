@@ -255,7 +255,7 @@ class WriteCallbackDispatcher:
                 if group is not None:
                     principal = group.principal
                     if group.closed:
-                        scope = None
+                        scope = current_commit_scope() if self._accepts_batch else None
             with self._worker_lock:
                 if self._closed:
                     logger.warning(
