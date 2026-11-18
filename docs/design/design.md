@@ -7687,6 +7687,12 @@ backlink rewrites and reports them; bulk OKF transforms finish eligible writes
 and report protected paths they skipped.
 
 
+**Designated indexes.** In an active OKF vault, the index capability reserves
+`index.md` in designated folders against ordinary mutations, including resolved
+aliases and secondary writes. Generation and maintenance bypass this designation
+only; explicit protected paths remain enforced. Library callers retain the
+explicit `allow_protected` override. Other indexes and logs remain editable.
+
 ### OKF capability transition
 
 The configuration resolves independent author, verify, index, log and folder

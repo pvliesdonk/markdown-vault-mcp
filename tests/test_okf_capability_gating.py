@@ -565,7 +565,9 @@ def test_reserved_file_symlink_write_does_not_trigger_maintenance(
     )
     try:
         vault.index.build_index()
-        vault.writer.write("team/alias.md", "# Manual reserved content\n")
+        vault.writer.write(
+            "team/alias.md", "# Manual reserved content\n", allow_protected=True
+        )
         wait_for_writer_drain(vault)
         assert (folder / reserved).read_text() == "# Manual reserved content\n"
         other = "log.md" if reserved == "index.md" else "index.md"
@@ -599,7 +601,7 @@ def test_rename_from_reserved_file_symlink_does_not_trigger_maintenance(
     )
     try:
         vault.index.build_index()
-        vault.writer.rename("team/alias.md", "team/renamed.md")
+        vault.writer.rename("team/alias.md", "team/renamed.md", allow_protected=True)
         wait_for_writer_drain(vault)
         assert (folder / "renamed.md").read_text() == "# Authored index\n"
         assert not (folder / "index.md").exists()
@@ -635,11 +637,13 @@ def test_reserved_spelling_symlink_to_concept_preserves_primary_write(
         vault.index.build_index()
         path = f"team/{reserved}"
         if operation == "write":
-            vault.writer.write(path, "# User content\n")
+            vault.writer.write(path, "# User content\n", allow_protected=True)
         elif operation == "edit":
-            vault.writer.edit(path, old_text="Before", new_text="Edited")
+            vault.writer.edit(
+                path, old_text="Before", new_text="Edited", allow_protected=True
+            )
         else:
-            vault.writer.append(path, "More\n")
+            vault.writer.append(path, "More\n", allow_protected=True)
         wait_for_writer_drain(vault)
         assert (
             note.read_text()
