@@ -9,23 +9,29 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
+
+import yaml
 
 from markdown_vault_mcp._okf_receipts import ReceiptNotRecordedError
 from markdown_vault_mcp._okf_review import concept_snapshot
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    DocumentUnreadableError,
     InvalidRequestError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.okf import (
     append_okf_verification,
     is_okf_reserved_file,
     okf_timestamp,
     verified_entries,
 )
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -56,6 +62,26 @@ if TYPE_CHECKING:
     )
 
 _R = TypeVar("_R", "WriteResult", "EditResult")
+
+_STALE_SNAPSHOT = (
+    "The reviewed snapshot is invalid or no longer current. Read the full "
+    "note, review it, and pass its snapshot to okf_verify."
+)
+
+
+def _from_one_read(note: NoteContent, raw: str) -> NoteContent:
+    """Rebuild *note* from one read of the file, so text, metadata and etag agree."""
+    text = raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        metadata = parse_frontmatter(text).metadata
+    except yaml.YAMLError as exc:  # the file changed after its first read
+        raise DocumentUnreadableError(note.path, str(exc)) from exc
+    return replace(
+        note,
+        content=text,
+        frontmatter=metadata,
+        etag=compute_etag(raw.encode("utf-8")),
+    )
 
 
 class WriterFacet:
@@ -106,14 +132,13 @@ class WriterFacet:
 
     def _current_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
         """Read *path*, refuse a stale snapshot and check receipt storage."""
-        note = self._doc_mgr.read(path)
-        if note is None:
-            raise DocumentNotFoundError.note(path)
+        with self._doc_mgr.write_scope():
+            note = self._doc_mgr.read(path)
+            if note is None:
+                raise DocumentNotFoundError.note(path)
+            note = _from_one_read(note, self._doc_mgr._okf_author_snapshot(path)[1])
         if concept_snapshot(note.content) != snapshot:
-            raise InvalidRequestError(
-                "The reviewed snapshot is invalid or no longer current. Read the full "
-                "note, review it, and pass its snapshot to okf_verify."
-            )
+            raise InvalidRequestError(_STALE_SNAPSHOT)
         if self._receipt_store is None:
             raise InvalidRequestError("Local review receipt storage is not configured")
         self._receipt_store.check()

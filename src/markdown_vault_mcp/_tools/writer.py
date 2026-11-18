@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
@@ -83,7 +84,6 @@ def write_identity_scope() -> Iterator[None]:
 # bound no real download can reach.
 _FETCH_UNCAPPED_BYTES = 2**63 - 1
 
-_REVIEW_RESPONSE_KEY = "review_confirmed"
 _RECEIPT_STATE_UNUSABLE = (
     "Local review receipt state is corrupt or from a newer server version, so "
     "nothing was written. Ask the operator to check the server's local state."
@@ -133,7 +133,7 @@ def _review_input_required(path: str, digest: str, check: str) -> InputRequiredR
     )
     return InputRequiredResult(
         result_type="input_required",
-        input_requests={_REVIEW_RESPONSE_KEY: request},
+        input_requests={json.dumps([path, digest, check]): request},
     )
 
 
@@ -148,7 +148,7 @@ def _require_modern_review(
     responses = ctx.input_responses
     if responses is None:
         return _review_input_required(path, digest, check)
-    answer = responses.get(_REVIEW_RESPONSE_KEY)
+    answer = responses.get(json.dumps([path, digest, check]))
     if (
         isinstance(answer, ElicitResult)
         and answer.action == "accept"

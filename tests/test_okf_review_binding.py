@@ -158,3 +158,31 @@ def test_facet_rejects_stale_and_malformed_snapshots(tmp_path) -> None:
                 vault.writer.require_reviewable("note.md", bad)
     finally:
         vault.close()
+
+
+def test_review_reports_unreadable_when_raw_frontmatter_changes(tmp_path, monkeypatch):
+    import pytest
+
+    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+    from markdown_vault_mcp.managers.document import DocumentManager
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    path = tmp_path / "note.md"
+    original = "---\ntype: concept\n---\nBody\n"
+    path.write_text(original, encoding="utf-8")
+    snapshot_read = DocumentManager._okf_author_snapshot
+
+    def change_after_validation(manager, name):
+        canonical, _ = snapshot_read(manager, name)
+        path.write_text("---\ntype: [unfinished\n---\nBody\n", encoding="utf-8")
+        return canonical, path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(
+        DocumentManager, "_okf_author_snapshot", change_after_validation
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(DocumentUnreadableError):
+            vault.writer.require_reviewable("note.md", concept_snapshot(original))
+    finally:
+        vault.close()

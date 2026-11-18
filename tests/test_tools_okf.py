@@ -691,3 +691,73 @@ async def test_review_refuses_edit_during_confirmation(
         assert "other: true" in path.read_text(encoding="utf-8")
     else:
         assert path.read_text(encoding="utf-8") == changed
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_modern_review_confirmation_rejects_changed_retry_snapshot(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    original = path.read_text(encoding="utf-8")
+    reviewed = concept_snapshot(original)
+    args: dict[str, Any] = {"path": "guides/plain.md", "reviewed_snapshot": reviewed}
+    changed = original + "\nUnreviewed revision\n"
+    prompts: list[str] = []
+
+    async def confirm(message: str, *_args: Any) -> bool:
+        prompts.append(message)
+        path.write_text(changed, encoding="utf-8")
+        args["reviewed_snapshot"] = concept_snapshot(changed)
+        return True
+
+    async with Client(make_server(), elicitation_handler=confirm) as client:
+        with pytest.raises(ToolError, match="confirmed"):
+            await client.call_tool("okf_verify", args)
+    assert len(prompts) == 1 and reviewed["digest"][:12] in prompts[0]
+    assert path.read_text(encoding="utf-8") == changed
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_review_rejects_split_read_aba_during_confirmation(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    import markdown_vault_mcp.managers.document as document
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    reviewed = path.read_text(encoding="utf-8")
+    newer = reviewed + "\nConcurrent edit\n"
+    read_text = document._read_text_utf8
+
+    async def confirm(*_args: Any) -> bool:
+        path.write_text(newer, encoding="utf-8")
+
+        def interleaved_read(target: Path) -> str:
+            target.write_text(reviewed, encoding="utf-8")
+            result = read_text(target)
+            target.write_text(newer, encoding="utf-8")
+            return result
+
+        monkeypatch.setattr(document, "_read_text_utf8", interleaved_read)
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        snapshot = _parse_tool_data(
+            await client.call_tool("read", {"path": "guides/plain.md"})
+        )["okf"]["snapshot"]
+        with pytest.raises(ToolError, match="snapshot"):
+            await client.call_tool(
+                "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+            )
+    assert path.read_text(encoding="utf-8") == newer
