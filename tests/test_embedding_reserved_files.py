@@ -393,3 +393,72 @@ def test_listed_input_never_exceeds_cap_or_unenriched_input(
     assert any(text.startswith("Concept\nglow glow") for text in listed) == (
         words == 30
     )
+
+
+def test_full_chunk_preserves_generated_description_and_body_meaning(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    provider = MeaningProvider()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=_capabilities(True, (".",)),
+            max_chunk_chars=300,
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        body = "\n\n".join(f"paragraph {i} orchard " + "word " * 70 for i in range(6))
+        vault.writer.write(
+            "concept.md",
+            f"---\ntitle: Concept\ndescription: luminescence\n---\n\n{body}\n",
+        )
+        wait_for_writer_drain(vault)
+        assert "luminescence" in (root / "index.md").read_text()
+        assert "index.md" not in _paths(vault)
+        assert any("orchard" in text for text in provider.texts)
+        assert any("luminescence" in text for text in provider.texts)
+        for query in ("fruit", "glowing"):
+            assert vault.reader.search(query, mode="semantic", limit=1)[0].path == (
+                "concept.md"
+            )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_full_chunk_preserves_configured_summary(tmp_path: Path, enabled: bool) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    body = "\n\n".join(f"paragraph {i} orchard " + "word " * 70 for i in range(6))
+    (root / "concept.md").write_text(
+        f"---\ntitle: Concept\nsummary: luminescence\n---\n\n{body}\n"
+    )
+    provider = MeaningProvider()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            okf_mode="on",
+            okf_capabilities=_capabilities(enabled, (".",)),
+            max_chunk_chars=300,
+            searchable_frontmatter_fields=["summary"],
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        assert any("orchard" in text for text in provider.texts)
+        assert any("luminescence" in text for text in provider.texts)
+        for query in ("fruit", "glowing"):
+            assert vault.reader.search(query, mode="semantic", limit=1)[0].path == (
+                "concept.md"
+            )
+    finally:
+        vault.close()
