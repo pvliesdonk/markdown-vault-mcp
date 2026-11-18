@@ -411,7 +411,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | (none) | No | Prepare review authority: off, elicit or trust-auth. Unset resolves to off, or elicit when OKF_WRITE is enabled. Runtime gates still require OKF_WRITE; keep it enabled until separate runtime gates are available. Elicit requires a human confirmation; trust-auth uses the token subject without confirmation and is safe only for a human-driven UI. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error. |
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | (none) | No | Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error. |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
 | `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
