@@ -750,12 +750,11 @@ paths and index-excluded paths are omitted by default; reserved `index.md` and
 `log.md` are kept. Library callers can opt into hidden and index-excluded paths
 separately (including a hidden scope root) and receive partial v0.2 observations;
 the download ref exposes neither options nor report. Incomplete inventory
-enumeration refuses export, even under default-omitted hidden paths, including denied entries, unknown-kind symlinks
-and unavailable state paths. Local policy records last-observed index state, not
+enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index
 state. A candidate absent from both policy lists was last observed searchable.
 An uninspected entry may be included with bounded metadata or omitted as a
-known symlink or nonregular entry. Failure to observe or read a selected file
+symlink, `hidden_symlink` or nonregular entry. Unlisted-name links are never followed; dot-path links omitted by policy are counted as hidden. Failure to observe or read a selected file
 aborts export. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
 is not a conformance verdict or snapshot; the report is not embedded.

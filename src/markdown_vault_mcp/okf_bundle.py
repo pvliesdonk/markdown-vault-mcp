@@ -101,7 +101,7 @@ def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
 
 
 def _scope(folder: str) -> str:
-    """Normalize harmless separators while rejecting escapes."""
+    """Normalize redundant POSIX separators and dot components."""
     scope = PurePosixPath(folder)
     return str(scope) if scope.parts else ""
 
@@ -129,7 +129,7 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
         location = f"at {path}" if failed else "(path not reported)"
         raise ValueError(
             f"Cannot export scope {folder or '(root)'}: inventory unavailable {location}: {reason}. "
-            "Check permissions, unknown-kind symlinks and state paths."
+            "Check permissions, traversal limits and state paths."
         )
 
 
@@ -199,6 +199,7 @@ def build_okf_bundle(
                     continue
                 if item.state == "unavailable" and item.reason in {
                     "symlink",
+                    "hidden_symlink",
                     "nonregular",
                 }:
                     report.uninspected[item.path] = item.reason

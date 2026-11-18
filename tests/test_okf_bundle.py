@@ -392,3 +392,63 @@ def test_reserved_conventions_omitted_with_options(
         assert result.report.omitted["conventions"] == 2
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    ("include_hidden", "include_index_excluded"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_unlisted_symlinks_follow_selection_policy(
+    source_dir: Path, tmp_path: Path, include_hidden: bool, include_index_excluded: bool
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("outside secret")
+    bin_dir = source_dir / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python3.14").symlink_to(outside / "missing")
+    (source_dir / ".cache").symlink_to(outside, target_is_directory=True)
+    (source_dir / "data.bak").symlink_to(outside / "secret.md")
+    vault = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(exclude_patterns=[".venv/**"]),
+    )
+    try:
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=source_dir),
+            include_hidden=include_hidden,
+            include_index_excluded=include_index_excluded,
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert "a.md" in archive.namelist()
+            assert not {".venv/bin/python3.14", ".cache", "data.bak"} & set(
+                archive.namelist()
+            )
+            assert all(
+                b"outside secret" not in archive.read(n) for n in archive.namelist()
+            )
+        assert result.report.uninspected["data.bak"] == "hidden_symlink"
+        if include_hidden:
+            assert result.report.uninspected[".cache"] == "hidden_symlink"
+        else:
+            assert ".cache" not in result.report.uninspected
+            assert result.report.omitted["hidden"] >= 2
+        if include_hidden and include_index_excluded:
+            assert result.report.uninspected[".venv/bin/python3.14"] == "hidden_symlink"
+        else:
+            assert ".venv/bin/python3.14" not in result.report.uninspected
+    finally:
+        vault.close()
+
+
+def test_default_export_omits_hidden_venv_symlink(
+    source_dir: Path, vault: Vault, config: ProjectConfig, tmp_path: Path
+) -> None:
+    bin_dir = source_dir / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
+    result = build_okf_bundle(vault, config)
+    assert "a.md" in _members(result.data)
+    assert ".venv/bin/python3.14" not in _members(result.data)
+    assert result.report.omitted["hidden"] >= 1
