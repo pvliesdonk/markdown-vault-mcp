@@ -506,6 +506,10 @@ it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
+`stated` — Since `022` shipped, `023` also takes the small owner-filed fixes,
+decay, tests and docs contributed after packaging, as `022` did (17 November
+2026).
+
 `stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
 follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 [#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
@@ -513,6 +517,24 @@ follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 `derived` — **Major intent**, because the owner kept the breaking marker on
 the [#1444][1444] fix: malformed review records no longer promote
 `derive_trust_tier`.
+
+`stated` — `024` also takes two breaking fixes outside OKF, because it is
+already a major (17 November 2026). [#1631][1631] accepts only a closed set of
+history date forms, and [#2205][2205] refuses degenerate or colliding search
+weight maps.
+
+`derived` — The content name `okf-evidence` no longer covers everything in the
+package. It is a label, not a scope.
+
+`stated` — **[025 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**
+follows `024` with eight owner-filed features that have contributed PRs:
+[#1293][1293], [#1241][1241], [#1923][1923], [#875][875], [#1605][1605],
+[#1496][1496], [#2031][2031] and [#1405][1405] (17 November 2026).
+
+`derived` — **Minor intent.** Each feature still has an open design question
+for the owner, recorded in the package description. A feature's PR merges only
+after that ruling, and one left unsettled at the cut moves out rather than
+holding the release.
 
 `stated` — `020 first-class-library` is renumbered `027` and `025
 submodules-read` is renumbered `028`, so that `024` fits after `023` and the
@@ -891,6 +913,52 @@ slices can land. With those moves `022` holds only closed issues and is ready
 to cut. [#2139][2139] and the flaky-test report [#2138][2138] have no package
 yet.
 
+### 17 November 2026 — package the pull requests contributed after `022`
+
+`stated` — The owner asked for packages from the triage of about fifty pull
+requests contributed on 16 and 17 November. The owner committed the small
+owner-filed work to `023`, the two breaking fixes to `024`, and the
+owner-filed features to a new minor `025`. The owner parked the epic-scale
+work.
+
+`derived` — `023` received the issues whose PR resolves them in full, is
+patch-safe and needs no other PR first: [#1729][1729], [#1955][1955],
+[#1538][1538], [#1349][1349], [#1976][1976], [#1434][1434], [#2138][2138],
+[#778][778], [#1853][1853], [#1751][1751], [#650][650], [#2139][2139],
+[#2054][2054], [#1268][1268], [#1752][1752] and [#1131][1131]. Three stayed
+out:
+
+- [#1383][1383]: its PR rebuilds every index and leaves a link-precedence
+  question open.
+- [#2128][2128]: its PR is stacked on the `027` refactor for [#2018][2018].
+- [#1310][1310]: it needs a third PR that links no issue.
+
+Six issues whose PRs resolve only part of them stay unpackaged while those
+PRs merge: [#1432][1432], [#1361][1361], [#1312][1312], [#1296][1296],
+[#871][871] and [#752][752].
+
+`stated` — For [#1631][1631] the owner chose the closed set of date forms, with
+the breaking marker. For [#871][871] the owner chose to split the weight-map
+items into [#2205][2205], which refuses rather than warns. [#871][871] stays
+open for its remaining items.
+
+`stated` — Under [epic #1313][1313], the foundation PRs for [#1307][1307] and
+[#1308][1308] merge now. Neither issue closes, because each PR covers part of
+it. The two libgit2 PRs for [#1309][1309] are parked until refinement
+[#1468][1468] and a ruling on the backend's refusal set. Under [epic
+#1425][1425], the new PRs are parked until the decisions they depend on:
+[#1610][1610], [#1438][1438], [#1412][1412], [#1421][1421]'s prerequisite and
+[#1677][1677]'s keying.
+
+`evidenced` — The parked PR bodies cite slice plans and approvals that this
+repository does not record (comments on [#1313][1313] and [#1425][1425], 17
+November 2026). The roadmap treats those plans as input to refinements
+[#1467][1467] and [#1468][1468], not as accepted designs.
+
+`derived` — The second and third slices of [#1938][1938] arrived as PRs and
+stay with [#1938][1938] in `023`. [#2124][2124] is a contributor-proposed
+feature, so it has no package until it is accepted.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1001,3 +1069,35 @@ yet.
 [2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
+[650]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/650
+[752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/752
+[778]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/778
+[871]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/871
+[875]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/875
+[1131]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131
+[1241]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1241
+[1268]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1268
+[1296]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1296
+[1312]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1312
+[1349]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349
+[1361]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1361
+[1405]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1405
+[1421]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1421
+[1432]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432
+[1434]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434
+[1438]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1438
+[1538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538
+[1605]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1605
+[1631]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1631
+[1677]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1677
+[1729]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729
+[1751]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1751
+[1752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1752
+[1853]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1853
+[1923]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1923
+[1955]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955
+[1976]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976
+[2031]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031
+[2054]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054
+[2124]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2124
+[2205]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2205
