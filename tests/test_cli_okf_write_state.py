@@ -28,5 +28,5 @@ def test_stats_okf_write_state(
         result = CliRunner().invoke(app, ["stats", *connection, "--json"])
     assert result.exit_code == 0, result.output
     section = json.loads(result.stdout)["okf"]
-    assert "write_configured" not in section
-    assert "write_effective" not in section
+    assert section["write_configured"] is True
+    assert section["write_effective"] is False

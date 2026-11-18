@@ -10,8 +10,10 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
 import posixpath
+import re
 import shutil
 import sqlite3
 import stat
@@ -27,6 +29,7 @@ from markdown_vault_mcp._commit_scope import (
     auxiliary_commit_writes,
     current_commit_scope,
 )
+from markdown_vault_mcp._okf_author import _header_span
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
     LogRepairInterrupted,
@@ -134,6 +137,51 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
 )
 
 
+_EOL = re.compile(r"\r\n|\r|\n")
+
+
+def _read_view(raw: str) -> str:
+    """Return stored note text as :meth:`DocumentManager.read` shows it.
+
+    The BOM is dropped and every line ending becomes ``\\n`` (#673), so an
+    edit matches exactly the text the caller read.
+    """
+    return raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _head_end(view: str) -> int:
+    """Return the offset just past *view*'s closing YAML fence line, or 0.
+
+    0 means no frontmatter block: none, unclosed, or not YAML.
+    """
+    try:
+        span = _header_span(view)
+    except InvalidRequestError:
+        return 0
+    if span is None:
+        return 0
+    end = view.find("\n", span[1])
+    return len(view) if end < 0 else end + 1
+
+
+def _keep_head(raw: str, view: str, new: str) -> str:
+    """Restore the stored frontmatter bytes of an edit that left them alone.
+
+    *new* is an edit of *view*, the read view of *raw*.  When *new* still
+    opens with *view*'s whole frontmatter block, that block is taken from
+    *raw* instead, so its BOM, comments and line endings stay byte-identical
+    (#1443).  Otherwise *new* is returned unchanged.
+    """
+    n = _head_end(view)
+    if not n or not new.startswith(view[:n]):
+        return new
+    if not view[:n].endswith("\n"):
+        return raw + new[n:]
+    lines = view.count("\n", 0, n)
+    fence = next(itertools.islice(_EOL.finditer(raw), lines - 1, None))
+    return raw[: fence.end()] + new[n:]
+
+
 def _submodule_links_text(sources: list[str]) -> str:
     """Name backlinks left in submodules or nested repositories (#1564, #1949)."""
     names = ", ".join(repr(s) for s in sources)
@@ -234,7 +282,6 @@ class DocumentManager:
         self._sync_index = sync_index
         self._submodule_guard = submodule_guard
         self._title_field = title_field
-        # Optional caller-supplied content transformation.
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
@@ -328,15 +375,15 @@ class DocumentManager:
         Held under the write lock, so no other write sees the mode.  For a
         caller that splices text it read byte for byte (OKF authoring) and
         must not have a platform's text-mode staging rewrite its line endings.
-        Content writes use this scope when preserving supplied bytes.
+        Edit and append use it to keep a stored frontmatter block's line
+        endings; other content writes keep their text-mode staging.
         """
         with self._file_write_lock:
-            previous = self._exact_bytes
             self._exact_bytes = True
             try:
                 yield
             finally:
-                self._exact_bytes = previous
+                self._exact_bytes = False
 
     def _staged(self, content: str) -> str | bytes:
         """Return *content* in the form the current write mode stages."""
@@ -965,8 +1012,7 @@ class DocumentManager:
             else:
                 file_content = content
 
-            with self.exact_byte_writes():
-                self._finalize_content_write(abs_path, path, file_content, "write")
+            self._finalize_content_write(abs_path, path, file_content, "write")
             result = WriteResult(path=path, created=created)
 
         return result
@@ -1010,8 +1056,10 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content. Existing bytes, including the
-        frontmatter and line endings, are preserved.
+        directly after the existing content.  The existing text is
+        rewritten as :meth:`read` shows it (``\\n`` line endings, no BOM), so
+        a CRLF file is normalized on its first append; its frontmatter block
+        keeps its stored bytes, BOM included (#1443).
 
         Args:
             path: Relative document path.
@@ -1052,9 +1100,14 @@ class DocumentManager:
             check_if_match(abs_path, path, if_match)
 
             if existed:
-                file_content = abs_path.read_bytes().decode("utf-8")
+                raw = abs_path.read_bytes().decode("utf-8")
+                file_content = _read_view(raw)
                 needs_newline = bool(file_content) and not file_content.endswith("\n")
-                new_content = file_content + ("\n" if needs_newline else "") + content
+                new_content = _keep_head(
+                    raw,
+                    file_content,
+                    file_content + ("\n" if needs_newline else "") + content,
+                )
             else:
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 new_content = content
@@ -1187,7 +1240,8 @@ class DocumentManager:
 
             check_if_match(abs_path, path, if_match)
 
-            file_content = abs_path.read_bytes().decode("utf-8")
+            raw = abs_path.read_bytes().decode("utf-8")
+            file_content = _read_view(raw)
 
             if has_lines:
                 assert line_start is not None and line_end is not None
@@ -1195,7 +1249,8 @@ class DocumentManager:
                     file_content,
                     old_text,
                     new_text,
-                    (line_start, line_end),
+                    line_start,
+                    line_end,
                     path,
                 )
             else:
@@ -1204,6 +1259,7 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
+            new_content = _keep_head(raw, file_content, new_content)
             with self.exact_byte_writes():
                 self._finalize_content_write(abs_path, path, new_content, "edit")
 
@@ -1214,7 +1270,8 @@ class DocumentManager:
         file_content: str,
         old_text: str | None,
         new_text: str,
-        line_range: tuple[int, int],
+        line_start: int,
+        line_end: int,
         path: str,
     ) -> tuple[str, str]:
         """Handle line-range and scoped-match edit modes.
@@ -1222,7 +1279,6 @@ class DocumentManager:
         Returns:
             Tuple of (new_file_content, match_type).
         """
-        line_start, line_end = line_range
         lines = file_content.split("\n")
         total_lines = len(lines) - 1 if lines and lines[-1] == "" else len(lines)
         if line_end > total_lines:
@@ -1235,28 +1291,15 @@ class DocumentManager:
 
         if old_text is not None:
             scope = "\n".join(lines[start_idx:end_idx])
-            # The split leaves the final CR of a scoped CRLF outside its LF.
-            # Include that LF while matching so it remains a single boundary.
-            scoped_crlf = scope.endswith("\r") and end_idx < len(lines)
-            if scoped_crlf:
-                scope += "\n"
             context_desc = f"lines {line_start}-{line_end} of {path}"
             new_scope, match_type = self._match_and_replace(
                 scope, old_text, new_text, path, context_desc=context_desc
             )
-            if scoped_crlf:
-                new_scope = new_scope.removesuffix("\n")
             lines[start_idx:end_idx] = new_scope.split("\n")
         else:
             match_type = "exact"
             # Empty new_text removes the range rather than blanking it (#1607).
-            terminal_cr = lines[end_idx - 1].endswith("\r") and end_idx < len(lines)
-            replacement = new_text
-            while replacement.endswith("\n"):
-                replacement = replacement[:-1].removesuffix("\r")
-            replacement_lines = replacement.split("\n") if new_text else []
-            if replacement_lines and terminal_cr:
-                replacement_lines[-1] += "\r"
+            replacement_lines = new_text.rstrip("\n").split("\n") if new_text else []
             lines[start_idx:end_idx] = replacement_lines
 
         return "\n".join(lines), match_type
@@ -1463,18 +1506,12 @@ class DocumentManager:
                 )
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
+                # Read before moving, so an undecodable note fails in place.
+                callback_content = _read_text_utf8(old_abs)
+                canonical = new_abs.relative_to(self._source_dir.resolve()).as_posix()
 
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
-
-                note = parse_note(
-                    new_abs,
-                    self._source_dir,
-                    self._chunk_strategy,
-                    title_field=self._title_field,
-                )
-
-                callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths, unrewritten = (
                     self._update_backlinks(old_path, new_path, backlinks)
@@ -1483,7 +1520,7 @@ class DocumentManager:
                 hint = self._submodule_links_hint(unrewritten)
 
                 if self._mark_paths_dirty is not None:
-                    dirty: list[str] = [old_path, note.path]
+                    dirty: list[str] = [old_path, canonical]
                     dirty.extend(backlink_paths)
                     self._mark_paths_dirty(dirty)
             else:
@@ -1573,9 +1610,12 @@ class DocumentManager:
             count, write back or announce such a source: it still names the
             old target, and saying otherwise is what made #1521 silent.
         """
-        # Hash the same bytes that are rewritten, preserving line endings and BOM.
+        # One read, hashed as is: a second read could see an external edit
+        # the ledger would then vouch for (#1492). Links are rewritten in the
+        # read view, as edit matches; the stored frontmatter block is kept.
         raw = source_abs.read_bytes()
-        original = raw.decode("utf-8")
+        stored = raw.decode("utf-8")
+        original = _read_view(stored)
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
@@ -1598,7 +1638,8 @@ class DocumentManager:
                 len(rewrites),
             )
             return None
-        # Record the hash of exactly the bytes written.
+        content = _keep_head(stored, original, content)
+        # Encoded here so the ledger records the hash of exactly what landed.
         encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
         self._link_rewrites.record(

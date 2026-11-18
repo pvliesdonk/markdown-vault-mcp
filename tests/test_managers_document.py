@@ -30,68 +30,6 @@ from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
 from markdown_vault_mcp.types import SubtreeToc, TocEntry
 
-
-@pytest.mark.parametrize("scoped", [False, True])
-def test_crlf_normalized_edit_preserves_header_and_suffix(
-    doc_mgr: DocumentManager, doc_vault: Path, scoped: bool
-) -> None:
-    path = doc_vault / "crlf.md"
-    header = b"\xef\xbb\xbf---\r\ngenerated: human:alice\r\nx-custom: true\r\n---\r\n"
-    path.write_bytes(header + b"First line\r\nSecond line\r\nLast line\r\n")
-    kwargs = {"line_start": 5, "line_end": 6} if scoped else {}
-    doc_mgr.edit(
-        "crlf.md", old_text="First line\nSecond line", new_text="Replacement", **kwargs
-    )
-    assert path.read_bytes() == header + b"Replacement\r\nLast line\r\n"
-
-
-@pytest.mark.parametrize("content", ["one\ntwo\n", "one\r\ntwo\r\n"])
-def test_write_preserves_supplied_newlines_on_windows_staging(
-    doc_mgr: DocumentManager,
-    doc_vault: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    content: str,
-) -> None:
-    atomic_write = doc_mod.atomic_write
-
-    def windows_staging(path: Path, data: str | bytes) -> None:
-        if isinstance(data, str):
-            data = data.replace("\n", "\r\n")
-        atomic_write(path, data)
-
-    monkeypatch.setattr(doc_mod, "atomic_write", windows_staging)
-    doc_mgr.write("newlines.md", content)
-    assert (doc_vault / "newlines.md").read_bytes() == content.encode("utf-8")
-
-
-def test_nested_exact_byte_writes_restore_outer_scope(doc_mgr: DocumentManager) -> None:
-    with doc_mgr.exact_byte_writes():
-        with doc_mgr.exact_byte_writes():
-            pass
-        assert doc_mgr._staged("line\n") == b"line\n"
-    assert doc_mgr._staged("line\n") == "line\n"
-
-
-@pytest.mark.parametrize(
-    ("original", "replacement", "expected"),
-    [
-        (b"a\r\nb\r\nc\r\n", "B1\nB2", b"a\r\nB1\nB2\r\nc\r\n"),
-        (b"a\r\nb", "B\r\n", b"a\r\nB"),
-    ],
-)
-def test_line_range_preserves_existing_boundary(
-    doc_mgr: DocumentManager,
-    doc_vault: Path,
-    original: bytes,
-    replacement: str,
-    expected: bytes,
-) -> None:
-    path = doc_vault / "range.md"
-    path.write_bytes(original)
-    doc_mgr.edit("range.md", line_start=2, line_end=2, new_text=replacement)
-    assert path.read_bytes() == expected
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -732,6 +670,36 @@ class TestRename:
         assert result.new_path == "photo.png"
         assert not (doc_vault / "image.png").exists()
         assert (doc_vault / "photo.png").exists()
+
+    def test_rename_malformed_yaml_fires_callback_and_marks_canonical_paths(
+        self, doc_vault: Path
+    ) -> None:
+        content = "---\ntitle: [unclosed\n---\nbody\n"
+        (doc_vault / "bad.md").write_text(content, encoding="utf-8")
+        calls: list[tuple[Path, str, str]] = []
+        dirty: list[str] = []
+        mgr = DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            read_only=False,
+            on_write_callback=lambda p, c, op: calls.append((p, c, op)),
+            mark_paths_dirty=lambda paths: dirty.extend(paths),
+        )
+        mgr.rename("bad.md", "sub/../moved.md")
+        assert (doc_vault / "moved.md").read_text(encoding="utf-8") == content
+        assert dirty == ["bad.md", "moved.md"]
+        assert [(c, op) for _p, c, op in calls] == [(content, "rename")]
+
+    def test_rename_undecodable_note_fails_before_moving(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        (doc_vault / "binary.md").write_bytes(b"\xff\xfe body")
+        with pytest.raises(UnicodeDecodeError):
+            doc_mgr.rename("binary.md", "moved.md")
+        assert (doc_vault / "binary.md").exists()
+        assert not (doc_vault / "moved.md").exists()
 
 
 # ---------------------------------------------------------------------------

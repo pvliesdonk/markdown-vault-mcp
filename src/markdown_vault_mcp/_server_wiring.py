@@ -325,5 +325,5 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
         mcp.disable(tags={"okf"})
     _gate_author(mcp, config)
     if config.content.okf_capabilities.verify == "off":
-        # Verification is independently configurable from legacy stamping.
+        # Verification is configurable independently of authoring.
         mcp.disable(tags={"okf-enforce"})

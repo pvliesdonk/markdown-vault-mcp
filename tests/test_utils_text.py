@@ -78,14 +78,6 @@ class TestNormalizeText:
 
 
 class TestBuildPositionMap:
-    def test_crlf_and_trailing_unicode_whitespace(self) -> None:
-        original = "one\u00a0\r\ntwo\r\nlast"
-        normalized = normalize_text(original)
-        assert normalized == "one\ntwo\nlast"
-        positions = build_position_map(original, normalized)
-        assert positions[3] == original.index("\r")
-        assert positions[7] == original.index("\r", positions[3] + 1)
-
     def test_identity(self) -> None:
         """When original == normalized, positions are 0..n."""
         text = "hello"

@@ -21,6 +21,7 @@ from markdown_vault_mcp._okf_write import (
     resolve_human_subject,
 )
 from markdown_vault_mcp.config_sections.content import ContentConfig
+from markdown_vault_mcp.exceptions import EditConflictError
 from markdown_vault_mcp.okf import (
     append_okf_verification,
 )
@@ -726,17 +727,97 @@ class TestServiceTokenOkf:
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
 
 
-def test_read_then_edit_preserves_crlf_header(enforced_vault: Vault) -> None:
+_CRLF_HEADER = (
+    b"\xef\xbb\xbf---\r\nunknown: value # comment\r\ngenerated:\r\n"
+    b"  at: 2026-01-01T00:00:00Z\r\nverified:\r\n  - by: human:reviewer\r\n"
+    b"    at: 2026-01-02T00:00:00Z\r\n---\r\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("operation", "body"),
+    [("edit", b"Changed.\nTail.\n"), ("append", b"Body.\nTail.\nExtra\n")],
+)
+def test_body_changes_preserve_frontmatter_bytes(
+    enforced_vault: Vault, operation: str, body: bytes
+) -> None:
+    path = enforced_vault.source_dir / "raw.md"
+    path.write_bytes(_CRLF_HEADER + b"Body.\r\nTail.\r\n")
+    if operation == "edit":
+        enforced_vault.writer.edit("raw.md", old_text="Body.", new_text="Changed.")
+    else:
+        enforced_vault.writer.append("raw.md", "Extra\n")
+    assert path.read_bytes() == _CRLF_HEADER + body
+
+
+def test_read_then_multiline_edit_on_crlf_note(enforced_vault: Vault) -> None:
     path = enforced_vault.source_dir / "read-edit.md"
-    header = b"\xef\xbb\xbf---\r\nverified: []\r\nx-custom: yes\r\n---\r\n"
-    path.write_bytes(header + b"First line\r\nSecond line\r\nLast line\r\n")
+    path.write_bytes(_CRLF_HEADER + b"First line\r\nSecond line\r\nLast line\r\n")
     note = enforced_vault.reader.read("read-edit.md")
     assert note is not None
     assert "First line\nSecond line" in note.content
     enforced_vault.writer.edit(
         "read-edit.md", old_text="First line\nSecond line", new_text="Replacement"
     )
-    assert path.read_bytes() == header + b"Replacement\r\nLast line\r\n"
+    assert path.read_bytes() == _CRLF_HEADER + b"Replacement\nLast line\n"
+
+
+def test_line_range_edit_on_crlf_note(enforced_vault: Vault) -> None:
+    path = enforced_vault.source_dir / "range.md"
+    path.write_bytes(b"---\r\ntitle: a\r\n---\r\na\r\nb\r\nc\r\n")
+    enforced_vault.writer.edit("range.md", line_start=5, line_end=5, new_text="B")
+    assert path.read_bytes() == b"---\r\ntitle: a\r\n---\r\na\nB\nc\n"
+
+
+def test_duplicate_across_mixed_endings_is_refused(enforced_vault: Vault) -> None:
+    path = enforced_vault.source_dir / "dup.md"
+    original = b"---\r\ntitle: a\r\n---\r\nsame\r\nx\nsame\nx\n"
+    path.write_bytes(original)
+    with pytest.raises(EditConflictError):
+        enforced_vault.writer.edit("dup.md", old_text="same\nx", new_text="y")
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"---\rtitle: a\r---\rbody\rmore\r", b"---\rtitle: a\r---\rX\n"),
+        (
+            b"\xef\xbb\xbf---\rtitle: a\r---\rbody\rmore\r",
+            b"\xef\xbb\xbf---\rtitle: a\r---\rX\n",
+        ),
+        (b"---\r\ntitle: a\r---\nbody\r\nmore", b"---\r\ntitle: a\r---\nX"),
+        (b"body\r\nmore\r\n", b"X\n"),
+        (b"---\r\nbody\r\nmore\r\n", b"---\nX\n"),
+    ],
+    ids=["cr-only", "bom-cr-only", "mixed", "no-header", "unclosed"],
+)
+def test_read_view_edit_keeps_stored_header(
+    enforced_vault: Vault, raw: bytes, expected: bytes
+) -> None:
+    path = enforced_vault.source_dir / "cr.md"
+    path.write_bytes(raw)
+    note = enforced_vault.reader.read("cr.md")
+    assert note is not None
+    assert "body\nmore" in note.content
+    enforced_vault.writer.edit("cr.md", old_text="body\nmore", new_text="X")
+    assert path.read_bytes() == expected
+
+
+def test_append_to_header_at_end_of_file(enforced_vault: Vault) -> None:
+    path = enforced_vault.source_dir / "eof.md"
+    path.write_bytes(b"---\r\ntitle: a\r\n---")
+    enforced_vault.writer.append("eof.md", "Body\n")
+    assert path.read_bytes() == b"---\r\ntitle: a\r\n---\nBody\n"
+
+
+def test_edit_that_changes_the_header_writes_the_read_view(
+    enforced_vault: Vault,
+) -> None:
+    path = enforced_vault.source_dir / "hdr.md"
+    path.write_bytes(b"\xef\xbb\xbf---\r\ntitle: a\r\n---\r\nBody\r\n")
+    enforced_vault.writer.edit("hdr.md", old_text="title: a", new_text="title: b")
+    assert path.read_bytes() == b"---\ntitle: b\n---\nBody\n"
 
 
 def test_ordinary_write_preserves_supplied_provenance(enforced_vault: Vault) -> None:
@@ -752,20 +833,6 @@ def test_ordinary_write_preserves_supplied_provenance(enforced_vault: Vault) -> 
     assert fm.loads(text).metadata == fields
 
 
-@pytest.mark.parametrize("operation", ["edit", "append"])
-def test_body_changes_preserve_frontmatter_bytes(
-    enforced_vault: Vault, operation: str
-) -> None:
-    header = b"\xef\xbb\xbf---\r\nunknown: value # comment\r\ngenerated:\r\n  at: 2026-01-01T00:00:00Z\r\nverified:\r\n  - by: human:reviewer\r\n    at: 2026-01-02T00:00:00Z\r\n---\r\n"
-    path = enforced_vault._source_dir / "raw.md"
-    path.write_bytes(header + b"Body.\r\n")
-    if operation == "edit":
-        enforced_vault.writer.edit("raw.md", old_text="Body.", new_text="Changed.")
-    else:
-        enforced_vault.writer.append("raw.md", "Extra\n")
-    assert path.read_bytes().startswith(header)
-
-
 def test_legacy_alias_enables_author_without_stamping() -> None:
     capabilities = ContentConfig(okf_write=True).okf_capabilities
     assert capabilities.author is True
@@ -775,14 +842,13 @@ def test_legacy_alias_enables_author_without_stamping() -> None:
 
 
 def test_rename_rewrites_link_without_changing_provenance_bytes(tmp_path: Path) -> None:
-    header = b'\xef\xbb\xbf---\r\ngenerated: {by: agent, at: 2026-01-01T00:00:00Z} # kept\r\nverified: [{by: "human:peter", at: 2026-01-02T00:00:00Z}]\r\n---\r\n'
     (tmp_path / "target.md").write_text("# Target\n", encoding="utf-8")
-    (tmp_path / "ref.md").write_bytes(header + b"See [[target]].\r\n")
+    (tmp_path / "ref.md").write_bytes(_CRLF_HEADER + b"See [[target]].\r\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         vault.index.build_index()
         vault.writer.rename("target.md", "new.md", update_links=True)
-        assert (tmp_path / "ref.md").read_bytes() == header + b"See [[new]].\r\n"
+        assert (tmp_path / "ref.md").read_bytes() == _CRLF_HEADER + b"See [[new]].\n"
     finally:
         vault.close()
 

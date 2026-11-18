@@ -2,10 +2,11 @@
 
 The vault's write path historically read "who is acting" from the MCP request
 context in two places with two different rules: the git strategy pulled OIDC
-claims via FastMCP's ``get_access_token`` per commit, and the OKF enforced-write
-layer read ``fastmcp_pvl_core.get_subject`` per tool call. The git read ran on
-the write-callback dispatcher's own daemon thread, where no request context
-exists, so the configured name/email claims silently never applied (#1218).
+claims via FastMCP's ``get_access_token`` per commit, and the since-retired
+OKF provenance stamping read ``fastmcp_pvl_core.get_subject`` per tool call.
+The git read ran on the write-callback dispatcher's own daemon thread, where no
+request context exists, so the configured name/email claims silently never
+applied (#1218).
 
 This module replaces both reads with a single resolution at the tool edge:
 

@@ -176,9 +176,10 @@ indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
 Content writes serialize supplied frontmatter in caller insertion order,
-including nested mappings and mappings inside lists. Body-only edits and
-appends preserve the original frontmatter bytes, including comments, quoting,
-BOM and line endings. Verification and git conflict marking serialize headers
+including nested mappings and mappings inside lists. Edits, appends and link
+rewrites match the text `read` shows (no BOM, `\n` line endings) and write the
+body in that form; a frontmatter block they leave unchanged keeps its stored
+bytes, including comments, quoting, BOM and line endings. Verification and git conflict marking serialize headers
 and retain surviving fields in order; their serialization can change formatting.
 The pinned dependency behavior is recorded in
 [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
@@ -4274,7 +4275,8 @@ scanner hashes the raw
 on-disk bytes (BOM included) but decodes the text without the BOM, so a
 BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
-loses its BOM the next time it is rewritten. A genuinely non-UTF-8 file still
+loses its BOM the next time it is rewritten, unless an edit, append or link
+rewrite keeps its unchanged frontmatter block (#1443). A genuinely non-UTF-8 file still
 raises `UnicodeDecodeError`. The same `decode_utf8` is applied on **ingress**
 (#681): the `fetch` tool and the transfer-upload route decode externally
 supplied markdown bodies through it, so a fetched/uploaded file is written
