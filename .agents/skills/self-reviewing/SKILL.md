@@ -8,8 +8,6 @@ description: >-
   works with any coding agent and needs no hosted model workflow.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Self-review
 
 This skill is the local self-review a change gets before its diff becomes

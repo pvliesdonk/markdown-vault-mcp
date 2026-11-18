@@ -17,7 +17,7 @@ release waits, or needs a `release/X.Y` branch cut from before the epic
 started. With the epic parked on `integration/<epic>`, trunk stays releasable
 throughout.
 
-## What the template provides
+## What this repository provides
 
 - `integration/*` branches are protected: child pull requests need a green
   `CI Success`, and force pushes are blocked. Checks added to the main and release

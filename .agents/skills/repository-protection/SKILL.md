@@ -4,8 +4,6 @@ description: >-
   Use when changing branch or tag rulesets, required checks, or the bootstrap workflow: how repository protection is applied and kept in sync.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Repository Protection
 
 ## Repository protection (rulesets)

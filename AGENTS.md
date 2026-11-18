@@ -34,7 +34,7 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `logging-standard` — before adding or changing a logging call.
 - `tool-registration` — before adding, renaming, or documenting an MCP tool, `get_server_info`, icons, or the public import surface.
 - `writing-model-facing-text` — before writing or changing a tool, parameter, resource or prompt description, or a server-instructions snippet.
-- `writing-documentation` — before adding, moving or substantially changing a page in `docs/` or `README.md`: whether the knowledge is this project's or the template's, and where it goes.
+- `writing-documentation` — before adding, moving or substantially changing a page in `docs/` or `README.md`: whether the knowledge is domain or general, and where it goes.
 - `designing-tool-outcomes` — before writing or changing a tool that can fail, refuse, find nothing or hit a conflict: what it returns, raises and logs in each case.
 - `repository-protection` — before changing rulesets, required checks, or the bootstrap workflow.
 - `authoring-issues-prs` — when filing an issue, sizing a change before coding, or opening a PR.
