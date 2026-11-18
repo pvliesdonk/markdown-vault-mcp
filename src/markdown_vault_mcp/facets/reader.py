@@ -14,6 +14,7 @@ the ``Vault.reader`` accessor.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from typing import Any, Literal
 
     from markdown_vault_mcp.bundle_inventory import (
+        BundleEntry,
         BundleInspection,
         BundleInspectionRequest,
         BundleTreeRequest,
@@ -55,6 +57,24 @@ if TYPE_CHECKING:
         SubtreeToc,
         TocEntry,
         VaultStats,
+    )
+
+
+def _selected(
+    entry: BundleEntry,
+    type_state: TypeState | None,
+    parse_state: ParseState | None,
+    search_state: SearchState | None,
+) -> bool:
+    if entry.path.rsplit("/", 1)[-1] in {"index.md", "log.md"}:
+        return False
+    if entry.state in {"unavailable", "missing"}:
+        return True
+    return (
+        entry.role == "concept_candidate"
+        and (type_state is None or entry.type_state in {type_state, "not_inspected"})
+        and (parse_state is None or entry.parse_state in {parse_state, "not_inspected"})
+        and (search_state is None or entry.search_state == search_state)
     )
 
 
@@ -122,7 +142,8 @@ class ReaderFacet:
     ) -> BundleInspection:
         """Inspect one page of concept candidates without building an index.
 
-        Unavailable directory boundaries remain visible regardless of filters.
+        Missing and unavailable rows remain visible; unknown type or parse state
+        does not rule out a match, and search-state filters remain exact.
 
         Args:
             request: Explicit root, page limit and optional continuation.
@@ -133,19 +154,11 @@ class ReaderFacet:
         Returns:
             The bounded page with matching concepts and the original continuation.
         """
-        from dataclasses import replace
-
         page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
         matching = tuple(
             entry
             for entry in page.entries
-            if (entry.role == "directory" and entry.state == "unavailable")
-            or (
-                entry.role == "concept_candidate"
-                and (type_state is None or entry.type_state == type_state)
-                and (parse_state is None or entry.parse_state == parse_state)
-                and (search_state is None or entry.search_state == search_state)
-            )
+            if _selected(entry, type_state, parse_state, search_state)
         )
         truncated = len(matching) > request.entry_limit
         entries = matching[: request.entry_limit]

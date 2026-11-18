@@ -50,8 +50,9 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Inspect concept candidates in a bundle, including notes outside search.
 
-        Unavailable depth boundaries are returned even when filters do not match;
-        select the boundary path as root to continue below it.
+        Missing and unavailable rows remain visible. Unknown type or parse state
+        can match; search-state filters are exact. Select a depth boundary as root
+        to continue below it.
 
         Args:
             root: Vault-relative bundle root; use an empty string for the vault root.
@@ -65,16 +66,19 @@ def register(mcp: FastMCP) -> None:
             Observations, scope and enumeration states, and an optional next_cursor.
         """
         try:
-            result = await asyncio.to_thread(
-                vault.reader.okf_inventory,
-                BundleTreeRequest(root=root, entry_limit=entry_limit, cursor=cursor),
-                type_state=type_state,
-                parse_state=parse_state,
-                search_state=search_state,
+            request = BundleTreeRequest(
+                root=root, entry_limit=entry_limit, cursor=cursor
             )
         except ValueError:
             raise ToolError(
                 "Invalid inventory selection. Use a relative root and a cursor returned by okf_inventory, with entry_limit from 1 to 1000.",
                 log_level=logging.INFO,
             ) from None
+        result = await asyncio.to_thread(
+            vault.reader.okf_inventory,
+            request,
+            type_state=type_state,
+            parse_state=parse_state,
+            search_state=search_state,
+        )
         return asdict(result)

@@ -334,16 +334,16 @@ Inspect concept candidates, including notes outside search.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|
-| `--type-state` |  |  |  |
-| `--parse-state` |  |  |  |
-| `--search-state` |  |  |  |
-| `--entry-limit` |  | 100 |  |
-| `--cursor` |  |  |  |
+| `--type-state` |  |  | Filter by type presence. |
+| `--parse-state` |  |  | Filter by parsing outcome. |
+| `--search-state` |  |  | Filter by search admission. |
+| `--entry-limit` |  | 100 | Maximum returned rows. |
+| `--cursor` |  |  | Continue from the previous `next_cursor`. |
 | `--source-dir` |  |  | Local vault directory. |
 | `--server` |  |  | Complete hosted MCP endpoint URL. |
 | `--local` |  | False | Override a configured remote endpoint. |
 | `--timeout` |  |  | Remote deadline in seconds. |
-| `--json` |  | False |  |
+| `--json` |  | False | Return the structured report. |
 | `--agent` |  | False | Return escaped agent records. |
 
 ## `markdown-vault-mcp links`

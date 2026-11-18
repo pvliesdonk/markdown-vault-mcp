@@ -670,8 +670,9 @@ complete traversal, truth, or editorial-policy compliance.
 
 Inspect concept candidates in a bundle, including notes outside search.
 
-Unavailable depth boundaries are returned even when filters do not match;
-select the boundary path as root to continue below it.
+Missing and unavailable rows remain visible. Unknown type or parse state
+can match; search-state filters are exact. Select a depth boundary as root
+to continue below it.
 
 **Parameters**
 

@@ -353,6 +353,7 @@ class Vault:
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
         vector_store: An open vector store to use instead of opening one;
             the caller owns it: the vault never rebuilds or closes it.
+        inspection_policy: Optional inventory-only access boundaries.
         vector_backend: The backend the vault opens its vector store with,
             instead of the one ``settings.embedding_store`` names; the vault
             owns and closes the store it opens.
@@ -380,6 +381,7 @@ class Vault:
         chunk_strategy: str | ChunkStrategy = "heading",
         vector_store: EmbeddingStore | None = None,
         vector_backend: VectorBackend | None = None,
+        inspection_policy: InspectionPolicy | None = None,
     ) -> None:
         if settings is None:
             settings = VaultSettings()
@@ -391,7 +393,7 @@ class Vault:
         self._injected_vector_store = vector_store
         self._injected_vector_backend = vector_backend
         self._configure(settings, chunk_strategy)
-        self._build_managers(settings)
+        self._build_managers(settings, inspection_policy)
         self._build_facets(settings)
 
     def _configure(
@@ -546,12 +548,15 @@ class Vault:
             raise OSError("OKF scope probe failed")
         return state.active
 
-    def _build_managers(self, settings: VaultSettings) -> None:
+    def _build_managers(
+        self, settings: VaultSettings, inspection_policy: InspectionPolicy | None
+    ) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
         Args:
             settings: The resolved construction settings (search-ranking
                 knobs and the OKF write toggle are consumed here).
+            inspection_policy: Optional policy independent of the opened index.
         """
         # Sub-module construction.
         keyword_backend = get_backend("keyword", "sqlite")(
@@ -722,7 +727,8 @@ class Vault:
             okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
             inventory_ready=self._coordinator.is_queryable,
-            inspection_policy=InspectionPolicy(
+            inspection_policy=inspection_policy
+            or InspectionPolicy(
                 settings.conventions_file,
                 () if self._state_path is None else (self._state_path,),
                 self._embeddings_path,

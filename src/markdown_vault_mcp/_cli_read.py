@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp._cli_remote import RemoteReply, run_read
 
 if TYPE_CHECKING:
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.cli import _BuiltVault
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
@@ -100,7 +101,11 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
 
 
 def _build_reader_vault(
-    config: ProjectConfig, source_dir: str | None, in_memory: bool
+    config: ProjectConfig,
+    source_dir: str | None,
+    in_memory: bool,
+    *,
+    inspection_policy: InspectionPolicy | None = None,
 ) -> _BuiltVault:
     from dataclasses import replace
     from pathlib import Path
@@ -140,6 +145,7 @@ def _build_reader_vault(
             Vault(
                 source_dir=config.source_dir,
                 settings=settings,
+                inspection_policy=inspection_policy,
                 embedding_provider=instances.embedding_provider,
                 summarizer=instances.summarizer,
                 git_strategy=instances.git_strategy,
