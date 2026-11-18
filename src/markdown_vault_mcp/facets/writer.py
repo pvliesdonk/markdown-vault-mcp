@@ -125,18 +125,23 @@ class WriterFacet:
         """
         return self._doc_mgr.okf_preview_log_repair(path)
 
-    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+    def okf_apply_log_repair(
+        self, path: str, *, etag: str, allow_protected: bool = False
+    ) -> LogRepairResult:
         """Apply an operator-reviewed legacy repair, retaining the complete original.
 
         Args:
             path: Exact log.md path used for the preview.
             etag: The ``etag`` of the preview the operator reviewed; a log
                 changed since then is refused.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             The resulting byte etag and adjacent recovery artifact path.
         """
-        return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
+        return self._doc_mgr.okf_apply_log_repair(
+            path, etag=etag, allow_protected=allow_protected
+        )
 
     def okf_convert_links(
         self, *, folder: str | None = None, allow_protected: bool = False
