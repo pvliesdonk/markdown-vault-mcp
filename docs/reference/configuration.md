@@ -514,6 +514,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | No | Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` | `300.0` | No | Seconds of group inactivity before automatic close. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` | `3600.0` | No | Maximum group age in seconds before automatic close. |
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30.0` | No | Seconds of write-idle time before pushing; 0 pushes only on shutdown. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | No | Git committer name for auto-commits, and the author name too unless an OIDC claim supplies one; set this in Docker where git config user.name is empty. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits, and the author email too unless an OIDC claim supplies one. |

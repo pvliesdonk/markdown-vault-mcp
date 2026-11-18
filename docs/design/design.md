@@ -6661,6 +6661,12 @@ number of paths in the commit (a rename counts both paths), or zero when the
 count is unknown. Untracked ignored writes are skipped; tracked updates are
 committed even when they match an ignore rule. A failed flush consumes
 its buffer without rollback or retry; staged work remains for the operator.
+A group closes automatically after 300 seconds idle or 3600 seconds from
+opening, whichever comes first. Both bounds are configurable and positive. An
+active write finishes before closure; its opener’s identity supplies the commit
+author. The last 1024 automatically closed results remain available to the
+owner for a late close. Timers stop when the dispatcher closes.
+
 Ordinary scopes keep their per-call behavior. A drain flushes open groups before
 a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
 deferral. The result carries the last SHA and summed path counts. Writes remain

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
@@ -44,6 +45,9 @@ class CommitGroup:
     result: GroupCommitResult = field(
         default_factory=lambda: GroupCommitResult(None, 0, "no_changes")
     )
+    principal: Principal | None = None
+    created: float = field(default_factory=time.monotonic)
+    touched: float = field(default_factory=time.monotonic)
     active: int = 0
     closed: bool = False
 
@@ -91,4 +95,5 @@ def make_group(description: str, owner: Principal | None) -> CommitGroup:
         description,
         owner_key(owner),
         new_commit_scope(description),
+        principal=owner,
     )

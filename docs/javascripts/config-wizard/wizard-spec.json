@@ -936,6 +936,22 @@
       "advancedGroup": "Git sync"
     },
     {
+      "id": "git_group_idle_s",
+      "label": "Git Group Idle S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S",
+      "help": "Seconds of group inactivity before automatic close.",
+      "advancedGroup": "Git sync"
+    },
+    {
+      "id": "git_group_max_age_s",
+      "label": "Git Group Max Age S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S",
+      "help": "Maximum group age in seconds before automatic close.",
+      "advancedGroup": "Git sync"
+    },
+    {
       "id": "git_push_delay_s",
       "label": "Git Push Delay S",
       "type": "number",

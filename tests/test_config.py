@@ -2776,3 +2776,16 @@ def test_protected_root_rejected_config(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", pattern)
     with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
         ProjectConfig.from_env()
+
+
+def test_group_timeout_settings_reach_vault_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S", "23")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S", "67")
+    config = ProjectConfig.from_env()
+    settings = VaultSettings.from_project_config(config)
+    assert settings.git_group_idle_s == 23
+    assert settings.git_group_max_age_s == 67

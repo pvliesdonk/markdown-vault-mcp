@@ -398,6 +398,18 @@
           "default": "600"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S",
+          "description": "Seconds of group inactivity before automatic close.",
+          "format": "number",
+          "default": "300.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S",
+          "description": "Maximum group age in seconds before automatic close.",
+          "format": "number",
+          "default": "3600.0"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S",
           "description": "Seconds of write-idle time before pushing; 0 pushes only on shutdown.",
           "format": "number",
@@ -1057,6 +1069,18 @@
           "description": "Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull.",
           "format": "number",
           "default": "600"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S",
+          "description": "Seconds of group inactivity before automatic close.",
+          "format": "number",
+          "default": "300.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S",
+          "description": "Maximum group age in seconds before automatic close.",
+          "format": "number",
+          "default": "3600.0"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S",

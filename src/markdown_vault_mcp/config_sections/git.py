@@ -24,6 +24,8 @@ class GitConfig:
     commit_email_claim: str | None = None
     lfs: bool = True
     pull_interval_s: int = 600
+    group_idle_s: float = 300
+    group_max_age_s: float = 3600
 
     def __post_init__(self) -> None:
         """Validate non-negative sync cadences on every construction path (#638).
@@ -32,6 +34,10 @@ class GitConfig:
             ConfigurationError: If ``push_delay_s`` or ``pull_interval_s`` is
                 negative.
         """
+        if not (0 < self.group_idle_s < float("inf")) or not (
+            0 < self.group_max_age_s < float("inf")
+        ):
+            raise ConfigurationError("Group timeouts must be finite and positive")
         if self.push_delay_s < 0:
             raise ConfigurationError(
                 f"push_delay_s must be >= 0, got {self.push_delay_s}"

@@ -655,7 +655,11 @@ class Vault:
         # callback runs on a background worker so write methods return after
         # the disk write and index submission.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
-        self._write_callback = WriteCallbackDispatcher(self._on_write)
+        self._write_callback = WriteCallbackDispatcher(
+            self._on_write,
+            group_idle_s=settings.git_group_idle_s,
+            group_max_age_s=settings.git_group_max_age_s,
+        )
         # #571: let the puller pause new writes and drain pending commits
         # before a merge so it runs on a clean tree. Wired here (not in start())
         # so the interactive force_pull is covered even when the periodic pull
