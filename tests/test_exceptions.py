@@ -62,11 +62,10 @@ class TestConfigurationErrorCanonical:
 
     def test_is_pvl_core_class(self) -> None:
         """The project's ConfigurationError IS pvl-core's, so env_int's raises are catchable."""
-        import fastmcp_pvl_core
-
+        from markdown_vault_mcp import _pvl_core
         from markdown_vault_mcp.exceptions import ConfigurationError
 
-        assert ConfigurationError is fastmcp_pvl_core.ConfigurationError
+        assert ConfigurationError is _pvl_core.ConfigurationError
 
     def test_not_a_markdown_mcp_error_subclass(self) -> None:
         """Deliberately outside the MarkdownMCPError tree (env_int raises the bare CE)."""

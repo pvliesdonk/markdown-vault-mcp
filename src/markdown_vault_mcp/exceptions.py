@@ -10,7 +10,7 @@ from typing import Literal
 # and config validation + git-remote checks raise the same catchable type, so
 # `markdown_vault_mcp.exceptions.ConfigurationError` and the pvl-core class are
 # identical.
-from fastmcp_pvl_core import ConfigurationError as ConfigurationError
+from markdown_vault_mcp._pvl_core import ConfigurationError as ConfigurationError
 
 
 class MarkdownMCPError(Exception):

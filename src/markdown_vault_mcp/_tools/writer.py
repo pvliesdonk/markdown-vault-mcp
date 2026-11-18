@@ -24,7 +24,6 @@ from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp_pvl_core import fetch_url, tool_boundary
 from mcp.shared.exceptions import MCPError
 from mcp.types import (
     ElicitRequest,
@@ -34,6 +33,7 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from markdown_vault_mcp._pvl_core import fetch_url, tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (

@@ -132,6 +132,7 @@ src/markdown_vault_mcp/
     summarize.py         -- SummarizeConfig: OpenAI-compatible summarization backend settings
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
+  _pvl_core.py         -- the only importer of fastmcp_pvl_core: re-exports the names still in use, grouped by the #2241 area that removes them (#2274)
   _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
   _server_apps.py      -- template-owned MCP Apps scaffold; its sentinels keep the template's text and call into _vault_apps / _vault_app_tools (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: the app-shell AppConfig (Claude sandbox domain + CDN CSP) + GraphView→SPA wire serializer (#905)

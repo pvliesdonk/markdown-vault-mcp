@@ -1,0 +1,133 @@
+"""The one place this project imports ``fastmcp_pvl_core`` (#2274).
+
+#2241 dissolves pvl-core one area at a time: each name below either becomes a
+direct FastMCP call or moves into a module of this project, and then leaves
+this file. When the file is empty, the dependency goes (#2283).
+``tests/test_pvl_core_imports.py`` fails on any other import of
+``fastmcp_pvl_core``, and on a ``monkeypatch``/``patch`` target that names it;
+patch ``markdown_vault_mcp._pvl_core.<name>`` instead, from code that looks the
+name up at call time.
+
+``__all__`` groups the names by the area feature that removes them.
+"""
+
+from __future__ import annotations
+
+from fastmcp_pvl_core import (
+    CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
+    GENERATED_INSTRUCTIONS_TARGET_UTF16,
+    ConfigurationError,
+    FetchResult,
+    HealthCheck,
+    InstructionRole,
+    Jobs,
+    JobsConfig,
+    ServerConfig,
+    TransferConfig,
+    TransferKind,
+    TransferLinks,
+    TransferReadResult,
+    TransferResourceGoneError,
+    TransferSinkError,
+    TransferUnavailableError,
+    _kv_store,
+    apply_tool_visibility,
+    build_auth,
+    build_bearer_auth,
+    build_event_store,
+    build_jobs,
+    build_kv_store,
+    configure_logging_from_env,
+    configure_task_backend,
+    domain_env_suffixes,
+    domain_env_surface,
+    env,
+    env_float,
+    env_int,
+    fetch_url,
+    finalize_instructions,
+    find_nonconforming_log_calls,
+    get_claims,
+    get_current_auth_mode,
+    get_subject,
+    instructions_for,
+    is_tool_boundary,
+    maybe_start_debugpy,
+    normalise_http_path,
+    parse_bool,
+    parse_list,
+    register_health_routes,
+    register_job_tools,
+    register_long_running_tool,
+    register_server_info_tool,
+    register_transfer_routes,
+    run_http,
+    tool_boundary,
+    utf16_code_units,
+    wire_middleware_stack,
+)
+from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
+
+__all__ = [  # noqa: RUF022 - grouped by area, not sorted
+    # Configuration, environment helpers and the config error (#2275).
+    "ConfigurationError",
+    "ServerConfig",
+    "domain_env_suffixes",
+    "domain_env_surface",
+    "env",
+    "env_float",
+    "env_int",
+    "parse_bool",
+    "parse_list",
+    # Logging setup and the request-logging middleware (#2276).
+    "RequestLoggingMiddleware",
+    "configure_logging_from_env",
+    "find_nonconforming_log_calls",
+    "wire_middleware_stack",
+    # Authentication and the request subject (#2277).
+    "build_auth",
+    "build_bearer_auth",
+    "get_claims",
+    "get_current_auth_mode",
+    "get_subject",
+    # HTTP serving, health routes, server info and tool visibility (#2278).
+    "HealthCheck",
+    "apply_tool_visibility",
+    "maybe_start_debugpy",
+    "normalise_http_path",
+    "register_health_routes",
+    "register_server_info_tool",
+    "run_http",
+    # Event store, key-value store and task backend (#2279). ``_kv_store`` is
+    # the core module itself, so tests can patch its default directory.
+    "_kv_store",
+    "build_event_store",
+    "build_kv_store",
+    "configure_task_backend",
+    # Tool boundary and the server-instructions builder (#2280).
+    "CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16",
+    "GENERATED_INSTRUCTIONS_TARGET_UTF16",
+    "InstructionRole",
+    "finalize_instructions",
+    "instructions_for",
+    "is_tool_boundary",
+    "tool_boundary",
+    "utf16_code_units",
+    # Long-running jobs (#2281).
+    "Jobs",
+    "JobsConfig",
+    "build_jobs",
+    "register_job_tools",
+    "register_long_running_tool",
+    # Transfer links and URL fetching (#2282).
+    "FetchResult",
+    "TransferConfig",
+    "TransferKind",
+    "TransferLinks",
+    "TransferReadResult",
+    "TransferResourceGoneError",
+    "TransferSinkError",
+    "TransferUnavailableError",
+    "fetch_url",
+    "register_transfer_routes",
+]

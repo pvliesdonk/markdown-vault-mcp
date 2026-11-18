@@ -13,7 +13,8 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
 from fastmcp import FastMCP
-from fastmcp_pvl_core import (
+
+from markdown_vault_mcp._pvl_core import (
     HealthCheck,
     ServerConfig,  # noqa: F401  — re-exported for downstream projects' convenience
     apply_tool_visibility,
@@ -31,7 +32,6 @@ from fastmcp_pvl_core import (
     register_server_info_tool,
     wire_middleware_stack,
 )
-
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import (
     bind_config,
@@ -240,7 +240,7 @@ def make_server(
     # dropping the feature. Requires fastmcp-pvl-core >= 4.8.0.
     #
     # First compose a TransferConfig into ProjectConfig (config.py): add
-    # ``TransferConfig`` to its ``from fastmcp_pvl_core import (...)`` block, then
+    # ``TransferConfig`` to its ``from markdown_vault_mcp._pvl_core import (...)`` block, then
     # a ``transfer: TransferConfig = field(default_factory=TransferConfig)`` field
     # in CONFIG-FIELDS and ``transfer=TransferConfig.from_env(_ENV_PREFIX),`` in
     # CONFIG-FROM-ENV. The second line is required — without it the
@@ -250,7 +250,7 @@ def make_server(
     # and create_upload_link with pvl-core's shared metadata (names, icons, tags):
     #
     # if transport != "stdio":
-    #     from fastmcp_pvl_core import register_transfer_routes
+    #     from markdown_vault_mcp._pvl_core import register_transfer_routes
     #
     #     register_transfer_routes(
     #         mcp,
@@ -274,7 +274,7 @@ def make_server(
     # caller ref itself, then mints over the already-validated sink handle:
     #
     # if transport != "stdio":
-    #     from fastmcp_pvl_core import (
+    #     from markdown_vault_mcp._pvl_core import (
     #         add_transfer_workflow,
     #         build_transfer_links,
     #         tool_boundary,

@@ -6,8 +6,8 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._pvl_core import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 

@@ -30,13 +30,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import (
+
+from markdown_vault_mcp._pvl_core import (
     TransferReadResult,
     TransferResourceGoneError,
     TransferSinkError,
     TransferUnavailableError,
 )
-
 from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
@@ -61,8 +61,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from fastmcp_pvl_core import TransferKind
-
+    from markdown_vault_mcp._pvl_core import TransferKind
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
 

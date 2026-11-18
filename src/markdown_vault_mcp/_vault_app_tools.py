@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.apps import AppConfig
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
+from markdown_vault_mcp._pvl_core import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp._vault_apps import _graph_view_payload
 from markdown_vault_mcp.domain import get_vault

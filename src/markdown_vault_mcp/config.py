@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import (
+from markdown_vault_mcp._pvl_core import (
     # For CONFIG-VALIDATE, which raises it.  The redundant alias marks an
     # explicit re-export, so ruff accepts the import whether or not a check
     # uses it; a `noqa: F401` would become an unused directive (RUF100) the
@@ -29,7 +29,7 @@ from fastmcp_pvl_core import (
 # (keeps the import above in its own statement, so adding a name to the one
 #  below never makes ruff re-sort the two — that fix would be outside the
 #  sentinels.)
-from fastmcp_pvl_core import (
+from markdown_vault_mcp._pvl_core import (
     JobsConfig,
     ServerConfig,
     TransferConfig,
@@ -38,7 +38,6 @@ from fastmcp_pvl_core import (
     # the import genuinely used, and a redundant directive fails RUF100.
     env,
 )
-
 from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,

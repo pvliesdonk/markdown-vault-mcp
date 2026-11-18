@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import ServerConfig, TransferLinks
 from httpx import ASGITransport, AsyncClient
 
+from markdown_vault_mcp._pvl_core import ServerConfig, TransferLinks
 from markdown_vault_mcp.config import ProjectConfig
 from tests.fixtures.git import make_nested_repository, make_superproject
 from tests.server_factory import make_server

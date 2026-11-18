@@ -32,15 +32,14 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import (
+import markdown_vault_mcp
+from markdown_vault_mcp._pvl_core import (
     JobsConfig,
     ServerConfig,
     TransferConfig,
     finalize_instructions,
     register_health_routes,
 )
-
-import markdown_vault_mcp
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 

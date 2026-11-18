@@ -155,9 +155,8 @@ class TestServerIdentity:
         library enforced it. This server does enforce it, so the sentence is
         a domain snippet with the semantic ``INSTANCE`` role.
         """
-        from fastmcp_pvl_core import InstructionRole
-
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._pvl_core import InstructionRole
 
         for read_only, expected in ((True, "READ-ONLY"), (False, "READ-WRITE")):
             snippets = _domain_snippets(GuidanceConfig(read_only=read_only))
@@ -168,9 +167,8 @@ class TestServerIdentity:
 
     def test_a_server_without_the_boot_reindex_says_to_reindex(self) -> None:
         """#1542: offline changes stay unindexed, so the model is told."""
-        from fastmcp_pvl_core import InstructionRole
-
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._pvl_core import InstructionRole
 
         default = _domain_snippets(GuidanceConfig(read_only=False))
         assert not [s for s in default if "reindex" in s.text]
@@ -194,9 +192,8 @@ class TestServerIdentity:
 
     def test_domain_snippets_use_their_normative_roles(self) -> None:
         """Pin the role ownership required by pvl-core's #299 design."""
-        from fastmcp_pvl_core import InstructionRole
-
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._pvl_core import InstructionRole
 
         snippets = _domain_snippets(
             GuidanceConfig(
@@ -226,7 +223,7 @@ class TestServerIdentity:
     @pytest.mark.usefixtures("_mcp_env_maximal")
     def test_maximal_generated_instructions_fit_target(self) -> None:
         """The complete generated feature matrix keeps operator headroom."""
-        from fastmcp_pvl_core import (
+        from markdown_vault_mcp._pvl_core import (
             GENERATED_INSTRUCTIONS_TARGET_UTF16,
             utf16_code_units,
         )
@@ -248,7 +245,7 @@ class TestServerIdentity:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Routing and policy retain their positions inside the client budget."""
-        from fastmcp_pvl_core import (
+        from markdown_vault_mcp._pvl_core import (
             CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
             utf16_code_units,
         )
@@ -898,8 +895,8 @@ class TestToolAnnotations:
         from dataclasses import replace
 
         from fastmcp import FastMCP
-        from fastmcp_pvl_core import register_transfer_routes
 
+        from markdown_vault_mcp._pvl_core import register_transfer_routes
         from markdown_vault_mcp._server_apps import register_apps
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
@@ -929,8 +926,7 @@ class TestToolAnnotations:
         # DOMAIN-WIRING block (they need the config-built Jobs mechanics,
         # #1033), not register_tools; wire them here the same way so the
         # full-registry sweep keeps asserting their metadata.
-        from fastmcp_pvl_core import build_jobs, register_job_tools
-
+        from markdown_vault_mcp._pvl_core import build_jobs, register_job_tools
         from markdown_vault_mcp._tools import index as index_tools
         from markdown_vault_mcp._tools import summarize as summarize_tools
 
@@ -2050,7 +2046,7 @@ class TestFetchTool:
         URL when nothing redirected, which is what every caller here wants
         (pvl-core 4.11.2 made the field mandatory, #1114).
         """
-        from fastmcp_pvl_core import FetchResult
+        from markdown_vault_mcp._pvl_core import FetchResult
 
         return AsyncMock(
             return_value=FetchResult(
@@ -4016,7 +4012,7 @@ class TestMiddlewareStack:
         exercised at the process level in test_container_logging.py.
         """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
+        from markdown_vault_mcp._pvl_core import RequestLoggingMiddleware
 
         server = make_server()
         mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
@@ -4035,7 +4031,7 @@ class TestMiddlewareStack:
         before ``make_server`` wires the middleware.
         """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
+        from markdown_vault_mcp._pvl_core import RequestLoggingMiddleware
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", "DEBUG")
         root = logging.getLogger()

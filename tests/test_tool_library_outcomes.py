@@ -147,7 +147,8 @@ async def test_a_fault_reaches_the_model_without_its_detail(
 ) -> None:
     """A git failure's stderr can name server paths; the model never sees it."""
     from fastmcp.exceptions import ToolError
-    from fastmcp_pvl_core import tool_boundary
+
+    from markdown_vault_mcp._pvl_core import tool_boundary
 
     @tool_boundary
     @library_outcomes
@@ -200,7 +201,7 @@ def test_every_tool_maps_library_outcomes_inside_its_boundary(
 
 
 def test_mapping_above_the_boundary_does_not_count() -> None:
-    from fastmcp_pvl_core import tool_boundary
+    from markdown_vault_mcp._pvl_core import tool_boundary
 
     @library_outcomes
     @tool_boundary

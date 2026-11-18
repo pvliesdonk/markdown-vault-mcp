@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastmcp_pvl_core import TransferConfig
 
+from markdown_vault_mcp._pvl_core import TransferConfig
 from markdown_vault_mcp.config import (
     ProjectConfig,
     derive_max_chunk_chars,
@@ -1299,7 +1299,7 @@ class TestServerConfigComposition:
     """The composed ServerConfig field on ProjectConfig."""
 
     def test_server_field_default_is_empty_serverconfig(self) -> None:
-        from fastmcp_pvl_core import ServerConfig
+        from markdown_vault_mcp._pvl_core import ServerConfig
 
         config = ProjectConfig(source_dir=Path("/tmp/v"))
         assert isinstance(config.server, ServerConfig)
@@ -1377,7 +1377,7 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
     ``env`` in ``config.py`` or breaking the sub-config recursion would silently
     drop these from the config-wizard drift gate's coverage check.
     """
-    from fastmcp_pvl_core import domain_env_suffixes
+    from markdown_vault_mcp._pvl_core import domain_env_suffixes
 
     suffixes = domain_env_suffixes(ProjectConfig)
     assert {

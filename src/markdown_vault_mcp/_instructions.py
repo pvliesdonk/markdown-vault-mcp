@@ -21,8 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastmcp_pvl_core import InstructionRole, instructions_for
-
+from markdown_vault_mcp._pvl_core import InstructionRole, instructions_for
 from markdown_vault_mcp._write_tools import gated_tool
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
