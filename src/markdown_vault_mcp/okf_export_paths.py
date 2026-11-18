@@ -783,11 +783,11 @@ class ArtifactLinks:
         for start, end, wiki in _body_spans(body):
             raw = body[start:end]
             target = self._target(raw, source, wiki is not None)
-            if (
-                target is not None
-                and target not in self.members
-                and target not in self.directories
-            ):
+            if target is None or target in self.directories:
+                continue
+            written, _ = _written_path(raw) if wiki is None else ("", "")
+            directory_form = decode_markdown_destination(written).endswith("/")
+            if directory_form or target not in self.members:
                 missing.setdefault(_safe_text(raw), None)
         return list(missing)
 

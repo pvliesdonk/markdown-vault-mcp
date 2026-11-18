@@ -778,8 +778,9 @@ Logs permit H1 titles before the first date and require valid ISO dates in
 non-increasing order. Entries must be flat bullet lists under a date; their
 items can contain paragraphs and fenced examples. These artifact checks are
 stricter than the live `okf_validate` checks.
-The shared frontmatter parser also rejects impossible implicit YAML dates;
-the export reports that parser failure without substituting another dialect.
+The shared frontmatter parser uses PyYAML safe loading and rejects unsupported
+tags, invalid tagged scalars, and impossible implicit YAML dates; the export
+reports those parser failures without substituting another dialect.
 An undecodable Markdown member or a parser resource failure leaves its checks unchecked,
 so the verdict is incomplete rather than asserting a format finding.
 

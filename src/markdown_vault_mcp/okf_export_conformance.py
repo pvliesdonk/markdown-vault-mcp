@@ -157,7 +157,7 @@ def _inspect(
     try:
         # Parsing directly preserves arbitrary YAML keys without Post's keyword expansion.
         metadata, _ = frontmatter.parse(text)
-    except (yaml.YAMLError, ValueError):
+    except (yaml.YAMLError, TypeError, ValueError, AttributeError, LookupError):
         if role == "index.md":
             _inspect_reserved(path, text, body, {}, report)
         else:

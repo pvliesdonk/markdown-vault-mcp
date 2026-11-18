@@ -543,3 +543,43 @@ def test_deep_yaml_export_is_incomplete(tmp_path: Path) -> None:
     assert result.data
     assert result.report.verdict == "incomplete"
     assert result.report.unchecked["note.md"] == ["yaml_frontmatter", "type"]
+
+
+@pytest.mark.parametrize("folder", ["", "sub"])
+@pytest.mark.parametrize("tag", ["!!bool maybe", "!!timestamp x"])
+def test_invalid_yaml_tag_export_is_nonconformant(
+    tmp_path: Path, folder: str, tag: str
+) -> None:
+    root = tmp_path / folder if folder else tmp_path
+    if folder:
+        root.mkdir()
+    (root / "note.md").write_text(f"---\ntype: T\nx: {tag}\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder=folder
+        )
+    finally:
+        vault.close()
+    assert result.report.verdict == "nonconformant"
+    assert [(f.path, f.reason) for f in result.report.format_findings] == [
+        ("note.md", "malformed_frontmatter")
+    ]
+
+
+def test_directory_form_links_require_directories(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_text(
+        "---\ntype: T\n---\n[file](target.md/) [encoded](target.md%2F) [directory](dir/) [root](/) [plain](target.md)\n"
+    )
+    (tmp_path / "target.md").write_text("---\ntype: T\n---\n")
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "note.md").write_text("---\ntype: T\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert [link.target for link in result.report.broken_links] == [
+        "target.md/",
+        "target.md%2F",
+    ]
