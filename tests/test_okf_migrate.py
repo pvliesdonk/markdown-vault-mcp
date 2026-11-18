@@ -370,6 +370,26 @@ class TestGenerateIndex:
         assert not errors
         assert (vault.source_dir / "index.md").read_text().startswith(header)
 
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_generated_index_notifies_write(
+        self, tmp_path: Path, existing: bool
+    ) -> None:
+        if existing:
+            (tmp_path / "index.md").write_text("---\ntitle: Legacy\n---\n# Old\n")
+        calls: list[tuple[str, str]] = []
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False),
+            on_write=lambda path, _content, op: calls.append((path.name, op)),
+        )
+        try:
+            vault.index.build_index()
+            vault.writer.okf_generate_index()
+            assert vault._write_callback.drain()
+            assert calls == [("index.md", "write")]
+        finally:
+            vault.close()
+
     def test_refreshing_an_existing_index_creates_nothing(self, vault: Vault) -> None:
         _write(vault, "guides/one.md", "# One\n")
         vault.writer.okf_generate_index()
