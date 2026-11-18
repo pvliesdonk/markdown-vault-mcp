@@ -157,8 +157,9 @@ placement in `config.py`, wizard metadata via field
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
 the clone happens inside the server lifespan). `config://vault` reports the
-mode, declared version and active state. The `stats.okf` section is absent
-when detection is inactive.
+mode, declared version and active state, as well as `okf_write_configured`
+and `okf_write_effective`. Active `stats.okf` reports the configured and
+effective write layer as `write_configured` and `write_effective`. Effective means `OKF_WRITE` is enabled, OKF is active, and the vault is not read-only. The resource also reports `okf_capabilities`; `stats.okf.capabilities` and the CLI carry the same configured values, effective true/false values, reasons and folder scope, including when detection is inactive. See [capability reporting](../use/okf.md) for the reason precedence.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -283,7 +284,7 @@ is disk-based rather than index-based, and the tool is hidden under
 `search` and `list_documents` accept OKF filter dimensions, implemented on the
 existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 
-- `type=<value>` — direct tag lookup.
+- `type=<value>` — direct tag lookup. `type=null` post-filters admitted notes without a non-empty string type, excluding reserved files. Non-string types match this selector as well as their existing string equality filter.
 - `status=<value>` — tag lookup with the documented caveat that absent
   `status` means `stable` (the filter for `stable` must match
   absent-or-stable; this is the one filter that cannot be a pure tag lookup

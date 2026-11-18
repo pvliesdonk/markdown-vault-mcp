@@ -35,6 +35,7 @@ created as needed.
 | `frontmatter` | `object \| null` | `null` | The note's frontmatter, such as `{"title": "My Note", "tags": ["draft"]}`. |
 | `content_base64` | `string` | `""` | An attachment's bytes, base64-encoded; for paths not ending in .md. |
 | `if_match` | `string \| null` | `null` | Etag from read, to replace an existing file; omit for a new file. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -96,6 +97,7 @@ whitespace is used and reported as `match_type` `"normalized"`.
 | `if_match` | `string \| null` | `null` | Etag from read. Pass it, one edit per read, when `line_start` and `line_end` are given; omit it for several `old_text`-only edits to one note at once. |
 | `line_start` | `integer \| null` | `null` | First line to replace, counting from 1 over the content read returns, frontmatter included; pass with `line_end`. |
 | `line_end` | `integer \| null` | `null` | Last line to replace, inclusive; pass with `line_start`. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -147,6 +149,7 @@ a paragraph or section.
 | `content` | `string` | required | Non-empty text to add after everything the note holds. |
 | `if_match` | `string \| null` | `null` | Etag from read; the text is then added only to that version. Omit to append regardless. |
 | `create_if_missing` | `boolean` | `false` | Create the note with content as its body when path does not exist. Default false, so a mistyped path creates nothing. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -191,6 +194,7 @@ Permanently delete a note or attachment; only git history can bring it back.
 |---|---|---|---|
 | `path` | `string` | required | Path of the note or attachment. |
 | `if_match` | `string \| null` | `null` | Etag from read; the file is then deleted only as that version. Omit to delete it as it is. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -227,6 +231,7 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 | `new_path` | `string` | required | New path, such as `"projects/idea.md"`, where nothing exists yet. |
 | `if_match` | `string \| null` | `null` | Etag from read of `old_path`; still accepted when the only changes since are link rewrites the server made. |
 | `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -282,6 +287,7 @@ Notes whose links could not be rewritten are listed in `failed_links`.
 |---|---|---|---|
 | `old_dir` | `string` | required | Folder to move, such as `"drafts"`. |
 | `new_dir` | `string` | required | Destination folder, such as `"archive/2026"`; an existing folder is merged into. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 

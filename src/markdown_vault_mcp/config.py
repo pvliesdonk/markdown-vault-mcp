@@ -821,6 +821,24 @@ class ProjectConfig:
             "wizard": {"group": "Git sync"},
         },
     )
+    git_group_idle_s: float = field(
+        default=300.0,
+        kw_only=True,
+        metadata={
+            "help": "Seconds of group inactivity before automatic close.",
+            "tags": ("git",),
+            "wizard": {"group": "Git sync"},
+        },
+    )
+    git_group_max_age_s: float = field(
+        default=3600.0,
+        kw_only=True,
+        metadata={
+            "help": "Maximum group age in seconds before automatic close.",
+            "tags": ("git",),
+            "wizard": {"group": "Git sync"},
+        },
+    )
     git_push_delay_s: float = field(
         default=30.0,
         metadata={
@@ -1128,6 +1146,8 @@ class ProjectConfig:
             commit_email_claim=self.git_commit_email_claim,
             lfs=self.git_lfs,
             pull_interval_s=self.git_pull_interval_s,
+            group_idle_s=self.git_group_idle_s,
+            group_max_age_s=self.git_group_max_age_s,
         )
 
     @property
@@ -1559,6 +1579,8 @@ class ProjectConfig:
             ),
             git_username=env(_ENV_PREFIX, "GIT_USERNAME") or "x-access-token",
             git_pull_interval_s=env_int(_ENV_PREFIX, "GIT_PULL_INTERVAL_S", 600),
+            git_group_idle_s=env_float(_ENV_PREFIX, "GIT_GROUP_IDLE_S", 300.0),
+            git_group_max_age_s=env_float(_ENV_PREFIX, "GIT_GROUP_MAX_AGE_S", 3600.0),
             git_push_delay_s=env_float(_ENV_PREFIX, "GIT_PUSH_DELAY_S", 30.0),
             git_commit_name=env(_ENV_PREFIX, "GIT_COMMIT_NAME") or "markdown-vault-mcp",
             git_commit_email=env(_ENV_PREFIX, "GIT_COMMIT_EMAIL")

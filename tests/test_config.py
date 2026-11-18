@@ -2776,3 +2776,58 @@ def test_protected_root_rejected_config(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", pattern)
     with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
         ProjectConfig.from_env()
+
+
+def test_group_timeout_settings_reach_vault_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S", "23")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S", "67")
+    config = ProjectConfig.from_env()
+    settings = VaultSettings.from_project_config(config)
+    assert settings.git_group_idle_s == 23
+    assert settings.git_group_max_age_s == 67
+
+
+def test_project_config_rejects_invalid_group_timeout() -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match="group_idle_s"):
+        ProjectConfig(git_group_idle_s=0)
+
+
+def test_group_settings_do_not_shift_existing_positional_signature() -> None:
+    import inspect
+
+    from markdown_vault_mcp.config_sections import VaultSettings
+
+    params = inspect.signature(VaultSettings).parameters
+    assert params["git_group_idle_s"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["git_group_max_age_s"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 1e100])
+@pytest.mark.parametrize("setting", ["git_group_idle_s", "git_group_max_age_s"])
+def test_direct_vault_group_timeout_validation(setting: str, value: float) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match=setting.removeprefix("git_")):
+        VaultSettings(**{setting: value})
+
+
+def test_group_timeouts_preserve_project_config_positional_fields() -> None:
+    defaults = ProjectConfig()
+    old_fields = [
+        f
+        for f in dataclasses.fields(ProjectConfig)
+        if not f.kw_only and f.name not in {"git_group_idle_s", "git_group_max_age_s"}
+    ]
+    end = next(i for i, f in enumerate(old_fields) if f.name == "git_push_delay_s")
+    args = [
+        27.0 if f.name == "git_push_delay_s" else getattr(defaults, f.name)
+        for f in old_fields[: end + 1]
+    ]
+    assert ProjectConfig(*args).git_push_delay_s == 27.0

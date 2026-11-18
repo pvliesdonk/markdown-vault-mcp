@@ -11,6 +11,7 @@ from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._tools._outcomes import library_outcomes
+from markdown_vault_mcp._tools.transactions import settle_transactions
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
@@ -352,16 +353,22 @@ def register(mcp: FastMCP) -> None:
     async def git_sync(
         direction: Literal["pull", "push", "both"] = "both",
         dry_run: bool = False,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Pull from and push to the vault's git remote now; returns what each leg did.
 
         With direction "both" the pull runs first, and a failed pull skips the push.
+        A real sync waits up to 30 seconds for your open or pending transaction
+        commits. If one is pending or failed, no sync leg runs.
 
         Args:
             direction: `pull`, `push` or `both` (default).
             dry_run: Report what a pull would do without changing anything; the push
                 leg reports applied false without contacting the remote.
+            transaction: Handle to validate and close before syncing. Real sync
+                closes your open transactions and waits for pending closes even
+                when omitted. Omit for dry_run; previews leave transactions open.
 
         Returns:
             Dict with the following fields:
@@ -411,6 +418,12 @@ def register(mcp: FastMCP) -> None:
                 git_sync has nothing to do.
         """
         strategy = _resolve_managed_strategy(vault)
+        if dry_run and transaction is not None:
+            raise InvalidRequestError(
+                "Omit transaction for a dry-run preview; it leaves transactions open."
+            )
+        if not dry_run:
+            await settle_transactions(vault, transaction)
         git_root = strategy.resolve_force_repo()
 
         result: dict[str, Any] = {

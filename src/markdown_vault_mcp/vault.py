@@ -352,6 +352,7 @@ class Vault:
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
         vector_store: An open vector store to use instead of opening one;
             the caller owns it: the vault never rebuilds or closes it.
+        inspection_policy: Optional inventory-only access boundaries.
         vector_backend: The backend the vault opens its vector store with,
             instead of the one ``settings.embedding_store`` names; the vault
             owns and closes the store it opens.
@@ -379,6 +380,7 @@ class Vault:
         chunk_strategy: str | ChunkStrategy = "heading",
         vector_store: EmbeddingStore | None = None,
         vector_backend: VectorBackend | None = None,
+        inspection_policy: InspectionPolicy | None = None,
     ) -> None:
         if settings is None:
             settings = VaultSettings()
@@ -390,7 +392,7 @@ class Vault:
         self._injected_vector_store = vector_store
         self._injected_vector_backend = vector_backend
         self._configure(settings, chunk_strategy)
-        self._build_managers(settings)
+        self._build_managers(settings, inspection_policy)
         self._build_facets(settings)
 
     def _configure(
@@ -551,12 +553,15 @@ class Vault:
             raise OSError("OKF scope probe failed")
         return state.active
 
-    def _build_managers(self, settings: VaultSettings) -> None:
+    def _build_managers(
+        self, settings: VaultSettings, inspection_policy: InspectionPolicy | None
+    ) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
         Args:
             settings: The resolved construction settings (search-ranking
                 knobs and the OKF write toggle are consumed here).
+            inspection_policy: Optional policy independent of the opened index.
         """
         # Sub-module construction.
         keyword_backend = get_backend("keyword", "sqlite")(
@@ -705,7 +710,11 @@ class Vault:
         # callback runs on a background worker so write methods return after
         # the disk write and index submission.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
-        self._write_callback = WriteCallbackDispatcher(self._on_write)
+        self._write_callback = WriteCallbackDispatcher(
+            self._on_write,
+            group_idle_s=settings.git_group_idle_s,
+            group_max_age_s=settings.git_group_max_age_s,
+        )
         # #571: let the puller pause new writes and drain pending commits
         # before a merge so it runs on a clean tree. Wired here (not in start())
         # so the interactive force_pull is covered even when the periodic pull
@@ -933,6 +942,62 @@ class Vault:
         """
         configured = self._okf_write_configured
         return configured, configured and active and not self._read_only
+
+    def okf_stats_report(self) -> dict[str, Any]:
+        """Return OKF capability reporting with any active-bundle aggregates.
+
+        Returns:
+            A capability report and, when OKF is active, its statistics.
+        """
+        section = self.reader.okf_stats()
+        active = section is not None
+        if section is None:
+            section = {}
+        section["capabilities"] = self.okf_capability_report(active=active)
+        return section
+
+    def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
+        """Report configured and effective OKF authority for this vault.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Capability entries and the configured folder designation scope.
+        """
+        caps = self._okf_capabilities
+
+        def entry(name: str, configured: bool | str) -> dict[str, Any]:
+            reason = None
+            enabled = configured is True or (
+                isinstance(configured, str) and configured != "off"
+            )
+            if self._read_only:
+                reason = "read_only"
+            elif enabled:
+                if not active and not (name == "verify" and self._okf_write_alias):
+                    reason = "okf_inactive"
+                elif (
+                    name == "author"
+                    or (name == "verify" and configured not in ("elicit", "trust-auth"))
+                    or (name == "log" and configured != "writes")
+                ):
+                    reason = "not_implemented"
+                elif name in ("index", "log") and not caps.folders:
+                    reason = "not_designated"
+            return {
+                "configured": configured,
+                "effective": enabled and reason is None,
+                "reason": reason,
+            }
+
+        return {
+            "author": entry("author", caps.author),
+            "verify": entry("verify", caps.verify),
+            "index": entry("index", caps.index),
+            "log": entry("log", caps.log),
+            "folders": list(caps.folders),
+        }
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
@@ -1171,6 +1236,10 @@ class Vault:
             scope: The scope to close.
         """
         self._write_callback.end_scope(scope)
+
+    def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue a scope's end and return its callback-attempt future."""
+        return self._write_callback._enqueue_scope_end(scope)
 
     def close(self) -> None:
         """Release what the vault opened.

@@ -57,8 +57,9 @@ _ATTACHING_NOT_DRIVEN = (
 #: Write tools that deliberately do not carry it. ``git_sync`` reports the
 #: sync outcome directly — it is the tool an operator calls to find out — and
 #: ``create_upload_link`` hands back a URL, with the writes it enables landing
-#: through the upload route rather than in its own response.
-_EXEMPT = ("git_sync", "create_upload_link")
+#: through the upload route rather than in its own response. Transaction tools
+#: open a group or report a local commit; their writes carry remote health.
+_EXEMPT = ("git_sync", "create_upload_link", "begin_transaction", "end_transaction")
 
 
 def _parse_tool_data(result: Any) -> Any:

@@ -34,7 +34,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check detection through the `config://vault` resource. The `stats` tool includes an `okf` section when detection is active. Detection reflects changes to the declaration on the next call.
+Check the current state through `config://vault`, the `stats` tool, or `markdown-vault-mcp stats --json`. The resource's `okf_capabilities` and `stats.okf.capabilities` carry the same configured values, effective true/false values, reasons and folder scope, even when OKF is inactive. Reasons follow this order: `read_only` applies to every capability on a read-only vault, including disabled ones. On a writable vault a disabled capability has no reason. For enabled capabilities, `okf_inactive` comes next, except that legacy verification can remain effective in an undeclared vault when `OKF_WRITE` is enabled. Then `not_implemented` applies to event logging, and unrecognized library-supplied verify or log modes; finally, `not_designated` applies to index and write logging with an empty folder scope supplied through the library. Effective describes vault-level authority; identity, elicitation and etag checks still apply to individual calls. An effective index or write-log capability applies only within the reported folder scope; a nonempty scope does not mean every path is designated.
+
+The resource's `okf_write_configured` and `okf_write_effective` report the legacy stamping layer; active `stats.okf` reports them as `write_configured` and `write_effective`. The layer is effective when configured, OKF is active, and the vault is not read-only. When inactive, `stats.okf` contains only `capabilities`. Detection reflects changes to the declaration on the next call.
 
 ## Authoring a concept
 
@@ -57,7 +59,7 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 The CLI labels recorded review metadata and unknown applicability in human-readable search output. For whole-note text reads, it sends that notice to `stderr`, leaving the note content on `stdout` unchanged. The app's note and context views show the same uncertainty beside any supplied `verified` field, including empty or malformed values; the original metadata stays available. These notices change only the human-readable presentation. JSON and agent output retain their existing payloads.
 
-You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
+You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. On an active OKF bundle, use `{"type": null}` with `search` or `list_documents` to find searchable notes without a non-empty string type; reserved `index.md` and `log.md` files are excluded. Non-string values such as `type: 42` count as missing a usable type, while the existing string equality filter `{"type": "42"}` still matches that value. The filter judges indexed metadata: an unquoted date such as `type: 2026-11-17` is indexed as the string `"2026-11-17"` and does not match null. The null selector is available only to `search` and `list_documents`; CLI and exact query filters accept strings. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
 ## Frontmatter fields
 
@@ -358,3 +360,17 @@ even if search refuses to prune its own rows for an empty root.
 The library's `Vault.force_pull()` sweeps after Git succeeds but does not
 reconcile search. If the sweep fails, Git may already have changed the working
 tree; the error propagates. A webhook reports failure so the delivery can be retried.
+
+The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOLDERS`
+settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
+implicit stamping. `OKF_WRITE=true` retains the
+existing behavior and logs a deprecation notice; explicit settings override
+its resolved defaults. See the [configuration reference](../reference/configuration.md).
+
+## Inspecting bundle inventory
+
+Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates. A blank, null or non-string `type` has `type_state="invalid"`, not `absent`.
+
+Pass `next_cursor` into the next call, including after an empty filtered page. Each call scans up to 1,000 observations before filtering and returns at most the requested limit. A `not_evaluated` search state means the index was not available, not that a note is excluded. The read-only `okf-inventory` CLI command accepts the same selection and `--json` returns the structured report. Neither interface builds an index for inventory. The local CLI uses a usable configured index when the selected source resolves to the configured vault; otherwise search state is `not_evaluated`. An unusable or unsupported optional index also leaves search state `not_evaluated`; the index is not changed. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly.
+
+An unavailable directory boundary with reason `depth_limit` remains in filtered results. Select its path as the root of another inventory call to inspect deeper entries.
