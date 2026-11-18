@@ -40,6 +40,8 @@ The effective write state describes the existing provenance stamping and reserve
 
 Enable `MARKDOWN_VAULT_MCP_OKF_AUTHOR=true` on a writable, active OKF vault to expose [`okf_author`](../reference/tools/writer.md#okf_author). Read the concept first and pass its `etag` as `if_match`, together with the editorial `fields` to change. The operation keeps the body, reviews, and fields omitted from the request. An explicit `producer` records `generated.by` and a server-generated UTC timestamp; omit it to leave existing generation metadata unchanged. Authentication identifies the caller for commits and does not identify the content producer.
 
+In auto mode, list tools again after adding or removing the root bundle declaration to see the current authoring availability.
+
 Fields and `generated` children omitted from the request retain their original text, including comments and formatting. Edited lists use flow form; comments inside an edited field move below it. Supply non-empty strings for `type`, `title`, and `description`, a list of strings for `tags`, and source entries with a non-empty `resource` string. `status` accepts `draft`, `stable`, or `deprecated`, and `stale_after` accepts an ISO date or offset datetime. Empty requests, invalid values, non-YAML or ambiguous frontmatter, and edits that cannot preserve the reader’s view are refused.
 
 ## What the metadata means

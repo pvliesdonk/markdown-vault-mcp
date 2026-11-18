@@ -63,7 +63,7 @@ from .._okf_write import (
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
-from ._common import attach_conventions, attach_remote_health
+from ._common import attach_conventions, attach_remote_health, okf_active
 
 logger = logging.getLogger(__name__)
 
@@ -1178,10 +1178,7 @@ def register(mcp: FastMCP) -> None:
             The written path and previous revision when available.
             Read the note again to obtain a fresh etag.
         """
-        if (
-            not config.content.okf_capabilities.author
-            or not (await asyncio.to_thread(vault.okf.state)).active
-        ):
+        if not config.content.okf_capabilities.author or not await okf_active(vault):
             raise ToolError(
                 "OKF authoring is not active for this vault. Ask the operator to enable authoring on an active bundle.",
                 log_level=logging.INFO,

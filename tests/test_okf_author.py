@@ -66,6 +66,61 @@ def test_author_requires_matching_etag_and_valid_producer(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("configuration_error", [False, True])
+async def test_mcp_author_discovery_when_vault_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configuration_error: bool
+) -> None:
+    from fastmcp import Client
+
+    from markdown_vault_mcp.exceptions import ConfigurationError
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_AUTHOR", "true")
+    async with Client(make_server()) as client:
+
+        def unavailable(_context: object) -> None:
+            error = ConfigurationError if configuration_error else RuntimeError
+            raise error("Vault unavailable")
+
+        monkeypatch.setattr("markdown_vault_mcp.domain.get_vault", unavailable)
+        names = {tool.name for tool in await client.list_tools()}
+        assert {"read", "okf_author"} <= names
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("initially_active", [False, True])
+@pytest.mark.parametrize(
+    ("configured", "read_only"), [(True, False), (False, False), (True, True)]
+)
+async def test_mcp_author_discovery_tracks_effective_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initially_active: bool,
+    configured: bool,
+    read_only: bool,
+) -> None:
+    from fastmcp import Client
+
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "auto")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_AUTHOR", str(configured).lower())
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", str(read_only).lower())
+    declaration = tmp_path / "index.md"
+    async with Client(make_server()) as client:
+        for active in (initially_active, not initially_active, initially_active):
+            if active:
+                declaration.write_text('---\nokf_version: "0.2"\n---\n')
+            else:
+                declaration.unlink(missing_ok=True)
+            names = {tool.name for tool in await client.list_tools()}
+            assert ("okf_author" in names) == (active and configured and not read_only)
+
+
+@pytest.mark.anyio
 async def test_mcp_author_visibility_and_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
