@@ -555,9 +555,33 @@ class ExportPaths:
             return bundle_target
         return compute_new_raw_target("wikilink", raw, None, bundle_target)
 
+    def _field_replacement(
+        self, value: str, source: str, dependencies: list[Dependency]
+    ) -> str | None:
+        target = _field_target(value, source)
+        archive_source = source[len(self.scope) + 1 :]
+        if target not in self.members:
+            dependencies.append(Dependency(archive_source, _safe_text(value)))
+            if self.external_base:
+                return self._external_url(target)
+            if _field_target(value, archive_source) in self._archive_members:
+                raise ValueError(
+                    f"Export collision in {_safe_text(source)}: {_safe_text(value)}; "
+                    "supply external_base to resolve outside destinations"
+                )
+            return None
+        if value.startswith("/"):
+            return "/" + target[len(self.scope) + 1 :]
+        replacement = posixpath.relpath(
+            target[len(self.scope) + 1 :], posixpath.dirname(archive_source) or "."
+        )
+        if value.startswith("./") and not replacement.startswith("."):
+            return "./" + replacement
+        return replacement
+
     def relocate_frontmatter(
         self, prefix: str, source: str
-    ) -> tuple[str, list[Dependency], list[Dependency]]:
+    ) -> tuple[str, list[Dependency], list[Dependency], bool]:
         """Relocate known YAML scalar fields while retaining all other text.
 
         Args:
@@ -565,66 +589,56 @@ class ExportPaths:
             source: Vault-relative source path.
 
         Returns:
-            Updated prefix, outside dependencies and ambiguous paths.
+            Updated prefix, outside dependencies, ambiguous paths and alias flag.
 
         Raises:
             ValueError: An outside path collides with a bundle member.
         """
         if not self.scope:
-            return prefix, [], []
+            return prefix, [], [], False
         match = re.match(
             r"\ufeff?\s*---[^\S\r\n]*\r?\n(.*?)(?:^---[^\S\r\n]*(?:\r?\n|$))",
             prefix,
             re.S | re.M,
         )
         if not match:
-            return prefix, [], []
+            return prefix, [], [], False
         text = match.group(1)
         try:
-            if any(isinstance(token, yaml.AliasToken) for token in yaml.scan(text)):
-                return prefix, [], []
             root = yaml.compose(text, Loader=yaml.SafeLoader)
+            tokens = list(yaml.scan(text))
         except yaml.YAMLError:
-            return prefix, [], []
+            return prefix, [], [], False
+        shared = _shared_nodes(root)
         dependencies: list[Dependency] = []
         ambiguous: list[Dependency] = []
         changes = []
+        alias_skipped = False
         for node in _frontmatter_paths(root):
             value = node.value
             if not value or _is_external_target(value):
                 continue
-            archive_source = source[len(self.scope) + 1 :]
             if not value.startswith(("/", "./", "../")):
-                ambiguous.append(Dependency(archive_source, _safe_text(value)))
-                continue
-            target = _field_target(value, source)
-            if target not in self.members:
-                dependencies.append(Dependency(archive_source, _safe_text(value)))
-                if self.external_base:
-                    replacement = self._external_url(target)
-                elif _field_target(value, archive_source) in self._archive_members:
-                    raise ValueError(
-                        f"Export collision in {_safe_text(source)}: {_safe_text(value)}; "
-                        "supply external_base to resolve outside destinations"
-                    )
-                else:
-                    continue
-            elif value.startswith("/"):
-                replacement = "/" + target[len(self.scope) + 1 :]
-            else:
-                replacement = posixpath.relpath(
-                    target[len(self.scope) + 1 :],
-                    posixpath.dirname(archive_source) or ".",
+                ambiguous.append(
+                    Dependency(source[len(self.scope) + 1 :], _safe_text(value))
                 )
-                if value.startswith("./") and not replacement.startswith("."):
-                    replacement = "./" + replacement
-            if replacement != value:
-                changes.append(
+                continue
+            if id(node) in shared:
+                alias_skipped = True
+                continue
+            replacement = self._field_replacement(value, source, dependencies)
+            if replacement is not None and replacement != value:
+                start = next(
                     (
-                        node.start_mark.index,
-                        node.end_mark.index,
-                        _yaml_scalar(replacement, node.style),
-                    )
+                        t.start_mark.index
+                        for t in tokens
+                        if isinstance(t, yaml.ScalarToken)
+                        and t.end_mark.index == node.end_mark.index
+                    ),
+                    node.start_mark.index,
+                )
+                changes.append(
+                    (start, node.end_mark.index, _yaml_scalar(replacement, node.style))
                 )
         for start, end, replacement in sorted(changes, reverse=True):
             text = text[:start] + replacement + text[end:]
@@ -632,6 +646,7 @@ class ExportPaths:
             prefix[: match.start(1)] + text + prefix[match.end(1) :],
             dependencies,
             ambiguous,
+            alias_skipped,
         )
 
     def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
@@ -718,3 +733,27 @@ def _yaml_scalar(value: str, style: str | None) -> str:
         .removesuffix("\n")
     )
     return encoded
+
+
+def _shared_nodes(root: object) -> set[int]:
+    seen: set[int] = set()
+    shared: set[int] = set()
+
+    def visit(node: object, ancestors: set[int]) -> None:
+        ident = id(node)
+        if ident in ancestors:
+            shared.add(ident)
+            return
+        if ident in seen:
+            shared.add(ident)
+        seen.add(ident)
+        children: list[object] = []
+        if isinstance(node, MappingNode):
+            children = [child for pair in node.value for child in pair]
+        elif isinstance(node, SequenceNode):
+            children = list(node.value)
+        for child in children:
+            visit(child, ancestors | {ident})
+
+    visit(root, set())
+    return shared

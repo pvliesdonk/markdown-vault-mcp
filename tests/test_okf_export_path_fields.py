@@ -73,3 +73,17 @@ def test_collision_or_external_base(tmp_path):
     output, report = export(tmp_path, text, external_base="https://example.org/vault")
     assert "resource: https://example.org/vault/b.md" in output
     assert report.dependencies[0].target == "/b.md"
+
+
+def test_unrelated_alias_does_not_block_relocation(tmp_path):
+    text = "---\nunknown: &keep value\ncopy: *keep\nresource: /guides/b.md\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text.replace("resource: /guides/b.md", "resource: /b.md")
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"
+
+
+def test_shared_path_alias_is_reported_without_changing_unknown_value(tmp_path):
+    text = "---\nresource: &path /guides/b.md\nunknown: *path\n---\n"
+    output, report = export(tmp_path, text)
+    assert output == text
+    assert report.uninspected["guides/a.md"] == "metadata_complexity"

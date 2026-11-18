@@ -160,9 +160,11 @@ def _note_bytes(
             body = convert_body_wikilinks(body, outlinks)
         else:
             body, _, _ = convert_wikilinks_to_markdown(body, outlinks)
-    prefix, field_dependencies, ambiguous = paths.relocate_frontmatter(
+    prefix, field_dependencies, ambiguous, alias_skipped = paths.relocate_frontmatter(
         prefix, item.path
     )
+    if alias_skipped:
+        report.uninspected.setdefault(item.path, "frontmatter_alias")
     report.dependencies.extend(field_dependencies)
     report.ambiguous_path.extend(ambiguous)
     body, dependencies = paths.relocate(body, item.path)
@@ -191,7 +193,7 @@ def build_okf_bundle(
         include_index_excluded: Include paths omitted from the search index.
         include_hidden: Include dot-paths other than internal state.
         external_base: Absolute HTTP(S) URL prefix without a query or fragment
-            for body destinations outside the selection.
+            for body and frontmatter destinations outside the selection.
 
     Returns:
         Archive bytes, counts, and a partial report; no conformance verdict.
@@ -199,7 +201,7 @@ def build_okf_bundle(
     Raises:
         ValueError: If the scope is invalid or inventory cannot enumerate it,
             including failures under otherwise omitted hidden paths, or if an
-            outside body destination collides with an exported file, or the
+            outside body or frontmatter destination collides with an exported file, or the
             external URL prefix is invalid.
         OSError: If a selected file cannot be read.
     """
