@@ -1111,9 +1111,7 @@ class Vault:
     def force_pull(self) -> PullResult | None:
         """Pull from the git remote synchronously.
 
-        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`
-        used by the GitHub webhook handler so the store stays an implementation
-        detail.
+        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`.
 
         The strategy self-quiesces around its own merge: it pauses new writes
         (via the :meth:`pause_writes` callable wired in :meth:`__init__` through
