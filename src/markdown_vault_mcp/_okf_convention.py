@@ -60,6 +60,13 @@ def folder_is_designated(folder: str, patterns: tuple[str, ...]) -> bool:
     """Return whether a folder matches the configured designation globs.
 
     ``a/**`` does not designate ``a`` itself. The empty folder is root.
+
+    Args:
+        folder: Vault-relative folder, or an empty string for the root.
+        patterns: Configured folder globs.
+
+    Returns:
+        Whether any pattern matches the folder.
     """
     name = folder or "."
     return any(fnmatchcase(name, pattern) for pattern in patterns)

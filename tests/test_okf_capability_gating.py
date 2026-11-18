@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 
-from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
+from tests.conftest import wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
 
@@ -16,8 +16,6 @@ async def test_verify_alone_exposes_tool_without_stamping(
     root = tmp_path / "vault"
     root.mkdir()
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
@@ -128,8 +126,6 @@ async def test_verify_refuses_inactive_vault(
     root.mkdir()
     note = root / "note.md"
     note.write_text("# Note\n")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
