@@ -517,10 +517,9 @@ Tool tags following switches: #1412.
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
-  Trust caveat: even `elicit` makes `human-reviewed` mean *"a human deliberately
-  confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
-  It guarantees a deliberate human act gates the tier, not diligence; downstream
-  OKF consumers should calibrate to that.
+  Trust caveat: `elicit` asks a human to confirm this tool’s entry, but the
+  tier also classifies supplied metadata and establishes neither reviewer
+  identity nor applicability to current content.
 - **Convention maintenance** (gated independently by `OKF_INDEX`, `OKF_LOG`,
   and `OKF_FOLDERS`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
