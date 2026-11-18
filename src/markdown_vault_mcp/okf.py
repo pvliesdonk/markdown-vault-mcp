@@ -45,7 +45,6 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ def is_okf_reserved_file(path: str) -> bool:
 
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
-#: builders and the reserved-frontmatter policy so the heading a reader sees
+#: builders so the heading a reader sees
 #: and the title the index resolves cannot drift apart.
 OKF_LOG_TITLE = "Log"
 
@@ -142,11 +141,15 @@ class OkfState:
             frontmatter, or ``None`` when absent/unreadable.
         active: Whether read semantics are in effect — declared under
             ``auto``, always under ``on``, never under ``off``.
+        probe_error: Whether the root ``index.md`` could not be read under
+            ``auto`` (an ``OSError`` other than absence). In that case,
+            ``active`` is false, but admission treats it as indeterminate.
     """
 
     mode: str
     declared_version: str | None
     active: bool
+    probe_error: bool = False
 
 
 class OkfDetector:
@@ -183,7 +186,18 @@ class OkfDetector:
         """
         if self._mode == "off":
             return OkfState(mode=self._mode, declared_version=None, active=False)
-        version = self._probe_declared_version()
+        version, failed = self._probe()
+        self._warn_unknown(version)
+        active = self._mode == "on" or version is not None
+        return OkfState(
+            mode=self._mode,
+            declared_version=version,
+            active=active,
+            probe_error=failed and self._mode != "on",
+        )
+
+    def _warn_unknown(self, version: str | None) -> None:
+        """Log an unrecognised declared version once per process."""
         # Warn-once dedup is best-effort: concurrent first probes may each
         # log the warning (set membership is checked without a lock). The
         # worst case is a duplicate log line, which does not justify
@@ -199,39 +213,37 @@ class OkfDetector:
                 version,
                 ",".join(KNOWN_OKF_VERSIONS),
             )
-        active = self._mode == "on" or version is not None
-        return OkfState(mode=self._mode, declared_version=version, active=active)
 
-    def _probe_declared_version(self) -> str | None:
+    def _probe(self) -> tuple[str | None, bool]:
         """Read ``okf_version`` from the root ``index.md`` frontmatter.
 
         Returns:
-            The declared version as a string (YAML scalars are normalized,
-            so an unquoted ``0.2`` still reads as ``"0.2"``), or ``None``
-            when the file is missing, unreadable, has no parseable
-            frontmatter, or carries no usable ``okf_version``.
+            ``(version, failed)``: the declared version as a string (YAML
+            scalars are normalized, so an unquoted ``0.2`` still reads as
+            ``"0.2"``), or ``None`` when missing, unparseable or unusable;
+            and whether the read raised an ``OSError`` other than absence.
         """
         file_path = self._source_dir / _ROOT_INDEX
         try:
             raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
         except FileNotFoundError:
-            return None
-        except (OSError, UnicodeDecodeError):
+            return None, False
+        except (OSError, UnicodeDecodeError) as exc:
             logger.debug("okf_probe_read_failed path=%s", _ROOT_INDEX, exc_info=True)
-            return None
+            return None, isinstance(exc, OSError)
         try:
             metadata = parse_frontmatter(raw).metadata
         except yaml.YAMLError:
             logger.debug(
                 "okf_probe_frontmatter_invalid path=%s", _ROOT_INDEX, exc_info=True
             )
-            return None
+            return None, False
         value = metadata.get("okf_version")
         if isinstance(value, str):
-            return value.strip() or None
+            return value.strip() or None, False
         if isinstance(value, (int, float)):
-            return str(value)
-        return None
+            return str(value), False
+        return None, False
 
 
 def verified_entries(metadata: dict[str, Any]) -> list[Any]:
@@ -889,10 +901,8 @@ class OkfIndexResult:
     Attributes:
         path: Vault-relative path of the generated listing.
         entries: Notes and sub-folder pointers listed.
-        frontmatter_preserved: Whether frontmatter already on the file was
-            carried over. Not "the file has frontmatter": a file that had
-            none is still written with the vault's required fields seeded
-            (#1175), which reports ``False`` here.
+        frontmatter_preserved: Whether an existing frontmatter block, including
+            an empty one, was carried over. A new body-only file reports False.
         created: Subfolder ``index.md`` files written because the listing
             points at them and they did not exist (#1647), outermost first.
     """
@@ -905,7 +915,13 @@ class OkfIndexResult:
 
 @dataclass(frozen=True)
 class OkfLogResult:
-    """Result of seeding a reserved ``log.md`` from git history (#963)."""
+    """Result of seeding a reserved ``log.md`` from git history (#963).
+
+    Attributes:
+        path: Vault-relative path of the generated log.
+        commits: Number of commits included.
+        dates: Number of dates represented.
+    """
 
     path: str
     commits: int
@@ -979,69 +995,6 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
         content, n = pattern.subn(_replace, content)
         converted += n
     return content, converted, skipped
-
-
-@dataclass(frozen=True)
-class ReservedFrontmatterPolicy:
-    """Frontmatter the server's own generated reserved files must carry.
-
-    ``index.md`` and ``log.md`` are written by the server, but the index gate
-    is configured by the operator: with ``required_frontmatter`` set, a
-    generated file carrying no frontmatter is a deterministic
-    ``missing_frontmatter`` skip, so the bundle's own navigation and change
-    history disappear from ``search`` and ``list_documents`` while staying
-    readable from disk (#1174, #1175). The generators consult this policy so
-    what they write satisfies the gate the same server enforces.
-
-    The policy is deliberately *conditional*. With no required fields
-    configured a reserved file needs no frontmatter to be indexed, and
-    :meth:`build` returns ``None`` so the generators keep emitting the
-    body-only files every existing vault already has on disk — closing the
-    defect costs an unconfigured vault no churn.
-
-    Attributes:
-        title_field: The frontmatter key the indexer resolves titles from.
-            The one required field given a derived value rather than a
-            placeholder, since the server knows the title it just wrote.
-        required_fields: The vault's configured ``required_frontmatter``.
-    """
-
-    title_field: str = "title"
-    required_fields: tuple[str, ...] = ()
-
-    def build(
-        self, existing: Mapping[str, Any] | None, *, title: str
-    ) -> dict[str, Any] | None:
-        """Build the frontmatter for a generated reserved file.
-
-        Existing keys always win, so a hand-authored title and the root
-        ``index.md``'s ``okf_version`` declaration survive regeneration
-        untouched and only genuinely absent required fields are added. A
-        required field other than *title_field* is seeded as ``None``: the
-        gate tests presence rather than value
-        (:func:`~markdown_vault_mcp.scanner.parse_note_categorized`), and the
-        server has nothing truthful to put there.
-
-        ``okf_version`` is never synthesized. The conformance audit flags it
-        on any file but the bundle root as ``misplaced``, so seeding it into
-        a folder's generated index would trade one defect for another.
-
-        Args:
-            existing: The file's current frontmatter, or ``None`` when the
-                file does not exist yet or carries none.
-            title: Title for *title_field*, matching the H1 heading the body
-                builders emit for the same file.
-
-        Returns:
-            The frontmatter mapping to write, or ``None`` when the file needs
-            no frontmatter at all.
-        """
-        merged: dict[str, Any] = dict(existing or {})
-        for field in self.required_fields:
-            if field in merged:
-                continue
-            merged[field] = title if field == self.title_field else None
-        return merged or None
 
 
 def build_index_markdown(
@@ -1184,43 +1137,6 @@ def okf_timestamp(now: _dt.datetime) -> str:
     if now.tzinfo is None:
         raise ValueError("okf_timestamp needs an aware datetime")
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
-
-
-def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
-    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
-
-    The enforced-write layer's core transform (design §6). Operates on the final
-    file text (frontmatter plus body), so it is uniform across the ``write``
-    (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten with the instant of this write —
-    "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
-    Surviving fields retain their mapping order, including nested mappings;
-    a new ``generated`` field appends, while replacing it retains its slot.
-    YAML comments and formatting are not retained on serialization.
-
-    Args:
-        text: The full note file text (frontmatter and body).
-        actor: The provenance actor resolved by the caller — ``human:<subject>``
-            for human attribution, else a tool actor such as
-            ``markdown-vault-mcp/<version>``.
-        now: The instant of the write, timezone-aware (spelled by
-            :func:`okf_timestamp`).
-
-    Returns:
-        The stamped file text, or *text* unchanged when the resulting frontmatter
-        is identical (the same actor and instant, no ``verified``) — so a
-        repeated stamp keeps the note's exact bytes and YAML formatting.
-    """
-    post = parse_frontmatter(text)
-    meta: dict[str, Any] = dict(post.metadata)
-    new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
-    new_meta.pop("verified", None)
-    if new_meta == meta:
-        return text
-    return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)
 
 
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:

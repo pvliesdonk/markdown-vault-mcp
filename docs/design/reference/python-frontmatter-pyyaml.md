@@ -59,7 +59,7 @@ The [frontmatter contract](../design.md#frontmatter-handling) disables sorting
 at every frontmatter serializer: the document writer, the two OKF transforms
 and the two git conflict-file writes. The OKF transforms
 retain surviving field positions while changing their owned trust fields.
-[pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf_write.py::TestAppendOkfVerification::test_preserves_body_and_other_fields, tests/test_git.py::TestGitSyncOnce::test_sync_once_conflict_preserves_existing_frontmatter]
+[pins: tests/test_okf_write.py::test_ordinary_write_preserves_supplied_provenance, tests/test_okf_write.py::TestAppendOkfVerification::test_preserves_body_and_other_fields, tests/test_git.py::TestGitSyncOnce::test_sync_once_conflict_preserves_existing_frontmatter]
 
 The source distributions' SHA-256 values match `uv.lock`: python-frontmatter
 `acc73e477a568dc2a25c9e130c6c68ae8daa8c204c8f7e813db47d6a7280dcf2`;

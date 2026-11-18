@@ -16,13 +16,17 @@ Field defaults preserve the established *library* defaults, which is why ``chunk
 from __future__ import annotations
 
 import dataclasses
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
+
+from fastmcp_pvl_core import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 
 #: Where the state file defaulted to before #1693, under the vault root.
 #: Nothing writes there now; ``Vault`` copies a leftover file into the new
@@ -42,6 +46,42 @@ _DEFAULT_STATE_SUFFIX = ".state.json"
 #: of cutting it at a dot (#819), and built from the whole name, so
 #: ``notes.db`` and ``notes.sqlite`` never share vectors.
 _DEFAULT_EMBEDDINGS_SUFFIX = "-embeddings"
+
+
+def normalize_protected_paths(patterns: Sequence[str] | None) -> tuple[str, ...] | None:
+    """Validate vault-relative protected globs at every configuration boundary.
+
+    Args:
+        patterns: Sequence of vault-relative patterns, or ``None``.
+
+    Returns:
+        An immutable sequence with redundant separators and ``.`` components removed.
+
+    Raises:
+        ConfigurationError: If the setting is not a sequence of valid patterns.
+    """
+    if patterns is None:
+        return None
+    setting = "MARKDOWN_VAULT_MCP_PROTECTED_PATHS"
+    if isinstance(patterns, (str, bytes)):
+        raise ConfigurationError(
+            f"{setting} must be a sequence of glob strings, not a scalar."
+        )
+    normalized = []
+    for pattern in patterns:
+        if not isinstance(pattern, str) or not pattern:
+            raise ConfigurationError(f"{setting} must contain non-empty glob strings.")
+        path = PurePosixPath(pattern)
+        if path.is_absolute() or ".." in path.parts:
+            raise ConfigurationError(
+                f"{setting} pattern {pattern!r} must be vault-relative and contain no '..' component."
+            )
+        if path.as_posix() == ".":
+            raise ConfigurationError(
+                f"{setting} pattern {pattern!r} names the vault root; use '*' to protect every path."
+            )
+        normalized.append(path.as_posix())
+    return tuple(normalized)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -132,6 +172,7 @@ class VaultSettings:
             are excluded from the index entirely.
         git_pull_interval_s: Interval in seconds for periodic pulls. ``0``
             disables the pull loop.
+        protected_paths: Vault-relative globs refusing ordinary mutations.
         exclude_patterns: Glob patterns (relative to *source_dir*) for files
             and directories to exclude from indexing.
         attachment_extensions: Allowlist of extensions for binary
@@ -192,7 +233,10 @@ class VaultSettings:
             scalar keys (``type`` / ``status`` / ``stale_after``) extend the
             effective *indexed_frontmatter_fields* set. See
             :attr:`~markdown_vault_mcp.vault.Vault.okf`.
-        okf_write: Enable the OKF enforced-write layer.
+        okf_write: The deprecated ``OKF_WRITE`` alias; it enables authoring,
+            review and maintenance defaults and stamps nothing (#1443).
+        okf_capabilities: Resolved OKF authority, or ``None`` for the legacy
+            library construction behavior controlled by ``okf_write``.
     """
 
     index_path: Path | None = None
@@ -211,6 +255,9 @@ class VaultSettings:
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
     git_pull_interval_s: int = 0
+    protected_paths: Sequence[str] | None = dataclasses.field(
+        default=None, kw_only=True
+    )
     exclude_patterns: Sequence[str] | None = None
     attachment_extensions: Sequence[str] | None = None
     max_attachment_size_mb: float = 1.0
@@ -235,6 +282,13 @@ class VaultSettings:
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
+    okf_capabilities: OkfCapabilities | None = None
+
+    def __post_init__(self) -> None:
+        """Validate protected-path policy for direct library callers."""
+        object.__setattr__(
+            self, "protected_paths", normalize_protected_paths(self.protected_paths)
+        )
 
     @classmethod
     def from_project_config(
@@ -297,6 +351,7 @@ class VaultSettings:
                 if (git.repo_url is not None or git.token is not None)
                 else 0
             ),
+            protected_paths=config.protected_paths,
             exclude_patterns=config.indexing.exclude_patterns,
             attachment_extensions=config.content.attachment_extensions,
             max_attachment_size_mb=config.content.max_attachment_size_mb,
@@ -333,6 +388,7 @@ class VaultSettings:
             conventions_file=config.content.conventions_file,
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,
+            okf_capabilities=config.content.okf_capabilities,
         )
 
     def effective_indexed_fields(self, *, okf_active: bool) -> list[str]:
