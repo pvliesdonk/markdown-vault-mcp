@@ -687,3 +687,7 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+
+### Deliberate placeholder repair
+
+`ReservedFrontmatterRepair` inventories reserved files independently of index admission. It previews matching historical required fields and, on explicit application, uses the guarded write path with an etag. Unmatched fields and remaining bytes are preserved. The `okf strip-seeded-frontmatter` CLI exposes this migration.

@@ -22,6 +22,45 @@ if TYPE_CHECKING:
     from markdown_vault_mcp._okf_log_repair import LogRepairPreview
 
 
+def register_okf_commands(app: typer.Typer) -> None:
+    """Register deliberate OKF migrations."""
+    okf = typer.Typer(help="Inspect and repair an OKF vault.", no_args_is_help=True)
+    okf.command("strip-seeded-frontmatter")(strip_seeded_frontmatter)
+    app.add_typer(okf, name="okf")
+
+
+def strip_seeded_frontmatter(
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    apply: bool = typer.Option(False, "--apply", help="Remove the listed keys."),
+) -> None:
+    """List historical placeholder fields in reserved files; apply to remove them."""
+    from markdown_vault_mcp._okf_reserved_repair import ReservedFrontmatterRepair
+    from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
+    from markdown_vault_mcp.exceptions import MarkdownMCPError
+
+    try:
+        built = (
+            _build_owning_vault("okf strip-seeded-frontmatter", source_dir)
+            if apply
+            else _build_vault(
+                source_dir, ":memory:", scratch_state=True, shared_files=True
+            )
+        )
+        try:
+            for item in ReservedFrontmatterRepair(built.vault).run(
+                apply=apply, allow_protected=True
+            ):
+                for key in item.keys:
+                    typer.echo(f"{item.path}: {key}")
+        finally:
+            built.close()
+    except MarkdownMCPError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
 def register_admin_commands(
     app: typer.Typer,
     index: Callable[..., None],

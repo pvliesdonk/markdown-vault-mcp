@@ -237,6 +237,10 @@ The independent `OKF_AUTHOR`, `OKF_VERIFY`, `OKF_INDEX`, `OKF_LOG`, and `OKF_FOL
 settings control authoring, review and maintenance. `OKF_AUTHOR` does not enable
 implicit stamping. `OKF_WRITE=true` enables these capabilities and logs a deprecation notice; explicit settings override its resolved defaults. See the [configuration reference](../reference/configuration.md).
 
+## Removing seeded placeholder fields
+
+Older servers could add required concept fields to generated `index.md` and `log.md` files. Run `markdown-vault-mcp okf strip-seeded-frontmatter` to list matching paths and fields without writing. Review the list, then run the same command with `--apply` to remove those fields. The repair matches the historical title for each reserved file and null values for other configured required fields; it keeps edited titles, the bundle declaration, conflict markers and other fields. It inspects the live vault, including notes excluded from search. The command requires an active OKF vault and the apply step requires write access. A concurrent change is refused; retry after inspecting the file. If a field has comments or complex YAML, inspect it manually.
+
 ## Inspecting bundle inventory
 
 Call `okf_inventory` with a vault-relative `root` (use `""` for the vault root) to inspect concept candidates, including notes excluded from search. Set `type_state` to `absent` to find untyped candidates; `parse_state` and `search_state` filter parsing and admission observations. Reserved `index.md` and `log.md` are not concept candidates. A blank, null or non-string `type` has `type_state="invalid"`, not `absent`.
