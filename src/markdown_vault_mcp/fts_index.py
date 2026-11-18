@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS documents (
     modified_at REAL NOT NULL,
     chunk_count INTEGER NOT NULL DEFAULT 1,
     content_chars INTEGER NOT NULL DEFAULT 0,
+    citations_derived INTEGER NOT NULL DEFAULT 0,
     skip_category TEXT,
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -200,7 +201,7 @@ CREATE TABLE IF NOT EXISTS citations (
     label TEXT NOT NULL,
     status TEXT NOT NULL,
     occurrences INTEGER NOT NULL,
-    resource TEXT
+    resource TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
 CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
@@ -518,8 +519,7 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-#: Version 13 (#1446) fills citation edges from each note snapshot and
-#: normalizes CR-only note text before deriving indexed metadata and content.
+#: Version 13 (#1446) fills citation edges from each note snapshot.
 INDEX_SEMANTICS_VERSION = 13
 
 
@@ -887,7 +887,7 @@ class FTSIndex:
                 if "duplicate column name" not in str(exc).lower():
                     raise
                 logger.debug("fts_index_column_already_added column=content_chars")
-        self._migrate_tombstone_columns(conn, cols)
+        self._migrate_document_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
         )
@@ -920,10 +920,10 @@ class FTSIndex:
         )
         conn.commit()
 
-    def _migrate_tombstone_columns(
+    def _migrate_document_columns(
         self, conn: sqlite3.Connection, cols: set[str]
     ) -> None:
-        """Add the skip-tombstone columns to a pre-#1129 ``documents`` table.
+        """Add derived-citation and skip-tombstone columns to older documents.
 
         Additive migration following the ``chunk_count`` / ``content_chars``
         precedent: ``ALTER TABLE ADD COLUMN`` guarded by the PRAGMA column
@@ -936,6 +936,10 @@ class FTSIndex:
             cols: The ``PRAGMA table_info(documents)`` column-name set.
         """
         for name, ddl in (
+            (
+                "citations_derived",
+                "ALTER TABLE documents ADD COLUMN citations_derived INTEGER NOT NULL DEFAULT 0",
+            ),
             ("skip_category", "ALTER TABLE documents ADD COLUMN skip_category TEXT"),
             (
                 "skip_detail",
@@ -1200,8 +1204,8 @@ class FTSIndex:
             """
             INSERT INTO documents (path, title, folder, frontmatter_json,
                                    content_hash, modified_at, chunk_count,
-                                   content_chars)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   content_chars, citations_derived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
             (
                 note.path,
@@ -1462,50 +1466,42 @@ class FTSIndex:
             ],
         )
 
-    def get_citation_rows(
-        self, resource: str
-    ) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
-        """Return matched edges and unresolved labels in notes declaring a resource.
+    def get_citation_rows(self, resource: str) -> tuple[list[sqlite3.Row], int]:
+        """Return resource-keyed citation rows and unconverted live-note count.
 
         Args:
             resource: Exact source resource string.
 
         Returns:
-            Matched rows and diagnostic rows in path and label order.
+            Citation rows in path and label order and the unconverted count.
         """
         from markdown_vault_mcp.exceptions import IndexUnavailableError
 
         conn = self._conn()
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        citation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(citations)")
+        }
         if (
-            conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='citations'"
-            ).fetchone()
-            is None
+            self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION
+            or "citations_derived" not in columns
+            or not {"document_id", "resource", "label", "status", "occurrences"}
+            <= citation_columns
         ):
-            raise IndexUnavailableError(
-                "Older index lacks citations; a writer must reopen it.",
-                reason="never_built",
-            )
-        if self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION:
             raise IndexUnavailableError(
                 "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
                 reason="never_built",
             )
-        matched = conn.execute(
-            "SELECT d.path, d.title, c.label, c.occurrences FROM citations c JOIN documents d ON d.id=c.document_id WHERE c.resource=? AND c.status='matched' ORDER BY d.path, c.label",
+        rows = conn.execute(
+            """SELECT d.path, d.title, c.label, c.status, c.occurrences
+               FROM citations c JOIN documents d ON d.id=c.document_id
+               WHERE c.resource=? ORDER BY d.path, c.label""",
             (resource,),
         ).fetchall()
-        diagnostics = conn.execute(
-            """SELECT d.path, c.label, c.status, c.occurrences FROM citations c
-            JOIN documents d ON d.id=c.document_id
-            WHERE c.status IN ('unmatched', 'ambiguous', 'invalid_resource')
-            AND json_type(d.frontmatter_json, '$.sources') = 'array' AND EXISTS (
-              SELECT 1 FROM json_each(d.frontmatter_json, '$.sources') j
-              WHERE CASE WHEN j.type='object' THEN json_extract(j.value, '$.resource') END = ?
-            ) ORDER BY d.path, c.label""",
-            (resource,),
-        ).fetchall()
-        return matched, diagnostics
+        count = conn.execute(
+            "SELECT count(*) FROM documents_live WHERE citations_derived=0"
+        ).fetchone()[0]
+        return rows, count
 
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
         """Delete a document row (cascade deletes sections, headings, tags,

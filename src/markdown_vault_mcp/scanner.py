@@ -2179,7 +2179,7 @@ def parse_note(
     # Decode for frontmatter parsing, stripping a leading BOM (#673). The hash
     # above is over the raw on-disk bytes (BOM included). May raise
     # UnicodeDecodeError — propagated to caller.
-    text = decode_utf8(raw_bytes).replace("\r\n", "\n").replace("\r", "\n")
+    text = decode_utf8(raw_bytes)
 
     # python-frontmatter strips the YAML block and returns the body separately.
     post = parse_frontmatter(text)

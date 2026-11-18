@@ -261,7 +261,20 @@ def test_indexed_citation_edges_use_exact_yaml_keys() -> None:
     edges = citation_edges(text)
     assert [(e.label, e.status, e.occurrences, e.resource) for e in edges] == [
         ("a", "matched", 2, "urn:one"),
-        ("missing", "unmatched", 1, None),
+        ("missing", "unmatched", 1, "urn:one"),
+    ]
+    multi = _note(
+        [
+            {"id": "a", "resource": "urn:one"},
+            {"id": "b", "resource": "urn:two"},
+            {"resource": "urn:one"},
+        ],
+        "[^a] [^missing]",
+    )
+    assert [(e.label, e.status, e.resource) for e in citation_edges(multi)] == [
+        ("a", "matched", "urn:one"),
+        ("missing", "unmatched", "urn:one"),
+        ("missing", "unmatched", "urn:two"),
     ]
 
 
@@ -288,6 +301,11 @@ def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
             "three.md",
             "two.md",
         ]
+        assert all(
+            row["labels"] == [{"label": "a", "occurrences": 2}]
+            for row in result["citing"]
+        )
+        assert result["unconverted_notes"] == 0
         assert result["syntax"] == inspect_citation_text("", "").syntax
         assert "not an exhaustive citation audit" in result["scope"]
     finally:
@@ -394,7 +412,7 @@ def test_reserved_paths_follow_effective_okf_mode(tmp_path: Path) -> None:
             vault.close()
 
 
-@pytest.mark.parametrize("version", ["12", "14", "missing_table"])
+@pytest.mark.parametrize("version", ["12", "14", "missing_table", "missing_column"])
 def test_citation_lookup_refuses_incompatible_semantics(
     tmp_path: Path, version: str
 ) -> None:
@@ -405,10 +423,18 @@ def test_citation_lookup_refuses_incompatible_semantics(
 
     db = tmp_path / "old.db"
     index = FTSIndex(db)
-    if version == "missing_table":
-        index._conn().execute("DROP TABLE citations")
+    if version in ("missing_table", "missing_column"):
+        index.set_chunking_meta(model=None, max_chunk_chars_override=None)
+        if version == "missing_table":
+            index._conn().execute("DROP TABLE citations")
+        else:
+            index._conn().execute(
+                "INSERT INTO documents(path, title, content_hash, modified_at) VALUES('old.md', 'Old', 'hash', 0)"
+            )
+            index._conn().execute("ALTER TABLE documents DROP COLUMN citations_derived")
+            index._conn().commit()
     index.close()
-    if version != "missing_table":
+    if version not in ("missing_table", "missing_column"):
         with sqlite3.connect(db) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES('index_semantics_version', ?)",
@@ -421,6 +447,12 @@ def test_citation_lookup_refuses_incompatible_semantics(
         assert exc.value.reason == "never_built"
     finally:
         reader.close()
+    if version == "missing_column":
+        writer = FTSIndex(db)
+        try:
+            assert writer.get_citation_rows("urn:s")[1] == 1
+        finally:
+            writer.close()
 
 
 def test_citation_foreign_key_has_index() -> None:
@@ -436,5 +468,107 @@ def test_citation_foreign_key_has_index() -> None:
             .fetchall()
         )
         assert any("idx_citations_docid" in row[3] for row in plan)
+        resource_plan = (
+            index._conn()
+            .execute(
+                "EXPLAIN QUERY PLAN SELECT * FROM citations WHERE resource = ?",
+                ("urn:s",),
+            )
+            .fetchall()
+        )
+        assert any("idx_citations_resource" in row[3] for row in resource_plan)
     finally:
         index.close()
+
+
+def test_upgrade_reports_unconverted_after_upsert_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    root = tmp_path / "notes"
+    root.mkdir()
+    (root / "one.md").write_text(
+        _note([{"id": "a", "resource": "urn:s"}], "[^a]"), encoding="utf-8"
+    )
+    db = tmp_path / "index.db"
+    settings = VaultSettings(index_path=db, state_path=tmp_path / "state.json")
+    vault = Vault(source_dir=root, settings=settings)
+    try:
+        vault.index.build_index()
+        conn = vault._fts._conn()
+        conn.execute("DELETE FROM citations")
+        conn.execute("UPDATE documents SET citations_derived=0")
+        conn.execute("UPDATE meta SET value='12' WHERE key='index_semantics_version'")
+        original = vault._fts.upsert_note
+
+        def fail(_note: object) -> int:
+            raise ValueError("transient indexing failure")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(vault._fts, "upsert_note", fail)
+            vault.index.build_index()
+        assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 1
+        reader = FTSIndex(db, read_only=True)
+        try:
+            assert reader.get_citation_rows("urn:s")[1] == 1
+        finally:
+            reader.close()
+        assert vault._fts.upsert_note == original
+        vault.index.reindex()
+        assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 0
+        assert [
+            r["path"] for r in vault.reader.find_citing_notes("urn:s")["citing"]
+        ] == ["one.md"]
+    finally:
+        vault.close()
+    reader = FTSIndex(db, read_only=True)
+    try:
+        assert reader.get_citation_rows("urn:s")[1] == 0
+    finally:
+        reader.close()
+
+
+def test_upgrade_reports_unconverted_after_unreadable_walk(tmp_path: Path) -> None:
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    root = tmp_path / "notes"
+    root.mkdir()
+    hidden = root / "hidden"
+    hidden.mkdir()
+    for path in (hidden / "one.md", root / "two.md", root / "three.md"):
+        path.write_text(
+            _note([{"id": "a", "resource": "urn:s"}], "[^a]"), encoding="utf-8"
+        )
+    db = tmp_path / "index.db"
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(index_path=db, state_path=tmp_path / "state.json"),
+    )
+    try:
+        vault.index.build_index()
+        conn = vault._fts._conn()
+        conn.execute("DELETE FROM citations")
+        conn.execute("UPDATE documents SET citations_derived=0")
+        conn.execute("UPDATE meta SET value='12' WHERE key='index_semantics_version'")
+        hidden.chmod(0)
+        try:
+            assert not vault.index.build_index().walk_complete
+            assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 1
+            reader = FTSIndex(db, read_only=True)
+            try:
+                assert reader.get_citation_rows("urn:s")[1] == 1
+            finally:
+                reader.close()
+        finally:
+            hidden.chmod(0o755)
+        vault.index.reindex()
+        result = vault.reader.find_citing_notes("urn:s")
+        assert result["unconverted_notes"] == 0
+        assert [r["path"] for r in result["citing"]] == [
+            "hidden/one.md",
+            "three.md",
+            "two.md",
+        ]
+    finally:
+        vault.close()

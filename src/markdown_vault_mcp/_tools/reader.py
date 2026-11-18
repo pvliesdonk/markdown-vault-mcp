@@ -284,7 +284,8 @@ def register(mcp: FastMCP) -> None:
             wait_for_pending_writes: Wait for pending writes to reach the index.
 
         Returns:
-            Citing notes with labels and counts, plus unresolved diagnostics.
+            Citing notes with labels and counts, unresolved diagnostics, and
+            unconverted_notes: indexed notes not yet re-read for citations.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "find_citing_notes"

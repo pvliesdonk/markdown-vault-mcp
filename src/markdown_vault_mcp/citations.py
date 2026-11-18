@@ -39,12 +39,12 @@ class Citation:
 
 @dataclass(frozen=True)
 class CitationEdge:
-    """A literal citation label and its resolved resource, if unique."""
+    """A label attributed to or diagnosed under one declared resource."""
 
+    resource: str
     label: str
     status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"]
     occurrences: int
-    resource: str | None
 
 
 @dataclass(frozen=True)
@@ -231,6 +231,19 @@ def citation_edges(text: str) -> list[CitationEdge]:
     sources = metadata["sources"]
     ids, _, _ = _source_ids(sources)
     citations = _join(_markers(strip_frontmatter_block(text)), ids)
+    declared = (
+        list(
+            dict.fromkeys(
+                source["resource"]
+                for source in sources
+                if isinstance(source, dict)
+                and isinstance(source.get("resource"), str)
+                and source["resource"].strip()
+            )
+        )
+        if isinstance(sources, list)
+        else []
+    )
     edges = []
     for citation in citations:
         resource = None
@@ -244,5 +257,8 @@ def citation_edges(text: str) -> list[CitationEdge]:
         )
         if status == "matched" and resource is None:
             status = "invalid_resource"
-        edges.append(CitationEdge(citation.id, status, citation.occurrences, resource))
+        for target in [resource] if resource is not None else declared:
+            edges.append(
+                CitationEdge(target, citation.id, status, citation.occurrences)
+            )
     return edges

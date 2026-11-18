@@ -1966,16 +1966,16 @@ ones).
 
 ### Reverse citation lookup (#1446)
 
-`find_citing_notes(resource)` reads persisted citation edges derived from the
-same decoded note snapshot as frontmatter. Scanner normalizes line endings before
-parsing while hashing original bytes; CR-only notes now derive metadata and content
-from that normalized snapshot. A semantic-version rebuild fills the
-new table. Exact resource matches return indexed notes and label
-counts; unmatched, ambiguous and invalid-resource labels are diagnostics only in
-notes declaring that resource. Results are unbounded. Reserved files are excluded only while OKF
-is active. Navigation links do not create edges. Missing tables on older
-read-only indexes are unavailable rather than empty. No resource is fetched and
-attribution does not establish support.
+`find_citing_notes(resource)` reads persisted citation edges derived from one
+normalized note snapshot. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
+each distinct resource declared by that note. The result is unbounded. Reserved
+files are excluded only while OKF is active. Navigation links do not create edges.
+The additive table and per-note conversion mark are filled on a version-13
+rebuild. A lookup reports `unconverted_notes` for retained indexed notes not yet
+re-read; they are omitted until a later reindex succeeds. Incompatible or missing
+schema is unavailable rather than empty. No resource is fetched and attribution
+does not establish support.
 
 ### Exact-note citation inspection (#1446, bounded slice)
 
@@ -2696,6 +2696,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- citation rows derived for this note
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2753,7 +2754,7 @@ CREATE TABLE IF NOT EXISTS citations (
     label TEXT NOT NULL,
     status TEXT NOT NULL,
     occurrences INTEGER NOT NULL,
-    resource TEXT
+    resource TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
 CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);

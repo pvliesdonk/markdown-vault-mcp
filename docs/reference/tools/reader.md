@@ -204,7 +204,8 @@ Find indexed notes citing an exact source resource and unresolved labels.
 
 **Returns**
 
-Citing notes with labels and counts, plus unresolved diagnostics.
+Citing notes with labels and counts, unresolved diagnostics, and
+`unconverted_notes`: indexed notes not yet re-read for citations.
 
 <!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
