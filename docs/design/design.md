@@ -3683,6 +3683,87 @@ The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
 operations to them. No manager holds a back-reference to Vault.
 
+#### Selected bundle directory inventory (#1442)
+
+`ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
+`DocumentManager` to `BundleInspector`. The caller explicitly chooses a
+vault-relative root and one root-relative directory. This library-only surface
+observes disk files independently of index admission: untyped and malformed
+Markdown remain visible. Once the index is queryable, entries report search
+state from a single index row read without refreshing or writing the index. Live rows
+and tombstones take precedence over current exclusions; an absent row falls
+back to the exclusion label. Backends without the optional row-state protocol
+leave the state unevaluated. Unknown and internal-error categories remain
+unevaluated. Any SQLite error from the index read, including after the vault
+closes, leaves all entries unevaluated. Each entry is read separately, so a page
+is not a snapshot.
+Before readiness and without index knowledge, search state is `not_evaluated`.
+These observations can lag disk changes and do not determine format conformance.
+Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
+candidates) confer no bundle conformance, global OKF activation or writer authority.
+
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
+recognize alternate case and Unicode spellings before opening selected components.
+Directory, attachment and budget-exhausted note candidates receive a no-follow
+open probe; permission refusals make enumeration incomplete and do not reveal
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
+source resolves once and its absolute components are opened from the filesystem
+root without following symlinks; selected components and child reads remain
+anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing
+configured sources and unavailable primitives are unavailable; only contained
+ENOENT/ENOTDIR imply missing. Errors retain explicit incomplete observations. A stat failure for an unknown
+file type hides its name but makes enumeration unavailable, because it could be
+a visible directory.
+
+Enumeration visits at most 100 entries by default (maximum 1000), counting
+omitted entries, plus one lookahead. It sorts only the bounded observations.
+`complete` means immediate policy-visible enumeration, never complete content or
+a whole bundle. Reads cap each Markdown file at the smaller of 64 KiB and a
+nonzero configured note-read cap, plus bounded lookahead, within 1 MiB aggregate
+including failed read reservations. Only complete bytes reach the existing UTF-8
+and frontmatter parsers. An inventory-only YAML event preflight uses the existing
+frontmatter delimiter handler: aliases, more than 4096 events or collection
+depth above 32 stop before metadata construction, preventing exponential merge
+expansion. Such files remain `not_inspected` with `metadata_complexity`, not
+malformed. General scanner parsing, Markdown bodies and other frontmatter
+formats retain their existing semantics. Parser recursion/overflow limits also
+remain uninspected. Known tag/value/shape conversion failures become malformed
+metadata; unexpected parser exceptions instead yield unavailable entries with
+`unexpected_parser_error`, without exception details or loss of sibling results.
+This keeps encoding, input, resource-limit and unexpected failures separate,
+analogous to the scanner's categorized boundary without adopting its admission
+or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
+invalid encoding, malformed metadata and absent/invalid/present type fields are
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
+following them. There is no navigation synthesis or declaration discovery.
+
+Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
+Their targets and target kinds are not returned, and they are never followed.
+Callers must inspect unavailable rows even when enumeration is complete.
+Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
+
 #### Internal Manager Architecture
 
 | Manager | Responsibility | Dependencies |

@@ -417,6 +417,15 @@ class ListsNoteStates(Protocol):
 
 
 @runtime_checkable
+class ReportsRowState(Protocol):
+    """Optional single-read index disposition for one document."""
+
+    def row_state(self, path: str) -> tuple[bool, str | None]:
+        """Return (exists, category); an existing row with category None is live."""
+        ...
+
+
+@runtime_checkable
 class StoreLifecycle(Protocol):
     """What every open store owes its owner (#1766).
 
