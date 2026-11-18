@@ -1,6 +1,6 @@
 # Repository Protection
 
-The template ships GitHub repository rulesets that gate the branches a release can ship from. The rules live as JSON files in `.github/rulesets/` and the `bootstrap.yml` workflow applies them, so the effective protection state is checked in, reviewed, and re-applied rather than clicked together in the UI and forgotten.
+This repository keeps GitHub repository rulesets that gate the branches a release can ship from. The rules live as JSON files in `.github/rulesets/` and the `bootstrap.yml` workflow applies them, so the effective protection state is checked in, reviewed, and re-applied rather than clicked together in the UI and forgotten.
 
 ## What ships
 
@@ -28,7 +28,7 @@ The cost of turning it off is the semantic conflict: two pull requests that each
 
 ## Who bypasses, and how
 
-Ruleset bypass lists name roles, teams, apps, or deploy keys, not user accounts. The shipped entry grants bypass to the **repository admin role** (`actor_id` 5, the one actor a template can name without knowing your account), with `bypass_mode: always`.
+Ruleset bypass lists name roles, teams, apps, or deploy keys, not user accounts. The shipped entry grants bypass to the **repository admin role** (`actor_id` 5, the one actor a checked-in file can name without knowing an account), with `bypass_mode: always`.
 
 The release flow depends on this. `RELEASE_TOKEN` is a personal access token, and a personal access token (classic or fine-grained) acts as its owner and holds the repository role of that owner. The release-PR flow shrank what the token does: version bumps reach `main` through reviewed pull requests now, so no release commit or merge-back is ever pushed directly to a protected branch. Its remaining operations still rely on the admin bypass:
 
@@ -49,7 +49,7 @@ If your release credential is a GitHub App installation token rather than a pers
 
 The apply step needs `administration: write`, a permission the default `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`, matching the permission set the README already asks for.
 
-## Requiring a check the template does not own
+## Requiring a check outside `ci.yml`
 
 `CI Success` is the only context the shipped rulesets require, and it is an aggregate: it passes when every job in the generated `ci.yml` passed, so adding a job there needs no ruleset change. A check that lives outside that workflow is a different matter. A workflow cannot list another workflow's job in its own `needs:`, so a domain workflow the project added itself cannot join the aggregate: it runs, it shows red on the pull request, and nothing stops the merge.
 
@@ -98,7 +98,7 @@ The same workflow turns on three settings that GitHub otherwise leaves for someo
 | Dependabot alerts               | Lists known-vulnerable dependencies on the Security tab; Renovate still owns the update pull requests        | Every repository                                                                               |
 | Secret scanning push protection | Blocks a push that contains a recognised secret                                                              | Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure |
 
-Without private vulnerability reporting, a researcher's only path is a public issue asking for a private one, which is how a project generated from this template was contacted. `SECURITY.md` at the repository root is the policy GitHub shows next to that button. It covers the reporting path, the response targets, the supported versions, and where a fix lands. The response targets and the scope live inside its `DOMAIN-SECURITY` block, which a project edits once and keeps across template updates.
+Without private vulnerability reporting, a researcher's only path is a public issue asking for a private one, which is how another project built from the same template was contacted. `SECURITY.md` at the repository root is the policy GitHub shows next to that button. It covers the reporting path, the response targets, the supported versions, and where a fix lands. The response targets and the scope live inside its `DOMAIN-SECURITY` block.
 
 The job runs with `RELEASE_TOKEN`, the same `administration: write` the rulesets need. Each call is idempotent, so a re-run converges on the same enabled state. An organisation-level security configuration outranks these repository settings. Where one applies, GitHub may reject the job's calls, and the run log names the rejected one.
 

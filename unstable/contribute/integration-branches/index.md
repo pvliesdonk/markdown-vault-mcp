@@ -4,7 +4,7 @@ An integration branch parks an epic's pull requests until the whole epic is done
 
 Reach for one when an epic spans many pull requests that must ship together, while unrelated fixes keep landing on `main`. Without it, the release model in the `releasing` skill treats an open atomic epic as a dirty trunk: a release waits, or needs a `release/X.Y` branch cut from before the epic started. With the epic parked on `integration/<epic>`, trunk stays releasable throughout.
 
-## What the template provides
+## What this repository provides
 
 - `integration/*` branches are protected: child pull requests need a green `CI Success`, and force pushes are blocked. Checks added to the main and release rulesets' `required_status_checks` are required only on the final pull request to `main`. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md).
 - `ci.yml`, `docs.yml`, `codeql.yml` and the automatic review run on pull requests that target an `integration/*` branch, and CI also runs on every push to one.

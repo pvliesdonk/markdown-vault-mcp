@@ -2921,7 +2921,7 @@
 <li><code>/health</code> and <code>/health/ready</code> reachable for whatever probes the deployment; they sit outside the MCP mount and outside authentication (<a href="../docker/#health">Health</a>).</li>
 </ul>
 <h2 id="its-own-hostname">Its own hostname<a class="headerlink" href="#its-own-hostname" title="Permanent link">&para;</a></h2>
-<p>Proxy configuration is deployment-specific, so <code>compose.yml</code> ships none. Add it in a second file rather than by editing <code>compose.yml</code>, which is template-owned and re-rendered: save this as <code>compose.override.yml</code>, which Compose loads automatically alongside <code>compose.yml</code>. It is written for Traefik; another proxy needs the same two facts, the hostname and the container port.</p>
+<p>Proxy configuration is deployment-specific, so <code>compose.yml</code> ships none. Add it in a second file rather than by editing <code>compose.yml</code>, which changes with releases: save this as <code>compose.override.yml</code>, which Compose loads automatically alongside <code>compose.yml</code>. It is written for Traefik; another proxy needs the same two facts, the hostname and the container port.</p>
 <div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
 <span class="w">    </span><span class="c1"># `!reset` drops the published port: the proxy reaches the container over</span>

@@ -2685,15 +2685,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requiring-a-check-the-template-does-not-own" class="md-nav__link">
+  <a href="#requiring-a-check-outside-ciyml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requiring a check the template does not own
+        Requiring a check outside ci.yml
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Requiring a check the template does not own">
+    <nav class="md-nav" aria-label="Requiring a check outside ci.yml">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2866,15 +2866,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requiring-a-check-the-template-does-not-own" class="md-nav__link">
+  <a href="#requiring-a-check-outside-ciyml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requiring a check the template does not own
+        Requiring a check outside ci.yml
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Requiring a check the template does not own">
+    <nav class="md-nav" aria-label="Requiring a check outside ci.yml">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2947,7 +2947,7 @@
 
 
 <h1 id="repository-protection">Repository Protection<a class="headerlink" href="#repository-protection" title="Permanent link">&para;</a></h1>
-<p>The template ships GitHub repository rulesets that gate the branches a
+<p>This repository keeps GitHub repository rulesets that gate the branches a
 release can ship from. The rules live as JSON files in <code>.github/rulesets/</code>
 and the <code>bootstrap.yml</code> workflow applies them, so the effective protection
 state is checked in, reviewed, and re-applied rather than clicked together
@@ -3034,7 +3034,7 @@ owned by a personal account.</p>
 <h2 id="who-bypasses-and-how">Who bypasses, and how<a class="headerlink" href="#who-bypasses-and-how" title="Permanent link">&para;</a></h2>
 <p>Ruleset bypass lists name roles, teams, apps, or deploy keys, not user
 accounts. The shipped entry grants bypass to the <strong>repository admin role</strong>
-(<code>actor_id</code> 5, the one actor a template can name without knowing your
+(<code>actor_id</code> 5, the one actor a checked-in file can name without knowing an
 account), with <code>bypass_mode: always</code>.</p>
 <p>The release flow depends on this. <code>RELEASE_TOKEN</code> is a personal access
 token, and a personal access token (classic or fine-grained) acts as its
@@ -3081,7 +3081,7 @@ other names are never touched, so you can add your own alongside.</p>
 <p>The apply step needs <code>administration: write</code>, a permission the default
 <code>GITHUB_TOKEN</code> cannot be granted, so it runs with <code>RELEASE_TOKEN</code>,
 matching the permission set the README already asks for.</p>
-<h2 id="requiring-a-check-the-template-does-not-own">Requiring a check the template does not own<a class="headerlink" href="#requiring-a-check-the-template-does-not-own" title="Permanent link">&para;</a></h2>
+<h2 id="requiring-a-check-outside-ciyml">Requiring a check outside <code>ci.yml</code><a class="headerlink" href="#requiring-a-check-outside-ciyml" title="Permanent link">&para;</a></h2>
 <p><code>CI Success</code> is the only context the shipped rulesets require, and it is an
 aggregate: it passes when every job in the generated <code>ci.yml</code> passed, so
 adding a job there needs no ruleset change. A check that lives outside that
@@ -3180,12 +3180,11 @@ security-settings failure show up apart:</p>
 </tbody>
 </table>
 <p>Without private vulnerability reporting, a researcher's only path is a public
-issue asking for a private one, which is how a project generated from this
-template was contacted. <code>SECURITY.md</code> at the repository root is the policy
+issue asking for a private one, which is how another project built from the same template was
+contacted. <code>SECURITY.md</code> at the repository root is the policy
 GitHub shows next to that button. It covers the reporting path, the response
 targets, the supported versions, and where a fix lands. The response targets
-and the scope live inside its <code>DOMAIN-SECURITY</code> block, which a project edits
-once and keeps across template updates.</p>
+and the scope live inside its <code>DOMAIN-SECURITY</code> block.</p>
 <p>The job runs with <code>RELEASE_TOKEN</code>, the same <code>administration: write</code> the
 rulesets need. Each call is idempotent, so a re-run converges on the same
 enabled state. An organisation-level security configuration outranks these

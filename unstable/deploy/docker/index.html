@@ -906,10 +906,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#domain-content-and-copier-update" class="md-nav__link">
+  <a href="#your-additions-to-composeyml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Domain content and copier update
+        Your additions to compose.yml
       
     </span>
   </a>
@@ -3026,10 +3026,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#domain-content-and-copier-update" class="md-nav__link">
+  <a href="#your-additions-to-composeyml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Domain content and copier update
+        Your additions to compose.yml
       
     </span>
   </a>
@@ -3248,7 +3248,7 @@ curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubuser
 <p>Copying <code>.env.example</code> first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and <code>compose.yml</code> names it.</p>
 <p>Apply a later edit with <code>docker compose up -d</code>, which recreates the container with the new values. <code>docker compose restart</code> does not pick them up: an env file is read when a container is created, so a restarted container keeps the values it was created with and the edit is ignored without any message.</p>
 <h2 id="docker-compose">Docker Compose<a class="headerlink" href="#docker-compose" title="Permanent link">&para;</a></h2>
-<p><code>compose.yml</code> is a working deployment, not an illustration. It is re-rendered on every <code>copier update</code>, so fixes and new defaults reach it; edit it inside the sentinel blocks described below and your changes survive.</p>
+<p><code>compose.yml</code> is a working deployment, not an illustration. Fixes and new defaults land in it with each release; keep your own changes inside the sentinel blocks described below, so they stay apart from the shipped lines.</p>
 <h3 id="the-service">The service<a class="headerlink" href="#the-service" title="Permanent link">&para;</a></h3>
 <p>This is <code>compose.yml</code> as this version of the documentation ships it, including any entries this project adds in its sentinel blocks:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Minimal working deployment for Markdown Vault MCP.  Runs as-is:</span>
@@ -3361,9 +3361,9 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <span class="w">    </span><span class="nt">ports</span><span class="p">:</span><span class="w"> </span><span class="kt">!override</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"8000:8000"</span>
 </code></pre></div>
-<p><code>!override</code> replaces the mapping instead of appending to it. The override file leaves <code>compose.yml</code> unedited, so a template update does not conflict with the change.</p>
-<h3 id="domain-content-and-copier-update">Domain content and <code>copier update</code><a class="headerlink" href="#domain-content-and-copier-update" title="Permanent link">&para;</a></h3>
-<p>Four sentinel blocks mark the parts of <code>compose.yml</code> a project owns. Content inside them survives a template update; content outside them does not, and will conflict.</p>
+<p><code>!override</code> replaces the mapping instead of appending to it. The override file leaves <code>compose.yml</code> unedited, so a new release of it does not conflict with the change.</p>
+<h3 id="your-additions-to-composeyml">Your additions to <code>compose.yml</code><a class="headerlink" href="#your-additions-to-composeyml" title="Permanent link">&para;</a></h3>
+<p>Four sentinel blocks mark the parts of <code>compose.yml</code> meant for additions. Keep your changes inside them; the lines outside them change with releases, and an edit there will conflict when you update.</p>
 <table>
 <thead>
 <tr>

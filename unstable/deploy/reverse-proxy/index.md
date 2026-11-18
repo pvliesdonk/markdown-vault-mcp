@@ -10,7 +10,7 @@ The server speaks plain HTTP on one port. A reverse proxy in front of it handles
 
 ## Its own hostname
 
-Proxy configuration is deployment-specific, so `compose.yml` ships none. Add it in a second file rather than by editing `compose.yml`, which is template-owned and re-rendered: save this as `compose.override.yml`, which Compose loads automatically alongside `compose.yml`. It is written for Traefik; another proxy needs the same two facts, the hostname and the container port.
+Proxy configuration is deployment-specific, so `compose.yml` ships none. Add it in a second file rather than by editing `compose.yml`, which changes with releases: save this as `compose.override.yml`, which Compose loads automatically alongside `compose.yml`. It is written for Traefik; another proxy needs the same two facts, the hostname and the container port.
 
 ```
 services:

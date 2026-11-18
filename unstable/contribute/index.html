@@ -2579,17 +2579,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#after-scaffolding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        After scaffolding
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#github-secrets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2794,17 +2783,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#after-scaffolding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        After scaffolding
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#github-secrets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2862,14 +2840,6 @@ uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span
 <div class="highlight"><pre><span></span><code>rm<span class="w"> </span>-rf<span class="w"> </span>.venv
 uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--all-groups
 </code></pre></div>
-<h2 id="after-scaffolding">After scaffolding<a class="headerlink" href="#after-scaffolding" title="Permanent link">&para;</a></h2>
-<p>Once, after <code>copier copy</code> and <code>gh repo create --push</code>:</p>
-<ol>
-<li>Fill in the <code>DOMAIN-*</code> blocks in <code>README.md</code> and <code>AGENTS.md</code>. The <code>GENERATED-*</code> regions are not yours: the generators own them and rewrite them on every run.</li>
-<li>Configure the GitHub secrets below.</li>
-<li>Install the tooling and the hooks (the first two commands above).</li>
-<li>Run the gate; push the first commit. CI should be green.</li>
-</ol>
 <h2 id="github-secrets">GitHub secrets<a class="headerlink" href="#github-secrets" title="Permanent link">&para;</a></h2>
 <p>The workflows read two required repository secrets and one optional token. Configure them under <strong>Settings → Secrets and variables → Actions</strong>, or with <code>gh secret set</code>:</p>
 <table>
@@ -2903,7 +2873,7 @@ gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</sp
 <span class="c1"># Optional: enables @claude and opted-in automatic review.</span>
 gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>CLAUDE_CODE_OAUTH_TOKEN
 </code></pre></div>
-<p><code>GITHUB_TOKEN</code> is provided by GitHub; nothing to configure. Dependency updates come from Renovate (<code>renovate.yml</code>), which reuses <code>RELEASE_TOKEN</code>, maintains <code>uv.lock</code> and merges patch and minor bumps once <code>CI Success</code> is green. <code>bootstrap.yml</code> enables auto-merge, applies the rulesets under <code>.github/rulesets/</code>, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from <code>pyproject.toml</code> on the first push; <a href="repository-protection/">repository protection</a> has the per-branch posture. GitHub Actions versions and the <code>hatchling</code> build-backend bound in <code>pyproject.toml</code> are updated in the template and arrive through template updates, not per repository.</p>
+<p><code>GITHUB_TOKEN</code> is provided by GitHub; nothing to configure. Dependency updates come from Renovate (<code>renovate.yml</code>), which reuses <code>RELEASE_TOKEN</code>, maintains <code>uv.lock</code> and merges patch and minor bumps once <code>CI Success</code> is green. <code>bootstrap.yml</code> enables auto-merge, applies the rulesets under <code>.github/rulesets/</code>, turns on private vulnerability reporting and Dependabot alerts, and fills the repository's About block from <code>pyproject.toml</code> on the first push; <a href="repository-protection/">repository protection</a> has the per-branch posture. Renovate does not update GitHub Actions versions or the <code>hatchling</code> build-backend bound in <code>pyproject.toml</code>; until #2259 settles how, bump them by hand.</p>
 <h2 id="the-other-pages-here">The other pages here<a class="headerlink" href="#the-other-pages-here" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="docs-structure/">Documentation structure</a>: where documentation goes and who owns it.</li>

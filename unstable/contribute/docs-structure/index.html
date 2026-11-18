@@ -2579,10 +2579,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-ownership-rule" class="md-nav__link">
+  <a href="#domain-and-general-knowledge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The ownership rule
+        Domain and general knowledge
       
     </span>
   </a>
@@ -2804,10 +2804,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-ownership-rule" class="md-nav__link">
+  <a href="#domain-and-general-knowledge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The ownership rule
+        Domain and general knowledge
       
     </span>
   </a>
@@ -2924,17 +2924,11 @@
 
 <h1 id="documentation-structure">Documentation structure<a class="headerlink" href="#documentation-structure" title="Permanent link">&para;</a></h1>
 <p>This page states where each piece of this project's documentation belongs and who owns it. It applies to every page in <code>docs/</code> and to <code>README.md</code>. Read it before adding or moving a page; agents run the <code>writing-documentation</code> skill, which applies it step by step.</p>
-<h2 id="the-ownership-rule">The ownership rule<a class="headerlink" href="#the-ownership-rule" title="Permanent link">&para;</a></h2>
-<p>The project is generated from a template, and the template's owner ruled:</p>
-<blockquote>
-<p>Template owned the designated areas.
-Documentation about domain knowledge can only exist in places designated by the template for [domain] knowledge.
-Documentation about non-domain knowledge is <em>always</em> part of the template.
-No exceptions.</p>
-</blockquote>
-<p><strong>Domain knowledge</strong> belongs to this server alone. It covers the tools, resources and prompts the server offers and how they behave. Its configuration fields and any bundled library count as well. <strong>Non-domain knowledge</strong> is what would be true of any server generated from the template: installing and running it, Docker, systemd, reverse proxies, authentication and identity providers, the security model's frame, configuration mechanics, setting up MCP clients in general, logging, releases, repository protection, template updates and how to contribute.</p>
+<h2 id="domain-and-general-knowledge">Domain and general knowledge<a class="headerlink" href="#domain-and-general-knowledge" title="Permanent link">&para;</a></h2>
+<p>Every page here belongs to this project. The project started from <code>fastmcp-server-template</code> and no longer tracks it (#2240). It keeps the structure it started with, because that structure gives each topic one page, until #2260 settles how the documentation is organised now.</p>
+<p><strong>Domain knowledge</strong> belongs to this server alone. It covers the tools, resources and prompts the server offers and how they behave. Its configuration fields and any bundled library count as well. <strong>General knowledge</strong> would be true of any MCP server deployed the same way: installing and running it, Docker, systemd, reverse proxies, authentication and identity providers, the security model's frame, configuration mechanics, setting up MCP clients in general, logging, releases, repository protection and how to contribute. General knowledge lives on the general page for its topic. Domain knowledge lives in the places the table below names, which include the <code>DOMAIN-*</code> blocks on general pages.</p>
 <h2 id="sections">Sections<a class="headerlink" href="#sections" title="Permanent link">&para;</a></h2>
-<p>The site is organised by what its reader is trying to do. The template owns this frame, including the order of the sections and the template pages in each; every section except the first two has a slot where this project lists its own pages.</p>
+<p>The site is organised by what its reader is trying to do. The frame sets the order of the sections and the general pages in each. Every section except the first two has a slot that lists this server's own pages.</p>
 <table>
 <thead>
 <tr>
@@ -2986,7 +2980,7 @@ No exceptions.</p>
 </tr>
 </tbody>
 </table>
-<p>Each section's template pages live in that section's directory (<code>get-started/</code>, <code>deploy/</code>, <code>use/</code>, <code>reference/</code>, <code>upgrade/</code>, <code>contribute/</code>; the Overview and the security model at the top). Moving a template page is a template change, and the template's redirects keep its old URL working.</p>
+<p>Each section's general pages live in that section's directory (<code>get-started/</code>, <code>deploy/</code>, <code>use/</code>, <code>reference/</code>, <code>upgrade/</code>, <code>contribute/</code>; the Overview and the security model at the top). Moving any page adds a redirects entry, as described below.</p>
 <h2 id="front-matter-and-llmstxt">Front matter and llms.txt<a class="headerlink" href="#front-matter-and-llmstxt" title="Permanent link">&para;</a></h2>
 <p>Every page opens with front matter naming its kind and saying what it's for:</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
@@ -3000,25 +2994,25 @@ No exceptions.</p>
 <thead>
 <tr>
 <th>Place</th>
-<th>Owner</th>
+<th>Changed by</th>
 <th>Holds</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>A template page, outside its sentinel blocks</td>
-<td>template</td>
-<td>non-domain knowledge only</td>
+<td>A general page, outside its sentinel blocks</td>
+<td>this project</td>
+<td>general knowledge only</td>
 </tr>
 <tr>
-<td>A <code>DOMAIN-&lt;TOPIC&gt;-&lt;KIND&gt;</code> block inside a template page (such as the Docker page's extra-notes block)</td>
+<td>A <code>DOMAIN-&lt;TOPIC&gt;-&lt;KIND&gt;</code> block inside a general page (such as the Docker page's extra-notes block)</td>
 <td>this project</td>
-<td>only what this server adds to that non-domain topic</td>
+<td>only what this server adds to that general topic</td>
 </tr>
 <tr>
 <td>The <code>DOMAIN-README-*</code> blocks of <code>README.md</code> (badges, pitch, fit, extras, design decisions)</td>
 <td>this project</td>
-<td>the front door's project-specific text; everything else on the README is the template's frame</td>
+<td>the front door's project-specific text; the rest of the README is the general frame</td>
 </tr>
 <tr>
 <td>A generated region (<code>GENERATED-*</code> markers, such as the configuration tables)</td>
@@ -3032,7 +3026,7 @@ No exceptions.</p>
 </tr>
 <tr>
 <td><code>docs/use/</code></td>
-<td>this project; the template renders only its <code>index.md</code></td>
+<td>this project</td>
 <td>this server's how-tos and explanations</td>
 </tr>
 <tr>
@@ -3051,16 +3045,16 @@ No exceptions.</p>
 <td>the per-release notes</td>
 </tr>
 <tr>
-<td><code>docs/design/</code>, apart from the pages the template renders there</td>
+<td><code>docs/design/</code></td>
 <td>this project</td>
 <td>internal design notes, unpublished</td>
 </tr>
 </tbody>
 </table>
-<p>A fix to a template page, outside its sentinel blocks, goes to <code>pvliesdonk/fastmcp-server-template</code>. The page's source there is at the same path with <code>.jinja</code> appended, such as <code>docs/deploy/docker.md.jinja</code> for <code>docs/deploy/docker.md</code>; a page without a <code>.jinja</code> source, such as this one, is copied as it stands. A generated region or page changes at its source in this project's code, never on the page.</p>
+<p>A fix to any page lands in this repository. A generated region or page changes at its source in this project's code, never on the page.</p>
 <p>When this project moves one of its own pages, it adds the old and new paths to the redirects map in <code>mkdocs.yml</code>, so the published URL keeps working. An entry left under Unsorted at the end of <code>nav:</code> hasn't found its section yet.</p>
-<p>A sentinel designates a place, not the knowledge in it. Non-domain text inside a <code>DOMAIN-*</code> block still belongs to the template.</p>
-<p>When no designated place fits domain knowledge, the gap is the template's. File a template issue describing what the content is and who reads it, instead of writing the page somewhere the template doesn't designate. When knowledge is non-domain and the template has no page for it, that also goes to the template as an issue, not into a project page.</p>
+<p>A sentinel designates a place, not the knowledge in it. General text inside a <code>DOMAIN-*</code> block belongs on the general page around it.</p>
+<p>When no place in the table fits, say so in the pull request or an issue instead of choosing one silently; #2260 is where the places themselves get revisited. General knowledge never goes in a section inside a domain page.</p>
 <p>A place that departs from this table counts as a decision only when an issue, a pull request or a design note records why. Otherwise it's debt, however settled the file makes it look.</p>
 <h2 id="generated-reference">Generated reference<a class="headerlink" href="#generated-reference" title="Permanent link">&para;</a></h2>
 <p>The Reference section is written from the code. <code>scripts/gen_reference.py</code> builds the server once and reads what it registers: every tool with its title, annotations, parameter schema and docstring; every resource and prompt; and the command line's commands and options, descending into each command group so a sub-command gets its own section under its full path. It writes <code>docs/reference/tools/&lt;group&gt;.md</code> (one page per group), <code>docs/reference/tools/index.md</code> (the jump table), <code>docs/reference/resources.md</code>, <code>docs/reference/prompts.md</code> and <code>docs/reference/cli.md</code>, and keeps the <code>GENERATED-NAV-TOOLS</code> region of <code>nav:</code> in step. The configuration pages are generated by <code>scripts/gen_config_surface.py</code> as before.</p>
@@ -3126,7 +3120,7 @@ No exceptions.</p>
 <tr>
 <td>E3</td>
 <td>error</td>
-<td>a template section-entry page that has lost its link to the security model; a page that no longer exists is skipped</td>
+<td>a section-entry page that has lost its link to the security model; a page that no longer exists is skipped</td>
 </tr>
 <tr>
 <td>W1</td>

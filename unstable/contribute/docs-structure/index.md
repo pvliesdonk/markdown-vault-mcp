@@ -2,17 +2,15 @@
 
 This page states where each piece of this project's documentation belongs and who owns it. It applies to every page in `docs/` and to `README.md`. Read it before adding or moving a page; agents run the `writing-documentation` skill, which applies it step by step.
 
-## The ownership rule
+## Domain and general knowledge
 
-The project is generated from a template, and the template's owner ruled:
+Every page here belongs to this project. The project started from `fastmcp-server-template` and no longer tracks it (#2240). It keeps the structure it started with, because that structure gives each topic one page, until #2260 settles how the documentation is organised now.
 
-> Template owned the designated areas. Documentation about domain knowledge can only exist in places designated by the template for [domain] knowledge. Documentation about non-domain knowledge is *always* part of the template. No exceptions.
-
-**Domain knowledge** belongs to this server alone. It covers the tools, resources and prompts the server offers and how they behave. Its configuration fields and any bundled library count as well. **Non-domain knowledge** is what would be true of any server generated from the template: installing and running it, Docker, systemd, reverse proxies, authentication and identity providers, the security model's frame, configuration mechanics, setting up MCP clients in general, logging, releases, repository protection, template updates and how to contribute.
+**Domain knowledge** belongs to this server alone. It covers the tools, resources and prompts the server offers and how they behave. Its configuration fields and any bundled library count as well. **General knowledge** would be true of any MCP server deployed the same way: installing and running it, Docker, systemd, reverse proxies, authentication and identity providers, the security model's frame, configuration mechanics, setting up MCP clients in general, logging, releases, repository protection and how to contribute. General knowledge lives on the general page for its topic. Domain knowledge lives in the places the table below names, which include the `DOMAIN-*` blocks on general pages.
 
 ## Sections
 
-The site is organised by what its reader is trying to do. The template owns this frame, including the order of the sections and the template pages in each; every section except the first two has a slot where this project lists its own pages.
+The site is organised by what its reader is trying to do. The frame sets the order of the sections and the general pages in each. Every section except the first two has a slot that lists this server's own pages.
 
 | Section        | Reader                                                    | Kind of page                                |
 | -------------- | --------------------------------------------------------- | ------------------------------------------- |
@@ -25,7 +23,7 @@ The site is organised by what its reader is trying to do. The template owns this
 | Upgrade        | an operator moving to a new release                       | how-to                                      |
 | Contribute     | someone changing the project                              | how-to or explanation                       |
 
-Each section's template pages live in that section's directory (`get-started/`, `deploy/`, `use/`, `reference/`, `upgrade/`, `contribute/`; the Overview and the security model at the top). Moving a template page is a template change, and the template's redirects keep its old URL working.
+Each section's general pages live in that section's directory (`get-started/`, `deploy/`, `use/`, `reference/`, `upgrade/`, `contribute/`; the Overview and the security model at the top). Moving any page adds a redirects entry, as described below.
 
 ## Front matter and llms.txt
 
@@ -42,26 +40,26 @@ kind: how-to
 
 ## Where documentation goes
 
-| Place                                                                                                | Owner                                                  | Holds                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| A template page, outside its sentinel blocks                                                         | template                                               | non-domain knowledge only                                                                                                              |
-| A `DOMAIN-<TOPIC>-<KIND>` block inside a template page (such as the Docker page's extra-notes block) | this project                                           | only what this server adds to that non-domain topic                                                                                    |
-| The `DOMAIN-README-*` blocks of `README.md` (badges, pitch, fit, extras, design decisions)           | this project                                           | the front door's project-specific text; everything else on the README is the template's frame                                          |
-| A generated region (`GENERATED-*` markers, such as the configuration tables)                         | the generator                                          | facts drawn from the code; change the source, never the page                                                                           |
-| A generated page under `docs/reference/` (it starts with the generator's marker comment)             | `scripts/gen_reference.py`                             | tools, resources, prompts and the command line, read from the code; prose only in its `DOMAIN-INTRO` and `DOMAIN-EXAMPLE-<name>` slots |
-| `docs/use/`                                                                                          | this project; the template renders only its `index.md` | this server's how-tos and explanations                                                                                                 |
-| `docs/reference/api/`                                                                                | this project                                           | API reference, when the project ships a library                                                                                        |
-| A section's slot in `nav:` (its `PROJECT-NAV-<SECTION>` block)                                       | this project                                           | entries for this project's pages in that section                                                                                       |
-| `docs/releases/`                                                                                     | this project                                           | the per-release notes                                                                                                                  |
-| `docs/design/`, apart from the pages the template renders there                                      | this project                                           | internal design notes, unpublished                                                                                                     |
+| Place                                                                                               | Changed by                 | Holds                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| A general page, outside its sentinel blocks                                                         | this project               | general knowledge only                                                                                                                 |
+| A `DOMAIN-<TOPIC>-<KIND>` block inside a general page (such as the Docker page's extra-notes block) | this project               | only what this server adds to that general topic                                                                                       |
+| The `DOMAIN-README-*` blocks of `README.md` (badges, pitch, fit, extras, design decisions)          | this project               | the front door's project-specific text; the rest of the README is the general frame                                                    |
+| A generated region (`GENERATED-*` markers, such as the configuration tables)                        | the generator              | facts drawn from the code; change the source, never the page                                                                           |
+| A generated page under `docs/reference/` (it starts with the generator's marker comment)            | `scripts/gen_reference.py` | tools, resources, prompts and the command line, read from the code; prose only in its `DOMAIN-INTRO` and `DOMAIN-EXAMPLE-<name>` slots |
+| `docs/use/`                                                                                         | this project               | this server's how-tos and explanations                                                                                                 |
+| `docs/reference/api/`                                                                               | this project               | API reference, when the project ships a library                                                                                        |
+| A section's slot in `nav:` (its `PROJECT-NAV-<SECTION>` block)                                      | this project               | entries for this project's pages in that section                                                                                       |
+| `docs/releases/`                                                                                    | this project               | the per-release notes                                                                                                                  |
+| `docs/design/`                                                                                      | this project               | internal design notes, unpublished                                                                                                     |
 
-A fix to a template page, outside its sentinel blocks, goes to `pvliesdonk/fastmcp-server-template`. The page's source there is at the same path with `.jinja` appended, such as `docs/deploy/docker.md.jinja` for `docs/deploy/docker.md`; a page without a `.jinja` source, such as this one, is copied as it stands. A generated region or page changes at its source in this project's code, never on the page.
+A fix to any page lands in this repository. A generated region or page changes at its source in this project's code, never on the page.
 
 When this project moves one of its own pages, it adds the old and new paths to the redirects map in `mkdocs.yml`, so the published URL keeps working. An entry left under Unsorted at the end of `nav:` hasn't found its section yet.
 
-A sentinel designates a place, not the knowledge in it. Non-domain text inside a `DOMAIN-*` block still belongs to the template.
+A sentinel designates a place, not the knowledge in it. General text inside a `DOMAIN-*` block belongs on the general page around it.
 
-When no designated place fits domain knowledge, the gap is the template's. File a template issue describing what the content is and who reads it, instead of writing the page somewhere the template doesn't designate. When knowledge is non-domain and the template has no page for it, that also goes to the template as an issue, not into a project page.
+When no place in the table fits, say so in the pull request or an issue instead of choosing one silently; #2260 is where the places themselves get revisited. General knowledge never goes in a section inside a domain page.
 
 A place that departs from this table counts as a decision only when an issue, a pull request or a design note records why. Otherwise it's debt, however settled the file makes it look.
 
@@ -98,7 +96,7 @@ Each page is also one kind of text. A tutorial teaches a first success, and a ho
 | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | E1   | error   | a link on a published page to something the site doesn't serve, such as a page `exclude_docs` drops or a path outside `docs/` |
 | E2   | error   | a published page that neither the nav nor `llms.txt` reaches: not in `nav:`, and no nav page in its directory                 |
-| E3   | error   | a template section-entry page that has lost its link to the security model; a page that no longer exists is skipped           |
+| E3   | error   | a section-entry page that has lost its link to the security model; a page that no longer exists is skipped                    |
 | W1   | warning | a page outside the places the table above designates                                                                          |
 | W2   | warning | a page without `description:` and a valid `kind:` front matter                                                                |
 | W3   | warning | entries still under Unsorted in `nav:`                                                                                        |
