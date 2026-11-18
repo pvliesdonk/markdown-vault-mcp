@@ -746,9 +746,10 @@ The bundle copies live inventory independently of search admission. Resolvable
 wikilinks are rewritten only for searchable notes using the existing graph,
 which can be stale; notes outside the index retain raw links and bytes. The
 report does not list unconverted links. Convention files, templates, hidden
-paths and index-excluded paths are omitted by default; reserved `index.md` and
-`log.md` are kept. Library callers can opt into hidden and index-excluded paths
-separately (including a hidden scope root) and receive partial v0.2 observations;
+paths and index-excluded paths are omitted by default. Reserved `index.md` and
+`log.md` are kept unless an omission policy applies, including a matching
+configured conventions filename. Library callers can opt into hidden and
+index-excluded paths separately (including a hidden scope root) and receive partial v0.2 observations;
 the download ref exposes neither options nor report. Incomplete inventory
 enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index

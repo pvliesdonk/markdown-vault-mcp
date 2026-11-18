@@ -2124,7 +2124,8 @@ the spec itself says, dated and sourced, in
   ref on pvl-core's ``create_download_link`` and generates the archive at
   fetch time via ``okf_bundle.build_okf_bundle`` (resolvable wikilinks rewritten
   only for searchable notes using the potentially stale index graph,
-  convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
+  convention/template files excluded, reserved ``index.md`` / ``log.md`` kept
+  unless an omission policy applies,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
   independent of search admission. The library result reports omitted classes,
@@ -6557,9 +6558,9 @@ the duplication this removed.
 Attachments are **not indexed or searched**: only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
 `ArtifactStore.read_bytes()` and `vault.reader.read_attachment_bytes()` return
-validated raw bytes for byte-oriented consumers, including transfer downloads
-and OKF bundles. The metadata-bearing `read_attachment()` retains its base64
-content, stat-derived size and modification time, MIME type, and etag. The
+validated raw bytes for byte-oriented consumers, including transfer downloads.
+OKF bundle export instead uses its own descriptor-relative no-follow read. The
+metadata-bearing `read_attachment()` retains its base64 content, stat-derived size and modification time, MIME type, and etag. The
 separate stat-only size probe lets MCP reject oversized files before reading.
 
 The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()`, `read_attachment_bytes()`, and `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
