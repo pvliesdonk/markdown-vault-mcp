@@ -30,6 +30,7 @@ class ReservedRepair:
 
     path: str
     keys: tuple[str, ...]
+    skip_reason: str | None = None
 
 
 def _strip(
@@ -83,10 +84,15 @@ def _candidate_edits(
         if isinstance(token, (yaml.AnchorToken, yaml.AliasToken))
     ]
     for key, value in node.value:
-        if not isinstance(key, ScalarNode) or key.value in seen:
+        if not isinstance(key, ScalarNode):
             raise InvalidRequestError("ambiguous frontmatter needs manual inspection")
-        seen.add(key.value)
         name = key.value
+        if name in required and name not in _PROTECTED:
+            if name in seen:
+                raise InvalidRequestError(
+                    "ambiguous frontmatter needs manual inspection"
+                )
+            seen.add(name)
         if (
             name not in required
             or name in _PROTECTED
@@ -135,7 +141,7 @@ class ReservedFrontmatterRepair:
             allow_protected: Allow a trusted caller to repair protected paths.
 
         Returns:
-            Each reserved path and the matching keys.
+            Each reserved path and matching keys, or a reason it was skipped.
 
         Raises:
             InvalidRequestError: If OKF scope or inventory cannot be established.
@@ -157,9 +163,12 @@ class ReservedFrontmatterRepair:
                     "Bundle inventory is incomplete; repair stopped"
                 )
             for entry in page.entries:
-                candidate = self._inspect_entry(
-                    entry, apply=apply, allow_protected=allow_protected
-                )
+                try:
+                    candidate = self._inspect_entry(
+                        entry, apply=apply, allow_protected=allow_protected
+                    )
+                except InvalidRequestError as exc:
+                    candidate = ReservedRepair(entry.path, (), str(exc))
                 if candidate:
                     result.append(candidate)
             if page.enumeration == "unavailable":

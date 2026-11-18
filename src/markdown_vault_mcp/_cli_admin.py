@@ -56,8 +56,12 @@ def strip_seeded_frontmatter(
                 typer.echo("Nothing to repair.")
             action = "Removed" if apply else "Would remove"
             for item in items:
+                if item.skip_reason:
+                    typer.echo(f"Skipped {item.path}: {item.skip_reason}")
                 for key in item.keys:
                     typer.echo(f"{action} {item.path}: {key}")
+            if any(item.skip_reason for item in items):
+                raise typer.Exit(1)
         finally:
             built.close()
     except (MarkdownMCPError, OSError) as exc:

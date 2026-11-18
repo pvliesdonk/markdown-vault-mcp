@@ -235,8 +235,6 @@ def test_apply_uses_exact_byte_write_mode(
     "header", ["{title: Log}", "title: Log\ntitle: Log", "title: Log # review"]
 )
 def test_ambiguous_candidates_are_reported(tmp_path: Path, header: str) -> None:
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
     path = tmp_path / "log.md"
     path.write_text(f"---\n{header}\n---\n# Body\n")
     vault = Vault(
@@ -246,8 +244,10 @@ def test_ambiguous_candidates_are_reported(tmp_path: Path, header: str) -> None:
         ),
     )
     try:
-        with pytest.raises(InvalidRequestError, match=r"log\.md.*manual"):
-            ReservedFrontmatterRepair(vault).run()
+        item = ReservedFrontmatterRepair(vault).run()[0]
+        assert (
+            item.path == "log.md" and item.skip_reason and "manual" in item.skip_reason
+        )
     finally:
         vault.close()
 
@@ -271,8 +271,6 @@ def test_large_reserved_file_remains_eligible(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("kind", ["symlink", "directory"])
 def test_uninspectable_reserved_path_is_reported(tmp_path: Path, kind: str) -> None:
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
     path = tmp_path / "log.md"
     if kind == "symlink":
         path.symlink_to("missing.md")
@@ -285,8 +283,8 @@ def test_uninspectable_reserved_path_is_reported(tmp_path: Path, kind: str) -> N
         ),
     )
     try:
-        with pytest.raises(InvalidRequestError, match=r"log\.md"):
-            ReservedFrontmatterRepair(vault).run()
+        item = ReservedFrontmatterRepair(vault).run()[0]
+        assert item.path == "log.md" and item.skip_reason
     finally:
         vault.close()
 
@@ -303,3 +301,50 @@ def test_cli_read_only_reports_nontransactional_batch(
     assert result.exit_code == 1
     assert "no rollback" in result.stderr and "read-only" in result.stderr
     assert "Earlier files" not in result.stderr
+
+
+def test_batch_reports_skips_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+    good = tmp_path / "a" / "log.md"
+    unsafe = tmp_path / "b" / "log.md"
+    good.write_text("---\ntitle: Log\n---\n# Log\n")
+    unsafe.write_text("---\ntitle: Log # keep\n---\n# Log\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    runner = CliRunner()
+    for options, word in [([], "Would remove"), (["--apply"], "Removed")]:
+        result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", *options])
+        assert result.exit_code == 1
+        assert f"{word} a/log.md: title" in result.stdout
+        assert "Skipped b/log.md:" in result.stdout and "manual" in result.stdout
+    assert good.read_text() == "# Log\n"
+    assert unsafe.read_text() == "---\ntitle: Log # keep\n---\n# Log\n"
+
+
+def test_unrelated_duplicate_keys_survive_splice() -> None:
+    original = "---\nx: 1\nx: 2\nconflict_with: null\nconflict_with: null\ntitle: Log\n---\nbody\n"
+    expected = original.replace("title: Log\n", "")
+    assert _strip(original, ["title", "conflict_with"], "title", "Log") == (
+        expected,
+        ("title",),
+    )
+
+
+@pytest.mark.parametrize(
+    "header,title",
+    [
+        ('title: "L\\\n  og"\nkeep: 1\n', "Log"),
+        ("title: a long\n  plain title\nkeep: 1\n", "a long plain title"),
+    ],
+)
+def test_multiline_titles_preserve_remaining_header(header: str, title: str) -> None:
+    text = f"---\n{header}---\nbody\n"
+    assert _strip(text, ["title"], "title", title) == (
+        "---\nkeep: 1\n---\nbody\n",
+        ("title",),
+    )
