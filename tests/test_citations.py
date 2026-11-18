@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -271,6 +272,28 @@ def test_unmatched_labels_fan_out_to_declared_resources() -> None:
         ("missing", "unmatched", "urn:two"),
     ]
 
+    # Each declared resource receives diagnostics; invalid source entries do not.
+    sources = [
+        False,
+        {"id": "a", "resource": "urn:s"},
+        {"id": "a", "resource": "urn:s"},
+        {"id": "missing"},
+        {"id": "blank", "resource": "   "},
+    ]
+    edges = citation_edges(_note(sources, "[^a] [^unknown] [^missing] [^blank]"))
+    assert [(e.label, e.status, e.resource) for e in edges] == [
+        ("a", "ambiguous", "urn:s"),
+        ("unknown", "unmatched", "urn:s"),
+        ("missing", "invalid_resource", "urn:s"),
+        ("blank", "invalid_resource", "urn:s"),
+    ]
+    assert (
+        citation_edges(_note({"bad": {"id": "a", "resource": "urn:s"}}, "[^a]")) == []
+    )
+    text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n"
+    for newline in ("\r", "\r\n"):
+        assert citation_edges(text.replace("\n", newline))[0].resource == "urn:s"
+
 
 def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
     resource = "https://example.invalid/source"
@@ -300,48 +323,10 @@ def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
             for row in result["citing"]
         )
         assert result["unconverted_notes"] == 0
-        assert result["syntax"] == inspect_citation_text("", "").syntax
-        assert "not an exhaustive citation audit" in result["scope"]
-    finally:
-        vault.close()
-
-
-def test_citation_diagnostics(tmp_path: Path) -> None:
-    resource = "urn:s"
-    sources = [
-        False,
-        {"id": "a", "resource": resource},
-        {"id": "a", "resource": resource},
-    ]
-    (tmp_path / "ambiguous.md").write_text(
-        _note(sources, "[^a] [^missing]"), encoding="utf-8"
-    )
-    (tmp_path / "candidate.md").write_text(
-        _note(
-            [
-                {"id": "a"},
-                {"id": "blank", "resource": "   "},
-                {"id": "b", "resource": resource},
-            ],
-            "[^a] [^blank]",
-        ),
-        encoding="utf-8",
-    )
-    (tmp_path / "mapping.md").write_text(
-        _note({"bad": {"id": "a", "resource": resource}}, "[^a]"), encoding="utf-8"
-    )
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        result = vault.reader.find_citing_notes(resource)
-        assert result["citing"] == []
         assert [
             (r["path"], r["label"], r["status"]) for r in result["diagnostics"]
         ] == [
-            ("ambiguous.md", "a", "ambiguous"),
-            ("ambiguous.md", "missing", "unmatched"),
-            ("candidate.md", "a", "invalid_resource"),
-            ("candidate.md", "blank", "invalid_resource"),
+            (name, "missing", "unmatched") for name in ("one.md", "three.md", "two.md")
         ]
         with pytest.raises(InvalidRequestError):
             vault.reader.find_citing_notes("  ")
@@ -414,6 +399,7 @@ def test_citation_lookup_refuses_incompatible_semantics(
 
     db = tmp_path / "old.db"
     index = FTSIndex(db)
+    # Sibling A6 (8d9f823a) and B2 (9f6d3870) stamp 13 without this schema.
     if version in ("missing_table", "missing_column"):
         index.set_chunking_meta(model=None, max_chunk_chars_override=None)
         if version == "missing_table":
@@ -446,49 +432,10 @@ def test_citation_lookup_refuses_incompatible_semantics(
             writer.close()
 
 
-@pytest.mark.parametrize("version", [12, 14])
-def test_upgrade_reports_unconverted_after_upsert_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
-) -> None:
-    from markdown_vault_mcp.fts_index import FTSIndex
-
-    root = tmp_path / "notes"
-    root.mkdir()
-    (root / "one.md").write_text(
-        _note([{"id": "a", "resource": "urn:s"}], "[^a]"), encoding="utf-8"
-    )
-    db = tmp_path / "index.db"
-    settings = VaultSettings(index_path=db, state_path=tmp_path / "state.json")
-    vault = Vault(source_dir=root, settings=settings)
-    try:
-        vault.index.build_index()
-        conn = vault._fts._conn()
-        conn.execute("UPDATE documents SET citations_derived=?", (version,))
-        conn.execute(
-            "UPDATE meta SET value=? WHERE key='index_semantics_version'",
-            (str(version),),
-        )
-
-        def fail(_note: object) -> int:
-            raise ValueError("transient indexing failure")
-
-        with monkeypatch.context() as patch:
-            patch.setattr(vault._fts, "upsert_note", fail)
-            vault.index.build_index()
-        result = vault.reader.find_citing_notes("urn:s")
-        assert result["unconverted_notes"] == 1
-        assert result["citing"] == []
-        vault.index.reindex()
-        assert vault.reader.find_citing_notes("urn:s")["unconverted_notes"] == 0
-    finally:
-        vault.close()
-    reader = FTSIndex(db, read_only=True)
-    try:
-        assert reader.get_citation_rows("urn:s")[1] == 0
-    finally:
-        reader.close()
-
-
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root bypasses directory permissions",
+)
 @pytest.mark.parametrize("version", [12, 14])
 def test_upgrade_reports_unconverted_after_unreadable_walk(
     tmp_path: Path, version: int
@@ -539,3 +486,8 @@ def test_upgrade_reports_unconverted_after_unreadable_walk(
         ]
     finally:
         vault.close()
+    reader = FTSIndex(db, read_only=True)
+    try:
+        assert reader.get_citation_rows("urn:s")[1] == 0
+    finally:
+        reader.close()

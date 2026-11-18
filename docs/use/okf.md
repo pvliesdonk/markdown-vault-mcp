@@ -103,10 +103,9 @@ ambiguous labels, plus labels whose matched source has no valid resource, in not
 declaring the resource. Results are unbounded. When OKF is active, reserved
 `index.md` and `log.md` files are excluded. Body links alone do not count.
 The index rebuilds on the first startup after upgrading. `unconverted_notes` counts
-indexed notes that could not be re-read with compatible citation rules; a later
-reindex can bring that count to zero.
+indexed notes that could not be re-read with compatible citation rules. If ordinary
+`reindex` leaves the count above zero, call `reindex(force=True)` for a full rebuild.
 The lookup does not fetch resources or assess whether they support a claim.
-
 
 ### Syntax coverage
 

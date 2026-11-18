@@ -1973,7 +1973,8 @@ each distinct resource declared by that note. The result is unbounded. Reserved
 files are excluded only while OKF is active. Navigation links do not create edges.
 The index rebuilds on the first startup after upgrading. A lookup reports
 `unconverted_notes` for retained indexed notes not yet re-read with compatible
-citation rules; they are omitted until a later reindex succeeds. Incompatible or missing
+citation rules; they are omitted until re-read. If ordinary `reindex` leaves the
+count above zero, call `reindex(force=True)` for a full rebuild. Incompatible or missing
 schema is unavailable rather than empty. No resource is fetched and attribution
 does not establish support.
 

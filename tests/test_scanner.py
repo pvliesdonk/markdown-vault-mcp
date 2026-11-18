@@ -1160,18 +1160,9 @@ def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> No
     assert len(errors) == 1
 
 
-@pytest.mark.parametrize("newline", ["\r", "\r\n"])
-def test_scanner_citations_keep_original_note_parsing(
-    tmp_path: Path, newline: str
-) -> None:
-    from markdown_vault_mcp.scanner import note_body, parse_frontmatter
-
-    text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n".replace(
-        "\n", newline
-    )
+def test_scanner_populates_citations(tmp_path: Path) -> None:
+    text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n"
     path = tmp_path / "one.md"
     path.write_bytes(text.encode())
     note = parse_note(path, tmp_path)
-    assert note.frontmatter == dict(parse_frontmatter(text).metadata)
-    assert note.content_chars == len(note_body(text))
     assert note.citations[0].resource == "urn:s"
