@@ -56,7 +56,7 @@ def strip_seeded_frontmatter(
                     typer.echo(f"{item.path}: {key}")
         finally:
             built.close()
-    except MarkdownMCPError as exc:
+    except (MarkdownMCPError, OSError) as exc:
         if apply:
             typer.echo(
                 "Earlier files may already have been changed; inspect the vault before retrying.",
