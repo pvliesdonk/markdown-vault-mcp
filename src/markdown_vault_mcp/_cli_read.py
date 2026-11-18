@@ -277,6 +277,10 @@ def read_payload(
             data["okf"]["snapshot"] = concept_snapshot(note.content)
         except (yaml.YAMLError, ValueError) as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
+        if active:
+            data["okf"]["observation"] = vault.reader.review_observation(
+                note.path, note.frontmatter, note.etag, data["okf"]["snapshot"]
+            )
     return data
 
 

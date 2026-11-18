@@ -22,8 +22,10 @@ import yaml
 
 from markdown_vault_mcp.bundle_inventory import (
     BundleChildrenRequest,
+    BundleEntry,
     BundleInspectionRequest,
     BundleInspector,
+    BundleTreeRequest,
 )
 from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
 from markdown_vault_mcp.exceptions import (
@@ -47,9 +49,7 @@ if TYPE_CHECKING:
     from typing import Any, Literal
 
     from markdown_vault_mcp.bundle_inventory import (
-        BundleEntry,
         BundleInspection,
-        BundleTreeRequest,
         Enumeration,
         ParseState,
         ScopeState,
@@ -322,7 +322,7 @@ class ReaderFacet:
         page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
         matching = tuple(
             entry
-            for entry in page.entries
+            for entry in self._inventory_with_removals(page)
             if _selected(entry, type_state, parse_state, search_state)
         )
         truncated = len(matching) > request.entry_limit
@@ -338,6 +338,53 @@ class ReaderFacet:
                 else page.enumeration
             ),
         )
+
+    def _inventory_with_removals(
+        self, page: BundleInspection
+    ) -> tuple[BundleEntry, ...]:
+        ledger = self._doc_mgr._observations
+        if (
+            ledger is None
+            or page.state != "inspected"
+            or not isinstance(page.request, BundleTreeRequest)
+        ):
+            return page.entries
+        manager = self._doc_mgr
+        inspector = BundleInspector(
+            manager._source_dir,
+            manager._exclude_patterns or (),
+            manager._artifacts.extensions(),
+            manager._max_note_read_bytes,
+            manager._inspection_policy,
+        )
+        scope = tuple(
+            filter(None, (page.request.root + "/" + page.request.directory).split("/"))
+        )
+        cursor = tuple(page.request.cursor.split("/")) if page.request.cursor else ()
+        boundary = tuple(page.next_cursor.split("/")) if page.next_cursor else None
+        entries = list(page.entries)
+        for path, row in ledger.rows().items():
+            parts = tuple(path.split("/"))
+            if (
+                row.presence != "removed"
+                or row.role != "concept_candidate"
+                or parts[: len(scope)] != scope
+                or len(parts) <= len(scope)
+                or parts <= cursor
+                or (boundary is not None and parts > boundary)
+            ):
+                continue
+            if inspector.observe_path(path, lambda *_: None) != "missing":
+                continue
+            entries.append(
+                BundleEntry(
+                    path=path,
+                    role="concept_candidate",
+                    state="missing",
+                    presence="removed",
+                )
+            )
+        return tuple(sorted(entries, key=lambda entry: tuple(entry.path.split("/"))))
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -477,6 +524,31 @@ class ReaderFacet:
                 *section* is empty or names no heading.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def review_observation(
+        self,
+        path: str,
+        metadata: dict[str, Any],
+        etag: str | None,
+        snapshot: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Compare a whole-note read with this instance's observation ledger.
+
+        Args:
+            path: Vault-relative path of the returned note.
+            metadata: Supplied note metadata.
+            etag: Digest of the returned whole-note bytes.
+            snapshot: Current concept snapshot, when available.
+
+        Returns:
+            An available comparison or an unavailable observation.
+        """
+        from markdown_vault_mcp._okf_observed import review_observation
+
+        ledger = self._doc_mgr._observations
+        return review_observation(
+            metadata, ledger.rows().get(path) if ledger else None, etag, snapshot
+        )
 
     def find_citing_notes(self, resource: str) -> dict[str, Any]:
         """Find indexed notes citing an exact resource.

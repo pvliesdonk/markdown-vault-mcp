@@ -156,6 +156,7 @@ class BundleEntry:
         visibility: Whether the path matches an effective index exclusion.
         hidden_path: Whether any vault-relative component begins with a dot.
         search_state: Last observed index admission, or not_evaluated.
+        presence: Whether a locally observed path is present or removed.
     """
 
     path: str
@@ -167,6 +168,7 @@ class BundleEntry:
     visibility: Literal["visible", "index_excluded"] = "visible"
     hidden_path: bool = False
     search_state: SearchState = "not_evaluated"
+    presence: Literal["present", "removed"] = "present"
 
 
 @dataclass(frozen=True)
