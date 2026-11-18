@@ -596,3 +596,62 @@ def test_mutation_endpoints_still_refuse_external_symlink(
         assert outside.read_text() == "original"
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("patterns", [None, ["unrelated.md"]])
+@pytest.mark.parametrize(
+    "operation",
+    ["write", "edit", "append", "delete", "rename_from", "rename_to", "attachment"],
+)
+def test_nul_mutations_keep_actionable_refusal(
+    tmp_path: Path, patterns: list[str] | None, operation: str
+) -> None:
+    (tmp_path / "note.md").write_text("original")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=patterns),
+    )
+    try:
+        actions = {
+            "write": lambda: vault.writer.write("bad\0.md", "changed"),
+            "edit": lambda: vault.writer.edit("bad\0.md", "original", "changed"),
+            "append": lambda: vault.writer.append("bad\0.md", "changed"),
+            "delete": lambda: vault.writer.delete("bad\0.md"),
+            "rename_from": lambda: vault.writer.rename("bad\0.md", "new.md"),
+            "rename_to": lambda: vault.writer.rename("note.md", "bad\0.md"),
+            "attachment": lambda: vault.writer.write_attachment(
+                "bad\0.png", b"changed"
+            ),
+        }
+        with pytest.raises(InvalidRequestError, match="NUL"):
+            actions[operation]()
+        assert (tmp_path / "note.md").read_text() == "original"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("protected", [False, True])
+async def test_nul_verify_preflight_is_actionable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _clear_env: None, protected: bool
+) -> None:
+    from typing import Any
+
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    from tests.server_factory import make_server
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    if protected:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "unrelated.md")
+
+    async def accept(*_args: Any) -> bool:
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="NUL"):
+            await client.call_tool("okf_verify", {"path": "bad\0.md"})

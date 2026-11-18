@@ -2,8 +2,11 @@
 
 from collections.abc import Iterator, Sequence
 from fnmatch import fnmatchcase
+from itertools import chain
 from pathlib import Path, PurePosixPath
 from unicodedata import normalize
+
+from markdown_vault_mcp.utils import reject_nul
 
 
 class PathGuard:
@@ -25,14 +28,14 @@ class PathGuard:
         if not self._patterns:
             return None
 
-        def candidates() -> Iterator[str]:
-            yield path
+        def resolved_candidate() -> Iterator[str]:
+            reject_nul(path)
             root = self._source_dir.resolve()
             resolved = (root / path).resolve()
             if resolved.is_relative_to(root):
                 yield resolved.relative_to(root).as_posix()
 
-        for candidate in candidates():
+        for candidate in chain([path], resolved_candidate()):
             parts = PurePosixPath(normalize("NFC", candidate).casefold()).parts
             for end in range(1, len(parts) + 1):
                 prefix = "/".join(parts[:end])

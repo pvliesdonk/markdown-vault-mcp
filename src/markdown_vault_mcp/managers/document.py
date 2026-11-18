@@ -346,7 +346,7 @@ class DocumentManager:
             allow_protected: Explicit trusted library override.
 
         Raises:
-            InvalidRequestError: If the path is protected or outside the vault.
+            InvalidRequestError: If the path is protected or contains a NUL byte.
         """
         reason = self.protection_reason(path, allow_protected=allow_protected)
         if reason:
