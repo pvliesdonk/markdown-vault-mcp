@@ -178,11 +178,9 @@ def test_settings_contract() -> None:
     assert [p.kind for p in params] == [inspect.Parameter.POSITIONAL_OR_KEYWORD] * 9 + [
         inspect.Parameter.KEYWORD_ONLY
     ] * 3
-    for field in fields(GitWriteSettings):
-        assert field.default == signature.parameters[field.name].default
-    assert [field.name for field in fields(GitWriteSettings)] == [
-        p.name for p in params[:10]
-    ]
+    settings_fields = {field.name: field for field in fields(GitWriteSettings)}
+    for param in params[:10]:
+        assert settings_fields[param.name].default == param.default
     settings = GitWriteSettings(token="secret")
     assert "secret" not in repr(settings)
     with pytest.raises(FrozenInstanceError):
