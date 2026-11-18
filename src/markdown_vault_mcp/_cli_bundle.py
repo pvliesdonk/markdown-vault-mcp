@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import asdict, replace
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -52,7 +53,7 @@ def _local(
     )
     path = config.index_path
     existing = (
-        source is None
+        (source is None or Path(source).resolve() == config.source_dir.resolve())
         and path is not None
         and str(path) != ":memory:"
         and could_be_regular_file(path)
@@ -129,9 +130,12 @@ def register(app: typer.Typer) -> None:
                 "entry_limit": entry_limit,
                 "cursor": cursor,
             }
-            request = BundleTreeRequest(
-                root=root, entry_limit=entry_limit, cursor=cursor
-            )
+            try:
+                request = BundleTreeRequest(
+                    root=root, entry_limit=entry_limit, cursor=cursor
+                )
+            except ValueError as exc:
+                raise ClientError(str(exc)) from exc
             options = ClientOptions(server, local, timeout)
             settings = resolve_settings(options)
             if source_dir is not None and settings.url is not None:

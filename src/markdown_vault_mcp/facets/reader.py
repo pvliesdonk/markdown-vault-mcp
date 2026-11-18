@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.utils.content_kind import is_note
 
 if TYPE_CHECKING:
@@ -70,7 +71,7 @@ def _selected(
 ) -> bool:
     if entry.role == "directory" and entry.state in {"unavailable", "missing"}:
         return True
-    if entry.path.rsplit("/", 1)[-1] in {"index.md", "log.md"}:
+    if entry.path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
         return False
     if entry.state in {"unavailable", "missing"}:
         return (

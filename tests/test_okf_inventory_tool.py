@@ -54,7 +54,10 @@ def test_filtered_paging(tmp_path, sparse):
         ({"cursor": "note.md"}, ["--cursor", "note.md"]),
     ],
 )
-async def test_tool_and_cli_read_only_parity(tmp_path, monkeypatch, arguments, flags):
+@pytest.mark.parametrize("explicit_source", [False, True])
+async def test_tool_and_cli_read_only_parity(
+    tmp_path, monkeypatch, arguments, flags, explicit_source
+):
     import json
 
     from fastmcp import Client
@@ -78,7 +81,10 @@ async def test_tool_and_cli_read_only_parity(tmp_path, monkeypatch, arguments, f
         payload = (
             await client.call_tool("okf_inventory", {"root": "", **arguments})
         ).structured_content
-    cli = CliRunner().invoke(app, ["okf-inventory", "", *flags, "--local", "--json"])
+    source_flags = ["--source-dir", str(vault_dir / ".")] if explicit_source else []
+    cli = CliRunner().invoke(
+        app, ["okf-inventory", "", *flags, "--local", "--json", *source_flags]
+    )
     assert cli.exit_code == 0, cli.output
     assert json.loads(cli.stdout) == payload
     if "parse_state" in arguments:
@@ -203,8 +209,12 @@ def test_unknown_observations_survive_type_filter_except_reserved(
         vault.close()
 
 
+@pytest.mark.parametrize(
+    ("root", "options", "message"),
+    [("../x", [], "Scope must"), ("", ["--cursor", "../x"], "Scope must")],
+)
 def test_remote_invalid_scope_is_rejected_before_dispatch(
-    tmp_path, monkeypatch, _clear_env
+    tmp_path, monkeypatch, _clear_env, root, options, message
 ):
     from typer.testing import CliRunner
 
@@ -213,10 +223,17 @@ def test_remote_invalid_scope_is_rejected_before_dispatch(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     result = CliRunner().invoke(
         app,
-        ["okf-inventory", "../x", "--server", "http://localhost:8000/mcp", "--json"],
+        [
+            "okf-inventory",
+            root,
+            "--server",
+            "http://localhost:8000/mcp",
+            "--json",
+            *options,
+        ],
     )
-    assert result.exit_code == 1
-    assert "Scope must" in result.output
+    assert result.exit_code == 2
+    assert message in result.output
 
 
 def test_injected_inspection_policy_replaces_default(tmp_path):
@@ -261,7 +278,14 @@ def _index_policy_fixture(tmp_path, case):
         with sqlite3.connect(index) as conn:
             conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
             conn.execute("INSERT INTO meta VALUES ('schema_version', '99')")
-    elif case in {"same", "override", "unrelated"}:
+    elif case in {
+        "same",
+        "same_override",
+        "alias",
+        "override",
+        "unrelated",
+        "internal_value",
+    }:
         vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
         try:
             vault.index.build_index()
@@ -276,6 +300,9 @@ def _index_policy_fixture(tmp_path, case):
         "missing",
         "state_dir",
         "override",
+        "same_override",
+        "alias",
+        "internal_value",
         "same",
         "corrupt",
         "newer",
@@ -297,14 +324,22 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(root / "vectors"))
     if case == "override":
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path / "other"))
-    options = ["--source-dir", str(root)] if case == "override" else []
+    options = (
+        ["--source-dir", str(root)] if case in {"override", "same_override"} else []
+    )
+    if case == "alias":
+        alias = tmp_path / "alias"
+        alias.symlink_to(root, target_is_directory=True)
+        options = ["--source-dir", str(alias)]
     calls = []
-    if case == "unrelated":
+    if case in {"unrelated", "internal_value"}:
         from markdown_vault_mcp import _cli_bundle
         from markdown_vault_mcp.exceptions import StoreUnavailableError
 
         def fail_other_store(*_args, **_kwargs):
             calls.append(1)
+            if case == "internal_value":
+                raise ValueError("internal value failure")
             raise StoreUnavailableError(
                 "other store unavailable", backend="sqlite", location="other.db"
             )
@@ -315,15 +350,22 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
     )
     if case == "newer":
         assert result.exit_code == 1 and "schema_version" in result.output
-    elif case == "unrelated":
-        assert result.exit_code == 1 and "other store unavailable" in result.output
+    elif case in {"unrelated", "internal_value"}:
+        expected = (
+            "other store unavailable"
+            if case == "unrelated"
+            else "internal value failure"
+        )
+        assert result.exit_code == 1 and expected in result.output
         assert calls == [1]
     else:
         assert result.exit_code == 0, result.output
         rows = json.loads(result.stdout)["entries"]
         assert [row["path"] for row in rows] == ["note.md"]
         assert rows[0]["search_state"] == (
-            "searchable" if case == "same" else "not_evaluated"
+            "searchable"
+            if case in {"same", "same_override", "alias"}
+            else "not_evaluated"
         )
     assert (
         (tracker / "secret.md").read_text() == "private"
