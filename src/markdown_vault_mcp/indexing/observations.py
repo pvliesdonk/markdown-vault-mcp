@@ -174,7 +174,6 @@ class ObservationLedger:
                 self._save(result)
 
     def _save(self, rows: dict[str, Observation]) -> None:
-        # Only persistent ledgers call this internal method.
         assert self._path is not None  # noqa: S101, RUF100
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(

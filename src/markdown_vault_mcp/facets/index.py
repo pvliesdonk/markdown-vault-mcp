@@ -184,8 +184,8 @@ class IndexFacet:
 
         Caller may ``.result()`` to wait or fire-and-forget. A warm build
         queues an observation sweep without rebuilding FTS. The Future includes
-        the sweep, completion-marker write and readiness publication; failure
-        in any of them fails the build. Pending work can be cancelled before execution begins.
+        the sweep, completion-marker write and readiness publication; failure in any
+        fails the build. Pending work can be cancelled before execution begins.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

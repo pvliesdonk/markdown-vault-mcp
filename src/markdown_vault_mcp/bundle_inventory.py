@@ -355,10 +355,7 @@ def _possible_header(prefix: bytearray, *, eof: bool) -> bool:
 
 
 def _observation_digests(stream: BinaryIO) -> tuple[str, str | None]:
-    """Hash all bytes and the parser's frontmatter block in bounded reads.
-
-    Memory grows with a candidate header, including an unterminated one.
-    """
+    """Hash all bytes and the frontmatter block, buffering only a candidate header."""
     content = hashlib.sha256()
     prefix = bytearray()
     size = 65536
