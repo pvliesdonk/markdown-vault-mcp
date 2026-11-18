@@ -231,13 +231,17 @@ class ConventionMaintainer:
             paths: Absolute paths awaiting regeneration.
 
         Returns:
-            Paths whose regeneration failed or was refused.
+            Paths whose regeneration failed.
         """
-        if self._source_dir is None:
-            return paths
-        folders = {p: self._canonical(str(p.parent)) for p in paths}
-        failed = self.refresh_indexes(folders.values(), trigger_paths=())
-        return [p for p, folder in folders.items() if folder in failed]
+        failed: list[Path] = []
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            for path in paths:
+                if not self.generated_index(path):
+                    continue
+                folder = self._canonical(str(path.parent))
+                if self._has_index(folder) and not self._refresh_index(folder):
+                    failed.append(path)
+        return failed
 
     def _may_log(self, folder: str) -> bool:
         """Whether a write into *folder* may append to its ``log.md``."""
@@ -296,7 +300,7 @@ class ConventionMaintainer:
         *,
         trigger_paths: Iterable[str],
         create: Iterable[str] = (),
-    ) -> list[str]:
+    ) -> None:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
         A designated folder in *folders* is refreshed only if it already has an
@@ -313,22 +317,15 @@ class ConventionMaintainer:
             trigger_paths: The vault-relative paths the change touched.
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
-
-        Returns:
-            Requested folders that were not successfully refreshed.
         """
-        folders = list(folders)
         if not self._capabilities.index or not self._maintains_after(trigger_paths):
-            return folders
+            return
         wanted = [f for f in folders if self._may_index(f) and self._has_index(f)]
-        failed = [f for f in folders if f not in wanted]
         with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys(
                 [*wanted, *(f for f in create if self._may_index(f))]
             ):
-                if not self._refresh_index(self._canonical(folder)):
-                    failed.append(folder)
-        return failed
+                self._refresh_index(self._canonical(folder))
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.

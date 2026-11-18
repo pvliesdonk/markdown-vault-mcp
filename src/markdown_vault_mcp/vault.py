@@ -1065,22 +1065,17 @@ class Vault:
             self._git_strategy, GitWriteStrategy
         ):
             return
+        pending = self._git_strategy.take_generated_indexes()
+        if not pending:
+            return
         try:
-            pending, snapshot = self._git_strategy.pending_generated_indexes(
-                self._source_dir
-            )
-            pending = [
-                p for p in pending if p.is_relative_to(self._source_dir.resolve())
-            ]
-            if pending:
-                failed = self._okf_convention.refresh_generated(pending)
-                self._git_strategy.settle_generated_indexes(
-                    self._source_dir, [p for p in pending if p not in failed], snapshot
-                )
+            failed = self._okf_convention.refresh_generated(pending)
         except Exception:
             logger.warning(
                 "git_pending_index_regeneration_failed action=retry", exc_info=True
             )
+            failed = pending
+        self._git_strategy.retry_generated_indexes(failed)
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.

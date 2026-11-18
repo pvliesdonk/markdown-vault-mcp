@@ -11,11 +11,9 @@ suite's global ``subprocess.run`` monkeypatch still intercepts them.
 from __future__ import annotations
 
 import datetime
-import json
 import logging
 import os
 import subprocess
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -357,13 +355,7 @@ def restore_upstream_paths(
     return restored
 
 
-def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> None:
-    target = git_root / conflict_rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(target, os.fsencode(content))
-
-
-def write_conflict_files(  # noqa: PLR0913, PLR0915, RUF100  # Existing sibling workflow and call contract.
+def write_conflict_files(
     git_root: Path,
     saved: list[tuple[str, str]],
     env: dict[str, str] | None,
@@ -408,8 +400,7 @@ def write_conflict_files(  # noqa: PLR0913, PLR0915, RUF100  # Existing sibling 
         conflict_rel = str(original.parent / conflict_name)
 
         if is_okf_reserved_file(rel_path):
-            _write_reserved_sibling(git_root, conflict_rel, mcp_content)
-            written.append(conflict_rel)
+            written.append(_write_reserved_sibling(git_root, conflict_rel, mcp_content))
             continue
 
         # --- Write conflict file (MCP version) ---
@@ -533,54 +524,8 @@ def write_conflict_files(  # noqa: PLR0913, PLR0915, RUF100  # Existing sibling 
     return written
 
 
-def _pending_file(git_root: Path) -> Path:
-    result = run_git_capturing(git_root, "rev-parse", "--absolute-git-dir")
-    if result.returncode:
-        raise OSError("Cannot locate git directory")
-    return (
-        Path(result.stdout.removesuffix("\n")) / "markdown-vault-pending-indexes.json"
-    )
-
-
-def read_generated_indexes(git_root: Path) -> list[str]:
-    """Read repository-relative generated indexes awaiting regeneration."""
-    marker = _pending_file(git_root)
-    try:
-        data = json.loads(marker.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
-    if not isinstance(data, dict) or data.get("version") != 1:
-        raise ValueError("unsupported pending index marker version")
-    data = data.get("paths")
-    if not isinstance(data, list) or any(
-        not isinstance(p, str) or Path(p).is_absolute() or ".." in Path(p).parts
-        for p in data
-    ):
-        raise ValueError("invalid pending indexes")
-    return data
-
-
-def _write_generated_indexes(git_root: Path, paths: list[str]) -> None:
-    marker = _pending_file(git_root)
-    if not paths:
-        marker.unlink(missing_ok=True)
-        return
-    atomic_write(
-        marker,
-        json.dumps(
-            {"version": 1, "revision": uuid.uuid4().hex, "paths": sorted(set(paths))}
-        ),
-    )
-
-
-def record_generated_indexes(git_root: Path, paths: list[str]) -> None:
-    """Atomically add repository-relative paths to the pending set."""
-    if paths:
-        _write_generated_indexes(git_root, read_generated_indexes(git_root) + paths)
-
-
-def settle_generated_indexes(git_root: Path, done: list[str]) -> None:
-    """Remove successfully regenerated paths from the pending set."""
-    _write_generated_indexes(
-        git_root, [p for p in read_generated_indexes(git_root) if p not in done]
-    )
+def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> str:
+    target = git_root / conflict_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(target, os.fsencode(content))
+    return conflict_rel

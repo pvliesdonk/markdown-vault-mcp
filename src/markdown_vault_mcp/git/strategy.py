@@ -223,8 +223,9 @@ class GitWriteStrategy:
         self._worktree_wanted = False
         self._worktree_checked = False
         self._worktree_retry_at: float | None = None
-        # ONE strategy-wide lock, shared with both collaborators below.
         self._generated_index_policy: Callable[[Path], bool] | None = None
+        self._pending_generated: set[Path] = set()
+        # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
             lock=self._lock,
@@ -1153,30 +1154,17 @@ class GitWriteStrategy:
         """Set the vault's authority check for conflict recovery."""
         self._generated_index_policy = is_generated
 
-    def pending_generated_indexes(self, repo_path: Path) -> tuple[list[Path], bytes]:
-        """Return pending paths and the marker revision read under the lock."""
-        root = self._bootstrap.ensure_git_root(repo_path)
-        if root is None:
-            return [], b""
+    def take_generated_indexes(self) -> list[Path]:
+        """Take paths awaiting regeneration under the strategy lock."""
         with self._lock:
-            paths = conflict.read_generated_indexes(root)
-            marker = conflict._pending_file(root)
-            return [
-                root / p for p in paths
-            ], marker.read_bytes() if marker.exists() else b""
+            paths = list(self._pending_generated)
+            self._pending_generated.clear()
+            return paths
 
-    def settle_generated_indexes(
-        self, repo_path: Path, done: list[Path], snapshot: bytes
-    ) -> None:
-        """Settle regenerated paths if the marker has not changed."""
-        root = self._bootstrap.ensure_git_root(repo_path)
-        if root is not None:
-            with self._lock:
-                marker = conflict._pending_file(root)
-                if marker.exists() and marker.read_bytes() == snapshot:
-                    conflict.settle_generated_indexes(
-                        root, [p.relative_to(root).as_posix() for p in done]
-                    )
+    def retry_generated_indexes(self, paths: list[Path]) -> None:
+        """Return failed regeneration paths to the pending set."""
+        with self._lock:
+            self._pending_generated.update(paths)
 
     def _finish_conflicts(
         self, recovery: _ConflictRecovery
@@ -1211,14 +1199,7 @@ class GitWriteStrategy:
                 git_root, env, authored, ref, token=self._token
             )
         else:
-            try:
-                conflict.record_generated_indexes(git_root, [p for p, _ in generated])
-            except (OSError, ValueError):
-                logger.warning(
-                    "git_pending_indexes_record_failed action=keep_siblings",
-                    exc_info=True,
-                )
-                authored.extend(generated)
+            self._pending_generated.update(git_root / p for p, _ in generated)
         if not authored:
             if not rebase_in_progress and self.head_sha(git_root) != from_sha:
                 return self._build_pull_result_advanced(

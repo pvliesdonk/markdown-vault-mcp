@@ -6,33 +6,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.git import GitWriteStrategy, conflict
-from tests.fixtures.conflict_recovery import _setup_multiple_conflicts, recovery_vault
+from markdown_vault_mcp.git import GitWriteStrategy
+from tests.fixtures.conflict_recovery import recovery_vault
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from tests.fixtures.git import GitRepoPair
-
-
-def test_marker_write_failure_preserves_all_local_conflicts(
-    git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root, _index, _concept = _setup_multiple_conflicts(git_repo_pair)
-    strategy, vault = recovery_vault(root, build=True)
-
-    def fail(*_args: object, **_kwargs: object) -> None:
-        raise OSError("disk full")
-
-    try:
-        monkeypatch.setattr(conflict, "_write_generated_indexes", fail)
-        result = strategy.force_pull()
-        assert result.reason == "conflicts_resolved_with_siblings"
-        assert list(root.glob("concept.conflict-mcp-*.md"))
-        assert list(root.glob("index.conflict-mcp-*.md"))
-    finally:
-        vault.close()
-        strategy.close()
 
 
 @pytest.mark.parametrize("name", ["index.md", "concept.md"])
@@ -80,92 +60,52 @@ def test_non_utf8_conflict_retains_local_bytes(
         strategy.close()
 
 
-def test_pending_marker_git_directory_with_trailing_space(git_repo: Path) -> None:
-    gitdir = git_repo.parent / "git metadata "
-    (git_repo / ".git").rename(gitdir)
-    (git_repo / ".git").write_text(f"gitdir: {gitdir}\n")
-    conflict.record_generated_indexes(git_repo, ["index.md"])
-    assert (gitdir / "markdown-vault-pending-indexes.json").exists()
+def test_deleted_pending_index_is_not_recreated_or_retried(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    root = git_repo_pair.local_path
+    index = root / "index.md"
+    index.write_text("---\nokf_version: 1\n---\n")
+    strategy, vault = recovery_vault(root, build=True)
+    try:
+        strategy.retry_generated_indexes([index])
+        index.unlink()
+        vault.reconcile_index_with_head(source="git_sync")
+        assert not index.exists()
+        assert strategy.take_generated_indexes() == []
+    finally:
+        vault.close()
+        strategy.close()
 
 
-@pytest.mark.parametrize(
-    "damaged",
-    [
-        '["index.md",',
-        '{"version":1,"paths":["../outside/index.md"]}',
-        '{"version":99,"paths":["index.md"]}',
-    ],
-)
-def test_invalid_marker_is_never_replaced(git_repo: Path, damaged: str) -> None:
-    marker = git_repo / ".git/markdown-vault-pending-indexes.json"
-    marker.write_text(damaged)
-    with pytest.raises(ValueError):
-        conflict.record_generated_indexes(git_repo, ["index.md"])
-    assert marker.read_text() == damaged
-
-
-def test_disabled_policy_retains_pending_without_rewriting_authored_index(
+def test_no_longer_designated_index_is_not_refreshed(
     git_repo_pair: GitRepoPair,
 ) -> None:
     root = git_repo_pair.local_path
     index = root / "index.md"
     index.write_text("authored\n")
-    conflict.record_generated_indexes(root, ["index.md"])
-    strategy, vault = recovery_vault(root, authority="disabled", build=True)
+    strategy, vault = recovery_vault(root, authority="outside", build=True)
     try:
-        assert vault.reconcile_index_with_head(source="git_sync") in (
-            "current",
-            "reindexed",
-        )
+        assert vault._okf_convention is not None
+        assert vault._okf_convention.refresh_generated([index]) == []
         assert index.read_text() == "authored\n"
-        assert conflict.read_generated_indexes(root) == ["index.md"]
     finally:
         vault.close()
         strategy.close()
 
 
-def test_new_conflict_for_same_path_cannot_be_settled_by_old_snapshot(
-    git_repo_pair: GitRepoPair,
-) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Event
-
-    root = git_repo_pair.local_path
+def test_new_conflict_for_same_path_survives_old_recovery(git_repo: Path) -> None:
     strategy = GitWriteStrategy(
-        enable_pull=True, enable_push=False, repo_path=root, git_lfs=False
+        enable_pull=True, enable_push=False, repo_path=git_repo, git_lfs=False
     )
-    read = Event()
-    recorded = Event()
-
-    def recover() -> None:
-        paths, snapshot = strategy.pending_generated_indexes(root)
-        read.set()
-        assert recorded.wait(5)
-        strategy.settle_generated_indexes(root, paths, snapshot)
-
+    index = git_repo / "index.md"
     try:
-        conflict.record_generated_indexes(root, ["README.md"])
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(recover)
-            assert read.wait(5)
-            conflict.record_generated_indexes(root, ["README.md"])
-            recorded.set()
-            future.result(timeout=5)
-        assert conflict.read_generated_indexes(root) == ["README.md"]
+        strategy.retry_generated_indexes([index])
+        old_work = strategy.take_generated_indexes()
+        assert old_work == [index]
+        strategy.retry_generated_indexes([index])
+        # Successful old work has no failed paths to retry.
+        strategy.retry_generated_indexes([])
+        assert strategy.take_generated_indexes() == [index]
     finally:
-        strategy.close()
-
-
-def test_invalid_marker_logs_on_reconcile(
-    git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
-) -> None:
-    root = git_repo_pair.local_path
-    strategy, vault = recovery_vault(root, build=True)
-    marker = root / ".git/markdown-vault-pending-indexes.json"
-    marker.write_text('{"version": 99, "paths": ["index.md"]}')
-    try:
-        vault.reconcile_index_with_head(source="git_sync")
-        assert "git_pending_index_regeneration_failed" in caplog.text
-    finally:
-        vault.close()
         strategy.close()

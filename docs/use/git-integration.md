@@ -412,10 +412,15 @@ commits) reports `would_apply=false`. The push leg has no safe local
     sibling without adding `conflict_with` or `conflict_date` to either copy.
     A designated generated index instead takes the upstream copy and is
     regenerated after the search index catches up. A generated-only conflict
-    reports `rebased` with no siblings. The pending regeneration survives a
-    restart and is retried if it fails. With no pull loop or webhook, the next
-    manual `git_sync` retries it. Preserved siblings appear in search and
-    generated listings until manually reconciled and deleted. At the root, the upstream
+    reports `rebased` with no siblings. Regeneration failures are logged and
+    retried on each later reconcile; the pull result stays `rebased`. A restart
+    loses the pending retry; a later write into the folder or `okf_generate_index`
+    heals the listing. An aborted rebase keeps the local index and the next pull
+    retries. A regenerated index commit failure follows the ordinary write path.
+    Preserved siblings appear in search and generated listings until manually
+    reconciled and deleted. They can also produce `missing_type` validation findings;
+    a root index sibling carrying `okf_version` can produce `misplaced_okf_version`.
+    At the root, the upstream
     `okf_version` wins, so a local-only change to it is not preserved.
 
     The LLM (or a downstream agent) is expected to read the listed

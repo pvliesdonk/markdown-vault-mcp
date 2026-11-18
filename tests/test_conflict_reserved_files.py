@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.git import conflict
 from tests.fixtures.conflict_recovery import (
     _setup_generated_conflict,
     _setup_multiple_conflicts,
@@ -93,18 +92,16 @@ def _fail_generation(*_args: object, **_kwargs: object) -> None:
 
 
 @pytest.mark.parametrize(
-    ("subdir", "tick", "restart"),
+    ("subdir", "tick"),
     [
-        (False, False, False),
-        (True, False, False),
-        (False, True, False),
-        (True, True, False),
-        (False, False, True),
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
     ],
 )
 def test_generated_index_is_recovered_after_pull(
     git_repo_pair: GitRepoPair,
-    restart: bool,
     subdir: bool,
     tick: bool,
     monkeypatch: pytest.MonkeyPatch,
@@ -122,22 +119,14 @@ def test_generated_index_is_recovered_after_pull(
             assert result.reason == "rebased"
             assert not result.conflict_files
             assert result.to_sha != result.from_sha
-        marker = root / ".git" / "markdown-vault-pending-indexes.json"
-        assert marker.exists()
-        if restart:
-            vault.close()
-            strategy.close()
-            strategy, vault = recovery_vault(vault_root)
-            vault.index.build_index()
+        assert "local.md" not in index.read_text()
         with monkeypatch.context() as patch:
             patch.setattr(vault._okf_migrate, "generate_index", _fail_generation)
             assert vault.reconcile_index_with_head(source="git_sync") in (
                 "current",
                 "reindexed",
             )
-            assert marker.exists()
-        if subdir and not tick:
-            conflict.record_generated_indexes(root, ["elsewhere/index.md"])
+            assert "local.md" not in index.read_text()
         if tick:
             vault._reconcile_on_tick()
         else:
@@ -145,10 +134,6 @@ def test_generated_index_is_recovered_after_pull(
                 "current",
                 "reindexed",
             )
-        if subdir and not tick:
-            assert conflict.read_generated_indexes(root) == ["elsewhere/index.md"]
-        else:
-            assert not marker.exists()
         wait_for_writer_drain(vault)
         text = index.read_text()
         assert "local.md" in text and "remote.md" in text
@@ -161,6 +146,33 @@ def test_generated_index_is_recovered_after_pull(
         vault.writer.okf_generate_index()
         wait_for_writer_drain(vault)
         assert index.read_text() == text
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_generated_index_and_log_conflicts_with_write_logging(
+    git_repo_pair: GitRepoPair,
+) -> None:
+    from tests.conftest import wait_for_writer_drain
+
+    root, vault_root, index = _setup_generated_conflict(
+        git_repo_pair, False, with_log=True
+    )
+    strategy, vault = recovery_vault(vault_root, log="writes", build=True)
+    try:
+        result = strategy.force_pull()
+        assert result.reason == "conflicts_resolved_with_siblings"
+        assert len(result.conflict_files) == 1
+        assert (root / result.conflict_files[0]).read_text() == "local log\n"
+        assert (root / "log.md").read_text() == "remote log\n"
+        vault.reconcile_index_with_head(source="git_sync")
+        wait_for_writer_drain(vault)
+        assert vault._write_callback.drain(timeout=5)
+        assert "local.md" in index.read_text() and "remote.md" in index.read_text()
+        assert (root / "log.md").read_text() == "remote log\n"
+        assert not list(root.glob("index.conflict-mcp-*.md"))
+        assert _run_git(root, "status", "--porcelain") == ""
     finally:
         vault.close()
         strategy.close()

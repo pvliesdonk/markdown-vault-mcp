@@ -7041,14 +7041,16 @@ the vault is a subdirectory. Returned `conflict_files` and `conflict_with`
 metadata use repository-relative paths; vault tools take vault-relative paths.
 Reserved index and log conflicts never receive conflict metadata: authored
 indexes and logs keep a verbatim local sibling. Designated generated indexes
-instead take upstream during a completed rebase and are recorded under the Git
-directory for regeneration after the search index reconciles. Failed or
-interrupted regeneration is retried on a later reconcile, including after a
-restart. The versioned marker refuses invalid or unsupported formats and a
-revision prevents an older reconcile from settling a newly recorded conflict.
-A generated-only conflict returns `rebased` without siblings. The
-upstream root `okf_version` wins; a local-only change to it is not carried
-forward. If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
+take upstream during a completed rebase and regenerate after the next search
+index reconcile. Failed regeneration is logged and retried on every later
+reconcile; the pull result remains `rebased`. The in-memory pending record is
+lost on restart; the next write into the folder or `okf_generate_index` heals
+the listing. An aborted rebase keeps the local index and the next pull retries.
+A regenerated index's commit failure follows the ordinary write path. Reserved
+siblings stay indexed concepts until reconciled by hand. A generated-only
+conflict returns `rebased` without siblings. The upstream root `okf_version`
+wins; a local-only change to it is not carried forward.
+If discovery fails, Git reports the original configured path error. `sync_once` adapts the result to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
 so a remoteless checkout skips quietly at INFO level, and maps
 `FileNotFoundError` / `CalledProcessError` to the loop's log-and-return-False
