@@ -434,6 +434,7 @@ class Vault:
             settings.okf_capabilities
             or ContentConfig(okf_write=settings.okf_write).okf_capabilities
         )
+        self._okf_write_alias = settings.okf_write
         self._okf = OkfDetector(self._source_dir, settings.okf_mode)
         configured_field_count = len(settings.indexed_frontmatter_fields or [])
         self._indexed_frontmatter_fields: list[str] = settings.effective_indexed_fields(
