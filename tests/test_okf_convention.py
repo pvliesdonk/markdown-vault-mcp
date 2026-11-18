@@ -396,7 +396,9 @@ class TestConventionMaintenanceIntegration:
         enforced_vault.writer.write("guides/note.md", "# N\n")
         wait_for_writer_drain(enforced_vault)
         log_before = _content(enforced_vault, "guides/log.md")
-        enforced_vault.writer.write("guides/index.md", "# Manual index\n")
+        enforced_vault.writer.write(
+            "guides/index.md", "# Manual index\n", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         # log.md unchanged by the reserved-file write.
         assert _content(enforced_vault, "guides/log.md") == log_before
@@ -564,7 +566,7 @@ class TestIndexRefreshOnStructuralChanges:
         monkeypatch.setattr(maintainer, "subtree_folders", walk)
         monkeypatch.setattr(maintainer, "refresh_indexes", refresh)
 
-        enforced_vault.writer.move_folder("guides/sub", "b")
+        enforced_vault.writer.move_folder("guides/sub", "b", allow_protected=True)
 
         walk.assert_called_once_with("b")
         refresh.assert_called_once_with(
@@ -602,7 +604,9 @@ class TestIndexRefreshOnStructuralChanges:
         enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
         enforced_vault.writer.write("guides/top.md", "# Top\n\nt\n")
         enforced_vault.writer.write("archive/old.md", "# Old\n\no\n")
-        enforced_vault.writer.move_folder("guides/sub", "archive/sub")
+        enforced_vault.writer.move_folder(
+            "guides/sub", "archive/sub", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         moved = _content(enforced_vault, "archive/sub/index.md") or ""
         assert "/archive/sub/a.md" in moved
@@ -754,7 +758,7 @@ class TestIndexRefreshEdgeCases:
         )
         vault.index.build_index()
         try:
-            vault.writer.move_folder("index.md/", "log.md/")
+            vault.writer.move_folder("index.md/", "log.md/", allow_protected=True)
             wait_for_writer_drain(vault)
             assert (root / "log.md/note.md").is_file()
             assert "Unique hand-written content." in (
@@ -768,7 +772,9 @@ class TestIndexRefreshEdgeCases:
     ) -> None:
         """No regeneration may overwrite the file the rename just placed."""
         enforced_vault.writer.write("guides/a.md", "# A\n\nbody A precious\n")
-        enforced_vault.writer.rename("guides/a.md", "newf/index.md")
+        enforced_vault.writer.rename(
+            "guides/a.md", "newf/index.md", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         assert "body A precious" in (_content(enforced_vault, "newf/index.md") or "")
 
@@ -787,7 +793,9 @@ class TestIndexRefreshEdgeCases:
     ) -> None:
         """A reserved-file change never triggers its own regeneration (#1414)."""
         enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
-        enforced_vault.writer.rename("guides/index.md", "guides/was-index.md")
+        enforced_vault.writer.rename(
+            "guides/index.md", "guides/was-index.md", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         assert _content(enforced_vault, "guides/index.md") is None
 
@@ -805,7 +813,7 @@ class TestIndexRefreshEdgeCases:
         self, enforced_vault: Vault
     ) -> None:
         enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
-        enforced_vault.writer.move_folder("guides/sub", "top/sub")
+        enforced_vault.writer.move_folder("guides/sub", "top/sub", allow_protected=True)
         wait_for_writer_drain(enforced_vault)
         assert "(/top/index.md)" in (_content(enforced_vault, "index.md") or "")
         top = _content(enforced_vault, "top/index.md") or ""

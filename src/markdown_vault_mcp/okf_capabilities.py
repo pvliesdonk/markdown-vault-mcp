@@ -1,10 +1,14 @@
 """Resolve OKF capabilities and filesystem-aware index designation."""
 
 import os
+import re
+import sys
 import tempfile
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
+from functools import lru_cache, partial
 from pathlib import Path
-from unicodedata import normalize
+from unicodedata import combining, normalize
 
 
 class DefaultVerify(str):
@@ -26,11 +30,71 @@ class OkfCapabilities:
     legacy_stamping: bool
 
 
-def _fold(value: str, case: bool, unicode: bool) -> str:
-    """Apply only the name transformations the filesystem aliases."""
+@lru_cache(maxsize=2)
+def _witnesses(unicode: bool) -> dict[str, tuple[str, ...]]:
+    """Index inverse single-character transformations for one measured axis."""
+    result: dict[str, list[str]] = {}
+    for cp in range(sys.maxunicode + 1):
+        char = chr(cp)
+        key = normalize("NFD", char) if unicode else char.casefold()
+        if key != char:
+            result.setdefault(key, []).append(char)
+    return {key: tuple(value) for key, value in result.items()}
+
+
+@lru_cache(maxsize=1)
+def _longest_decomposition() -> int:
+    return max(map(len, _witnesses(True)), default=1)
+
+
+def _ordered_tokens(pattern: str, unicode: bool) -> list[str]:
+    tokens = re.findall(r"\[!?\]?[^\]]*\]|.", pattern, re.S)
     if unicode:
-        value = normalize("NFC", value)
-    return value.casefold() if case else value
+        start = 0
+        while start < len(tokens):
+            end = start
+            while (
+                end < len(tokens) and len(tokens[end]) == 1 and combining(tokens[end])
+            ):
+                end += 1
+            if end > start:
+                tokens[start:end] = sorted(tokens[start:end], key=combining)
+            start = max(start + 1, end)
+    return tokens
+
+
+def _equivalent(name: str, pattern: str, case: bool, unicode: bool) -> bool:
+    """Match an original glob against measured equivalent segment spellings."""
+    tokens = _ordered_tokens(pattern, unicode)
+    base = normalize("NFD", name) if unicode else name
+    decompositions = _witnesses(True) if unicode else {}
+    cases = _witnesses(False) if case else {}
+    longest = _longest_decomposition() if unicode else 1
+    states: list[set[int]] = [set() for _ in range(len(base) + 1)]
+    states[0].add(0)
+    for offset, positions in enumerate(states):
+        for pos in range(len(tokens)):
+            if pos in positions and tokens[pos] == "*":
+                positions.add(pos + 1)
+        for length in range(1, min(longest, len(base) - offset) + 1):
+            unit = base[offset : offset + length]
+            originals = (
+                *((unit,) if length == 1 else ()),
+                *decompositions.get(unit, ()),
+            )
+            for original in originals:
+                folded = original.casefold()
+                variants = (original, *cases.get(folded, ())) if case else (original,)
+                if case and len(folded) == 1:
+                    variants += (folded,)
+                for pos in positions:
+                    if pos < len(tokens) and any(
+                        fnmatchcase(v, tokens[pos]) for v in variants
+                    ):
+                        states[offset + length].add(
+                            pos if tokens[pos] == "*" else pos + 1
+                        )
+    return len(tokens) in states[-1]
 
 
 def _probe(anchor: Path) -> tuple[bool, bool]:
@@ -65,28 +129,23 @@ def designated_index_path(root: Path, path: str, folders: tuple[str, ...]) -> bo
     note = Path(path)
     if not path or note.is_absolute() or ".." in note.parts:
         return False
-    folder = "" if note.parent == Path() else note.parent.as_posix()
-
-    def hit(case: bool, unicode: bool) -> bool:
-        return _fold(note.name, case, unicode) == "index.md" and folder_is_designated(
-            _fold(folder, case, unicode),
-            tuple(_fold(p, case, unicode) for p in folders),
-        )
-
-    if not hit(True, True) or (root / note).is_dir():
+    if normalize("NFC", note.name).casefold() != "index.md" or (root / note).is_dir():
         return False
     resolved_root = root.resolve()
     parent = (root / note.parent).resolve()
     if not parent.is_relative_to(resolved_root):
         return False
-    folder = parent.relative_to(resolved_root).as_posix()
-    if folder == ".":
-        folder = ""
-    if not hit(True, True):
-        return False
-    if hit(False, False):
+    resolved = parent.relative_to(resolved_root).as_posix()
+    if resolved == ".":
+        resolved = ""
+    if note.name == "index.md" and folder_is_designated(resolved, folders):
         return True
     anchor = root / note.parent
     while not anchor.is_dir() and anchor != root:
         anchor = anchor.parent
-    return hit(*_probe(anchor))
+    case, unicode = _probe(anchor)
+    return _equivalent(note.name, "index.md", case, unicode) and folder_is_designated(
+        resolved,
+        folders,
+        segment_match=partial(_equivalent, case=case, unicode=unicode),
+    )

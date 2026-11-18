@@ -566,7 +566,9 @@ def test_reserved_file_symlink_write_does_not_trigger_maintenance(
     try:
         vault.index.build_index()
         vault.writer.write(
-            "team/alias.md", "# Manual reserved content\n", allow_protected=True
+            "team/alias.md",
+            "# Manual reserved content\n",
+            allow_protected=reserved == "index.md",
         )
         wait_for_writer_drain(vault)
         assert (folder / reserved).read_text() == "# Manual reserved content\n"
@@ -637,13 +639,11 @@ def test_reserved_spelling_symlink_to_concept_preserves_primary_write(
         vault.index.build_index()
         path = f"team/{reserved}"
         if operation == "write":
-            vault.writer.write(path, "# User content\n", allow_protected=True)
+            vault.writer.write(path, "# User content\n")
         elif operation == "edit":
-            vault.writer.edit(
-                path, old_text="Before", new_text="Edited", allow_protected=True
-            )
+            vault.writer.edit(path, old_text="Before", new_text="Edited")
         else:
-            vault.writer.append(path, "More\n", allow_protected=True)
+            vault.writer.append(path, "More\n")
         wait_for_writer_drain(vault)
         assert (
             note.read_text()
