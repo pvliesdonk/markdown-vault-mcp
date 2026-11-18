@@ -662,7 +662,8 @@ class IndexManager:
             )
         return result
 
-    def build_index(
+    # Existing build phases share scan state and error publication.
+    def build_index(  # noqa: C901, PLR0912, PLR0915, RUF100
         self, *, force: bool = False, before_search: Callable[[], None] | None = None
     ) -> IndexStats:
         """Scan source_dir and build the FTS index.

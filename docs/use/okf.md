@@ -261,8 +261,11 @@ including evidence of removals during downtime. Back up persistent state to
 retain its history. If a ledger is missing or corrupt, the next sweep starts a
 new history from the files it can read. A newer schema is refused rather than
 overwritten. A ledger refusal or I/O failure fails the build or reindex before
-search is updated; repair the ledger or its storage and retry. An already-warm
-index remains queryable.
+search is updated; repair the ledger or its storage and retry. A failed build
+leaves the on-disk completion marker intact if the ledger sweep failed; after
+repair, a restart can reuse the index. An unforced warm build that fails its
+sweep leaves an already-warm index queryable in the current process. A forced
+rebuild may make it unavailable in that process.
 
 The ledger compares states; it does not record an event for each edit, identify
 an author, or change frontmatter or `log.md`. It hashes the full file and,
@@ -272,7 +275,17 @@ digest; invalid bytes in the body do not affect a valid header's digest. Reads
 use bounded chunks. Ordinary notes use bounded memory, while a candidate header,
 including an unterminated one, can use memory proportional to its length. The
 version 1 ledger preserves digest meanings across parser upgrades; changing them
-requires a new version and migration. It observes external edits
-at build, reindex, or post-pull reindex. A warm build also sweeps. The watcher
-triggers reindex in its watched folders; excluded top-level folders wait for the
-next sweep until watcher scope is expanded.
+requires a new version and migration.
+
+A build, reindex or successful pull observes external edits, even when the Git
+HEAD does not change. The server reconciles after interactive pulls and webhooks,
+as well as on periodic pull ticks. A webhook can sweep twice.
+
+Each pull tick reads the full observation scope, normally every 600 seconds.
+Periodic pulls disable the file watcher. When the watcher runs, excluded
+top-level folders wait for the next sweep until its scope is expanded. A readable empty root records previously observed files as removed,
+even if search refuses to prune its own rows for an empty root.
+
+The library's `Vault.force_pull()` sweeps after Git succeeds but does not
+reconcile search. If the sweep fails, Git may already have changed the working
+tree; the error propagates. A webhook reports failure so the delivery can be retried.

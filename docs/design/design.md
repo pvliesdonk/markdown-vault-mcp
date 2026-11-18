@@ -836,7 +836,7 @@ document's rows are replaced or removed as a unit.
 Two methods manage the index:
 
 - **`build_index(force=False)`**: initial population. Scans `source_dir` and
-  builds the FTS index. Short-circuits as a no-op when the persisted FTS
+  builds the FTS index. Reuses FTS and sweeps observations when the persisted
   database contains documents and carries the completeness sentinel
   written by a prior clean build (warm restart on the same `index_path`).
   A database with rows but no sentinel (residue of a process that
@@ -1072,8 +1072,8 @@ not index unavailability. Embeddings stay on the
 synchronous lifespan path in PR1: on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the
-operator runs CLI `index`. Warm starts continue to use PR #526's
-O(1) sentinel short-circuit and never spawn the background thread.
+operator runs CLI `index`. Warm starts reuse FTS through the sentinel check and
+queue an observation sweep on the writer.
 The library's `_require_built()` is unchanged from PR #525:
 it raises immediately on not-ready, which is what lets the git
 pull loop and lifespan's embeddings path handle "not ready"
@@ -1411,9 +1411,9 @@ soft deadline is promoted to a background job polled via
 **Boot reconciliation (#665).** The server lifespan conditionally submits
 `reindex_async()` immediately after `build_index_async()` (gated by
 `MARKDOWN_VAULT_MCP_BOOT_REINDEX`, default `true`; see #1535). On a warm
-restart the build short-circuits in O(1) via the FTS sentinel and scans
-nothing, so the queued `ReindexAll` job is what picks up files added,
-modified, or deleted while no server was running (the file watcher only
+restart the build reuses FTS and sweeps observations; the queued `ReindexAll`
+job picks up search changes from files added, modified, or deleted while no
+server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
 cold boot the full build has just recorded tracker state (including
 skipped files), so the reindex degenerates to a hash scan with zero
@@ -7750,9 +7750,14 @@ The inventory boundary also supplies a descriptor-relative full sweep of readabl
 Markdown to an instance-local, versioned ledger beside the tracker. It stores
 path, role, content and frontmatter digests, first and last change observation
 times, presence, removal time and origin. Builds (including warm builds),
-reindexes and post-pull reindexes reconcile state. Unchanged rows remain stable;
+reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
+The server's pull tick and post-pull reconciliation also sweep on current or
+deferred search state; webhook delivery may sweep twice. A tick reads the full
+observation scope, normally every 600 seconds. The watcher is disabled when
+periodic pulls are active. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
-removal elsewhere. Inventory-denied symlinks are never followed, even when search
+removal elsewhere. A readable empty root records prior files as removed even
+when search refuses to prune its own rows. Inventory-denied symlinks are never followed, even when search
 admits them; an earlier row hidden by one remains unchanged. The content digest
 covers the full file. The frontmatter digest covers the parser-delimited block
 with surrounding whitespace trimmed; it is absent for missing, unterminated or
@@ -7763,6 +7768,10 @@ Version 1 preserves row meanings and digest vectors across parser upgrades; a
 change requires a version bump and a migration preserving trustworthy history
 and marking unknowns. A missing or corrupt ledger starts new history, while a
 newer schema is refused. A ledger refusal or I/O failure fails the build or
-reindex before search is touched until repaired; an already-warm index remains
-queryable. Sweep origin is unknown; observation does not write author metadata
-or log entries.
+reindex before search is touched; on a build the completion marker remains
+intact until observation succeeds. A repaired restart can reuse it. An unforced
+warm build retains in-process queryability after a sweep failure; a forced build
+may not. `Vault.force_pull()` sweeps after successful Git work without itself
+reconciling search. If the sweep fails, the Git side effect has already happened
+and the error propagates; a webhook returns a retryable failure. Sweep origin is
+unknown; observation does not write author metadata or log entries.

@@ -1055,7 +1055,8 @@ class Vault:
         building, a writer error, a pull reported as not applied although
         HEAD advanced) is retried by the next call instead of waiting for the
         next pull that moves HEAD.  Called by the pull loop on every tick, by
-        webhook deliveries and by the ``git_sync`` tool.
+        webhook deliveries and by the ``git_sync`` tool. A current or deferred
+        reconciliation also sweeps the observation ledger.
 
         Args:
             source: Which caller asked, for the log line.
@@ -1110,7 +1111,9 @@ class Vault:
         ``set_write_quiescer``) and drains the deferred-commit queue before the
         merge, so a write that landed just before the pull is committed first
         and the merge runs on a clean tree (#571). This facade therefore no
-        longer wraps ``pause_writes`` itself.
+        longer wraps ``pause_writes`` itself. A successful pull also sweeps
+        the observation ledger. If that sweep fails, Git has already completed;
+        the error propagates and search is not reconciled by this facade.
 
         Returns:
             :class:`~markdown_vault_mcp.git.PullResult` from the strategy, or
