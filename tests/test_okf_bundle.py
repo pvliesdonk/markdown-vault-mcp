@@ -82,6 +82,20 @@ def test_bundle_includes_notes_and_attachments(vault: Vault, config: ProjectConf
     assert result.notes == 5
 
 
+def test_whole_vault_keeps_inherited_wikilink_conversion(tmp_path):
+    body = "[[b]]\n\n```\n[[b]]\n```\n"
+    (tmp_path / "a.md").write_text(body)
+    (tmp_path / "b.md").write_text("# B\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("a.md") == b"[b](/b.md)\n\n```\n[b](/b.md)\n```\n"
+    finally:
+        vault.close()
+
+
 def test_bundle_rewrites_resolvable_wikilinks(vault: Vault, config: ProjectConfig):
     zf = zipfile.ZipFile(io.BytesIO(build_okf_bundle(vault, config, folder="").data))
     body = zf.read("a.md").decode("utf-8")

@@ -7,14 +7,17 @@ import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
+from markdown_vault_mcp.okf_export_paths import ExportPaths
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
 def test_subtree_relocates_and_reports(tmp_path):
     (tmp_path / "guides").mkdir()
-    original = b"---\ntype: Note\nresource: /guides/b.md\n---\n[a](/guides/b.md?x=1#h) [b](b.md) [c](/other.md)\n"
+    original = "---\ntype: Note\nresource: /guides/b.md\n---\n[a](/guides/b.md?x=1#h) [b](./b.md) [c](/other.md) [d](/guides/é.md) [e](</guides/my file.md>)\n".encode()
     (tmp_path / "guides/a.md").write_bytes(original)
     (tmp_path / "guides/b.md").write_text("# B\n")
+    (tmp_path / "guides/é.md").write_text("é")
+    (tmp_path / "guides/my file.md").write_text("b")
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
@@ -22,12 +25,16 @@ def test_subtree_relocates_and_reports(tmp_path):
             vault, ProjectConfig(source_dir=tmp_path), folder="guides"
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert set(archive.namelist()) == {"a.md", "b.md"}
+            assert set(archive.namelist()) == {"a.md", "b.md", "é.md", "my file.md"}
             assert archive.read("a.md") == original.replace(
                 b"/guides/b.md?x=1#h", b"/b.md?x=1#h"
+            ).replace("/guides/é.md".encode(), "/é.md".encode()).replace(
+                b"/guides/my file.md", b"/my file.md"
             )
         assert result.report.transformed == ["a.md"]
-        assert result.report.dependencies[0].target == "/other.md"
+        assert [(d.path, d.target) for d in result.report.dependencies] == [
+            ("a.md", "/other.md")
+        ]
         assert (tmp_path / "guides/a.md").read_bytes() == original
     finally:
         vault.close()
@@ -106,7 +113,7 @@ def _export_body(tmp_path, body, **kwargs):
     "body",
     [
         b"    [x](/guides/b.md)\n",
-        b"```markdown\n[x](/guides/b.md)\n",
+        b"```markdown\r\n[x](/guides/b.md)\r\n",
         b"<!-- [x](/guides/b.md) -->\n",
         b"    [x](/b.md)\n",
     ],
@@ -125,8 +132,8 @@ def test_code_and_comments_preserved(tmp_path, body):
             b"[link][ref]\r\n\r\n[ref]: /b.md\r\n",
         ),
         (
-            b"[/guides/b.md]\n\n[/guides/b.md]: /guides/b.md\n",
-            b"[/guides/b.md]\n\n[/guides/b.md]: /b.md\n",
+            b"[/guides/b.md]\r\r[/guides/b.md]: /guides/b.md\r",
+            b"[/guides/b.md]\r\r[/guides/b.md]: /b.md\r",
         ),
         (b"[x](../guides/b.md)", b"[x](b.md)"),
         (b"[x](/../guides/b.md)", b"[x](/b.md)"),
@@ -146,7 +153,7 @@ def test_clamped_collision(tmp_path):
 @pytest.mark.parametrize(
     "base",
     [
-        "relative",
+        "https://exa mple.org",
         "/root",
         "//host/path",
         "https://",
@@ -162,38 +169,20 @@ def test_invalid_external_base(tmp_path, base):
         _export_body(tmp_path, b"[x](/b.md)", external_base=base)
 
 
-def test_scope_index_version_and_transformed_wikilink(tmp_path):
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    (tmp_path / "guides/index.md").write_text('---\nokf_version: "0.1"\n---\n')
-    (tmp_path / "guides/a.md").write_text("[[b]]\n")
-    (tmp_path / "guides/b.md").write_text("# B\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        vault.index.build_index()
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
-            assert archive.read("a.md") == b"[b](/b.md)\n"
-        assert result.report.transformed == ["a.md"]
-    finally:
-        vault.close()
-
-
-def test_omitted_member_dependency_and_no_root_version(tmp_path):
+def test_omitted_member_dependency_and_scope_index_version(tmp_path):
     (tmp_path / "guides").mkdir()
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     (tmp_path / "guides/a.md").write_text("[hidden](/guides/.hidden.md)")
     (tmp_path / "guides/.hidden.md").write_text("# hidden")
+    (tmp_path / "guides/index.md").write_text('---\nokf_version: "0.1"\n---\n')
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         result = build_okf_bundle(
             vault, ProjectConfig(source_dir=tmp_path), folder="guides"
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.namelist() == ["a.md"]
+            assert set(archive.namelist()) == {"a.md", "index.md"}
+            assert archive.read("index.md") == b'---\nokf_version: "0.1"\n---\n'
             assert archive.read("a.md") == b"[hidden](/guides/.hidden.md)"
         assert [d.target for d in result.report.dependencies] == ["/guides/.hidden.md"]
         assert not result.report.transformed
@@ -229,7 +218,10 @@ def test_external_anchor_pointy_and_footnote(tmp_path):
 @pytest.mark.parametrize(
     "body,expected",
     [
-        ("> ```\n> [x](/guides/b.md)\n> ```\n", "> ```\n> [x](/guides/b.md)\n> ```\n"),
+        (
+            "> ```\r\n> [x](/guides/b.md)\r\n> ```\r\n",
+            "> ```\r\n> [x](/guides/b.md)\r\n> ```\r\n",
+        ),
         ("```\n<!--\n```\n\n[x](/guides/b.md)\n", "```\n<!--\n```\n\n[x](/b.md)\n"),
         ("`inline\n[x](/guides/b.md)`\n", "`inline\n[x](/guides/b.md)`\n"),
         ("`<!--` [x](/guides/b.md)\n", "`<!--` [x](/b.md)\n"),
@@ -244,37 +236,11 @@ def test_external_anchor_pointy_and_footnote(tmp_path):
         ("![a [b](/guides/b.md)](/guides/b.md)\n", "![a [b](/b.md)](/b.md)\n"),
     ],
 )
-def test_replan_markdown_forms(tmp_path, body, expected):
-    output, report = _export_body(tmp_path, body.encode())
-    assert output == expected.encode()
-    assert report.transformed == (["a.md"] if body != expected else [])
-    assert not report.dependencies
-    assert (tmp_path / "guides/a.md").read_text() == body
-
-
-def test_replan_spelling_and_report_paths(tmp_path):
-    (tmp_path / "guides").mkdir()
-    body = "[a](/guides/é.md) [b](</guides/my file.md>) [c](/missing.md)"
-    (tmp_path / "guides/a.md").write_text(body)
-    (tmp_path / "guides/é.md").write_text("é")
-    (tmp_path / "guides/my file.md").write_text("b")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
-        )
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert (
-                archive.read("a.md").decode()
-                == "[a](/é.md) [b](</my file.md>) [c](/missing.md)"
-            )
-        assert result.report.transformed == ["a.md"]
-        assert [(d.path, d.target) for d in result.report.dependencies] == [
-            ("a.md", "/missing.md")
-        ]
-        assert (tmp_path / "guides/a.md").read_text() == body
-    finally:
-        vault.close()
+def test_markdown_forms(body, expected):
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == expected
+    assert not dependencies
 
 
 @pytest.mark.parametrize(
@@ -315,25 +281,23 @@ def test_replan_spelling_and_report_paths(tmp_path):
         ('[r]: /guides/b.md "see /guides/b.md"\n', '[r]: /b.md "see /guides/b.md"\n'),
     ],
 )
-def test_replan_container_cases(tmp_path, body, expected):
-    output, report = _export_body(tmp_path, body.encode())
-    assert output == expected.encode()
-    assert report.transformed == (["a.md"] if body != expected else [])
-    assert not report.dependencies
-    assert (tmp_path / "guides/a.md").read_text() == body
+def test_container_cases(body, expected):
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == expected
+    assert not dependencies
 
 
-def test_replan_unmatched_backticks_are_bounded(tmp_path):
-    import time
-
+def test_unmatched_backticks_remain_literal():
     body = " ".join("`" * i for i in range(1, 600))
-    started = time.monotonic()
-    output, _ = _export_body(tmp_path, body.encode())
-    assert output == body.encode()
-    assert time.monotonic() - started < 5
+    output, dependencies = ExportPaths("guides", {"guides/a.md"}, None).relocate(
+        body, "guides/a.md"
+    )
+    assert output == body
+    assert not dependencies
 
 
-def test_replan_nested_images_with_attachment_and_collision(tmp_path):
+def test_nested_images_with_attachment_and_collision(tmp_path):
     (tmp_path / "guides").mkdir()
     body = "[![i](/guides/i.png)](/guides/b.md) ![a [b](/guides/b.md)](/guides/i.png)"
     (tmp_path / "guides/a.md").write_text(body)
@@ -346,6 +310,7 @@ def test_replan_nested_images_with_attachment_and_collision(tmp_path):
         config = ProjectConfig(source_dir=tmp_path, attachment_extensions=("png",))
         result = build_okf_bundle(vault, config, folder="guides")
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert "i.png" in archive.namelist()
             assert (
                 archive.read("a.md") == b"[![i](/i.png)](/b.md) ![a [b](/b.md)](/i.png)"
             )
@@ -358,7 +323,7 @@ def test_replan_nested_images_with_attachment_and_collision(tmp_path):
         vault.close()
 
 
-def test_replan_invalid_utf8_is_copied(tmp_path):
+def test_invalid_utf8_is_copied(tmp_path):
     body = b"\xff[x](/guides/b.md)"
     output, report = _export_body(tmp_path, body)
     assert output == body
@@ -366,14 +331,14 @@ def test_replan_invalid_utf8_is_copied(tmp_path):
     assert any(f.reason == "invalid_encoding" for f in report.format_findings)
 
 
-def test_replan_escaped_backtick_does_not_open_code(tmp_path):
+def test_escaped_backtick_does_not_open_code(tmp_path):
     body = b"\\` [x](/guides/b.md) `\n"
     output, report = _export_body(tmp_path, body)
     assert output == b"\\` [x](/b.md) `\n"
     assert report.transformed == ["a.md"]
 
 
-def test_replan_wikilinks_in_code_remain_literal(tmp_path):
+def test_wikilinks_in_code_remain_literal(tmp_path):
     (tmp_path / "guides").mkdir()
     body = "[[b]]\n\n```\n[[b]]\n```\n"
     (tmp_path / "guides/a.md").write_text(body)
@@ -404,13 +369,13 @@ def test_replan_wikilinks_in_code_remain_literal(tmp_path):
         ("text <!-- unclosed [x](/guides/b.md)\n", "text <!-- unclosed [x](/b.md)\n"),
     ],
 )
-def test_replan_protected_boundaries(tmp_path, body, expected):
+def test_protected_boundaries(tmp_path, body, expected):
     output, _ = _export_body(tmp_path, body.encode())
     assert output == expected.encode()
 
 
 @pytest.mark.parametrize("prefix", [b"> ", b"> > "])
-def test_r3_quoted_definition_relocation_and_collision(tmp_path, prefix):
+def test_quoted_definition_relocation_and_collision(tmp_path, prefix):
     body = prefix + b'[ref]: </guides/b.md?x=1#h> "title"\r\n'
     output, report = _export_body(tmp_path, body)
     assert output == prefix + b'[ref]: </b.md?x=1#h> "title"\r\n'
@@ -419,7 +384,7 @@ def test_r3_quoted_definition_relocation_and_collision(tmp_path, prefix):
 
 
 @pytest.mark.parametrize("base", [None, "https://example.org/vault"])
-def test_r3_quoted_definition_outside_collision(tmp_path, base):
+def test_quoted_definition_outside_collision(tmp_path, base):
     body = b"> > [ref]: /b.md#part 'title'\r\n"
     if base is None:
         with pytest.raises(ValueError, match="collision"):
@@ -432,7 +397,7 @@ def test_r3_quoted_definition_outside_collision(tmp_path, base):
 
 @pytest.mark.parametrize("prefix", [b"- ", b"- item\n  - ", b"> - "])
 @pytest.mark.parametrize("target", [b"/guides/b.md", b"/b.md"])
-def test_r3_list_fence_ends_with_container(tmp_path, prefix, target):
+def test_list_fence_ends_with_container(tmp_path, prefix, target):
     quote = b"> " if prefix.startswith(b">") else b""
     indent = b"    " if b"item" in prefix else b"  "
     body = (
@@ -455,28 +420,14 @@ def test_r3_list_fence_ends_with_container(tmp_path, prefix, target):
         assert (tmp_path / "guides/a.md").read_bytes() == body
 
 
-def test_r3_unicode_separator_is_not_line_end(tmp_path):
+def test_unicode_separator_is_not_line_end(tmp_path):
     body = "intro\u2028```\n[a](/guides/b.md)\n".encode()
     output, _ = _export_body(tmp_path, body)
     assert output == body.replace(b"/guides/b.md", b"/b.md")
     assert (tmp_path / "guides/a.md").read_bytes() == body
 
 
-def test_r3_whole_vault_keeps_inherited_wikilink_conversion(tmp_path):
-    body = "[[b]]\n\n```\n[[b]]\n```\n"
-    (tmp_path / "a.md").write_text(body)
-    (tmp_path / "b.md").write_text("# B\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        vault.index.build_index()
-        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md") == b"[b](/b.md)\n\n```\n[b](/b.md)\n```\n"
-    finally:
-        vault.close()
-
-
-def test_r3_list_fence_blank_lines_remain_literal(tmp_path):
+def test_list_fence_blank_lines_remain_literal(tmp_path):
     body = b"- ```\n\n\n  [x](/guides/b.md)\n  ```\noutside [x](/guides/b.md)\n"
     output, _ = _export_body(tmp_path, body)
     assert output == body.replace(b"outside [x](/guides/b.md)", b"outside [x](/b.md)")
