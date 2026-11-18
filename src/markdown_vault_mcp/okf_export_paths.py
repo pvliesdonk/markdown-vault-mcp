@@ -11,8 +11,6 @@ from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import Dependency
 from markdown_vault_mcp.scanner import (
     _RE_LINE_QUOTE_PREFIX,
-    _RE_REF_DEF_OPEN,
-    _RE_REF_DEF_TAIL,
     _blank_spans,
     _closes_fence,
     _definition_destination_end,
@@ -28,7 +26,7 @@ from markdown_vault_mcp.utils.links import (
     _is_escaped,
     compute_new_raw_target,
     decode_markdown_destination,
-    find_bracket_span,
+    is_pointy_destination,
     iter_bracket_links,
     split_markdown_fragment,
 )
@@ -177,8 +175,6 @@ def _regions(masked: str) -> Iterator[tuple[int, str]]:
         start = masked.find(region, offset)
         while start > 0 and masked[start - 1] != "\n":
             start = masked.find(region, start + 1)
-        if start < 0:
-            raise RuntimeError("Paragraph region missing")
         yield start, region
         offset = start + len(region)
 
@@ -188,19 +184,12 @@ def _definition_spans(
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     spans = []
     definitions = []
-    for label, _tail, start, end in _iter_definition_matches(masked):
+    for label, tail, start, end in _iter_definition_matches(masked):
         if label.startswith("^"):
             continue
-        opener = _RE_REF_DEF_OPEN.match(masked, start)
-        if opener is None:
-            raise RuntimeError("Reference definition opener missing")
-        label_span = find_bracket_span(masked, opener.end() - 1)
-        if label_span is None:
-            raise RuntimeError("Reference definition label missing")
-        match = _RE_REF_DEF_TAIL.match(masked, label_span[1] + 2)
-        if match is None:
-            raise RuntimeError("Reference definition destination missing")
-        target_start = match.start(1)
+        # The yielded tail runs greedily to the end of the destination's line.
+        line_end = masked.find("\n", end)
+        target_start = (len(masked) if line_end < 0 else line_end) - len(tail)
         target_end = _definition_destination_end(masked, target_start)
         if target_end is not None:
             spans.append((target_start, target_end))
@@ -284,7 +273,6 @@ class ExportPaths:
     scope: str
     members: set[str]
     external_base: str | None
-    bundle_members: set[str] = field(init=False)
 
     def __post_init__(self) -> None:
         if self.external_base is not None:
@@ -305,9 +293,6 @@ class ExportPaths:
                 raise ValueError(
                     "external_base must be an absolute HTTP(S) URL without query or fragment"
                 )
-        self.bundle_members = (
-            {p[len(self.scope) + 1 :] for p in self.members} if self.scope else set()
-        )
 
     def _replacement(
         self, raw: str, source: str, dependencies: list[Dependency]
@@ -316,66 +301,49 @@ class ExportPaths:
         if not path or _is_external_target(path):
             return None
         target, _ = _resolve_link_path(path, source)
-        replacement: str | None
-        if target in self.members:
-            bundle_target = target[len(self.scope) + 1 :]
-            apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
-            if not path.startswith("/") and apparent == bundle_target:
-                return None
-            written = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
-            path_written = written[: len(written) - len(suffix)] if suffix else written
-            pointy = raw.startswith("<") and raw.endswith(">")
-            raw_path = "<" + path_written + ">" if pointy else path_written
-            replacement = compute_new_raw_target(
-                "markdown",
-                raw_path,
-                None,
-                bundle_target,
-                source_path=source[len(self.scope) + 1 :],
-                old_path=target,
-            )
-            if pointy:
-                replacement = replacement[:-1] + suffix + ">"
-            else:
-                replacement += suffix
-        else:
-            dependencies.append(Dependency(source, raw))
-            replacement = self._outside(target, source, raw)
-        if (
-            target not in self.members
-            and replacement is not None
-            and raw.startswith("<")
-            and raw.endswith(">")
-        ):
-            return "<" + replacement + ">"
-        return replacement
+        archive_source = source[len(self.scope) + 1 :]
+        if target not in self.members:
+            dependencies.append(Dependency(archive_source, raw))
+            return self._outside(target, source, raw)
+        bundle_target = target[len(self.scope) + 1 :]
+        apparent, _ = _resolve_link_path(path, archive_source)
+        if not path.startswith("/") and apparent == bundle_target:
+            return None
+        pointy = is_pointy_destination(raw)
+        head = raw[: len(raw) - len(suffix) - int(pointy)]
+        replacement = compute_new_raw_target(
+            "markdown",
+            head + ">" if pointy else head,
+            None,
+            bundle_target,
+            source_path=archive_source,
+            old_path=target,
+        )
+        return replacement[:-1] + suffix + ">" if pointy else replacement + suffix
 
     def _outside(self, target: str, source: str, raw: str) -> str | None:
         path, suffix = _path_and_suffix(raw)
         if self.external_base:
-            return (
+            url = (
                 self.external_base.rstrip("/")
                 + "/"
                 + quote(target.lstrip("/"), safe="/")
                 + suffix
             )
-        bundle_source = source[len(self.scope) + 1 :]
-        apparent, _ = _resolve_link_path(path, bundle_source)
-        if apparent in self.bundle_members:
+            return f"<{url}>" if is_pointy_destination(raw) else url
+        apparent, _ = _resolve_link_path(path, source[len(self.scope) + 1 :])
+        if f"{self.scope}/{apparent}" in self.members:
             raise ValueError(
                 f"Export collision in {source}: {raw}; supply external_base to resolve outside destinations"
             )
         return None
 
-    def relocate(
-        self, body: str, source: str, archive_path: str
-    ) -> tuple[str, list[Dependency]]:
+    def relocate(self, body: str, source: str) -> tuple[str, list[Dependency]]:
         """Relocate body destinations and report outside dependencies.
 
         Args:
             body: Markdown body without frontmatter.
             source: Vault-relative source path.
-            archive_path: Source path in the exported archive.
 
         Returns:
             Rewritten body and outside dependencies.
@@ -393,4 +361,4 @@ class ExportPaths:
                 changes.append((start, end, replacement))
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
-        return body, [Dependency(archive_path, d.target) for d in dependencies]
+        return body, dependencies
