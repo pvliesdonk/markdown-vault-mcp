@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import asdict, replace
 from typing import Annotated, Any
 
@@ -11,9 +12,18 @@ from markdown_vault_mcp._cli_client import ClientError, ClientOptions, resolve_s
 from markdown_vault_mcp._cli_options import Agent, Local, Server, SourceDir, Timeout  # noqa: TC001 -- Typer resolves annotations at runtime
 from markdown_vault_mcp._cli_output import output_mode, render_reply, terminal_text
 from markdown_vault_mcp._cli_read import _build_reader_vault, run_read
-from markdown_vault_mcp.bundle_inventory import ParseState, SearchState, TypeState  # noqa: TC001 -- Typer resolves annotations at runtime
+from markdown_vault_mcp.bundle_inventory import (
+    BundleTreeRequest,
+    ParseState,
+    SearchState,
+    TypeState,
+)
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.exceptions import ConfigurationError, MarkdownMCPError
+from markdown_vault_mcp.exceptions import (
+    ConfigurationError,
+    IndexUnavailableError,
+    MarkdownMCPError,
+)
 
 
 def _local(arguments: dict[str, Any], source: str | None) -> dict[str, Any]:
@@ -25,9 +35,28 @@ def _local(arguments: dict[str, Any], source: str | None) -> dict[str, Any]:
         summarize_openai_api_key=None,
         summarize_openai_base_url=None,
     )
-    built = _build_reader_vault(config, source, True)
+    path = config.index_path
+    existing = path is not None and str(path) != ":memory:" and path.is_file()
+    if not existing:
+        config = replace(config, index_path=None)
+    built = _build_reader_vault(config, source, not existing)
     try:
-        return asdict(built.vault.reader.okf_inventory(**arguments))
+        if existing:
+            with suppress(IndexUnavailableError):
+                built.vault.index.use_existing_index()
+        request = BundleTreeRequest(
+            root=arguments["root"],
+            entry_limit=arguments["entry_limit"],
+            cursor=arguments["cursor"],
+        )
+        return asdict(
+            built.vault.reader.okf_inventory(
+                request,
+                type_state=arguments["type_state"],
+                parse_state=arguments["parse_state"],
+                search_state=arguments["search_state"],
+            )
+        )
     finally:
         built.close()
 
@@ -36,7 +65,7 @@ def register(app: typer.Typer) -> None:
     """Register the bundle inventory command."""
 
     @app.command("okf-inventory")
-    def okf_inventory(
+    def okf_inventory(  # noqa: PLR0913, RUF100 -- CLI exposes independent tool and connection options
         root: str = typer.Argument(
             ..., help="Vault-relative bundle root; empty for vault root."
         ),

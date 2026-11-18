@@ -114,34 +114,26 @@ class ReaderFacet:
 
     def okf_inventory(
         self,
-        root: str,
+        request: BundleTreeRequest,
         *,
         type_state: TypeState | None = None,
         parse_state: ParseState | None = None,
         search_state: SearchState | None = None,
-        entry_limit: int = 100,
-        cursor: str | None = None,
     ) -> BundleInspection:
         """Inspect one page of concept candidates without building an index.
 
         Args:
-            root: Vault-relative root; an empty string selects the vault.
+            request: Explicit root, page limit and optional continuation.
             type_state: Filter by observed type presence.
             parse_state: Filter by metadata parsing outcome.
             search_state: Filter by observed index admission.
-            entry_limit: Maximum observations visited in this page.
-            cursor: Continuation from the previous page.
 
         Returns:
             The bounded page with matching concepts and the original continuation.
         """
         from dataclasses import replace
 
-        from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-
-        page = self.inspect_bundle_tree(
-            BundleTreeRequest(root=root, entry_limit=entry_limit, cursor=cursor)
-        )
+        page = self.inspect_bundle_tree(request)
         return replace(
             page,
             entries=tuple(

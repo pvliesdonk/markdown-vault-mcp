@@ -14,7 +14,12 @@ from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
 from markdown_vault_mcp._tools._outcomes import library_outcomes
-from markdown_vault_mcp.bundle_inventory import ParseState, SearchState, TypeState
+from markdown_vault_mcp.bundle_inventory import (
+    BundleTreeRequest,
+    ParseState,
+    SearchState,
+    TypeState,
+)
 from markdown_vault_mcp.domain import get_vault
 from markdown_vault_mcp.vault import Vault
 
@@ -59,12 +64,10 @@ def register(mcp: FastMCP) -> None:
         try:
             result = await asyncio.to_thread(
                 vault.reader.okf_inventory,
-                root,
+                BundleTreeRequest(root=root, entry_limit=entry_limit, cursor=cursor),
                 type_state=type_state,
                 parse_state=parse_state,
                 search_state=search_state,
-                entry_limit=entry_limit,
-                cursor=cursor,
             )
         except ValueError:
             raise ToolError(
