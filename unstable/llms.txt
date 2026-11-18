@@ -94,7 +94,6 @@
 - [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/index.md): Set up a clone of Markdown Vault MCP to contribute, and learn where a fix belongs.
 - [Documentation structure](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/docs-structure/index.md): Where each piece of documentation belongs, and who owns it.
 - [Release process](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/release-process/index.md): How a release is cut, published and promoted.
-- [Template updates](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/template-updates/index.md): How to work through a template update pull request.
 - [Repository protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md): The branch and tag rules that decide what a release can ship from.
 - [Integration branches](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/integration-branches/index.md): How to run an epic on an integration branch and bring it to main in one pull request.
 

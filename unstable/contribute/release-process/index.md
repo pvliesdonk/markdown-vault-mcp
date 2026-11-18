@@ -77,10 +77,6 @@ Fixes flow from trunk to the branch: they land on `main` first and are cherry-pi
 
 Release branches carry shipped releases, so they get the same protection as `main`: pull requests plus green CI, applied by the shipped rulesets. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md).
 
-## Template updates
-
-Releases of this project and updates from its template are separate events; the weekly template update pull request is covered in [Working Through a Template Update](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/template-updates/index.md).
-
 ## Where to read about a release
 
 Each release is described in three places with distinct jobs:

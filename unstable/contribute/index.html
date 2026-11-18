@@ -2573,17 +2573,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#uvlock-after-a-template-update" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        uv.lock after a template update
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -2674,34 +2663,6 @@
     
   
     Release process
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="template-updates/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Template updates
   
 
     
@@ -2827,17 +2788,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#uvlock-after-a-template-update" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        uv.lock after a template update
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -2912,8 +2862,6 @@ uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span
 <div class="highlight"><pre><span></span><code>rm<span class="w"> </span>-rf<span class="w"> </span>.venv
 uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--all-groups
 </code></pre></div>
-<h3 id="uvlock-after-a-template-update"><code>uv.lock</code> after a template update<a class="headerlink" href="#uvlock-after-a-template-update" title="Permanent link">&para;</a></h3>
-<p>When a template update adds a dependency, the <code>uv sync --locked</code> step in CI fails against the stale lockfile. Run <code>uv lock</code> and commit the refreshed <code>uv.lock</code> with the update. CI never rewrites <code>uv.lock</code> in its own workspace, so lockfile drift shows as a red install step with a clear message.</p>
 <h2 id="after-scaffolding">After scaffolding<a class="headerlink" href="#after-scaffolding" title="Permanent link">&para;</a></h2>
 <p>Once, after <code>copier copy</code> and <code>gh repo create --push</code>:</p>
 <ol>
@@ -2935,7 +2883,7 @@ uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w
 <tbody>
 <tr>
 <td><code>RELEASE_TOKEN</code></td>
-<td><code>release-prepare.yml</code>, <code>release.yml</code>, <code>copier-update.yml</code>, <code>renovate.yml</code>, <code>bootstrap.yml</code></td>
+<td><code>release-prepare.yml</code>, <code>release.yml</code>, <code>renovate.yml</code>, <code>bootstrap.yml</code></td>
 <td>A fine-grained personal access token from <a href="https://github.com/settings/personal-access-tokens/new">https://github.com/settings/personal-access-tokens/new</a> with <code>contents: write</code>, <code>pull_requests: write</code> and <code>administration: write</code> (bootstrap applies the repository rulesets, auto-merge, the security settings and the About block). It must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the tag and GitHub release that knope creates after a release pull request merges rely on it. Scoped to this repository.</td>
 </tr>
 <tr>
@@ -2960,7 +2908,6 @@ gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</sp
 <ul>
 <li><a href="docs-structure/">Documentation structure</a>: where documentation goes and who owns it.</li>
 <li><a href="release-process/">Release process</a>: how a release is cut and what it publishes.</li>
-<li><a href="template-updates/">Template updates</a>: applying the weekly template update.</li>
 <li><a href="repository-protection/">Repository protection</a>: rulesets, required checks and bypass.</li>
 <li><a href="integration-branches/">Integration branches</a>: landing an epic as one merge.</li>
 </ul>

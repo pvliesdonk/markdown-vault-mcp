@@ -8,7 +8,7 @@ Reach for one when an epic spans many pull requests that must ship together, whi
 
 - `integration/*` branches are protected: child pull requests need a green `CI Success`, and force pushes are blocked. Checks a project adds through `extra_required_checks` are required only on the final pull request to `main`. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md).
 - `ci.yml`, `docs.yml`, `codeql.yml` and the automatic review run on pull requests that target an `integration/*` branch, and CI also runs on every push to one.
-- The local structural and template-conformance gates measure a child branch against the integration branch it was cut from, not against `main`.
+- The local structural gate measures a child branch against the integration branch it was cut from, not against `main`.
 - The release workflows ignore integration branches. Nothing is released from one, and merging a child pull request releases nothing.
 
 ## Running an epic on an integration branch
