@@ -2236,8 +2236,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2295,8 +2297,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2338,8 +2342,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
 
@@ -2382,8 +2388,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
@@ -2419,8 +2427,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
@@ -2517,8 +2527,10 @@ class TestGitPullLoop:
         monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
         monkeypatch.setattr(
             "markdown_vault_mcp.git.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(
-                returncode=0, stdout="", stderr=""
+            lambda *_args, **kwargs: SimpleNamespace(
+                returncode=0,
+                stdout="" if kwargs.get("text") or kwargs.get("encoding") else b"",
+                stderr="" if kwargs.get("text") or kwargs.get("encoding") else b"",
             ),
         )
         monkeypatch.setattr(strategy, "sync_once", lambda _p, **_: True)
