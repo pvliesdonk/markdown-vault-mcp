@@ -3804,6 +3804,13 @@ whose base64 default is widely accepted. This narrow request shape is why
 strict endpoints work: Voyage answers HTTP 400 to <code>dimensions</code>, to <code>user</code>,
 and to <code>encoding_format="float"</code>. An endpoint that requires a
 field outside <code>model</code> and <code>input</code> cannot be driven this way.</p>
+<p>From the response, the server reads each item's <code>embedding</code> and puts the
+items back in input order by their <code>index</code>. An item with no <code>index</code> counts as
+the first one: Gemini's compatibility endpoint,
+<code>https://generativelanguage.googleapis.com/v1beta/openai/</code>, leaves the field
+out of the first item of every batch. When two items claim the same
+position, the batch fails with an error instead of storing a vector against
+the wrong note.</p>
 <p>The one addition is vendor-specific and reached only through a named provider:
 <a href="#voyage-ai"><code>voyage</code></a> also sends <code>input_type</code>. Driving Voyage through this
 <code>openai</code> recipe instead sends no <code>input_type</code>, so it does not get the
