@@ -85,7 +85,8 @@ class _DrainMarker:
 class _ScopeEnd:
     """Queue sentinel closing one commit scope, flushing its buffered writes.
 
-    Enqueued by :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware`
+    Enqueued by
+    :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
     when a tool call returns. FIFO ordering guarantees every write that call
     fired precedes this marker, so no wait or handshake is needed.
     """
