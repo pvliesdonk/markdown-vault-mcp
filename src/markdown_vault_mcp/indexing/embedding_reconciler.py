@@ -432,7 +432,7 @@ class EmbeddingReconciler:
     def _remove_unbacked(self, state: _Pass, paths: list[str]) -> None:
         """Remove the vectors of *paths* whose absence is authoritative (#1785).
 
-        An exclusion removes without asking the source. A tombstone keeps:
+        An exclusion or vector-only skip removes without asking the source. A tombstone keeps:
         the note exists but does not parse, and once fixed its unchanged
         chunks are reused (#1505). Then the source probe decides: *absent*
         removes, *unavailable* keeps (one WARNING for the pass), *present* is

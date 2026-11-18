@@ -610,12 +610,16 @@ class Vault:
 
         def skip_generated_index(path: str) -> bool:
             parent, _, name = path.rpartition("/")
-            return (
+            if not (
                 capabilities.index
                 and name == "index.md"
-                and self._okf.state().active
                 and folder_is_designated(parent, capabilities.folders)
-            )
+            ):
+                return False
+            state = self._okf.state()
+            if state.probe_error:
+                raise OSError("OKF scope probe failed")
+            return state.active
 
         self._index_mgr = IndexManager(
             fts=self._fts,
