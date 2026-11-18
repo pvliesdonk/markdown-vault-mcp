@@ -2463,8 +2463,8 @@ def test_every_coverage_patch_poster_posts_under_all_outcomes(
 ) -> None:
     """Both posters of ``coverage/patch`` report something, always.
 
-    `extra_required_checks` lets a project make ``coverage/patch`` a required
-    context.  A required check that never reports does not turn a pull request
+    Listing ``coverage/patch`` in a ruleset's ``required_status_checks`` makes
+    it a required context.  A required check that never reports does not turn a pull request
     red — it leaves it waiting forever on a status that is not coming, and the
     only exits are an admin bypass or a ruleset edit.  So "post an ``error``"
     and "post nothing" are not equivalent failure modes, and the difference is
@@ -2535,6 +2535,6 @@ def test_server_json_description_fits_the_registry_cap() -> None:
     assert len(description) <= MCP_REGISTRY_DESCRIPTION_MAX, (
         f"server.json description is {len(description)} chars; the MCP registry "
         f"caps it at {MCP_REGISTRY_DESCRIPTION_MAX} and publish-registry — the "
-        f"last job of a release — would fail with 422 (#481). Shorten it here "
-        f"and in .copier-answers.yml (domain_description)."
+        f"last job of a release — would fail with 422 (#481). Shorten it here, "
+        f"in pyproject.toml, plugin.json and release.yml's PLUGIN_DESC."
     )
