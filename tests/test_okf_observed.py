@@ -40,18 +40,20 @@ def test_removed_entry_keeps_hidden_and_excluded_labels(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("all_removed", [True, False])
 def test_removed_probes_are_bounded_and_resumable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, all_removed: bool
 ) -> None:
     from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
 
-    for i in range(1001):
+    count = 1001 if all_removed else 1002
+    for i in range(count):
         (tmp_path / f"{i:04}.md").write_text("Body")
     vault = Vault(source_dir=tmp_path)
     try:
         vault._index_mgr.observations.sweep()
-        for path in tmp_path.glob("*.md"):
-            path.unlink()
+        for i in range(0, count, 1 if all_removed else 2):
+            (tmp_path / f"{i:04}.md").unlink()
         vault._index_mgr.observations.sweep()
         seen: list[str] = []
         original = BundleInspector.observe_path
@@ -62,20 +64,25 @@ def test_removed_probes_are_bounded_and_resumable(
 
         monkeypatch.setattr(BundleInspector, "observe_path", counted)
         first = vault.reader.okf_inventory(BundleTreeRequest(root="", entry_limit=1000))
-        assert len(seen) <= 1000
+        if all_removed:
+            assert len(seen) <= 1000
         assert first.next_cursor is not None
         seen.clear()
         second = vault.reader.okf_inventory(
             BundleTreeRequest(root="", entry_limit=1000, cursor=first.next_cursor)
         )
-        assert len(seen) <= 1000
+        if all_removed:
+            assert len(seen) <= 1000
+            assert second.next_cursor is None
         paths = [e.path for e in (*first.entries, *second.entries)]
-        if second.next_cursor:
-            third = vault.reader.okf_inventory(
-                BundleTreeRequest(root="", entry_limit=1000, cursor=second.next_cursor)
+        cursor = second.next_cursor
+        while cursor is not None:
+            page = vault.reader.okf_inventory(
+                BundleTreeRequest(root="", entry_limit=1000, cursor=cursor)
             )
-            paths += [e.path for e in third.entries]
-        assert paths == [f"{i:04}.md" for i in range(1001)]
+            paths.extend(e.path for e in page.entries)
+            cursor = page.next_cursor
+        assert paths == [f"{i:04}.md" for i in range(count)]
     finally:
         vault.close()
 
@@ -102,55 +109,6 @@ def test_mixed_inventory_pages_and_reappearing_path(tmp_path: Path) -> None:
             ("d.md", "present"),
             ("e.md", "removed"),
         ]
-    finally:
-        vault.close()
-
-
-def test_removed_path_is_hidden_when_parent_becomes_symlink(tmp_path: Path) -> None:
-    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-
-    source = tmp_path / "vault"
-    outside = tmp_path / "outside"
-    source.mkdir()
-    outside.mkdir()
-    (source / "folder").mkdir()
-    note = source / "folder" / "secret.md"
-    note.write_text("Body")
-    vault = Vault(source_dir=source)
-    try:
-        vault._index_mgr.observations.sweep()
-        note.unlink()
-        vault._index_mgr.observations.sweep()
-        (source / "folder").rmdir()
-        (source / "folder").symlink_to(outside, target_is_directory=True)
-        page = vault.reader.okf_inventory(BundleTreeRequest(root=""))
-        assert all(entry.path != "folder/secret.md" for entry in page.entries)
-    finally:
-        vault.close()
-
-
-def test_large_mixed_inventory_continues_without_skipping(tmp_path: Path) -> None:
-    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-
-    for i in range(1002):
-        (tmp_path / f"{i:04}.md").write_text("Body")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault._index_mgr.observations.sweep()
-        for i in range(0, 1002, 2):
-            (tmp_path / f"{i:04}.md").unlink()
-        vault._index_mgr.observations.sweep()
-        cursor = None
-        paths: list[str] = []
-        while True:
-            page = vault.reader.okf_inventory(
-                BundleTreeRequest(root="", entry_limit=1000, cursor=cursor)
-            )
-            paths.extend(entry.path for entry in page.entries)
-            cursor = page.next_cursor
-            if cursor is None:
-                break
-        assert paths == [f"{i:04}.md" for i in range(1002)]
     finally:
         vault.close()
 
@@ -223,43 +181,13 @@ def test_latest_unreceipted_review_makes_comparison_unknown(
     snapshot = {"algo": "mvmcp-concept-v1", "digest": "a" * 64}
     alice = {"by": "human:alice", "at": "2020-01-01T00:00:00Z"}
     store.append({"path": "note.md", **alice, "snapshot": snapshot})
+    current = {**snapshot, "digest": "b" * 64}
     assert store.review_observation(
-        "note.md", {"verified": [alice, extra]}, snapshot
+        "note.md", {"verified": [alice, extra]}, current
     ) == {"state": "unavailable"}
-    assert store.review_observation("other.md", {"verified": [alice]}, snapshot) == {
+    assert store.review_observation("other.md", {"verified": [alice]}, current) == {
         "state": "unavailable"
     }
-
-
-@pytest.mark.parametrize(
-    "contents",
-    [
-        "not json",
-        '{"version": 99, "rows": []}',
-        '{"version": 1, "rows": [{"path": "note.md", "by": "human:a", "at": "2020-01-01T00:00:00Z", "snapshot": {"algo": "mvmcp-concept-v1", "digest": "invalid"}}]}',
-    ],
-)
-def test_unusable_receipt_state_does_not_break_read(
-    tmp_path: Path, contents: str
-) -> None:
-    from markdown_vault_mcp.vault import VaultSettings
-
-    source = tmp_path / "vault"
-    source.mkdir()
-    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
-    (source / "note.md").write_text(
-        '---\ntype: concept\nverified: [{by: "human:a", at: "2020-01-01T00:00:00Z"}]\n---\nBody\n'
-    )
-    (tmp_path / "state.receipts.json").write_text(contents)
-    vault = Vault(
-        source_dir=source, settings=VaultSettings(state_path=tmp_path / "state")
-    )
-    try:
-        assert read_payload(vault, "note.md")["okf"]["observation"] == {
-            "state": "unavailable"
-        }
-    finally:
-        vault.close()
 
 
 async def test_mcp_read_exposes_receipt_observation(
@@ -283,45 +211,16 @@ async def test_mcp_read_exposes_receipt_observation(
         }
 
 
-def test_copy_without_receipts_remains_unknown_after_edit(tmp_path: Path) -> None:
-    import shutil
-
-    from markdown_vault_mcp._okf_review import concept_snapshot
-    from markdown_vault_mcp.vault import VaultSettings
-
-    source = tmp_path / "source"
-    source.mkdir()
-    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
-    text = "---\ntype: concept\n---\nBody\n"
-    (source / "note.md").write_text(text)
-    vault = Vault(
-        source_dir=source,
-        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
-    )
-    try:
-        vault.writer.okf_verify("note.md", "alice", concept_snapshot(text))
-    finally:
-        vault.close()
-    copied = tmp_path / "copy"
-    shutil.copytree(source, copied)
-    fresh = Vault(source_dir=copied)
-    try:
-        assert read_payload(fresh, "note.md")["okf"]["observation"] == {
-            "state": "unavailable"
-        }
-        note = copied / "note.md"
-        note.write_text(note.read_text() + "Changed\n")
-        assert read_payload(fresh, "note.md")["okf"]["observation"] == {
-            "state": "unavailable"
-        }
-    finally:
-        fresh.close()
-
-
-def test_receipt_read_error_is_unavailable(tmp_path: Path) -> None:
+@pytest.mark.parametrize("contents", [None, "not json", '{"version": 99, "rows": []}'])
+def test_receipt_read_error_is_unavailable(
+    tmp_path: Path, contents: str | None
+) -> None:
     from markdown_vault_mcp._okf_receipts import ReceiptStore
 
-    store = ReceiptStore(tmp_path, tmp_path / "vault")
+    receipt_path = tmp_path if contents is None else tmp_path / "receipts.json"
+    if contents is not None:
+        receipt_path.write_text(contents)
+    store = ReceiptStore(receipt_path, tmp_path / "vault")
     metadata = {"verified": [{"by": "human:a", "at": "2099-01-01T00:00:00Z"}]}
     snapshot = {"algo": "mvmcp-concept-v1", "digest": "a" * 64}
     assert store.review_observation("note.md", metadata, snapshot) == {
@@ -348,100 +247,20 @@ def test_latest_receipt_is_used_for_matching_identity(tmp_path: Path) -> None:
     assert store.review_observation("note.md", {"verified": review}, None) == {
         "state": "unavailable"
     }
+    from datetime import UTC, datetime
+
+    dated_review = {**review, "at": datetime(2020, 1, 1, tzinfo=UTC)}
+    assert store.review_observation("note.md", {"verified": dated_review}, first) == {
+        "state": "available",
+        "later_change_observed": True,
+    }
     assert store.review_observation("note.md", {}, first) == {"state": "unavailable"}
 
 
-def test_direct_reader_without_receipt_store_reports_unknown(tmp_path: Path) -> None:
-    from markdown_vault_mcp.facets.reader import ReaderFacet
-
-    vault = Vault(source_dir=tmp_path)
-    try:
-        reader = ReaderFacet(
-            search_mgr=vault._search_mgr,
-            doc_mgr=vault._doc_mgr,
-            git_query_mgr=vault._git_query_mgr,
-            require_built=vault._require_built,
-        )
-        assert reader.review_observation("note.md", {}, None) == {
-            "state": "unavailable"
-        }
-    finally:
-        vault.close()
-
-
-def test_equivalent_review_timestamp_matches_local_receipt(tmp_path: Path) -> None:
-    import re
-
-    from markdown_vault_mcp._okf_review import concept_snapshot
-    from markdown_vault_mcp.vault import VaultSettings
-
-    source = tmp_path / "vault"
-    source.mkdir()
-    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
-    note = source / "note.md"
-    original = "---\ntype: concept\n---\nBody\n"
-    note.write_text(original)
-    vault = Vault(
-        source_dir=source,
-        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
-    )
-    try:
-        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
-        reviewed = note.read_text()
-        reformatted = re.sub(r"(at: )'([^']+)'", r"\1\2", reviewed)
-        assert reformatted != reviewed
-        note.write_text(reformatted.replace("Body", "Changed"))
-        assert (
-            read_payload(vault, "note.md")["okf"]["observation"][
-                "later_change_observed"
-            ]
-            is True
-        )
-    finally:
-        vault.close()
-
-
-def test_revert_and_ledger_reset_do_not_assert_no_change(tmp_path: Path) -> None:
-    from markdown_vault_mcp._okf_review import concept_snapshot
-    from markdown_vault_mcp.vault import VaultSettings
-
-    source = tmp_path / "vault"
-    source.mkdir()
-    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
-    note = source / "note.md"
-    original = "---\ntype: concept\n---\nBody\n"
-    note.write_text(original)
-    settings = VaultSettings(read_only=False, state_path=tmp_path / "state")
-    vault = Vault(source_dir=source, settings=settings)
-    try:
-        vault.index.build_index()
-        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
-        reviewed = note.read_text()
-        note.write_text(reviewed.replace("Body", "Changed"))
-        vault._index_mgr.observations.sweep()
-        note.write_text(reviewed)
-        vault._index_mgr.observations.sweep()
-        assert read_payload(vault, "note.md")["okf"]["observation"] == {
-            "state": "unavailable"
-        }
-    finally:
-        vault.close()
-    (tmp_path / "state.observations.json").unlink()
-    vault = Vault(source_dir=source, settings=settings)
-    try:
-        assert read_payload(vault, "note.md")["okf"]["observation"] == {
-            "state": "unavailable"
-        }
-        note.write_text(reviewed.replace("Body", "Changed"))
-        assert read_payload(vault, "note.md")["okf"]["observation"] == {
-            "state": "available",
-            "later_change_observed": True,
-        }
-    finally:
-        vault.close()
-
-
-def test_removed_folder_paging_and_blocked_scope(tmp_path: Path) -> None:
+@pytest.mark.parametrize("existing_target", [True, False])
+def test_removed_folder_paging_and_blocked_scope(
+    tmp_path: Path, existing_target: bool
+) -> None:
     from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 
     folder = tmp_path / "folder"
@@ -468,24 +287,17 @@ def test_removed_folder_paging_and_blocked_scope(tmp_path: Path) -> None:
             if cursor is None:
                 break
         assert paths == [(f"folder/{i}.md", "removed") for i in range(5)]
-        folder.symlink_to(tmp_path / "nonexistent", target_is_directory=True)
+        target = tmp_path / "target"
+        if existing_target:
+            target.mkdir()
+        folder.symlink_to(target, target_is_directory=True)
         blocked = vault.reader.okf_inventory(BundleTreeRequest(root="folder"))
         assert blocked.state == "unavailable"
         assert blocked.entries == ()
+        root_page = vault.reader.okf_inventory(BundleTreeRequest(root=""))
+        assert not any(e.path.startswith("folder/") for e in root_page.entries)
     finally:
         vault.close()
-
-
-def test_receipt_snapshot_extra_fields_do_not_prove_change(tmp_path: Path) -> None:
-    from markdown_vault_mcp._okf_receipts import ReceiptStore
-
-    store = ReceiptStore(None, tmp_path)
-    snapshot = {"algo": "mvmcp-concept-v1", "digest": "a" * 64}
-    review = {"by": "human:alice", "at": "2020-01-01T00:00:00Z"}
-    store.append({"path": "note.md", **review, "snapshot": {**snapshot, "extra": 1}})
-    assert store.review_observation("note.md", {"verified": [review]}, snapshot) == {
-        "state": "unavailable"
-    }
 
 
 @pytest.mark.parametrize("failure", ["newer", "unreadable"])

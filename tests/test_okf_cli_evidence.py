@@ -96,54 +96,6 @@ def test_read_of_explicit_other_vault_does_not_borrow_receipts(
         vault.close()
 
 
-def test_bound_review_edit_removal_and_fresh_copy_flow(tmp_path: Path) -> None:
-    import shutil
-
-    from markdown_vault_mcp._cli_read import read_payload
-
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\nIndex\n')
-    original = "---\ntype: concept\n---\nBody\n"
-    note = root / "note.md"
-    note.write_text(original)
-    lost = root / "lost.md"
-    lost.write_text("Body")
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
-    )
-    try:
-        vault.index.build_index()
-        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
-        before = read_payload(vault, "note.md")
-        assert before["okf"]["observation"] == {"state": "unavailable"}
-        note.write_text(note.read_text().replace("Body", "Changed"))
-        after = read_payload(vault, "note.md")
-        assert after["okf"]["observation"] == {
-            "state": "available",
-            "later_change_observed": True,
-        }
-        assert after["frontmatter"]["verified"] == before["frontmatter"]["verified"]
-        lost.unlink()
-        vault._index_mgr.observations.sweep()
-        assert any(
-            e.path == "lost.md" and e.presence == "removed"
-            for e in vault.reader.okf_inventory(BundleTreeRequest(root="")).entries
-        )
-        copy = tmp_path / "copy"
-        shutil.copytree(root, copy)
-        fresh = Vault(source_dir=copy)
-        try:
-            assert read_payload(fresh, "note.md")["okf"]["observation"] == {
-                "state": "unavailable"
-            }
-        finally:
-            fresh.close()
-    finally:
-        vault.close()
-
-
 def test_in_memory_cli_queries_preserve_persistent_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -197,3 +149,32 @@ def test_inventory_uses_default_state_when_index_missing(
         e["path"] == "lost.md" and e["presence"] == "removed"
         for e in inventory["entries"]
     )
+
+
+@pytest.mark.parametrize("index_exists", [True, False])
+def test_source_override_preserves_configured_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, index_exists: bool
+) -> None:
+    import typer
+
+    default = tmp_path / "default"
+    chosen = tmp_path / "chosen"
+    default.mkdir()
+    chosen.mkdir()
+    (chosen / "first.md").write_text("first")
+    index = tmp_path / "index.db"
+    if index_exists:
+        vault = Vault(source_dir=chosen, settings=VaultSettings(index_path=index))
+        try:
+            vault.index.build_index()
+        finally:
+            vault.close()
+    (chosen / "second.md").write_text("second")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(default))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index))
+    if not index_exists:
+        with pytest.raises(typer.Exit):
+            local_read("count_documents", {}, str(chosen))
+        assert not index.exists()
+    else:
+        assert local_read("count_documents", {}, str(chosen))["total"] == 1

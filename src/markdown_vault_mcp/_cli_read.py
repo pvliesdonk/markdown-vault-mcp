@@ -39,8 +39,6 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
     Returns:
         JSON-compatible native payload. Shared-index freshness remains unknown.
     """
-    from pathlib import Path
-
     from pydantic import TypeAdapter
     from pydantic_core import PydanticSerializationError
 
@@ -73,13 +71,6 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
             summarize_openai_api_key=None,
             summarize_openai_base_url=None,
         )
-    if (
-        source_dir is not None
-        and Path(source_dir).resolve() != config.source_dir.resolve()
-    ):
-        from dataclasses import replace
-
-        config = replace(config, index_path=None, state_path=None)
     configured = config.indexing.index_path
     in_memory = configured is None or str(configured) == ":memory:"
     if configured is not None and not in_memory:
@@ -190,7 +181,10 @@ def _build_reader_vault(
             summarizer=instances.summarizer,
             git_strategy=instances.git_strategy,
         )
-        if in_memory and evidence_path is not None:
+        if not same_source:
+            vault.reader._receipt_store = None
+            vault._doc_mgr._observations = None
+        elif in_memory and evidence_path is not None:
             # Index builds keep their own in-memory tracker and ledger. Only
             # the read-facing collaborators see the matching vault's evidence.
             ledger = cast("ObservationLedger", vault._doc_mgr._observations)
