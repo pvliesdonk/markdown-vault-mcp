@@ -181,7 +181,7 @@ def test_older_completion_cannot_publish_newer_build_readiness(
     original = vault._index_mgr.build_index
     builds = 0
 
-    def held_build(*, force: bool = False) -> IndexStats:
+    def held_build(*, force: bool = False, before_search=None) -> IndexStats:
         nonlocal builds
         builds += 1
         if builds == 1:
@@ -189,7 +189,7 @@ def test_older_completion_cannot_publish_newer_build_readiness(
             assert release.wait(5)
         else:
             raise OSError("second build failed")
-        return original(force=force)
+        return original(force=force, before_search=before_search)
 
     monkeypatch.setattr(vault._index_mgr, "build_index", held_build)
     try:

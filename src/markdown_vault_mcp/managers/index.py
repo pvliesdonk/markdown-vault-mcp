@@ -662,7 +662,9 @@ class IndexManager:
             )
         return result
 
-    def build_index(self, *, force: bool = False) -> IndexStats:
+    def build_index(
+        self, *, force: bool = False, before_search: Callable[[], None] | None = None
+    ) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
         ``force=True`` drops all existing data and rebuilds from scratch,
@@ -681,6 +683,7 @@ class IndexManager:
             force: When ``True``, keep no old row the build does not rewrite,
                 a readable note that fails to index included, sparing what
                 the walk could not read.
+            before_search: Optional callback after observation, before index work.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
@@ -688,6 +691,8 @@ class IndexManager:
         """
         if self.observations is not None:
             self.observations.sweep()
+        if before_search is not None:
+            before_search()
         exempt = self._admission_snapshot()
         if exempt is not None:
             self._store_exempt(None)

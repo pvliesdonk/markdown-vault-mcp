@@ -392,3 +392,63 @@ def test_invalid_evidence_resets_entire_ledger(tmp_path: Path, field, value) -> 
         assert rows["b.md"].first_seen_at != "2000-01-01T00:00:00+00:00"
     finally:
         vault.close()
+
+
+def test_forced_build_preserves_marker_until_observation_succeeds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    settings = VaultSettings(index_path=tmp_path / "index.sqlite")
+    vault = Vault(source_dir=source, settings=settings)
+    try:
+        vault.index.build_index()
+        path = vault._index_mgr.observations._path
+        path.write_text('{"version": 999, "rows": {}}')
+        with pytest.raises(StoreUnsupportedSchemaError):
+            vault.index.build_index(force=True)
+        assert vault._fts.is_build_completed()
+        path.unlink()
+        vault.close()
+        vault = Vault(source_dir=source, settings=settings)
+        vault.index.build_index()
+        assert vault.index.is_queryable()
+
+        def fail_scan(*_args, **_kwargs):
+            assert not vault._fts.is_build_completed()
+            raise OSError("scan failed")
+
+        monkeypatch.setattr(vault._index_mgr, "_scan_and_index", fail_scan)
+        with pytest.raises(OSError, match="scan failed"):
+            vault.index.build_index(force=True)
+        assert not vault._fts.is_build_completed()
+    finally:
+        vault.close()
+
+
+def test_direct_and_raw_build_sweep_once(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.indexing import BuildIndex
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("hello")
+    vault = Vault(source_dir=source)
+    ledger = vault._index_mgr.observations
+    original = ledger.sweep
+    calls = []
+
+    def sweep():
+        calls.append(True)
+        original()
+
+    monkeypatch.setattr(ledger, "sweep", sweep)
+    try:
+        vault._index_mgr.build_index()
+        assert len(calls) == 1
+        vault._coordinator.writer.submit(BuildIndex()).result(timeout=5)
+        assert len(calls) == 2
+    finally:
+        vault.close()

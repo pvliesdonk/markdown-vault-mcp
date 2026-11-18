@@ -184,8 +184,9 @@ class BuildLifecycle:
                 )
                 self._finish(attempt, _Succeeded(stats))
                 return stats
-            self._fts.clear_build_completed()
-            stats = run_build_index(job, ctx)
+            stats = ctx.index_manager.build_index(
+                force=job.force, before_search=self._fts.clear_build_completed
+            )
             scanning = False
             self._fts.set_build_completed(walk_complete=stats.walk_complete)
             if not stats.walk_complete:
