@@ -1166,6 +1166,8 @@ def append_okf_verification(
             or ``local`` for a confirmed review without human identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        reviewed_snapshot: Optional reviewed snapshot to bind in x-mvmcp.reviews.
+        check: Name of the review performed.
 
     Returns:
         The note text with the appended verification.

@@ -690,3 +690,7 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+
+### Snapshot-bound review recording
+
+`okf_verify` validates the reviewed snapshot before confirmation and uses the read etag for the subsequent write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. A failed receipt write can leave the portable claim without local evidence. Review applicability presentation remains separate work.

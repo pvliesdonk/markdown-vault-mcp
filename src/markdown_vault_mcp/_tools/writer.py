@@ -9,10 +9,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import logging
-from dataclasses import asdict
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -34,6 +34,8 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from markdown_vault_mcp._okf_receipts import ReceiptWriteError
+from markdown_vault_mcp._okf_review import ReviewRequest, validate_reviewed_snapshot
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
@@ -43,11 +45,6 @@ from markdown_vault_mcp.exceptions import (
     FolderMoveInterruptedError,
     InvalidRequestError,
 )
-from markdown_vault_mcp.okf import (
-    _HUMAN_ACTOR_PREFIX,
-    append_okf_verification,
-    verified_entries,
-)
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
@@ -55,7 +52,6 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._identity import bound_principal, resolve_mcp_principal
 from .._okf_write import (
-    okf_write_suppressed,
     resolve_human_subject,
     resolve_verify_subject,
 )
@@ -92,6 +88,14 @@ _FETCH_UNCAPPED_BYTES = 2**63 - 1
 _REVIEW_RESPONSE_KEY = "review_confirmed"
 
 
+@dataclass(frozen=True)
+class _ReviewConfirmation:
+    path: str
+    digest: str
+    check: str
+    etag: str
+
+
 async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
     """Refuse independent review when the vault is not active."""
     if (
@@ -105,21 +109,24 @@ async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None
         )
 
 
-def _review_message(path: str) -> str:
+def _review_message(path: str, digest: str, check: str) -> str:
     """Build the human-review confirmation prompt for *path*."""
     return (
-        f"Confirm you have personally reviewed {path!r} and want to attest it "
+        f"Confirm you have personally reviewed {path!r}, snapshot {digest[:12]}, "
+        f"check {check}, and want to attest it "
         "as human-reviewed. This records a verification in the note's OKF "
         "frontmatter and promotes its trust tier."
     )
 
 
-def _review_input_required(path: str) -> InputRequiredResult:
+def _review_input_required(
+    path: str, digest: str, check: str, key: str
+) -> InputRequiredResult:
     """Build the modern-protocol review request for *path*."""
     request = ElicitRequest(
         method="elicitation/create",
         params=ElicitRequestFormParams(
-            message=_review_message(path),
+            message=_review_message(path, digest, check),
             requested_schema={
                 "type": "object",
                 "properties": {
@@ -134,11 +141,13 @@ def _review_input_required(path: str) -> InputRequiredResult:
     )
     return InputRequiredResult(
         result_type="input_required",
-        input_requests={_REVIEW_RESPONSE_KEY: request},
+        input_requests={key: request},
     )
 
 
-def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | None:
+def _require_modern_review(
+    ctx: Context, path: str, digest: str, check: str, key: str
+) -> InputRequiredResult | None:
     """Return a review request or validate its modern-protocol response.
 
     Raises:
@@ -146,8 +155,8 @@ def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | Non
     """
     responses = ctx.input_responses
     if responses is None:
-        return _review_input_required(path)
-    answer = responses.get(_REVIEW_RESPONSE_KEY)
+        return _review_input_required(path, digest, check, key)
+    answer = responses.get(key)
     if (
         isinstance(answer, ElicitResult)
         and answer.action == "accept"
@@ -188,7 +197,9 @@ def _remote_status_error(exc: httpx.HTTPStatusError) -> ToolError | None:
     )
 
 
-async def _require_review_elicitation(ctx: Context, path: str) -> None:
+async def _require_review_elicitation(
+    ctx: Context, path: str, digest: str, check: str
+) -> None:
     """Gate okf_verify's ``elicit`` mode on an affirmative human elicitation.
 
     Fails **closed**: raises :class:`ToolError` (writing nothing) when the client
@@ -206,7 +217,9 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
     try:
         # A scalar bool wraps into a single-field object schema; an affirmative
         # reply deconstructs back to True.
-        result = await ctx.elicit(_review_message(path), response_type=bool)
+        result = await ctx.elicit(
+            _review_message(path, digest, check), response_type=bool
+        )
     except MCPError as exc:
         logger.info("okf_verify_elicitation_unsupported path=%s", path)
         raise ToolError(
@@ -224,7 +237,7 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
 
 
 async def _resolve_verify_mode_subject(
-    *, mode: str, ctx: Context, path: str
+    *, mode: str, ctx: Context, review: _ReviewConfirmation
 ) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
@@ -251,11 +264,20 @@ async def _resolve_verify_mode_subject(
         request_context is not None
         and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
     ):
-        request = _require_modern_review(ctx, path)
+        token = hashlib.sha256(
+            f"{review.path}\0{review.digest}\0{review.check}\0{review.etag}".encode()
+        ).hexdigest()
+        request = _require_modern_review(
+            ctx,
+            review.path,
+            review.digest,
+            review.check,
+            f"{_REVIEW_RESPONSE_KEY}_{token}",
+        )
         if request is not None:
             return request
     else:
-        await _require_review_elicitation(ctx, path)
+        await _require_review_elicitation(ctx, review.path, review.digest, review.check)
     return resolve_verify_subject()
 
 
@@ -1224,6 +1246,8 @@ def register(mcp: FastMCP) -> None:
     @library_outcomes
     async def okf_verify(
         path: str,
+        reviewed_snapshot: dict[str, str],
+        check: Literal["human-review"] = "human-review",
         ctx: Context = CurrentContext(),
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
@@ -1231,12 +1255,12 @@ def register(mcp: FastMCP) -> None:
         """Record that a person reviewed a note, raising its Open Knowledge Format trust
         tier to human-reviewed; returns the verifier recorded.
 
-        The user may be asked to confirm the review. The record means a person looked,
-        not that the content is correct. A retained review may describe an older
-        version of the note; it is not bound to the current content.
+        The user may be asked to confirm the review.
 
         Args:
             path: Path of the note the user reviewed.
+            reviewed_snapshot: Snapshot from the whole-note read that was reviewed.
+            check: Review performed; defaults to human-review.
 
         Returns:
             On the modern protocol's first round, an input request asking the
@@ -1261,40 +1285,41 @@ def register(mcp: FastMCP) -> None:
         """
         await _require_review_authority(config, vault)
         await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
+        note = await asyncio.to_thread(vault.reader.read, path)
+        if note is None:
+            raise DocumentNotFoundError.note(path)
+        snapshot = validate_reviewed_snapshot(note.content, reviewed_snapshot)
+        if not note.etag:
+            raise InvalidRequestError("Read the complete note before verifying it")
         subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
+            mode=config.content.okf_capabilities.verify,
+            ctx=ctx,
+            review=_ReviewConfirmation(path, snapshot["digest"], check, note.etag),
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
         subject = subject_or_request
-        note = await asyncio.to_thread(vault.reader.read, path)
-        if note is None:
-            raise DocumentNotFoundError.note(path)
-        verified_count = len(verified_entries(note.frontmatter)) + 1
-        new_text = append_okf_verification(
-            note.content, subject=subject, now=datetime.now(UTC)
-        )
-        # Verification attests to a specific set of bytes, so the read-modify-
-        # write must be atomic: pass the read's etag as if_match so a concurrent
-        # write/edit/delete in the window fails the attestation instead of
-        # silently clobbering it or resurrecting a deleted note (#964).
         await _require_review_authority(config, vault)
         try:
-            with okf_write_suppressed():
-                await asyncio.to_thread(
-                    vault.writer.write, path, new_text, if_match=note.etag
+            with write_identity_scope():
+                result = await run_in_transaction(
+                    vault,
+                    None,
+                    vault.writer.okf_verify,
+                    path,
+                    ReviewRequest(subject, snapshot, note.etag, check),
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(
                 f"Note {path!r} changed while it was being verified, so nothing "
-                "was written. Call okf_verify again to attest the current text.",
+                "was written. Read and review the current text before retrying.",
                 log_level=logging.INFO,
             ) from exc
-        return attach_remote_health(
-            vault,
-            {
-                "path": path,
-                "verifier": f"{_HUMAN_ACTOR_PREFIX}{subject}",
-                "verified_count": verified_count,
-            },
-        )
+        except ReceiptWriteError as exc:
+            raise ToolError(
+                "The review was written to the note, but its local receipt could "
+                "not be saved. Tell the operator to check local state storage; "
+                "read the note before taking further action.",
+                log_level=logging.WARNING,
+            ) from exc
+        return attach_remote_health(vault, result)

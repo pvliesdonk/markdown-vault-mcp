@@ -557,15 +557,15 @@ Read a concept, then pass its `etag` as `if_match` and the fields to change, suc
 Record that a person reviewed a note, raising its Open Knowledge Format trust
 tier to human-reviewed; returns the verifier recorded.
 
-The user may be asked to confirm the review. The record means a person looked,
-not that the content is correct. A retained review may describe an older
-version of the note; it is not bound to the current content.
+The user may be asked to confirm the review.
 
 **Parameters**
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `path` | `string` | required | Path of the note the user reviewed. |
+| `reviewed_snapshot` | `object` | required | Snapshot from the whole-note read that was reviewed. |
+| `check` | `string` | `"human-review"` | Review performed; defaults to human-review. |
 
 **Returns**
 

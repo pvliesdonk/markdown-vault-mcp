@@ -9,9 +9,23 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
+import sqlite3
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar
 
-from markdown_vault_mcp.okf import is_okf_reserved_file
+from markdown_vault_mcp._okf_receipts import ReceiptWriteError
+from markdown_vault_mcp._okf_review import concept_snapshot, validate_reviewed_snapshot
+from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    InvalidRequestError,
+)
+from markdown_vault_mcp.okf import (
+    append_okf_verification,
+    is_okf_reserved_file,
+    okf_timestamp,
+    verified_entries,
+)
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -23,6 +37,8 @@ if TYPE_CHECKING:
         LogRepairPreview,
         LogRepairResult,
     )
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp._okf_review import ReviewRequest
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -45,7 +61,8 @@ _R = TypeVar("_R", "WriteResult", "EditResult")
 class WriterFacet:
     """Document-mutation operations, backed by :class:`DocumentManager`."""
 
-    def __init__(
+    # The facet receives independent write collaborators from the vault.
+    def __init__(  # noqa: PLR0913, RUF100
         self,
         doc_mgr: DocumentManager,
         *,
@@ -53,6 +70,7 @@ class WriterFacet:
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
+        receipt_store: Callable[[], ReceiptStore] | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -73,6 +91,7 @@ class WriterFacet:
                 write path (OKF link conversion rewrites thousands of notes in
                 one call), and a git probe per file there would spend several
                 subprocesses each on a result nobody reads.
+            receipt_store: Supplies local storage for recorded review receipts.
             link_reporter: Answers ``report_unresolved_links=True`` on
                 :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
                 ``None`` (the default) makes such a call raise
@@ -83,6 +102,67 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+        self._receipt_store = receipt_store
+
+    def okf_verify(self, path: str, review: ReviewRequest) -> dict[str, Any]:
+        """Record a review of an exact snapshot and its local receipt.
+
+        Args:
+            path: Vault-relative note path.
+            review: Subject, reviewed snapshot, exact etag and check.
+
+        Returns:
+            The note path, verifier and number of portable reviews.
+
+        Raises:
+            ConcurrentModificationError: If the note changed since the read.
+            InvalidRequestError: If the snapshot or note cannot be safely reviewed.
+            ReceiptWriteError: If the note was written but the receipt failed.
+        """
+        note = self._doc_mgr.read(path)
+        if note is None or note.etag != review.etag:
+            raise ConcurrentModificationError(
+                path, review.etag, note.etag or "" if note else ""
+            )
+        snapshot = validate_reviewed_snapshot(note.content, review.snapshot)
+        if self._receipt_store is None:
+            raise InvalidRequestError("Local review receipt storage is not configured")
+        store = self._receipt_store()
+        now = datetime.now(UTC)
+        text = append_okf_verification(
+            note.content,
+            subject=review.subject,
+            now=now,
+            reviewed_snapshot=snapshot,
+            check=review.check,
+        )
+        if concept_snapshot(text) != snapshot:
+            raise InvalidRequestError(
+                "Cannot safely preserve this note while recording the review"
+            )
+        with okf_write_suppressed():
+            self.write(path, text, if_match=review.etag)
+        actor = f"human:{review.subject}"
+        try:
+            store.append(
+                {
+                    "path": note.path,
+                    "by": actor,
+                    "at": okf_timestamp(now),
+                    "check": review.check,
+                    "digest": snapshot["digest"],
+                    "recorded_at": okf_timestamp(datetime.now(UTC)),
+                }
+            )
+        except (OSError, sqlite3.Error) as exc:
+            raise ReceiptWriteError(
+                "The note was written but its local receipt failed"
+            ) from exc
+        return {
+            "path": path,
+            "verifier": actor,
+            "verified_count": len(verified_entries(note.frontmatter)) + 1,
+        }
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]

@@ -13,7 +13,7 @@ kind: how-to
 !!! tip "Example pack"
     The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) directory ships a declaration index, typed note templates (`Concept`, `Capture`), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.
 
-Live whole-note structured reads in an active bundle include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and frontmatter except `verified` and `x-mvmcp`; resolved YAML scalar text, including spellings of true and null, and JSON number spellings count; YAML string quoting style does not. Converting a header between YAML and JSON can change the snapshot. Optional TOML uses the numeric and timestamp precision of its parser. The etag distinguishes raw bytes. The legacy verifier can rewrite the body or other metadata and change the snapshot; snapshot-preserving review recording is planned for D3. The digest does not itself bind a review or prove who recorded one. Historical and section reads and search hits omit it. In the CLI, use `--json` or `--agent` to see the snapshot.
+Live whole-note structured reads in an active bundle include `okf.snapshot` with algorithm `mvmcp-concept-v1` and a SHA-256 digest. It identifies the body and frontmatter except `verified` and `x-mvmcp`; resolved YAML scalar text, including spellings of true and null, and JSON number spellings count; YAML string quoting style does not. Converting a header between YAML and JSON can change the snapshot. Optional TOML uses the numeric and timestamp precision of its parser. The etag distinguishes raw bytes. Pass this snapshot as `reviewed_snapshot` to `okf_verify` after reviewing the note. The digest alone does not prove who recorded a review. Historical and section reads and search hits omit it. In the CLI, use `--json` or `--agent` to see the snapshot.
 
 ## How the server recognises a bundle
 
@@ -200,7 +200,7 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 
 The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 
-A `verified` entry records a review claim at a time without identifying the reviewed snapshot. Server writes and external edits leave it in place. Neither the tier nor `generated.at` establishes which content was reviewed.
+A `verified` entry records the reviewer and time in the portable format. `okf_verify` also appends a claim in `x-mvmcp.reviews` with the reviewed snapshot and check (default `human-review`). Its confirmation shows the path, digest prefix and check; a stale snapshot or a concurrent edit is refused. Read the note again and review the current content before retrying. Other editors can supply or alter `x-mvmcp`, so the claim alone does not prove a local action. The server also stores a matching local receipt beside its observation ledger, outside the bundle. With in-memory state the receipt is lost on restart. A receipt storage failure after the note write leaves the claim in the note without a receipt. Later edits retain the review; the tier does not establish that it covers current content.
 
 ### Keeping `log.md` and `index.md` current
 

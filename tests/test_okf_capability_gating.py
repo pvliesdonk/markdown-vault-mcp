@@ -6,6 +6,7 @@ import pytest
 from fastmcp import Client
 
 from tests.conftest import wait_for_mcp_writer_drain
+from tests.fixtures.review_binding import review_args
 from tests.server_factory import make_server
 
 
@@ -114,7 +115,7 @@ async def test_verify_refuses_inactive_vault(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
     async with Client(make_server()) as client:
         with pytest.raises(ToolError, match="OKF is not active"):
-            await client.call_tool("okf_verify", {"path": "note.md"})
+            await client.call_tool("okf_verify", review_args("note.md"))
     assert note.read_text() == "# Note\n"
 
 
@@ -227,7 +228,7 @@ async def test_legacy_alias_verifies_undeclared_vault(
     async with Client(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
-        await client.call_tool("okf_verify", {"path": "note.md"})
+        await client.call_tool("okf_verify", review_args("note.md"))
     assert "verified:" in (root / "note.md").read_text()
 
 
@@ -340,7 +341,7 @@ async def test_independent_review_is_retained_after_edit(
         await client.call_tool("write", {"path": "note.md", "content": "# Note\n"})
         await wait_for_mcp_writer_drain(client)
         assert note.read_text() == "# Note\n"
-        await client.call_tool("okf_verify", {"path": "note.md"})
+        await client.call_tool("okf_verify", review_args("note.md"))
         reviewed = frontmatter.loads(note.read_text()).metadata
         assert reviewed.get("verified") and "generated" not in reviewed
         await client.call_tool(
@@ -356,7 +357,7 @@ async def test_independent_review_is_retained_after_edit(
     monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
     monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
     async with Client(make_server()) as client:
-        await client.call_tool("okf_verify", {"path": "note.md"})
+        await client.call_tool("okf_verify", review_args("note.md"))
         await wait_for_mcp_writer_drain(client)
     assert any(
         entry["by"] == "human:peter"
@@ -422,7 +423,7 @@ async def test_review_refuses_when_bundle_deactivated_during_confirmation(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
         with pytest.raises(ToolError, match="OKF is not active"):
-            await client.call_tool("okf_verify", {"path": "note.md"})
+            await client.call_tool("okf_verify", review_args("note.md"))
     assert note.read_text() == "# Note\n"
 
 

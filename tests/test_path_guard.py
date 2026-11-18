@@ -6,6 +6,7 @@ import pytest
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.fixtures.review_binding import review_args
 
 
 @pytest.mark.parametrize("policy_has_link", [False, True])
@@ -655,4 +656,4 @@ async def test_nul_verify_preflight_is_actionable(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
         with pytest.raises(ToolError, match="NUL"):
-            await client.call_tool("okf_verify", {"path": "bad\0.md"})
+            await client.call_tool("okf_verify", review_args("bad\0.md"))

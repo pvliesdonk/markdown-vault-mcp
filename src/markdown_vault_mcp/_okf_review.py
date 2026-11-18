@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from dataclasses import dataclass
 from typing import Any, cast
 
 import frontmatter
@@ -112,3 +113,45 @@ def concept_snapshot(text: str) -> dict[str, str]:
             body = view[: len(view) - len(view.lstrip())] + view[end:]
     payload = _json([metadata, body]).encode("utf-8")
     return {"algo": "mvmcp-concept-v1", "digest": compute_etag(payload)}
+
+
+def validate_reviewed_snapshot(text: str, snapshot: dict[str, str]) -> dict[str, str]:
+    """Check that a supplied snapshot identifies the current concept.
+
+    Args:
+        text: Complete current note text.
+        snapshot: Snapshot returned by a whole-note read.
+
+    Returns:
+        The matching canonical snapshot.
+
+    Raises:
+        InvalidRequestError: If the snapshot is malformed or stale.
+    """
+    import re
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    if (
+        not isinstance(snapshot, dict)
+        or set(snapshot) != {"algo", "digest"}
+        or snapshot.get("algo") != "mvmcp-concept-v1"
+        or not isinstance(snapshot.get("digest"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", snapshot["digest"])
+        or concept_snapshot(text) != snapshot
+    ):
+        raise InvalidRequestError(
+            "The reviewed snapshot is invalid or no longer current. Read the full "
+            "note, review it, and pass its snapshot to okf_verify."
+        )
+    return snapshot
+
+
+@dataclass(frozen=True)
+class ReviewRequest:
+    """Reviewed snapshot and exact bytes to verify as one operation."""
+
+    subject: str
+    snapshot: dict[str, str]
+    etag: str
+    check: str = "human-review"

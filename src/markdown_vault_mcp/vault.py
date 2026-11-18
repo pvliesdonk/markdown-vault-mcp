@@ -832,8 +832,11 @@ class Vault:
                 source_dir=self._source_dir,
                 capabilities=capabilities,
             )
+        from markdown_vault_mcp._okf_receipts import receipts_for
+
         self._writer_facet = WriterFacet(
             self._doc_mgr,
+            receipt_store=lambda: receipts_for(self),
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
             # The overwrite breadcrumb (#1137) reads git state, so it is the
