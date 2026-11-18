@@ -212,3 +212,69 @@ A cold build now writes each note to the keyword index as it is parsed and relea
 ### Contributors
 
 Every fix and guide change in this release came from pull requests by [@salmonumbrella](https://github.com/salmonumbrella), for issues the maintainer had filed. The append-only guidance answers a suggestion from [@FoundationOperations](https://github.com/FoundationOperations).
+
+## v6.1.4
+
+This release fixes how new notes and changed notes reach the disk and the index. A new note in a folder with a default ACL keeps the group access that ACL grants. Frontmatter is written in the order you gave it. A save that replaces a note through a hidden temporary file now triggers reindexing. OpenAI-compatible endpoints that omit `index`, such as Gemini's, embed whole batches again. A folder move's commit names the folder. Indexing no longer sends the Linux file watcher a read event for every file. Nothing needs to change on upgrade for most deployments; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required for most deployments.
+
+- **If you install with `pip` and pin `watchdog`:** the `file-watcher` and `all` extras now need `watchdog>=4.0.2`, because "earlier FSEvents scheduling overrides lack the filter keyword" ([#2066](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066)).
+- **If your state folder or `TMPDIR` is small or memory-backed:** a full embedding build now stages its prepared windows on scratch disk beside the state file (`/data/state` in the shipped Compose setup), or in `TMPDIR` when there is no state file. A PostgreSQL store's full publish also stages rows in the system temp folder. Make room there, since a memory-backed folder counts against memory ([#2176](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176), [#2185](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185)).
+- **If you installed the Claude Desktop bundle and left optional fields empty:** reinstall it. The new bundle sends those fields empty instead of as literal `${user_config.<id>}` text ([#2141](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141)).
+
+**Clients:** nothing beyond reconnecting. The tool surface is unchanged. `config://vault` and `stats` gain fields that report the OKF write state.
+
+**State:** kept. The index is not rebuilt and no vectors are re-embedded. On its first writable open, the keyword index repairs rows left without an owner by older builds, and logs `fts_index_rowid_map_repaired` when it finds any.
+
+**Security posture:** on Linux, a note or attachment the server creates in a folder with a POSIX default ACL now gets the permissions that ACL grants, as a plain file creation there would. A group the ACL grants write keeps write. When the ACL cannot be read for another reason than its absence, such as a permission error, creating the file fails instead of falling back to the umask. Three more Git failure log lines now redact the configured token.
+
+### New notes keep their folder's permissions
+
+In a vault folder with a POSIX default ACL, "a note the server creates gets its group permissions from the process umask instead of from the default ACL, so a group the ACL grants write gets read-only," reported [@princelundgren](https://github.com/princelundgren) in [#2054](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054). Another program writing as that group, such as a sync client, then could not update the note.
+
+The server now reads the folder's default ACL and gives a new note the mode a plain `open()` would. Without a default ACL, the umask applies as before. Other platforms, filesystems without extended attributes, and NFSv4 or SMB ACL formats keep the umask behaviour. Overwriting a note still keeps its existing mode, and nothing is created in the vault to work the mode out ([#2144](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2144), [writer tools](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/tools/writer/index.md)).
+
+### Notes, frontmatter and the file watcher
+
+- **Frontmatter keeps your key order.** "Expected the frontmatter keys of `write()` to be serialised in the order the caller supplied them; got them re-sorted into alphabetical order on disk," reported [@mingyueman](https://github.com/mingyueman) in [#2029](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2029). Every writer now keeps the caller's order, nested mappings included: writes, OKF stamping and verification, and the two files a Git pull conflict rewrites. Notes already on disk keep their order until they are rewritten ([#2075](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2075)).
+- **Saves through a hidden temporary file reindex the note.** An editor that saves to a file such as `notes/.save.tmp` and renames it over the note did not trigger the watcher, while the same save from a visible temporary name did ([#2063](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2063)). A move now counts when either end is a visible path in the vault ([#2080](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2080)).
+- **Indexing no longer feeds the Linux watcher read events.** A reindex opens and closes every file. On a vault with about 40,000 files that produced about 80,000 read events, "well over the default `fs.inotify.max_queued_events` of 16384, so the queue overflows" ([#2045](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2045)). The watcher now subscribes only to creates, changes, moves and deletes ([#2066](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066)). The reported loop was not reproduced, and a real burst of changes can still overflow the queue, so #2045 stays open for the overflow backoff and for skipping excluded folders.
+
+### Embeddings and search
+
+- **OpenAI-compatible endpoints that omit `index`.** With Gemini's compatibility endpoint, "every embedding batch that holds more than one chunk is skipped. No vectors are saved, so search by meaning has nothing to search." The issue's diagnosis: "The endpoint omits the `index` field of the first item in `data`" ([#2050](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2050)). A missing `index` now counts as the first position. A response whose indexes collide is refused rather than risk pairing a vector with the wrong text, and the build skips that batch with a warning. The `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE=1` workaround is no longer needed ([#2220](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2220), [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embeddings/index.md)).
+- **A store damaged after startup is recovered by the writer.** A damaged `numpy` or `sqlite` vector store met by a reindex, flush or convergence job failed that job with a traceback on every note change ([#1976](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976)). The job now moves the store aside as `.corrupt-<time>` and rebuilds it. Stores the process does not own, and PostgreSQL, behave as before ([#2194](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2194)).
+- **Full builds hold less at once.** Two more steps on [#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938): a full build now prepares sections in bounded windows staged on disk ([#2176](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176)), and a PostgreSQL publish replays rows from a temporary file instead of holding every vector ([#2185](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185)). The PRs measured only the steps they change: the PostgreSQL preparation probe went from between 111,140 and 111,532 KiB to between 97,248 and 97,540 KiB, and the build probe's `tracemalloc` peak from 190.8 MB to 188.9 MB, about 13% slower in one run. No step yet lowers a whole build's peak, and #1938 stays open ([embedding stores](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/embedding-stores/index.md)).
+- **The keyword index repairs orphaned rows.** After a downgrade to a build from before #1535 and back, keyword rows without an owner could never be deleted. In the issue's words, "The failure mode is silent" ([#1538](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538)). Every writable open now re-links or purges them ([#2184](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2184)).
+
+### Git history and logs
+
+- **Folder moves name the folder.** v6.1.3 left `move_folder` commits as `move_folder: N files`. They now read `move_folder: drafts -> archive/2026`, with the moved files and rewritten backlinks in the same commit ([#2139](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139), [#2178](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2178), [what a commit covers](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/git-integration/#what-a-commit-covers)).
+- **Git errors stay on one log line.** Git's stderr spans several lines, so "one logical event becomes one prefixed line plus several unprefixed continuation lines" for a line-oriented collector ([#1349](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349)). Failure logs now carry stderr on one line. The LFS pull, fast-forward and sync failure lines now also redact the configured token ([#2189](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2189)).
+- **Startup logs the Git version.** A Git-backed vault logs `git_runtime_version` once at startup. No minimum version is enforced yet ([#2146](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2146), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/git-integration/index.md)).
+
+### OKF write state
+
+Neither `config://vault` nor `stats` reported it, so "an operator cannot tell from the server whether `OKF_WRITE` is in effect" ([#1432](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432)). `config://vault` now reports `okf_write_configured` and `okf_write_effective`, and `stats.okf` reports `write_configured` and `write_effective`. Effective means `OKF_WRITE` is on, OKF is active and the vault is writable ([#2155](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2155)). A read-only server with `OKF_WRITE` set also logs `okf_write_inert` at startup ([#1434](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434), [#2174](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2174), [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/use/okf/index.md)).
+
+### Command line and installation
+
+- **Store-open errors without a traceback.** "A traceback also reads as a crash, so a permission or path mistake is reported as a bug" ([#1955](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955)). `admin index` and `admin reindex` now print `ERROR: <cause>` and exit 1 ([#2164](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2164)).
+- **Empty optional install fields.** Claude Desktop passed an optional field the user left empty "as the literal text `${user_config.<id>}`" ([#1729](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729)). Nine optional fields now default to empty. This was checked against the released MCPB loader, not in the Claude Desktop interface ([#2141](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141), [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/get-started/claude-desktop/index.md)).
+
+### Documentation
+
+- [VS Code and Goose](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/get-started/http-client/index.md) connection examples, and a read-only local Goose setup ([#2145](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2145)).
+- [Cross-instance note links](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/configuration/#cross-instance-note-links): name a vault's URL prefix in its instance description, so a model can map a link to the right server ([#1131](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131), [#2169](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2169)).
+- [Separate search data from persistent state](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/deploy/docker/#separate-search-data-from-persistent-state): an opt-in Docker volume, so the index and embeddings can be reset without losing sign-in state ([#650](https://github.com/pvliesdonk/markdown-vault-mcp/issues/650), [#2173](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2173)).
+
+### For library users
+
+Additions only. `markdown_vault_mcp.git.GitWriteSettings` groups the Git strategy's settings, and the flat constructor arguments still work ([#2219](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2219), [Git API](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/api/git/index.md)). `IteratesChunks` is a new optional protocol in `markdown_vault_mcp.interfaces` ([storage API](https://pvliesdonk.github.io/markdown-vault-mcp/6.1/reference/api/storage/index.md)). Importing `markdown_vault_mcp.write_callback` no longer loads FastMCP ([#2152](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2152)).
+
+### Contributors
+
+Every fix in this release came from pull requests by [@salmonumbrella](https://github.com/salmonumbrella), except the Gemini fix, which [@Fl0p](https://github.com/Fl0p) both reported and wrote. Thanks also to [@princelundgren](https://github.com/princelundgren) and [@mingyueman](https://github.com/mingyueman) for their reports.
