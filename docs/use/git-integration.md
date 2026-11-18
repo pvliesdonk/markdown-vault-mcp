@@ -71,12 +71,15 @@ produced them.
 
 ## Write group deadlines
 
-Write groups close automatically after five minutes of inactivity or one hour
-after opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+The internal write group API closes groups automatically after five minutes of
+inactivity or one hour after opening. The public transaction tools are planned
+for a later slice. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
 `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
-bounds. A write already in progress can finish after the deadline; its later
-writes commit separately. The owner can retrieve an automatic close result for
-the lifetime of the server process; results do not survive a restart.
+bounds. A group can close while a write is active. Later callbacks use the
+ordinary commit path under the opener's identity. Git stages current on-disk
+content, which can include a write whose callback is still pending. The owner
+can retrieve an automatic close result for the lifetime of the server process;
+results do not survive a restart.
 
 ## Uncommitted files at startup
 

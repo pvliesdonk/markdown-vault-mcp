@@ -245,7 +245,7 @@ class WriteCallbackDispatcher:
             current_commit_scope() if self._accepts_batch else None
         )
         # Serialize enqueue with group closure so writes after its marker do
-        # not become an orphaned buffer. In-flight writes then commit alone.
+        # not become an orphaned buffer. Later callbacks use the ordinary path.
         with self._group_lock:
             if current_commit_group() is not None and scope is not None:
                 group = next(

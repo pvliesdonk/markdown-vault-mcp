@@ -6663,10 +6663,11 @@ committed even when they match an ignore rule. A failed flush consumes
 its buffer without rollback or retry; staged work remains for the operator.
 A group closes automatically after 300 seconds idle or 3600 seconds from
 opening, whichever comes first. Both bounds are configurable and positive. The
-maximum age closes the buffered group even if a write is active. Later writes
-from that binding commit separately under the opener’s identity. Automatic
-results remain available to the owner until the server process exits. Timers
-stop when the dispatcher closes.
+maximum age closes the buffered group even if a write is active. Later callbacks
+from that binding use the ordinary commit path under the opener's identity. Git
+stages current on-disk content, which can include a write whose callback is
+still pending. Automatic results remain available to the owner until the
+server process exits. Timers stop when the dispatcher closes.
 
 Ordinary scopes keep their per-call behavior. A drain flushes open groups before
 a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
