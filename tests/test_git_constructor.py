@@ -100,3 +100,125 @@ def test_default_committer_without_checkout_identity_needs_no_warning(
         assert not any("no user.email" in record.message for record in caplog.records)
     finally:
         strategy.close()
+
+
+def test_settings_match_legacy_and_wire_collaborators() -> None:
+    """Settings and legacy options configure the same strategy and collaborators."""
+    from dataclasses import asdict
+
+    from markdown_vault_mcp.git import GitWriteSettings
+
+    settings = GitWriteSettings(
+        token="secret",
+        username="user",
+        repo_url="https://example.com/repo",
+        managed=True,
+        enable_pull=False,
+        enable_push=False,
+        push_delay_s=12,
+        commit_name="name",
+        commit_email="email",
+        git_lfs=False,
+    )
+    new = GitWriteStrategy(settings=settings)
+    old = GitWriteStrategy(**asdict(settings))
+    try:
+        for name in asdict(settings):
+            assert getattr(new, f"_{name}") == getattr(old, f"_{name}")
+        for name in ("token", "username", "_repo_url"):
+            assert getattr(new._bootstrap, name) == getattr(old._bootstrap, name)
+        for name in ("enable_push", "push_delay_s"):
+            assert getattr(new._push_scheduler, f"_{name}") == getattr(
+                old._push_scheduler, f"_{name}"
+            )
+    finally:
+        new.close()
+        old.close()
+
+
+def test_settings_conflicts_and_defaults() -> None:
+    """Mixed nondefault arguments fail without disclosing their values."""
+    from markdown_vault_mcp.git import GitWriteSettings
+
+    with pytest.raises(ValueError) as error:
+        GitWriteStrategy(token="secret", enable_push=False, settings=GitWriteSettings())
+    assert "token" in str(error.value) and "enable_push" in str(error.value)
+    assert "secret" not in str(error.value)
+    strategy = GitWriteStrategy(
+        token=None, settings=GitWriteSettings(enable_push=False)
+    )
+    try:
+        assert strategy._enable_push is False
+    finally:
+        strategy.close()
+
+
+def test_settings_contract() -> None:
+    """Settings retain constructor defaults, hide credentials, and are immutable."""
+    from dataclasses import FrozenInstanceError, fields
+
+    from markdown_vault_mcp.git import GitWriteSettings
+
+    signature = inspect.signature(GitWriteStrategy)
+    names = [field.name for field in fields(GitWriteSettings)]
+    assert names == [
+        "token",
+        "username",
+        "repo_url",
+        "managed",
+        "enable_pull",
+        "enable_push",
+        "push_delay_s",
+        "commit_name",
+        "commit_email",
+        "git_lfs",
+    ]
+    assert list(signature.parameters) == [
+        *names[:-1],
+        "git_lfs",
+        "repo_path",
+        "settings",
+    ]
+    for field in fields(GitWriteSettings):
+        assert field.default == signature.parameters[field.name].default
+    for name in ("git_lfs", "repo_path", "settings"):
+        assert signature.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+    for name in names[:-1]:
+        assert (
+            signature.parameters[name].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        )
+    settings = GitWriteSettings(token="secret")
+    assert "secret" not in repr(settings)
+    with pytest.raises(FrozenInstanceError):
+        settings.token = "other"  # type: ignore[misc]
+
+
+def test_settings_drive_managed_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Managed bootstrap receives the resolved credentials before validation."""
+    from markdown_vault_mcp.git import GitWriteSettings
+    from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+
+    calls: list[tuple[str, Path, str | None]] = []
+    monkeypatch.setattr(
+        RepoBootstrap,
+        "ensure_managed_repo",
+        lambda self, path: calls.append(("bootstrap", path, self.token)),
+    )
+    monkeypatch.setattr(
+        GitWriteStrategy,
+        "validate_startup",
+        lambda self, path: calls.append(("validate", path, self._token)),
+    )
+    strategy = GitWriteStrategy(
+        settings=GitWriteSettings(managed=True, token="secret", enable_push=False),
+        repo_path=tmp_path,
+    )
+    try:
+        assert calls == [
+            ("bootstrap", tmp_path, "secret"),
+            ("validate", tmp_path, "secret"),
+        ]
+    finally:
+        strategy.close()
