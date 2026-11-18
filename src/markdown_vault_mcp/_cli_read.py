@@ -266,8 +266,13 @@ def read_payload(
     if note is None:
         raise DocumentNotFoundError.note(path)
     data = asdict(note)
-    if section is None and vault.okf.state().active:
-        data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+    active = vault.okf.state().active
+    if section is None and (
+        active or vault.okf_capability_report(active=False)["verify"]["effective"]
+    ):
+        data["okf"] = (
+            derive_annotation(note.frontmatter, include_sources=True) if active else {}
+        )
         try:
             data["okf"]["snapshot"] = concept_snapshot(note.content)
         except (yaml.YAMLError, ValueError) as exc:
