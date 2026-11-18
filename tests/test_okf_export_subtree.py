@@ -61,7 +61,7 @@ def test_collision_refused_or_externalized(tmp_path):
 def test_reference_image_and_code(tmp_path):
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides/a.md").write_text(
-        "[ref]: /guides/b.md\n\n![image](/guides/b.md) `[code](/guides/b.md)`\n"
+        "[ref]: /guides/b.md\n\n[ref] ![image](/guides/b.md) `[code](/guides/b.md)`\n"
     )
     (tmp_path / "guides/b.md").write_text("# B")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -72,7 +72,7 @@ def test_reference_image_and_code(tmp_path):
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert (
                 archive.read("a.md")
-                == b"[ref]: /b.md\n\n![image](/b.md) `[code](/guides/b.md)`\n"
+                == b"[ref]: /b.md\n\n[ref] ![image](/b.md) `[code](/guides/b.md)`\n"
             )
     finally:
         vault.close()
@@ -278,7 +278,10 @@ def test_markdown_forms(body, expected):
             "<!-- [x](/guides/b.md) --> [y](/b.md)\n",
         ),
         ("> ```\n> [x](/b.md)\n> ```\n", "> ```\n> [x](/b.md)\n> ```\n"),
-        ('[r]: /guides/b.md "see /guides/b.md"\n', '[r]: /b.md "see /guides/b.md"\n'),
+        (
+            '[r]\n\n[r]: /guides/b.md "see /guides/b.md"\n',
+            '[r]\n\n[r]: /b.md "see /guides/b.md"\n',
+        ),
     ],
 )
 def test_container_cases(body, expected):
@@ -376,22 +379,25 @@ def test_protected_boundaries(tmp_path, body, expected):
 
 @pytest.mark.parametrize("prefix", [b"> ", b"> > "])
 def test_quoted_definition_relocation_and_collision(tmp_path, prefix):
-    body = prefix + b'[ref]: </guides/b.md?x=1#h> "title"\r\n'
+    body = b"[ref]\r\n\r\n" + prefix + b'[ref]: </guides/b.md?x=1#h> "title"\r\n'
     output, report = _export_body(tmp_path, body)
-    assert output == prefix + b'[ref]: </b.md?x=1#h> "title"\r\n'
+    assert output == b"[ref]\r\n\r\n" + prefix + b'[ref]: </b.md?x=1#h> "title"\r\n'
     assert not report.dependencies
     assert (tmp_path / "guides/a.md").read_bytes() == body
 
 
 @pytest.mark.parametrize("base", [None, "https://example.org/vault"])
 def test_quoted_definition_outside_collision(tmp_path, base):
-    body = b"> > [ref]: /b.md#part 'title'\r\n"
+    body = b"[ref]\r\n\r\n> > [ref]: /b.md#part 'title'\r\n"
     if base is None:
         with pytest.raises(ValueError, match="collision"):
             _export_body(tmp_path, body)
     else:
         output, report = _export_body(tmp_path, body, external_base=base)
-        assert output == b"> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
+        assert (
+            output
+            == b"[ref]\r\n\r\n> > [ref]: https://example.org/vault/b.md#part 'title'\r\n"
+        )
         assert [d.target for d in report.dependencies] == ["/b.md#part"]
 
 
@@ -485,7 +491,7 @@ def test_unindexed_wikilink_outside_winner_refused_or_externalized(tmp_path, out
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert (
                 archive.read("a.md").decode()
-                == f"[[https://example.org/vault/{outside}]]"
+                == f"[{'outside/b' if outside.startswith('outside') else 'b'}](https://example.org/vault/{outside})"
             )
     finally:
         vault.close()
@@ -753,7 +759,7 @@ def test_relative_attachment_and_external_wikilinks():
     )
     assert (
         output
-        == "![[b.png#fragment|B]] [[https://example.org/vault/outside/b.md|B]] [[https://example.org]] [[#section]]"
+        == "![[b.png#fragment|B]] [B](https://example.org/vault/outside/b.md) [[https://example.org]] [[#section]]"
     )
     assert [d.target for d in dependencies] == ["outside/b.md"]
 
@@ -789,5 +795,76 @@ def test_wikilink_inventory_reads_all_pages_once(tmp_path, monkeypatch):
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert archive.read("a.md") == b"[[b]] [[b]]"
         assert roots == [None, "page-two"]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("indexed", [False, True])
+def test_externalized_wikilinks_are_markdown_links_and_images(tmp_path, indexed):
+    from markdown_it import MarkdownIt
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "outside").mkdir()
+    body = "[[outside/b#Head|Read B]] ![[outside/pic.png|Picture]]\n\n| [[outside/b\\|Cell]] |\n"
+    (tmp_path / "guides/a.md").write_text(body)
+    (tmp_path / "outside/b.md").write_text("# B")
+    (tmp_path / "outside/pic.png").write_bytes(b"image")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        if indexed:
+            vault.index.build_index()
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            external_base="https://example.org/vault",
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            text = archive.read("a.md").decode()
+        html = MarkdownIt().render(text)
+        assert 'href="https://example.org/vault/outside/b.md#Head"' in html
+        assert 'src="https://example.org/vault/outside/pic.png"' in html
+        assert "[Cell](https://example.org/vault/outside/b.md)" in text
+        assert "[[https:" not in text
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "usage", ["[Ref Name]", "[text][REF   NAME]", "[Ref Name][]", "![alt][REF NAME]"]
+)
+def test_only_first_used_reference_definition_is_relocated(usage):
+    body = (
+        usage
+        + '\n\n[ref name]: /guides/b.md "title"\n[REF  NAME]: /b.md\n[unused]: /b.md\n'
+    )
+    expected = body.replace('/guides/b.md "title"', '/b.md "title"')
+    paths = ExportPaths("guides", {"guides/a.md", "guides/b.md"}, None)
+    output, dependencies = paths.relocate(body, "guides/a.md")
+    assert output == expected
+    assert not dependencies
+
+
+def test_hidden_wikilink_winner_is_selection_independent(tmp_path):
+    (tmp_path / "guides/nested").mkdir(parents=True)
+    (tmp_path / ".x").mkdir()
+    (tmp_path / "guides/a.md").write_text("[[b]]")
+    (tmp_path / "guides/nested/b.md").write_text("selected")
+    (tmp_path / ".x/b.md").write_text("outside")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        vault.index.build_index()
+        assert vault.graph.get_outlinks("guides/a.md")[0].target_path == ".x/b.md"
+        # Remove the indexed source so only a new, unindexed note is exported.
+        (tmp_path / "guides/a.md").unlink()
+        (tmp_path / "guides/new.md").write_text("[[b]]")
+        for include_hidden in (False, True):
+            with pytest.raises(ValueError, match="collision"):
+                build_okf_bundle(
+                    vault,
+                    ProjectConfig(source_dir=tmp_path),
+                    folder="guides",
+                    include_hidden=include_hidden,
+                )
     finally:
         vault.close()

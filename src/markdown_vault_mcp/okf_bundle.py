@@ -246,7 +246,6 @@ def build_okf_bundle(
                     for item in page.entries
                     if item.role not in {"directory", "unknown"}
                     and item.state not in {"unavailable", "missing"}
-                    and (include_hidden or not item.hidden_path)
                 )
                 if page.next_cursor is None:
                     return candidates

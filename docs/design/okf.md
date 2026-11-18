@@ -750,7 +750,7 @@ Outside destinations are reported as dependencies, and a destination that would
 point to a different exported file refuses the export. Library callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report
 lists files whose bytes changed. Frontmatter stays unchanged, and only the
-selected root’s own index can provide an `okf_version`. Outside wikilink targets are reported as dependencies. Convention files, templates, hidden
+selected root’s own index can provide an `okf_version`. Outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
 configured conventions filename. Library callers can opt into hidden and

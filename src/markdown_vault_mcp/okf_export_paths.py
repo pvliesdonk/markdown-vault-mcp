@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
@@ -13,12 +14,14 @@ from markdown_vault_mcp.okf_export_report import Dependency
 from markdown_vault_mcp.scanner import (
     _RE_LINE_QUOTE_PREFIX,
     _blank_spans,
+    _blank_wikilinks,
     _closes_fence,
     _definition_destination_end,
     _fence_opener,
     _find_wikilink,
     _is_external_target,
     _iter_definition_matches,
+    _make_reference_follow,
     _paragraph_regions,
     _resolve_link_path,
 )
@@ -31,6 +34,9 @@ from markdown_vault_mcp.utils.links import (
     _is_escaped,
     compute_new_raw_target,
     decode_markdown_destination,
+    encode_plain_destination,
+    escape_link_text,
+    escape_unparsable_parentheses,
     is_pointy_destination,
     iter_bracket_links,
     split_markdown_fragment,
@@ -190,27 +196,62 @@ def _regions(masked: str) -> Iterator[tuple[int, str]]:
         offset = start + len(region)
 
 
+def _label_key(label: str) -> str:
+    return " ".join(label.split()).casefold()
+
+
+class _ReferenceLabels(Mapping[str, str]):
+    def __init__(self, labels: set[str]) -> None:
+        self.labels = labels
+
+    def __getitem__(self, key: str) -> str:
+        key = _label_key(key)
+        if key not in self.labels:
+            raise KeyError(key)
+        return key
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.labels)
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+
 def _definition_spans(
     masked: str,
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    spans = []
     definitions = []
+    first: dict[str, tuple[int, int]] = {}
     unquoted = re.sub(
         re.compile(_RE_LINE_QUOTE_PREFIX.pattern, re.MULTILINE),
         lambda match: " " * len(match.group()),
         masked,
     )
     for label, tail, start, end in _iter_definition_matches(unquoted):
-        if label.startswith("^"):
+        key = _label_key(label)
+        if not key or key.startswith("^"):
             continue
-        # The yielded tail runs greedily to the end of the destination's line.
         line_end = masked.find("\n", end)
         target_start = (len(masked) if line_end < 0 else line_end) - len(tail)
         target_end = _definition_destination_end(masked, target_start)
         if target_end is not None:
-            spans.append((target_start, target_end))
+            first.setdefault(key, (target_start, target_end))
             definitions.append((start, end))
-    return spans, definitions
+    usages = _blank_wikilinks(_blank_spans(masked, definitions))
+    labels = _ReferenceLabels(set(first))
+    used: set[str] = set()
+    follow_reference = _make_reference_follow(labels)
+
+    def follow(region: str, opener: int, closer: int) -> tuple[str, int] | None:
+        result = follow_reference(region, opener, closer)
+        if result is not None:
+            used.add(result[0])
+        return result
+
+    for _offset, region in _regions(usages):
+        for _ in iter_bracket_links(region, follow):
+            pass
+    return [span for key, span in first.items() if key in used], definitions
 
 
 def _inline_destinations(region: str, offset: int) -> list[tuple[int, int]]:
@@ -285,14 +326,28 @@ def _safe_text(text: str) -> str:
     return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
-def _wikilink_spans(masked: str) -> Iterator[tuple[int, int]]:
+def _wikilink_spans(masked: str) -> Iterator[tuple[int, int, int, int]]:
     position = 0
     while (found := _find_wikilink(masked, position)) is not None:
         position, target, _alias, start = found
         left = len(target) - len(target.lstrip())
         path = target.strip().removesuffix("\\").split("#", 1)[0]
         if path and not _is_external_target(path):
-            yield start + 2 + left, start + 2 + left + len(path)
+            yield start + 2 + left, start + 2 + left + len(path), start, position
+
+
+def _external_wikilink(body: str, start: int, end: int, url: str) -> tuple[int, str]:
+    target, _pipe, alias = body[start + 2 : end - 2].partition("|")
+    target = target.strip().removesuffix("\\")
+    path, separator, fragment = target.partition("#")
+    display = alias.strip() if alias and alias.strip() else path
+    if separator:
+        url += "#" + quote(fragment, safe="/%?", errors="surrogateescape")
+    url = encode_plain_destination(escape_unparsable_parentheses(url))
+    embed = start > 0 and body[start - 1] == "!" and not _is_escaped(body, start - 1)
+    if embed:
+        start -= 1
+    return start, f"{'!' if embed else ''}[{escape_link_text(display)}]({url})"
 
 
 @dataclass
@@ -474,9 +529,14 @@ class ExportPaths:
         changes = []
         dependencies: list[Dependency] = []
         masked = _masked_body(body)
-        spans = [(start, end, False) for start, end in _destination_spans(masked)]
-        spans.extend((start, end, True) for start, end in _wikilink_spans(masked))
-        for start, end, wiki in sorted(spans):
+        spans: list[tuple[int, int, tuple[int, int] | None]] = [
+            (start, end, None) for start, end in _destination_spans(masked)
+        ]
+        spans.extend(
+            (start, end, (opening, closing))
+            for start, end, opening, closing in _wikilink_spans(masked)
+        )
+        for start, end, wiki in sorted(spans, key=lambda span: (span[0], span[1])):
             raw = body[start:end]
             replacement = (
                 self._wiki_replacement(raw, source, dependencies)
@@ -484,6 +544,9 @@ class ExportPaths:
                 else self._replacement(raw, source, dependencies)
             )
             if replacement is not None:
+                if wiki and _is_external_target(replacement):
+                    start, replacement = _external_wikilink(body, *wiki, replacement)
+                    end = wiki[1]
                 changes.append((start, end, replacement))
         for start, end, replacement in reversed(changes):
             body = body[:start] + replacement + body[end:]
