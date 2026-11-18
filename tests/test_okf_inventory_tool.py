@@ -272,7 +272,12 @@ def _index_policy_fixture(tmp_path, case):
         tracker.unlink()
         tracker.mkdir()
         (tracker / "secret.md").write_text("private")
-    if case == "corrupt":
+    if case == "zero":
+        index.write_bytes(b"")
+    elif case == "unbuilt":
+        vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
+        vault.close()
+    elif case == "corrupt":
         index.write_bytes(b"bad index")
     elif case == "newer":
         with sqlite3.connect(index) as conn:
@@ -306,6 +311,8 @@ def _index_policy_fixture(tmp_path, case):
         "same",
         "corrupt",
         "newer",
+        "zero",
+        "unbuilt",
         "unrelated",
     ],
 )
@@ -345,12 +352,13 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
             )
 
         monkeypatch.setattr(_cli_bundle, "_build_reader_vault", fail_other_store)
+    original_index = (
+        index.read_bytes() if case in {"zero", "newer", "unbuilt"} else None
+    )
     result = CliRunner().invoke(
         app, ["okf-inventory", "", "--local", "--json", *options]
     )
-    if case == "newer":
-        assert result.exit_code == 1 and "schema_version" in result.output
-    elif case in {"unrelated", "internal_value"}:
+    if case in {"unrelated", "internal_value"}:
         expected = (
             "other store unavailable"
             if case == "unrelated"
@@ -373,6 +381,8 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
         else tracker.read_text() == "private"
     )
     assert vector.read_bytes() == b"vector"
+    if original_index is not None:
+        assert index.read_bytes() == original_index
     if case == "missing":
         assert not index.exists()
     if case == "corrupt":

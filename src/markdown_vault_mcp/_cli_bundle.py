@@ -26,8 +26,7 @@ from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     IndexUnavailableError,
     MarkdownMCPError,
-    StoreCorruptError,
-    StoreUnavailableError,
+    StoreOpenError,
 )
 from markdown_vault_mcp.utils.fs import could_be_regular_file
 
@@ -64,7 +63,7 @@ def _local(
         built = _build_reader_vault(
             config, source, not existing, inspection_policy=policy
         )
-    except (StoreCorruptError, StoreUnavailableError) as exc:
+    except StoreOpenError as exc:
         if not existing or exc.backend != "sqlite" or exc.location != str(path):
             raise
         config = replace(config, index_path=None)
