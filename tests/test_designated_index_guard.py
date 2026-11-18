@@ -232,26 +232,26 @@ def test_equivalent_segment_matches_original_glob(
 
 
 @pytest.mark.parametrize(
-    ("name", "pattern", "axes", "want"),
+    ("names", "axes", "want"),
     [
-        ("a", "[!a]*", (True, False), True),
-        ("a", "[!a]*", (False, False), False),
-        ("é", "??", (False, True), True),
-        ("é", "??", (False, False), False),
-        ("ff", "ﬀ", (True, False), True),
-        ("ff", "ﬀ", (False, False), False),
+        (("a", "[!a]*"), (True, False), True),
+        (("a", "[!a]*"), (False, False), False),
+        (("é", "??"), (False, True), True),
+        (("é", "??"), (False, False), False),
+        (("ff", "ﬀ"), (True, False), True),
+        (("ff", "ﬀ"), (False, False), False),
     ],
 )
 def test_policy_with_simulated_folding_axes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    name: str,
-    pattern: str,
+    names: tuple[str, str],
     axes: tuple[bool, bool],
     want: bool,
 ) -> None:
     from markdown_vault_mcp.okf_capabilities import designated_index_path
 
+    name, pattern = names
     monkeypatch.setattr("markdown_vault_mcp.okf_capabilities._probe", lambda _p: axes)
     assert designated_index_path(tmp_path, f"{name}/index.md", (pattern,)) is want
 
