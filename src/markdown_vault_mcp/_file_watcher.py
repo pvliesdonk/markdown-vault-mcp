@@ -292,7 +292,7 @@ def _contains_internal_dir(child: Path, internal_dirs: frozenset[Path]) -> bool:
         internal_dirs: Resolved vault-internal directories to protect.
 
     Returns:
-        ``True`` when *child* should not be watched. An unresolvable *child*
+        ``True`` when *child* should not be watched for search. An unresolvable *child*
         returns ``False`` (a symlink-loop child is already screened out earlier
         by the caller's ``is_dir`` check).
     """
@@ -440,9 +440,9 @@ def _derive_watch_roots(
         root_floor: Whether to append the non-recursive ``source_dir`` floor
             watch. ``False`` omits it on every path, including the fallback.
         internal_dirs: Vault-internal directories (state / index / embeddings
-            dir, ``.git``) that must never be watched, so the writes ``reindex``
-            makes into them do not re-trigger the watcher. A top-level child
-            that is or contains one of these is skipped, or kept for
+            dir, ``.git``) excluded from search watches, so writes ``reindex``
+            makes into them do not re-trigger search. A top-level child that
+            is or contains one of these is skipped for search, or kept for
             observation only when *observe*.
         observe: Keep excluded and internal-holding children as
             ``search=False`` roots.
