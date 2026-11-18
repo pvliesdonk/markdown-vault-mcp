@@ -523,3 +523,85 @@ def test_full_first_chunk_input_is_reused_across_restart_and_incremental_edit(
     assert after[0].startswith("Concept\ncobalt\n\n")
     assert edited.texts == [after[0]]
     assert after[1:] == stored[1:]
+
+
+@pytest.mark.parametrize("long_title", [True, False], ids=["title", "body-tail"])
+def test_listed_concept_retains_title_description_and_body_meaning(
+    tmp_path: Path, long_title: bool
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    title = "T" * 80 if long_title else "Concept"
+    body = "orchard" if long_title else "word " * 56 + "orchard"
+    provider = MeaningProvider()
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=_capabilities(True, (".",)),
+            max_chunk_chars=300,
+            chunk_overlap_words=0,
+        ),
+        embedding_provider=provider,
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        vault.writer.write(
+            "concept.md",
+            f"---\ntitle: {title}\ndescription: luminescence\n---\n\n{body}\n",
+        )
+        wait_for_writer_drain(vault)
+        listing = (root / "index.md").read_text()
+        assert title in listing and "luminescence" in listing
+        assert "index.md" not in _paths(vault)
+        assert any("luminescence" in text for text in provider.texts)
+        assert any("orchard" in text for text in provider.texts)
+        for query in ("glowing", "fruit"):
+            assert vault.reader.search(query, mode="semantic", limit=1)[0].path == (
+                "concept.md"
+            )
+    finally:
+        vault.close()
+
+
+def test_listed_configured_summary_respects_provider_input_budget(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "concept.md").write_text(
+        "---\ntitle: Concept\nsummary: "
+        + "s" * 200
+        + "\ndescription: "
+        + "luminescence " * 8
+        + "\n---\n\norchard body content\n"
+    )
+
+    def inputs(enabled: bool) -> list[str]:
+        provider = CountingProvider()
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                okf_mode="on",
+                okf_capabilities=_capabilities(enabled, (".",)),
+                max_chunk_chars=300,
+                searchable_frontmatter_fields=["summary"],
+            ),
+            embedding_provider=provider,
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+            return provider.texts
+        finally:
+            vault.close()
+
+    plain = inputs(False)
+    listed = inputs(True)
+    assert plain and listed
+    assert any("s" * 200 in text for text in listed)
+    assert any("luminescence" in text for text in listed)
+    assert any("orchard body content" in text for text in listed)
+    assert max(map(len, listed)) <= max(300, max(map(len, plain)))
