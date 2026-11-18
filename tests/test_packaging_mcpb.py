@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MCPB_DIR = REPO_ROOT / "packaging" / "mcpb"
 PLUGIN_DIR = REPO_ROOT / ".claude-plugin" / "plugin"
@@ -105,6 +107,52 @@ def test_mcpb_pyproject_template_pins_versioned_package() -> None:
     # lower floor here lets a 3.10 host install the bundle and fail at
     # resolve time instead of at install time.
     assert 'requires-python = ">=3.11"' in template
+
+
+@pytest.mark.parametrize("channel", ["mcpb", "plugin"])
+def test_optional_install_fields_have_defaults(channel: str) -> None:
+    """Omitted optional fields must resolve instead of remaining placeholders."""
+    fields = (
+        _load_manifest_template()["user_config"]
+        if channel == "mcpb"
+        else _load_plugin_json()["userConfig"]
+    )
+    for field_id, field in fields.items():
+        if not field["required"]:
+            assert field.get("default") is not None, field_id
+
+
+def test_mcpb_optional_defaults_keep_features_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bundle's optional defaults retain server fallbacks and opt-in features."""
+    from markdown_vault_mcp.config import ProjectConfig
+
+    manifest = _load_manifest_template()
+    # MCPB merges defaults first, then stored values. No optional values
+    # are supplied here, just the required vault selection (#1729).
+    values = {
+        key: field["default"]
+        for key, field in manifest["user_config"].items()
+        if "default" in field
+    }
+    values["source_dir"] = str(tmp_path)
+    for name, template in manifest["server"]["mcp_config"]["env"].items():
+        field_id = template.removeprefix("${user_config.").removesuffix("}")
+        value = values.get(field_id, template)
+        monkeypatch.setenv(
+            name, str(value).lower() if isinstance(value, bool) else value
+        )
+
+    config = ProjectConfig.from_env()
+    assert config.embedding_provider is None
+    assert config.openai_api_key is None
+    assert config.voyage_api_key is None
+    assert config.git_repo_url is None
+    assert config.git_token is None
+    assert config.openai_base_url == "https://api.openai.com/v1"
+    assert config.openai_embedding_model == "text-embedding-3-small"
+    assert config.server_name == "markdown-vault-mcp"
 
 
 def _load_plugin_json() -> dict:
