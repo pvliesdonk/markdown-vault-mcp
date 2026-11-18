@@ -652,3 +652,28 @@ def test_postgres_into_itself_is_refused(
     result = _import("--from", "postgres")
     assert result.exit_code == 1
     assert "is the configured store" in result.stderr
+
+
+@pytest.mark.usefixtures("env")
+@pytest.mark.parametrize("command", ["index", "import"])
+def test_scratch_failure_is_diagnostic_and_preserves_generation(
+    monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """Both commands surface scratch failure without replacing compatible vectors."""
+    _built_with(monkeypatch, "numpy")
+    _built_with(monkeypatch, "sqlite")
+    before = _chunk_count(monkeypatch, "sqlite")
+    failure = OSError("synthetic disk full")
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise failure
+
+    monkeypatch.setattr("tempfile.TemporaryFile", fail)
+    if command == "index":
+        result = runner.invoke(app, ["admin", "index", "--force"])
+    else:
+        result = _import("--from", "numpy")
+    assert result.exit_code != 0
+    assert result.exception is failure
+    assert "embedding_stage_io_failed" in result.stderr
+    assert _chunk_count(monkeypatch, "sqlite") == before

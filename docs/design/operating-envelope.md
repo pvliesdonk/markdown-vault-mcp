@@ -324,8 +324,16 @@ medians at 3,252 notes were 450.12 → 449.96 MiB for NumPy, 343.97 →
 window includes post-build GC, diagnostic allocator trim and close.
 Five-millisecond sampling and scalar instrumentation add overhead; these
 finite runs establish neither an asymptotic bound nor a production budget.
-The unchanged embedding stages still hold prepared text, packed vectors
-and normalized generations. NumPy's required resident matrix alone was
+The measured embedding stages held prepared text, packed vectors
+and normalized generations. Full-build preparation now stages completed windows
+on scratch disk beside the state file, or under `TMPDIR` without a state file;
+memory-backed scratch consumes memory. Scratch contains embedding text and
+metadata content plus base64-encoded vectors. Operating-system temporary files are removed on handle close or process termination, though a create-then-unlink fallback has a brief vulnerable creation interval. A full or unwritable location
+fails preparation before publication; compatible and owned stores retain previous vectors, while an incompatible injected store is emptied before preparation. Cleanup failures are logged. The built-in chunk reader reads atomic pages and holds read locks only during each page fetch. Changes between pages can be observed or missed; convergence reconciles later edits. Built-in
+publishers still materialize generation copies, third-party indexes without the
+optional chunk iterator retain an eager read, and custom non-scalar metadata
+remains resident. Path bookkeeping and the largest document remain unbounded by
+the window. NumPy's required resident matrix alone was
 93,241,344 bytes (22,764 rows × 1,024 dimensions × 4 bytes). Reported vector
 widths do not count unique allocations or measure extra copies.
 
