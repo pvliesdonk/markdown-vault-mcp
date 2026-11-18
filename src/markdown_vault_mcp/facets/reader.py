@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.utils.content_kind import is_note
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from typing import Any, Literal
@@ -66,10 +68,16 @@ def _selected(
     parse_state: ParseState | None,
     search_state: SearchState | None,
 ) -> bool:
+    if entry.role == "directory" and entry.state in {"unavailable", "missing"}:
+        return True
     if entry.path.rsplit("/", 1)[-1] in {"index.md", "log.md"}:
         return False
     if entry.state in {"unavailable", "missing"}:
-        return True
+        return (
+            entry.role in {"unknown", "concept_candidate"}
+            and is_note(entry.path)
+            and (search_state is None or entry.search_state == search_state)
+        )
     return (
         entry.role == "concept_candidate"
         and (type_state is None or entry.type_state in {type_state, "not_inspected"})
@@ -142,8 +150,8 @@ class ReaderFacet:
     ) -> BundleInspection:
         """Inspect one page of concept candidates without building an index.
 
-        Missing and unavailable rows remain visible; unknown type or parse state
-        does not rule out a match, and search-state filters remain exact.
+        Unknown type or parse state does not rule out a match. Search-state
+        filters match exactly, except directory boundaries needed to continue.
 
         Args:
             request: Explicit root, page limit and optional continuation.

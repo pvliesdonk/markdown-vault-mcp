@@ -207,7 +207,7 @@ an inaccessible cursor ancestor makes enumeration incomplete.
 To select concept candidates from the same bounded observation, call
 `vault.reader.okf_inventory(BundleTreeRequest(root="knowledge"), type_state="absent")`.
 Each call filters up to 1,000 observations and returns at most the requested
-limit; continue with `next_cursor` even when no entries match. Reserved `index.md` and `log.md` are excluded first. Policy-visible missing and unavailable observations survive filters. Unknown type or parse state does not prove a mismatch, while search-state filters match exactly. An absent type has no `type` key; blank, null and non-string values are invalid.
+limit; continue with `next_cursor` even when no entries match. Reserved files named `index.md` and `log.md` are excluded. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. An absent type has no `type` key; blank, null and non-string values are invalid.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

@@ -146,6 +146,12 @@ def register(app: typer.Typer) -> None:
                 settings=settings,
             )
             render_reply("okf-inventory", reply, output_mode(json_output, agent))
-        except (ClientError, ConfigurationError, MarkdownMCPError, ValueError) as exc:
+        except ClientError as exc:
+            typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
+            raise typer.Exit(exc.code) from None
+        except (ConfigurationError, MarkdownMCPError, ValueError) as exc:
             typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
             raise typer.Exit(1) from None
+
+        except KeyboardInterrupt:
+            raise typer.Exit(130) from None

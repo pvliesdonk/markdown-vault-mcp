@@ -56,8 +56,11 @@ def test_sparse_matches_and_matching_cursor(tmp_path):
     ("arguments", "flags"),
     [
         ({"type_state": "absent"}, ["--type-state", "absent"]),
-        ({"parse_state": "valid"}, ["--parse-state", "valid"]),
-        ({"search_state": "searchable"}, ["--search-state", "searchable"]),
+        (
+            {"parse_state": "malformed_metadata"},
+            ["--parse-state", "malformed_metadata"],
+        ),
+        ({"search_state": "non_admitted"}, ["--search-state", "non_admitted"]),
         ({"entry_limit": 1}, ["--entry-limit", "1"]),
         ({"cursor": "note.md"}, ["--cursor", "note.md"]),
     ],
@@ -74,10 +77,12 @@ async def test_tool_and_cli_read_only_parity(tmp_path, monkeypatch, arguments, f
     vault_dir = tmp_path / "vault"
     vault_dir.mkdir()
     (vault_dir / "note.md").write_text("# note")
-    (vault_dir / "typed.md").write_text("---\ntype: concept\n---\ntext")
+    (vault_dir / "typed.md").write_text("---\ntype: concept\ntitle: Typed\n---\ntext")
+    (vault_dir / "broken.md").write_text("---\ntype: [\n---\ntext")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "index.db"))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title")
     async with Client(make_server()) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
         assert tools["okf_inventory"].icons
@@ -87,6 +92,12 @@ async def test_tool_and_cli_read_only_parity(tmp_path, monkeypatch, arguments, f
     cli = CliRunner().invoke(app, ["okf-inventory", "", *flags, "--local", "--json"])
     assert cli.exit_code == 0, cli.output
     assert json.loads(cli.stdout) == payload
+    if "parse_state" in arguments:
+        assert [row["path"] for row in payload["entries"]] == ["broken.md"]
+        assert payload["entries"][0]["parse_state"] == "malformed_metadata"
+    if "search_state" in arguments:
+        assert [row["path"] for row in payload["entries"]] == ["note.md"]
+        assert payload["entries"][0]["search_state"] == "non_admitted"
 
 
 @pytest.mark.parametrize(
@@ -173,7 +184,7 @@ def test_cli_rejects_conflicting_options(
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     result = CliRunner().invoke(app, ["okf-inventory", "", *args])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert message in result.output
 
 
@@ -206,6 +217,8 @@ def test_unknown_observations_survive_type_filter_except_reserved(tmp_path):
     (tmp_path / "big.md").write_text("x" * 70000)
     (tmp_path / "link.md").symlink_to(tmp_path / "ok.md")
     (tmp_path / "index.md").symlink_to(tmp_path / "ok.md")
+    (tmp_path / "image.png").symlink_to(tmp_path / "ok.md")
+    (tmp_path / "linkdir").symlink_to(tmp_path, target_is_directory=True)
     vault = Vault(source_dir=tmp_path)
     try:
         for state in (None, "absent"):
@@ -215,13 +228,22 @@ def test_unknown_observations_survive_type_filter_except_reserved(tmp_path):
             assert rows["big.md"].reason == "note_limit"
             assert rows["link.md"].reason == "symlink"
         report = vault.reader.okf_inventory(
-            BundleTreeRequest(""), parse_state="invalid", search_state="searchable"
+            BundleTreeRequest(""),
+            parse_state="malformed_metadata",
+            search_state="searchable",
         )
-        assert [row.path for row in report.entries] == ["link.md"]
+        assert report.entries == ()
         report = vault.reader.okf_inventory(
-            BundleTreeRequest(""), parse_state="invalid"
+            BundleTreeRequest(""), parse_state="malformed_metadata"
         )
         assert {row.path for row in report.entries} == {"big.md", "link.md"}
+        from markdown_vault_mcp.bundle_inventory import BundleEntry
+        from markdown_vault_mcp.facets.reader import _selected
+
+        for role in ("support", "supporting"):
+            assert not _selected(
+                BundleEntry("support.md", role, "unavailable"), None, None, None
+            )
     finally:
         vault.close()
 
@@ -282,13 +304,13 @@ def _index_policy_fixture(tmp_path, case):
     elif case == "sidecars":
         wal.write_bytes(b"wal")
         lock.write_bytes(b"lock")
-    elif case in {"corrupt", "override"}:
+    elif case == "corrupt":
         index.write_bytes(b"bad index")
     elif case == "newer":
         with sqlite3.connect(index) as conn:
             conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
             conn.execute("INSERT INTO meta VALUES ('schema_version', '99')")
-    elif case == "same":
+    elif case in {"same", "override", "unrelated"}:
         vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
         try:
             vault.index.build_index()
@@ -298,7 +320,17 @@ def _index_policy_fixture(tmp_path, case):
 
 
 @pytest.mark.parametrize(
-    "case", ["missing", "directory", "sidecars", "override", "same", "corrupt", "newer"]
+    "case",
+    [
+        "missing",
+        "directory",
+        "sidecars",
+        "override",
+        "same",
+        "corrupt",
+        "newer",
+        "unrelated",
+    ],
 )
 def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
     # One matrix checks every index fallback against the same policy contract.
@@ -316,11 +348,26 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
     if case == "override":
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path / "other"))
     options = ["--source-dir", str(root)] if case == "override" else []
+    calls = []
+    if case == "unrelated":
+        from markdown_vault_mcp import _cli_bundle
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+        def fail_other_store(*_args, **_kwargs):
+            calls.append(1)
+            raise StoreUnavailableError(
+                "other store unavailable", backend="sqlite", location="other.db"
+            )
+
+        monkeypatch.setattr(_cli_bundle, "_build_reader_vault", fail_other_store)
     result = CliRunner().invoke(
         app, ["okf-inventory", "", "--local", "--json", *options]
     )
     if case == "newer":
         assert result.exit_code == 1 and "schema_version" in result.output
+    elif case == "unrelated":
+        assert result.exit_code == 1 and "other store unavailable" in result.output
+        assert calls == [1]
     else:
         assert result.exit_code == 0, result.output
         rows = json.loads(result.stdout)["entries"]
@@ -331,7 +378,53 @@ def test_cli_index_selection_preserves_policy(tmp_path, monkeypatch, case):
     assert tracker.read_text() == "private" and vector.read_bytes() == b"vector"
     if case == "missing":
         assert not index.exists()
-    if case in {"corrupt", "override"}:
+    if case == "corrupt":
         assert index.read_bytes() == b"bad index"
     if case == "sidecars":
         assert wal.read_bytes() == b"wal" and lock.read_bytes() == b"lock"
+
+
+@pytest.mark.parametrize("name", ["index.md", "log.md"])
+def test_reserved_directory_boundary_can_be_resumed(tmp_path, name):
+    (tmp_path / "a.md").write_text("note")
+    path = tmp_path
+    for _ in range(31):
+        path = path / "d"
+        path.mkdir()
+    boundary = path / name
+    boundary.mkdir()
+    (boundary / "note.md").write_text("note")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        report = vault.reader.okf_inventory(
+            BundleTreeRequest(""), search_state="searchable"
+        )
+        assert len(report.entries) == 1
+        assert report.entries[0].reason == "depth_limit"
+        first = vault.reader.okf_inventory(BundleTreeRequest("", entry_limit=1))
+        assert [row.path for row in first.entries] == ["a.md"]
+        second = vault.reader.okf_inventory(
+            BundleTreeRequest("", entry_limit=1, cursor=first.next_cursor)
+        )
+        assert second.entries == report.entries
+        resumed = vault.reader.okf_inventory(BundleTreeRequest(report.entries[0].path))
+        assert [row.path for row in resumed.entries] == [
+            f"{report.entries[0].path}/note.md"
+        ]
+    finally:
+        vault.close()
+
+
+def test_cli_interrupt_exits_130(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp import _cli_bundle
+    from markdown_vault_mcp.cli import app
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setattr(_cli_bundle, "run_read", interrupt)
+    result = CliRunner().invoke(app, ["okf-inventory", "", "--local"])
+    assert result.exit_code == 130
