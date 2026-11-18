@@ -181,6 +181,7 @@ class _HiddenChangeNotices:
         Args:
             event: The ignored hidden event.
             paths: Its endpoint paths.
+            arm_modified: Also arm parents for an excluded modification.
         """
         if event.event_type in _PARENT_NOTICE_EVENT_TYPES or (
             arm_modified and event.event_type == EVENT_TYPE_MODIFIED
@@ -431,7 +432,10 @@ def _derive_watch_roots(
         internal_dirs: Vault-internal directories (state / index / embeddings
             dir, ``.git``) that must never be watched, so the writes ``reindex``
             makes into them do not re-trigger the watcher. A top-level child
-            that is or contains one of these is skipped entirely.
+            that is or contains one of these is skipped, or kept for
+            observation only when *observe*.
+        observe: Keep excluded and internal-holding children as
+            ``search=False`` roots.
 
     Returns:
         Resolved watch roots to schedule, the non-recursive resolved
@@ -557,11 +561,11 @@ class VaultFileWatcher:
     """Watch a vault directory for external file changes and call *on_change*.
 
     Debounces rapid bursts of filesystem events into a single callback.
-    The vault's own internal write dirs (state / index / embeddings dir and
-    ``.git``, passed as ``internal_dirs``) are never watched, so git operations
-    and the state-file write ``reindex`` makes on every run do not trigger a
-    self-feedback reindex loop.  User dot-roots (e.g. ``.claude/``) are still
-    watched recursively.
+    Search never watches the vault's internal write dirs (``internal_dirs``),
+    so git operations and the state-file write ``reindex`` makes on every run
+    do not trigger a self-feedback reindex loop. Observation may watch notes
+    beside them; it drops internal names and the sweep enforces artifact
+    policy.  User dot-roots (e.g. ``.claude/``) are still watched recursively.
 
     A ``_stopped`` flag prevents watchdog events delivered *during* ``stop()``
     from resurrecting the debounce timer or invoking ``on_change`` after the
@@ -582,8 +586,8 @@ class VaultFileWatcher:
             at ``source_dir`` and root-level files rely on scans (see
             :func:`_derive_watch_roots`).
         internal_dirs: Vault-internal directories (state / index / embeddings
-            dir, ``.git``) that must never be watched, so ``reindex``'s writes
-            into them do not re-trigger the watcher (see
+            dir, ``.git``) whose top-level children search never watches, so
+            ``reindex``'s writes into them do not re-trigger it (see
             :func:`_derive_watch_roots`).
         on_observation: Optional callback for inventory-only changes, subscribed
             without search exclusions and coalesced with search events.
@@ -703,7 +707,7 @@ class VaultFileWatcher:
             selected = [
                 (path, value)
                 for path, value in self._watches.items()
-                if path == root or path.is_relative_to(root)
+                if path.is_relative_to(root)
             ]
             for path, _ in selected:
                 self._watches.pop(path, None)
@@ -724,7 +728,6 @@ class VaultFileWatcher:
             for root in _tree_roots(parent):
                 changed = self._register(root) or changed
             return changed
-        changed = False
         try:
             children = list(parent.iterdir())
         except OSError:
@@ -762,9 +765,7 @@ class VaultFileWatcher:
             )
             return False
         with self._lock:
-            covered = any(
-                path == child or path.is_relative_to(child) for path in self._watches
-            )
+            covered = any(path.is_relative_to(child) for path in self._watches)
         if covered:
             return False
         changed = False
@@ -773,13 +774,19 @@ class VaultFileWatcher:
         return changed
 
     def start(self) -> None:
-        """Start watching the configured roots; safe to call more than once."""
+        """Start watching *source_dir*.
+
+        No-op when watchdog is not installed.  Safe to call on a stopped
+        watcher — resets the stopped flag and starts a fresh observer.
+        A no-op if the observer is already running (double-call guard).
+        """
         if not _WATCHDOG_AVAILABLE:
             logger.warning("file_watcher_watchdog_missing")
             return
+
         with self._lock:
             if self._observer is not None:
-                return
+                return  # already running
             self._stopped = False
             self._watches.clear()
             observer = Observer()
@@ -797,22 +804,34 @@ class VaultFileWatcher:
             for piece in pieces:
                 if self._register(piece):
                     scheduled.append(piece)
+
         if roots and not scheduled:
+            # Every derived root failed to schedule: the observer will run but
+            # watch nothing, so no edit will ever trigger a reindex. Surface it
+            # above the per-root WARNINGs and the INFO summary so the degraded
+            # state is visible, not buried (#835). Distinct from the legitimate
+            # "no roots at all" case (root_floor off, no children), where roots
+            # is empty and this does not fire.
             logger.error(
-                "file_watcher_all_roots_failed roots=%d fallback=scan_only source_dir=%s",
+                "file_watcher_all_roots_failed roots=%d fallback=scan_only "
+                "source_dir=%s",
                 len(roots),
                 self._source_dir,
             )
+
         try:
             observer.start()
         except Exception:
             with self._lock:
                 self._observer = None
             raise
+
+        recursive_count = sum(1 for root in scheduled if root.recursive)
         logger.info(
-            "file_watcher_watching roots=%d recursive=%d floor=%s under=%s debounce_s=%s roots=%s",
+            "file_watcher_watching roots=%d recursive=%d floor=%s under=%s "
+            "debounce_s=%s roots=%s",
             len(scheduled),
-            sum(root.recursive for root in scheduled),
+            recursive_count,
             "on" if self._root_floor else "off",
             self._source_dir,
             self._debounce_s,
@@ -828,6 +847,7 @@ class VaultFileWatcher:
                 self._timer = None
             self._search_pending = False
             observer, self._observer = self._observer, None
+
         if observer is not None:
             try:
                 observer.stop()
@@ -839,7 +859,16 @@ class VaultFileWatcher:
 if _WATCHDOG_AVAILABLE:
 
     class _VaultEventHandler(FileSystemEventHandler):
-        """Route search and observation events through the same watch."""
+        """Forward mutating filesystem events to the search or observation scheduler.
+
+        Read-only events (``opened`` / ``closed`` / ``closed_no_write``) are
+        dropped before the hidden-path check so the read-only vault walk that
+        ``reindex()`` performs cannot re-trigger itself (#720).
+
+        Hiddenness is evaluated relative to *watch_root*, the specific root this
+        handler was scheduled on, so a watched dot-root delivers its non-dot
+        descendants while hidden noise below any root is still dropped.
+        """
 
         def __init__(
             self,
@@ -861,6 +890,7 @@ if _WATCHDOG_AVAILABLE:
             self._notices = _HiddenChangeNotices()
 
         def _concerns_vault(self, event: FileSystemEvent) -> bool:
+            """Return whether a mutating event is a visible, non-derived change."""
             paths = _event_paths(event)
             hidden = all(
                 _is_hidden_relative_to_root(path, self._watch_root) for path in paths
@@ -916,7 +946,15 @@ if _WATCHDOG_AVAILABLE:
             )
 
         def on_any_event(self, event: FileSystemEvent) -> None:
-            """Route a mutation, including either endpoint of a move."""
+            """Schedule a mutating event when an endpoint belongs to this root.
+
+            Moves consider both endpoints; other mutations consider only source.
+            The parent notice watchdog derives from a hidden change is absorbed.
+            A change search does not take is scheduled for observation.
+
+            Args:
+                event: The filesystem event delivered under this watch root.
+            """
             if event.event_type not in _MUTATING_EVENT_TYPES:
                 return
             search = self._root.search and self._concerns_vault(event)

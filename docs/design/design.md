@@ -1490,10 +1490,10 @@ watched dot-root such as `.claude/` are delivered — and `source_dir`
 itself is watched non-recursively as a floor for root-level files. The
 floor is gated by `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` (default
 on); setting it false removes every `source_dir`-rooted registration, at
-the cost of root-level files being picked up only by scans. The vault's
-own state / index / embeddings directories and `.git` are never watched
-(#830): `reindex()` rewrites the state file on every run, so a watch on
-its directory would re-trigger the watcher into a self-feedback loop.
+the cost of root-level files being picked up only by scans. Search never
+watches the vault's own state / index / embeddings directories or `.git`
+(#830): `reindex()` rewrites the state file on every run, so a search watch
+on its directory would re-trigger the watcher into a self-feedback loop.
 For search, a top-level directory created after startup needs a restart
 to be watched, and a state/index/embeddings path configured beneath a
 content directory un-watches that whole top-level directory (keep those
