@@ -7529,6 +7529,7 @@ Later decisions (2026-10-22, #1505):
 **Protected paths.** `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` defines
 case-insensitive vault-relative globs for ordinary client mutations. A matching
 folder protects its contents, and both requested and resolved paths are checked.
+A folder move checks every entry its cleanup removes before moving files.
 Reads remain available; library callers can opt in with `allow_protected=True`.
 Automatic OKF maintenance respects protection; its isolated failures do not
 undo the primary write. A rename or folder move skips protected

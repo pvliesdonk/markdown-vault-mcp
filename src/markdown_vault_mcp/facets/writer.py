@@ -146,7 +146,6 @@ class WriterFacet:
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
                 whole vault.
-
             allow_protected: Allow this library call to change protected paths.
 
         Returns:
@@ -166,7 +165,6 @@ class WriterFacet:
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
-
             allow_protected: Allow this library call to change protected paths.
 
         Returns:
@@ -186,7 +184,6 @@ class WriterFacet:
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
-
             allow_protected: Allow this library call to change protected paths.
 
         Returns:
@@ -213,7 +210,6 @@ class WriterFacet:
         provided, it is serialised as a YAML header at the top of the file.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             path: Relative document path (e.g. ``"notes/topic.md"``).
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as a YAML header.
@@ -223,6 +219,7 @@ class WriterFacet:
                 modifications.  Pass ``None`` (default) to skip the check.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the write and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.  On an overwrite of
@@ -304,7 +301,6 @@ class WriterFacet:
         are given instead.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             old_text: Exact text to replace (must occur exactly once).
                 Mutually exclusive with *line_start* / *line_end*.
@@ -315,6 +311,7 @@ class WriterFacet:
             line_end: 1-based end line (inclusive) for line-range mode.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the edit and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.EditResult`.
@@ -363,7 +360,6 @@ class WriterFacet:
         when the file does not already end with one.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             path: Relative document path.
             content: Text to append (must be non-empty).
             if_match: Optional etag for optimistic concurrency; see
@@ -373,6 +369,7 @@ class WriterFacet:
             report_unresolved_links: When ``True``, wait for the index to take
                 in the append and set the result's ``unresolved_links``
                 (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -412,10 +409,10 @@ class WriterFacet:
         vector indices.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             path: Relative path of the document or attachment to remove.
             if_match: Optional etag for optimistic concurrency; see
                 :meth:`WriterFacet.write`.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
@@ -457,7 +454,6 @@ class WriterFacet:
         tracked as links) and the result's ``hint`` says so.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             old_path: Current relative path of the document or attachment.
             new_path: Desired relative path after the move.
             if_match: Optional etag for optimistic concurrency; see
@@ -469,6 +465,7 @@ class WriterFacet:
                 this vault made (#1492); the result's
                 ``link_rewrites_since_etag`` counts them.  Defaults to
                 ``False``, the strict whole-file check.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult`.
@@ -526,9 +523,9 @@ class WriterFacet:
         before anything moves); link rewrites are best-effort.
 
         Args:
-            allow_protected: Allow this library call to change protected paths.
             old_dir: Relative source folder prefix (e.g. ``"drafts"``).
             new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.MoveFolderResult`.

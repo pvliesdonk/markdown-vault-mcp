@@ -970,3 +970,25 @@ class TestServiceTokenOkf:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+async def test_protected_verify_precedes_elicitation(
+    enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = enforced_env / "_conventions.md"
+    path.write_text("original")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "_conventions.md")
+    calls = 0
+
+    async def accept(*_args: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+    assert calls == 0
+    assert path.read_text() == "original"

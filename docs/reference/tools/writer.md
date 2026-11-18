@@ -551,6 +551,7 @@ client for human confirmation. After confirmation, a dict with:
 
 - ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; call `okf_verify` again to attest the current text. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
 - DocumentNotFoundError: If the note does not exist.
+- InvalidRequestError: If the path is protected.
 
 <!-- DOMAIN-EXAMPLE-okf_verify-START -->
 After the user confirms, `okf_verify(path="guides/setup.md")` returns `{"path": "guides/setup.md", "verifier": "human:alice", "verified_count": 1}`, and the note's frontmatter gains:

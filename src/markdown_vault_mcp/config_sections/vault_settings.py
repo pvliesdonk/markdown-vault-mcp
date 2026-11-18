@@ -75,6 +75,10 @@ def normalize_protected_paths(patterns: Sequence[str] | None) -> tuple[str, ...]
             raise ConfigurationError(
                 f"{setting} pattern {pattern!r} must be vault-relative and contain no '..' component."
             )
+        if path.as_posix() == ".":
+            raise ConfigurationError(
+                f"{setting} pattern {pattern!r} names the vault root; use '*' to protect every path."
+            )
         normalized.append(path.as_posix())
     return tuple(normalized)
 
@@ -247,7 +251,9 @@ class VaultSettings:
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
     git_pull_interval_s: int = 0
-    protected_paths: Sequence[str] | None = None
+    protected_paths: Sequence[str] | None = dataclasses.field(
+        default=None, kw_only=True
+    )
     exclude_patterns: Sequence[str] | None = None
     attachment_extensions: Sequence[str] | None = None
     max_attachment_size_mb: float = 1.0

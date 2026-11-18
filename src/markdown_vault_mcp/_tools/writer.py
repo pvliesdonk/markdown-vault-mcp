@@ -1189,7 +1189,9 @@ def register(mcp: FastMCP) -> None:
                 ask the user, and the user's confirmation; under `trust-auth`,
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the path is protected.
         """
+        await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.okf_verify, ctx=ctx, path=path
         )

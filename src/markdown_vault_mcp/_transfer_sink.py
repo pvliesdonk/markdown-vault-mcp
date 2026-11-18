@@ -249,8 +249,8 @@ class VaultTransferSink:
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
                 not exist, an upload destination inside a git submodule or
-                nested repository, or an existing upload destination when
-                overwrite protection is enabled.
+                nested repository, a protected upload destination, or an existing
+                upload destination when overwrite protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.
@@ -433,8 +433,8 @@ class VaultTransferSink:
                 file created after validation or by a prior upload (409
                 Conflict); a note upload whose body is not valid UTF-8 (415
                 Unsupported Media Type); or a body the vault refuses to write,
-                such as one the OKF enforced-write layer cannot stamp (422
-                Unprocessable Content). Each leaves the link usable.
+                such as a protected path or one the OKF enforced-write layer
+                cannot stamp (422 Unprocessable Content). Each leaves the link usable.
         """
         vault = self._resolve_vault()
         try:

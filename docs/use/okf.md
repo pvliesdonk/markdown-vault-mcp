@@ -230,8 +230,10 @@ It is best-effort packaging rather than a certified publication, in three specif
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
 
-
 Protected paths also prevent automatic index and log upkeep. A primary write
 to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
 bulk transforms finish eligible writes before reporting protected paths they
-skipped; see [protected paths](../reference/configuration.md).
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.
