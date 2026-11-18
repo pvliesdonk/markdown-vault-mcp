@@ -836,7 +836,7 @@ document's rows are replaced or removed as a unit.
 Two methods manage the index:
 
 - **`build_index(force=False)`**: initial population. Scans `source_dir` and
-  builds the FTS index. Short-circuits as a no-op when the persisted FTS
+  builds the FTS index. Reuses FTS and sweeps observations when the persisted
   database contains documents and carries the completeness sentinel
   written by a prior clean build (warm restart on the same `index_path`).
   A database with rows but no sentinel (residue of a process that
@@ -1072,8 +1072,8 @@ not index unavailability. Embeddings stay on the
 synchronous lifespan path in PR1: on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the
-operator runs CLI `index`. Warm starts continue to use PR #526's
-O(1) sentinel short-circuit and never spawn the background thread.
+operator runs CLI `index`. Warm starts reuse FTS through the sentinel check and
+queue an observation sweep on the writer.
 The library's `_require_built()` is unchanged from PR #525:
 it raises immediately on not-ready, which is what lets the git
 pull loop and lifespan's embeddings path handle "not ready"
@@ -1411,9 +1411,9 @@ soft deadline is promoted to a background job polled via
 **Boot reconciliation (#665).** The server lifespan conditionally submits
 `reindex_async()` immediately after `build_index_async()` (gated by
 `MARKDOWN_VAULT_MCP_BOOT_REINDEX`, default `true`; see #1535). On a warm
-restart the build short-circuits in O(1) via the FTS sentinel and scans
-nothing, so the queued `ReindexAll` job is what picks up files added,
-modified, or deleted while no server was running (the file watcher only
+restart the build reuses FTS and sweeps observations; the queued `ReindexAll`
+job picks up search changes from files added, modified, or deleted while no
+server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
 cold boot the full build has just recorded tracker state (including
 skipped files), so the reindex degenerates to a hash scan with zero
@@ -3749,6 +3749,87 @@ import (directly or transitively) ``fastmcp_pvl_core``, ``beartype``,
 The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
 operations to them. No manager holds a back-reference to Vault.
+
+#### Selected bundle directory inventory (#1442)
+
+`ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
+`DocumentManager` to `BundleInspector`. The caller explicitly chooses a
+vault-relative root and one root-relative directory. This library-only surface
+observes disk files independently of index admission: untyped and malformed
+Markdown remain visible. Once the index is queryable, entries report search
+state from a single index row read without refreshing or writing the index. Live rows
+and tombstones take precedence over current exclusions; an absent row falls
+back to the exclusion label. Backends without the optional row-state protocol
+leave the state unevaluated. Unknown and internal-error categories remain
+unevaluated. Any SQLite error from the index read, including after the vault
+closes, leaves all entries unevaluated. Each entry is read separately, so a page
+is not a snapshot.
+Before readiness and without index knowledge, search state is `not_evaluated`.
+These observations can lag disk changes and do not determine format conformance.
+Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
+candidates) confer no bundle conformance, global OKF activation or writer authority.
+
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
+recognize alternate case and Unicode spellings before opening selected components.
+Directory, attachment and budget-exhausted note candidates receive a no-follow
+open probe; permission refusals make enumeration incomplete and do not reveal
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
+source resolves once and its absolute components are opened from the filesystem
+root without following symlinks; selected components and child reads remain
+anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing
+configured sources and unavailable primitives are unavailable; only contained
+ENOENT/ENOTDIR imply missing. Errors retain explicit incomplete observations. A stat failure for an unknown
+file type hides its name but makes enumeration unavailable, because it could be
+a visible directory.
+
+Enumeration visits at most 100 entries by default (maximum 1000), counting
+omitted entries, plus one lookahead. It sorts only the bounded observations.
+`complete` means immediate policy-visible enumeration, never complete content or
+a whole bundle. Reads cap each Markdown file at the smaller of 64 KiB and a
+nonzero configured note-read cap, plus bounded lookahead, within 1 MiB aggregate
+including failed read reservations. Only complete bytes reach the existing UTF-8
+and frontmatter parsers. An inventory-only YAML event preflight uses the existing
+frontmatter delimiter handler: aliases, more than 4096 events or collection
+depth above 32 stop before metadata construction, preventing exponential merge
+expansion. Such files remain `not_inspected` with `metadata_complexity`, not
+malformed. General scanner parsing, Markdown bodies and other frontmatter
+formats retain their existing semantics. Parser recursion/overflow limits also
+remain uninspected. Known tag/value/shape conversion failures become malformed
+metadata; unexpected parser exceptions instead yield unavailable entries with
+`unexpected_parser_error`, without exception details or loss of sibling results.
+This keeps encoding, input, resource-limit and unexpected failures separate,
+analogous to the scanner's categorized boundary without adopting its admission
+or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
+invalid encoding, malformed metadata and absent/invalid/present type fields are
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
+following them. There is no navigation synthesis or declaration discovery.
+
+Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
+Their targets and target kinds are not returned, and they are never followed.
+Callers must inspect unavailable rows even when enumeration is complete.
+Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
 
 #### Internal Manager Architecture
 
@@ -7728,3 +7809,43 @@ the NFC-normalized folder spelling; the guard does not expand a folder into
 decomposed spellings for glob matching. A leaf symlink to an authored note is editable, while an alias
 to a designated index remains protected. Library callers retain the
 explicit `allow_protected` override. Other indexes and logs remain editable.
+
+
+### Local observation ledger
+
+The inventory boundary also supplies a descriptor-relative full sweep of readable
+Markdown to an instance-local, versioned ledger beside the tracker. It stores
+path, role, content and frontmatter digests, first and last change observation
+times, presence, removal time and origin. Builds (including warm builds),
+reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
+Persistent ledger sweeps for the same resolved path share a process-local lock.
+Shared persistent state has one owning process; independent indexes must not
+share tracker or ledger state.
+The server's pull tick and post-pull reconciliation also sweep on current,
+deferred or failed search state; webhook delivery may sweep twice. A failed
+search reconcile keeps its failed outcome while the fallback sweep observes the
+tree. A failed fallback sweep is logged and reported as failed, allowing the
+pull tick to continue to its independent pending push retry. A tick reads the full
+observation scope, normally every 600 seconds. The watcher is disabled when
+periodic pulls are active. Byte or presence changes advance the change time;
+a role-only refresh leaves it intact. Unchanged rows remain stable;
+inaccessible paths and their subtrees do not establish removal, but do not block
+removal elsewhere. A readable empty root records prior files as removed even
+when search refuses to prune its own rows. Inventory-denied symlinks are never followed, even when search
+admits them; an earlier row hidden by one remains unchanged. The content digest
+covers the full file. The frontmatter digest covers the parser-delimited block
+with surrounding whitespace trimmed; it is absent for missing, unterminated or
+invalid UTF-8 headers. Invalid body bytes do not change a valid header digest.
+Reads use bounded chunks and ordinary notes use bounded memory; a candidate
+header, including an unterminated one, may use memory proportional to its length.
+Version 1 preserves row meanings and digest vectors across parser upgrades; a
+change requires a version bump and a migration preserving trustworthy history
+and marking unknowns. A missing or corrupt ledger starts new history, while a
+newer schema is refused. A ledger refusal or I/O failure fails the build or
+reindex before search is touched; on a build the completion marker remains
+intact until observation succeeds. A repaired restart can reuse it. An unforced
+warm build retains in-process queryability after a sweep failure; a forced build
+may not. `Vault.force_pull()` sweeps after successful Git work without itself
+reconciling search. If the sweep fails, the Git side effect has already happened
+and the error propagates; a webhook returns a retryable failure. Sweep origin is
+unknown; observation does not write author metadata or log entries.

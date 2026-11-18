@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
@@ -57,6 +58,7 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils import effective_attachment_extensions
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -294,9 +296,8 @@ class Vault:
     job to the single-owner
     :class:`~markdown_vault_mcp.indexing.IndexWriter` via
     :meth:`IndexFacet.build_index_async` and yields immediately. On a warm
-    restart the persisted FTS completeness sentinel (PR #526) causes
-    :meth:`IndexFacet.build_index_async` to return an already-resolved
-    ``Future`` in O(1) without touching the writer queue. On a cold
+    restart the persisted FTS completeness sentinel (PR #526) avoids an FTS
+    rebuild; the writer still runs an observation sweep. On a cold
     restart the writer thread runs the job asynchronously while the
     lifespan yields; bucket-3/4 MCP tool *clients* block on the
     :class:`markdown_vault_mcp._server_queryable.needs_queryable`
@@ -605,7 +606,32 @@ class Vault:
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
 
+        from markdown_vault_mcp.bundle_inventory import BundleInspector
+        from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+        observation_path = (
+            self._state_path.with_name(self._state_path.name + ".observations.json")
+            if self._state_path is not None
+            else None
+        )
+        policy = InspectionPolicy(
+            settings.conventions_file,
+            tuple(p for p in (self._state_path, observation_path) if p is not None),
+            self._embeddings_path,
+            self._index_path,
+        )
+        observations = ObservationLedger(
+            observation_path,
+            BundleInspector(
+                self._source_dir,
+                self._exclude_patterns or [],
+                effective_attachment_extensions(self._attachment_extensions),
+                self._max_note_read_bytes,
+                policy,
+            ),
+        )
         self._index_mgr = IndexManager(
+            observations=observations,
             fts=self._fts,
             tracker=self._tracker,
             source_dir=self._source_dir,
@@ -718,6 +744,8 @@ class Vault:
             sync_index=self._coordinator.prepare_index_read,
             title_field=self._title_field,
             submodule_guard=self._build_submodule_guard(),
+            inventory_ready=self._coordinator.is_queryable,
+            inspection_policy=policy,
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:
@@ -977,8 +1005,8 @@ class Vault:
         Intended to run during server startup before the initial index build.
         No reindex is triggered here: on a cold start build_index() will scan
         the updated working tree, but on a warm restart build_index_async()
-        short-circuits in O(1) on the existing FTS sentinel and scans
-        nothing. In that case the boot reindex (gated by
+        reuses the existing FTS index while sweeping observations. In that
+        case the boot reindex (gated by
         ``config.boot_reindex``, see #1535) is what actually indexes the tree
         this pull just updated — with it disabled, the server accepts the
         index at the resulting HEAD and only reindexes once HEAD moves on.
@@ -1029,7 +1057,9 @@ class Vault:
         building, a writer error, a pull reported as not applied although
         HEAD advanced) is retried by the next call instead of waiting for the
         next pull that moves HEAD.  Called by the pull loop on every tick, by
-        webhook deliveries and by the ``git_sync`` tool.
+        webhook deliveries and by the ``git_sync`` tool. Unless the reindex ran
+        (and swept), the observation ledger is swept too, even after a failed
+        search reconcile. A failed sweep is logged and reported as ``"failed"``.
 
         Args:
             source: Which caller asked, for the log line.
@@ -1039,7 +1069,21 @@ class Vault:
         """
         if self._head_reconciler is None:
             return "current"
-        return self._head_reconciler.reconcile(source=source)
+        outcome = self._head_reconciler.reconcile(source=source)
+        if outcome != "reindexed" and not self._sweep_observations(source):
+            return "failed"
+        return outcome
+
+    def _sweep_observations(self, source: str) -> bool:
+        """Sweep the ledger outside a reindex; report failure without raising."""
+        if self._index_mgr.observations is None:
+            return True
+        try:
+            self._index_mgr.observations.sweep()
+        except Exception:
+            logger.error("observation_sweep_failed source=%s", source, exc_info=True)
+            return False
+        return True
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.
@@ -1078,7 +1122,9 @@ class Vault:
         ``set_write_quiescer``) and drains the deferred-commit queue before the
         merge, so a write that landed just before the pull is committed first
         and the merge runs on a clean tree (#571). This facade therefore no
-        longer wraps ``pause_writes`` itself.
+        longer wraps ``pause_writes`` itself. A successful pull also sweeps
+        the observation ledger. If that sweep fails, Git has already completed;
+        the error propagates and search is not reconciled by this facade.
 
         Returns:
             :class:`~markdown_vault_mcp.git.PullResult` from the strategy, or
@@ -1088,7 +1134,20 @@ class Vault:
             return None
         # The strategy now self-quiesces (pause + drain) around the merge (#571),
         # so the previous outer pause_writes() wrap here is redundant.
-        return self._git_strategy.force_pull()
+        result = self._git_strategy.force_pull()
+        if result.applied and self._index_mgr.observations is not None:
+            try:
+                self._index_mgr.observations.sweep()
+            except Exception:
+                logger.exception(
+                    "git_pull_observation_failed applied=%s from_sha=%s to_sha=%s reason=%s",
+                    result.applied,
+                    result.from_sha,
+                    result.to_sha,
+                    result.reason,
+                )
+                raise
+        return result
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.

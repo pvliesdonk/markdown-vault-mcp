@@ -308,3 +308,53 @@ skipped. The refusal repeats until the operator converts the protected notes or
 changes the setting; see [protected paths](../reference/configuration.md).
 Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
 the client write guard.
+
+### Local observation state
+
+A build or reindex records the latest observed state of Markdown files in the
+inventory scope, including readable hidden paths and files excluded from search.
+Internal server state, Git directories and inaccessible paths are outside that
+scope. Symlinks are not followed, even when search can read their targets; a
+previous observation hidden by a symlink or an inaccessible subtree is retained.
+The ledger is instance-local state beside the change tracker. With an in-memory
+index and no configured state path it stays in memory: a restart loses history,
+including evidence of removals during downtime. Back up persistent state to
+retain its history. One process must own a shared persistent state file;
+independent indexes must not share a tracker or ledger. If a ledger is missing
+or corrupt, the next sweep starts a new history from the files it can read. A
+newer schema is refused rather than
+overwritten. A ledger refusal or I/O failure fails the build or reindex before
+search is updated; repair the ledger or its storage and retry. A failed build
+leaves the on-disk completion marker intact if the ledger sweep failed; after
+repair, a restart can reuse the index. An unforced warm build that fails its
+sweep leaves an already-warm index queryable in the current process. A forced
+rebuild may make it unavailable in that process.
+
+The ledger compares states; it does not record an event for each edit, identify
+an author, or change frontmatter or `log.md`. `last_change_observed_at` moves
+when the file's bytes or presence change. A role that changes with
+configuration, such as a new conventions file, is refreshed in place without
+moving it. It hashes the full file and,
+separately, the parser-recognised frontmatter block with surrounding whitespace
+trimmed. An absent, unterminated or invalid UTF-8 header has no frontmatter
+digest; invalid bytes in the body do not affect a valid header's digest. Reads
+use bounded chunks. Ordinary notes use bounded memory, while a candidate header,
+including an unterminated one, can use memory proportional to its length. The
+version 1 ledger preserves digest meanings across parser upgrades; changing them
+requires a new version and migration.
+
+A build, reindex or successful pull observes external edits, even when the Git
+HEAD does not change. The server reconciles after interactive pulls and webhooks,
+as well as on periodic pull ticks. A webhook can sweep twice. When search
+fails to reconcile, the server still sweeps the ledger and keeps the failed
+result. A ledger failure on a pull tick or `git_sync` is logged and reported as
+failed; the tick still retries a pending push.
+
+Each pull tick reads the full observation scope, normally every 600 seconds.
+Periodic pulls disable the file watcher. When the watcher runs, excluded
+top-level folders wait for the next sweep until its scope is expanded. A readable empty root records previously observed files as removed,
+even if search refuses to prune its own rows for an empty root.
+
+The library's `Vault.force_pull()` sweeps after Git succeeds but does not
+reconcile search. If the sweep fails, Git may already have changed the working
+tree; the error propagates. A webhook reports failure so the delivery can be retried.

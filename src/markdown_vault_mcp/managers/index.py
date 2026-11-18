@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
     from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -165,6 +166,7 @@ class IndexManager:
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
         okf_admission_active: Current effective OKF state, if applicable.
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+        observations: Optional local ledger reconciled on full sweeps.
     """
 
     def __init__(
@@ -188,7 +190,9 @@ class IndexManager:
         vector_slot: VectorStoreSlot | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
         scratch_dir: Path | None = None,
+        observations: ObservationLedger | None = None,
     ) -> None:
+        self.observations = observations
         self._fts = fts
         self._tracker = tracker
         self._source_dir = source_dir
@@ -658,7 +662,10 @@ class IndexManager:
             )
         return result
 
-    def build_index(self, *, force: bool = False) -> IndexStats:
+    # Existing build phases share scan state and error publication.
+    def build_index(  # noqa: C901, PLR0912, PLR0915, RUF100
+        self, *, force: bool = False, before_search: Callable[[], None] | None = None
+    ) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
         ``force=True`` drops all existing data and rebuilds from scratch,
@@ -677,11 +684,16 @@ class IndexManager:
             force: When ``True``, keep no old row the build does not rewrite,
                 a readable note that fails to index included, sparing what
                 the walk could not read.
+            before_search: Optional callback after observation, before index work.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
         """
+        if self.observations is not None:
+            self.observations.sweep()
+        if before_search is not None:
+            before_search()
         exempt = self._admission_snapshot()
         if exempt is not None:
             self._store_exempt(None)
@@ -907,6 +919,8 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
             of changes applied.
         """
+        if self.observations is not None:
+            self.observations.sweep()
         # Phase 1: scan filesystem (read-only walk + hashing). Excluded
         # subtrees are filtered before hashing so they neither churn the
         # tracker nor get reported as changes (#257).

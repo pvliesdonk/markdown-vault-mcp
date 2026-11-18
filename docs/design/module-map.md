@@ -54,7 +54,7 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
-    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, matrix_sequence, numbered_files, report_unused_sidecar (#1505)
     _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     _quarantine.py     -- move_aside: a corrupt built-in store's files renamed to .corrupt-<UTC time> under one suffix, undone on a refused rename (StoreUnavailableError) (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as `{base}.v2.json` naming a per-persist `{base}.v2.m<N>.npy`; a release's or edge build's `{base}.json` is read only through `legacy_only=True`, read-only, as an upgrade or import source (#1505)
@@ -64,6 +64,7 @@ src/markdown_vault_mcp/
     sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
+    observations.py    -- instance-local versioned observation ledger and sweep reconciliation
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: query-readiness projection and compatibility transitions (#576, #1483)
     build_lifecycle.py -- BuildLifecycle: scheduling, per-attempt outcomes, marker writes and readiness publication; shared by sync/async/legacy entry points (#1483)
@@ -93,7 +94,7 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
@@ -108,6 +109,7 @@ src/markdown_vault_mcp/
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442); descriptor-relative full observation traversal
   okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_review.py       -- versioned concept snapshot digest for full reads
