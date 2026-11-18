@@ -23,6 +23,7 @@ from markdown_vault_mcp._tools import (
     okf_inventory,
     query,
     reader,
+    transactions,
     writer,
 )
 
@@ -40,5 +41,6 @@ def register_tools(mcp: FastMCP) -> None:
     query.register(mcp)
     graph.register(mcp)
     index.register(mcp)
+    transactions.register(mcp)
     writer.register(mcp)
     git.register(mcp)

@@ -5755,7 +5755,7 @@ to avoid shadowing Python's built-in `list`. The underlying
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: the write tools (`write`, `edit`, `append`,
+**Tag-based visibility**: the write tools (`begin_transaction`, `end_transaction`, `write`, `edit`, `append`,
 `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
 `create_upload_link`) are registered with ``tags={"write"}``. When
 ``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide
@@ -6844,8 +6844,10 @@ a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
 deferral. The result carries the last SHA and summed path counts. Writes remain
 immediately readable, and indexing proceeds independently of the commit.
 Callbacks that do not opt into groups flush ordinary batches or individual
-writes and report `no_changes`. No group tools or arguments are registered in
-this slice. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
+writes and report `no_changes`. MCP clients open a group with `begin_transaction`,
+pass its handle to supported write calls, and close it with `end_transaction`.
+An explicit `git_sync` with that handle closes the group before syncing. Other
+write tools, including uploads, stay outside the group. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
 in a Git command argument.
 
 OKF content-write maintenance, index-listing refreshes, and single-note

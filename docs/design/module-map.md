@@ -152,6 +152,7 @@ src/markdown_vault_mcp/
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     okf_inventory.py   -- bounded read-only bundle inventory tool
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
+    transactions.py    -- MCP transaction tools and explicit write binding (#1677)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations
     index.py           -- index/reindex/embeddings-status tool registrations

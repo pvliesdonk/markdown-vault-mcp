@@ -64,6 +64,7 @@ from .._okf_write import (
 )
 from ..domain import get_config, get_vault
 from ._common import attach_conventions, attach_remote_health, okf_active
+from .transactions import transaction_scope
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +318,7 @@ def register(mcp: FastMCP) -> None:
         frontmatter: dict[str, Any] | None = None,
         content_base64: str = "",
         if_match: str | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Create a note or attachment, or replace one whole; returns its path and
@@ -334,6 +336,8 @@ def register(mcp: FastMCP) -> None:
             content_base64: An attachment's bytes, base64-encoded; for paths not ending
                 in .md.
             if_match: Etag from read, to replace an existing file; omit for a new file.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with path (str) and created (bool: true if new file,
@@ -397,7 +401,10 @@ def register(mcp: FastMCP) -> None:
                 )
             # Attachments carry no OKF frontmatter; bind only the principal
             # so the git commit is attributed to the caller (#1218).
-            with write_identity_scope(okf_intent=False):
+            with (
+                transaction_scope(vault, transaction),
+                write_identity_scope(okf_intent=False),
+            ):
                 result = await asyncio.to_thread(
                     vault.writer.write_attachment, path, raw_bytes, if_match=if_match
                 )
@@ -408,7 +415,7 @@ def register(mcp: FastMCP) -> None:
         # worker, where the enricher runs and the dispatcher snapshots the
         # principal for the git commit.
         report = vault.report_unresolved_links
-        with write_identity_scope():
+        with transaction_scope(vault, transaction), write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.write,
                 path,
@@ -441,6 +448,7 @@ def register(mcp: FastMCP) -> None:
         if_match: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Replace text in an existing note, chosen by an exact old_text, by a range of
@@ -461,6 +469,8 @@ def register(mcp: FastMCP) -> None:
             line_start: First line to replace, counting from 1 over the content read
                 returns, frontmatter included; pass with line_end.
             line_end: Last line to replace, inclusive; pass with line_start.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             - **path** (str): path of the edited document.
@@ -494,7 +504,7 @@ def register(mcp: FastMCP) -> None:
         """
         report = vault.report_unresolved_links
         try:
-            with write_identity_scope():
+            with transaction_scope(vault, transaction), write_identity_scope():
                 result = await asyncio.to_thread(
                     vault.writer.edit,
                     path,
@@ -538,6 +548,7 @@ def register(mcp: FastMCP) -> None:
         content: str,
         if_match: str | None = None,
         create_if_missing: bool = False,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Add text to the end of an existing note without reading it first.
@@ -553,6 +564,8 @@ def register(mcp: FastMCP) -> None:
                 to append regardless.
             create_if_missing: Create the note with content as its body when path does
                 not exist. Default false, so a mistyped path creates nothing.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             - **path** (str): path of the document.
@@ -582,7 +595,7 @@ def register(mcp: FastMCP) -> None:
                 (ConcurrentModificationError).
         """
         report = vault.report_unresolved_links
-        with write_identity_scope():
+        with transaction_scope(vault, transaction), write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.append,
                 path,
@@ -611,6 +624,7 @@ def register(mcp: FastMCP) -> None:
     async def delete(
         path: str,
         if_match: str | None = None,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Permanently delete a note or attachment; only git history can bring it back.
@@ -619,6 +633,8 @@ def register(mcp: FastMCP) -> None:
             path: Path of the note or attachment.
             if_match: Etag from read; the file is then deleted only as that version.
                 Omit to delete it as it is.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with path (str) of the deleted file.
@@ -635,7 +651,10 @@ def register(mcp: FastMCP) -> None:
         """
         # Bind the caller's Principal so the delete commit is attributed
         # (#1218); the OKF enricher never runs for deletes, so no intent.
-        with write_identity_scope(okf_intent=False):
+        with (
+            transaction_scope(vault, transaction),
+            write_identity_scope(okf_intent=False),
+        ):
             result = await asyncio.to_thread(
                 vault.writer.delete, path, if_match=if_match
             )
@@ -658,6 +677,7 @@ def register(mcp: FastMCP) -> None:
         new_path: str,
         if_match: str | None = None,
         update_links: bool = False,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Rename or move a note or attachment; with update_links, links to it in other
@@ -673,6 +693,8 @@ def register(mcp: FastMCP) -> None:
             update_links: Rewrite links to old_path in other notes so they point at
                 new_path; attachment references are not tracked. Default false; pass
                 true for every note.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with old_path (str), new_path (str), and updated_links (int)
@@ -705,7 +727,10 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so the rename commit (and any link-
         # rewrite commits) are attributed (#1218); no OKF intent — the
         # enricher's actor for link rewrites stays the tool actor, as before.
-        with write_identity_scope(okf_intent=False):
+        with (
+            transaction_scope(vault, transaction),
+            write_identity_scope(okf_intent=False),
+        ):
             result = await asyncio.to_thread(
                 vault.writer.rename,
                 old_path,
@@ -741,6 +766,7 @@ def register(mcp: FastMCP) -> None:
     async def move_folder(
         old_dir: str,
         new_dir: str,
+        transaction: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Move a folder and everything under it to a new location, rewriting every link
@@ -752,6 +778,8 @@ def register(mcp: FastMCP) -> None:
             old_dir: Folder to move, such as `"drafts"`.
             new_dir: Destination folder, such as `"archive/2026"`; an existing folder is
                 merged into.
+
+            transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
             Dict with old_dir (str), new_dir (str), files_moved (int) and
@@ -781,7 +809,10 @@ def register(mcp: FastMCP) -> None:
         # Bind the caller's Principal so every per-file commit of the move is
         # attributed (#1218); no OKF intent — the enricher's actor for the
         # link-rewrite edits stays the tool actor, as before.
-        with write_identity_scope(okf_intent=False):
+        with (
+            transaction_scope(vault, transaction),
+            write_identity_scope(okf_intent=False),
+        ):
             try:
                 result = await asyncio.to_thread(
                     vault.writer.move_folder, old_dir, new_dir
