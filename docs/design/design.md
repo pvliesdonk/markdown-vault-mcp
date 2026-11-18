@@ -7753,9 +7753,10 @@ times, presence, removal time and origin. Builds (including warm builds),
 reindexes and post-pull reindexes reconcile state. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. Inventory-denied symlinks are never followed, even when search
-admits them; an earlier row hidden by one remains unchanged. Content digests
-stream in bounded chunks. The frontmatter digest covers exact bytes from the
-start (including an optional UTF-8 BOM) through the closing delimiter, excluding
-its following newline and body. A missing or corrupt ledger starts new history,
-while a newer schema is refused. Sweep
-origin is unknown; observation does not write author metadata or log entries.
+admits them; an earlier row hidden by one remains unchanged. The content digest
+covers the full file. The frontmatter digest covers the parser-delimited block
+with surrounding whitespace trimmed; it is absent for missing or unterminated
+frontmatter. Reads use bounded chunks, with memory proportional to a candidate
+header, including an unterminated one. A missing or corrupt ledger starts new
+history, while a newer schema is refused. Sweep origin is unknown; observation
+does not write author metadata or log entries.
