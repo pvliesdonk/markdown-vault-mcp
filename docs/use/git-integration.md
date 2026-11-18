@@ -69,6 +69,19 @@ No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
 
+## Write group deadlines
+
+The internal write group API closes groups automatically after five minutes of
+inactivity or one hour after opening. The public transaction tools are planned
+for a later slice. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
+bounds. A group can close while a write is active. New attempts to bind an
+automatically closed group are refused; the owner can retrieve its result for
+the lifetime of the server process. Results do not survive a restart. A write
+already bound to the group can continue; later callbacks use the ordinary
+per-call commit path under the opener's identity. Git stages current on-disk
+content, which can include a write whose callback is still pending.
+
 ## Uncommitted files at startup
 
 Startup inspects the repository's working tree and staging area in both git

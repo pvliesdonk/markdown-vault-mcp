@@ -6224,6 +6224,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files; when absent the server starts but every tool fails naming this variable (managed git clones into it) | `/data/vault` |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | Case-insensitive vault-relative globs protecting paths and matching folder contents | empty |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | Add `unresolved_links` to `write` / `edit` / `append` responses: the links the call added that `get_broken_links` reports | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
@@ -6724,6 +6725,14 @@ number of paths in the commit (a rename counts both paths), or zero when the
 count is unknown. Untracked ignored writes are skipped; tracked updates are
 committed even when they match an ignore rule. A failed flush consumes
 its buffer without rollback or retry; staged work remains for the operator.
+A group closes automatically after 300 seconds idle or 3600 seconds from
+opening, whichever comes first. Both bounds are configurable and positive. The
+maximum age closes the buffered group even if a write is active. Later callbacks
+from that binding use the ordinary commit path under the opener's identity. Git
+stages current on-disk content, which can include a write whose callback is
+still pending. Automatic results remain available to the owner until the
+server process exits. Timers stop when the dispatcher closes.
+
 Ordinary scopes keep their per-call behavior. A drain flushes open groups before
 a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
 deferral. The result carries the last SHA and summed path counts. Writes remain
@@ -6774,11 +6783,8 @@ Properties this depends on:
 - **The scope is read in `fire`, never on the worker.** `fire` runs on the
   request's `to_thread` worker, whose copied context carries the contextvar;
   the dispatcher thread has no request context, so reading there would always
-  see `None` — the same constraint that governs `current_principal` (#1218).
-- **The scope is captured in `fire`.** `fire` runs on the request's
-  `to_thread` worker, whose copied context carries the contextvar. The
-  dispatcher thread has no request context; it binds only the captured folder
-  roots while invoking the batch callback and resets them afterward (#1218).
+  see `None`. The dispatcher binds the captured folder roots only while invoking
+  the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
@@ -7628,3 +7634,15 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+| 39 | Protected paths | Operator globs refuse ordinary mutations and automatic maintenance, with explicit library override. Bulk operations report protected skips after eligible writes. | One shared policy covers requested and resolved paths. |
+
+
+**Protected paths.** `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` defines
+case-insensitive vault-relative globs for ordinary client mutations. A matching
+folder protects its contents, and both requested and resolved paths are checked.
+A folder move checks every entry its cleanup removes before moving files.
+Reads remain available; library callers can opt in with `allow_protected=True`.
+Automatic OKF maintenance respects protection; its isolated failures do not
+undo the primary write. A rename or folder move skips protected
+backlink rewrites and reports them; bulk OKF transforms finish eligible writes
+and report protected paths they skipped.

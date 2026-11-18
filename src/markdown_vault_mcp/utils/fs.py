@@ -102,14 +102,14 @@ def could_be_regular_file(path: Path) -> bool:
         return True
 
 
-def walk_files_strict(root: Path) -> list[Path]:
+def walk_files_strict(root: Path, *, include_dirs: bool = False) -> list[Path]:
     """Return every file below *root*, sorted, refusing an unreadable directory.
 
     ``Path.rglob()`` skips a directory it cannot enter, so a folder behind a
     permission problem would read as empty. This walk re-raises the error
     instead: a caller moving or changing every file below *root* must not act
     on part of them (#1625). Symlinked directories are not followed, as with
-    ``rglob()``.
+    ``rglob()``. With *include_dirs*, include directories and directory links.
 
     Raises:
         OSError: If *root* or a directory below it cannot be listed.
@@ -120,8 +120,8 @@ def walk_files_strict(root: Path) -> list[Path]:
 
     return sorted(
         Path(dirpath) / name
-        for dirpath, _dirnames, filenames in os.walk(root, onerror=_raise)
-        for name in filenames
+        for dirpath, dirnames, filenames in os.walk(root, onerror=_raise)
+        for name in (filenames + dirnames if include_dirs else filenames)
     )
 
 

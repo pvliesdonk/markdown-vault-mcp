@@ -194,7 +194,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
@@ -229,3 +231,11 @@ The export reads from the live vault and never changes it. Wikilinks become the 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
+
+Protected paths also prevent automatic index and log upkeep. A primary write
+to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
+bulk transforms finish eligible writes before reporting protected paths they
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.
