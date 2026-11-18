@@ -2,6 +2,9 @@
 
 ## 2026-11-17
 
+- [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
+  observed `next` URL host for #1853, from a full pagination of both sources.
+  Other claims and review date unchanged.
 - Updated: [File creation permissions and default ACLs](file-creation-permissions.md),
   for #2054. Rechecked acl(5)'s permission-bit correspondence for a default
   ACL without a mask; the runtime now reads the default-ACL xattr instead of
@@ -9,6 +12,9 @@
 
 ## 2026-11-16
 
+- Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
+  Observed anonymous responses for both repositories, pagination and strict tag
+  shapes; checked variants against the chosen patterns. Next review: 2027-05-16.
 - New: [File creation permissions and default ACLs](file-creation-permissions.md),
   for #2054. Checked Linux ACL inheritance, chmod masks and private staging;
   reproduced the new-file group-write loss against plain creation.

@@ -626,15 +626,13 @@ def test_a_refused_job_is_the_callers_to_report_not_a_traceback(
 
     writer = IndexWriter(runners={"build_index": refusing_runner}, ctx=None)
     writer.start()
-    try:
-        pending = writer.submit(BuildIndex())
-        with (
-            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.indexing"),
-            pytest.raises(EmbeddingsNotConfiguredError),
-        ):
-            pending.result(timeout=5)
-    finally:
-        writer.close(timeout=5)
+    with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.indexing"):
+        try:
+            pending = writer.submit(BuildIndex())
+            with pytest.raises(EmbeddingsNotConfiguredError):
+                pending.result(timeout=5)
+        finally:
+            writer.close(timeout=5)
     # A request the vault cannot serve is the caller's outcome to report
     # (#1733): the writer logs it at DEBUG, without a traceback.
     (record,) = [r for r in caplog.records if r.msg.startswith("writer_job_")]
