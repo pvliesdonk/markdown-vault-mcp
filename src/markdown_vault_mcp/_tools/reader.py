@@ -45,7 +45,7 @@ def register(mcp: FastMCP) -> None:
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
         folder: str | None = None,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         wait_for_pending_writes: _WaitForPendingWrites = False,
@@ -70,7 +70,8 @@ def register(mcp: FastMCP) -> None:
                 matches when it holds the value. On an OKF bundle, status (draft, stable
                 or deprecated; stable includes notes with none), stale (`"true"` or
                 `"false"`) and trust_tier (unverified, machine-confirmed or
-                human-reviewed) filter too.
+                human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes
+                without a non-empty string type, excluding reserved files.
             chunks_per_file: Maximum sections per note, at least 1; omit for the server
                 default.
             snippet_words: Snippet width in words; omit for the server default, 0 for
@@ -104,8 +105,8 @@ def register(mcp: FastMCP) -> None:
               the vault is an active OKF bundle. Carries `type` (when
               declared), `status` (defaults to `"stable"`), `stale`
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-              `"machine-confirmed"` / `"human-reviewed"`), and
-              `sources_count` (when the note cites sources).
+              `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
+              `review_applicability`, and `sources_count` (when the note cites sources).
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
@@ -190,9 +191,11 @@ def register(mcp: FastMCP) -> None:
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
-            an 'okf' dict (type, status, stale, trust_tier, and the note's
-            'sources' list when present); section reads omit it because they
-            carry no frontmatter to derive it from.
+            an 'okf' dict (type, status, stale, trust_tier, freshness, review,
+            review_applicability, recorded, and the note's 'sources' list when
+            present). Review applicability reports whether a snapshot binding is
+            available, independently of freshness and recorded claims. Section reads omit
+            it because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
             etag (SHA-256 hex str or null).
@@ -239,7 +242,7 @@ def register(mcp: FastMCP) -> None:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: dict[str, str | None] | None = None,
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
@@ -260,7 +263,8 @@ def register(mcp: FastMCP) -> None:
                 attachments never match. On an OKF bundle, status (draft, stable or
                 deprecated; stable includes notes with none), stale (`"true"` or `"false"`)
                 and trust_tier (unverified, machine-confirmed or human-reviewed) filter
-                too.
+                too. Use `{"type": null}` on an active OKF bundle for searchable notes without
+                a non-empty string type, excluding reserved files.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -823,8 +827,9 @@ def register(mcp: FastMCP) -> None:
               them when writing to or proposing links involving this note;
               some folders are self-contained by design.
             - okf (dict, optional): OKF read annotation for this note
-              (type, status, stale, trust_tier, sources_count). Present
-              only when the vault is an active OKF bundle.
+              (type, status, stale, trust_tier, freshness, review,
+              review_applicability, sources_count).
+              Present only when the vault is an active OKF bundle.
 
             Index freshness is reported out-of-band in the response's
             `_meta.index_stale` field: True when the IndexWriter had
@@ -961,6 +966,17 @@ def register(mcp: FastMCP) -> None:
               exporting.
             - missing_recommended: notes without the recommended `title` or
               `description`.
+            - missing_freshness: assessed notes with no expiry supplied.
+
+            Evidence observations leave conformant_notes unchanged:
+
+            - malformed_freshness, malformed_review: assessed notes with
+              unsupported expiry or malformed review records.
+            - evidence_unavailable: discovered notes not assessed for evidence
+              because reading/parsing failed or the read cap was exceeded.
+
+            Evidence findings cover discovered, non-excluded concepts, not
+            complete traversal, truth, or editorial-policy compliance.
         """
         report = await asyncio.to_thread(vault.reader.okf_validate)
         return asdict(report)

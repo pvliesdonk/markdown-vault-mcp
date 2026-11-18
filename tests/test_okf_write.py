@@ -719,6 +719,25 @@ class TestOkfVerifyTrustAuth:
         assert entry["by"] == "human:peter"
         _assert_recent_utc_stamp(entry["at"])
 
+    @pytest.mark.usefixtures("trust_auth_env")
+    @pytest.mark.parametrize("subject", ["user:alice", "urn:uuid:123", "team/alice"])
+    async def test_written_subject_remains_recorded_on_read(
+        self, monkeypatch: pytest.MonkeyPatch, subject: str
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": subject})
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("read", {"path": "guides/playbook.md"})
+        annotation = _parse_tool_data(result)["okf"]
+        assert annotation["trust_tier"] == "human-reviewed"
+        assert annotation["review"]["state"] == "recorded"
+        assert annotation["review"]["recorded_entries"] == 1
+        assert annotation["review"]["malformed_entries"] == 0
+        assert annotation["recorded"]["verified"][0]["by"] == f"human:{subject}"
+
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})

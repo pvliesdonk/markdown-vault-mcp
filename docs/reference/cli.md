@@ -17,7 +17,7 @@ kind: reference
 markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
 ```
 
-Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values can contain equals signs; duplicate keys fail. Filters use the vault's existing indexed-field and OKF rules.
+Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values are strings and can contain equals signs; duplicate keys fail. For the missing-type selector, use the [MCP tools or library](../use/okf.md).
 
 ```bash
 markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-file 2 --snippet-words 40 --agent
