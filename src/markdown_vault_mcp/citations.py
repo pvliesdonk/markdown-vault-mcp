@@ -237,7 +237,7 @@ def citation_edges(text: str) -> list[CitationEdge]:
         if citation.status == "matched" and isinstance(sources, list):
             source = sources[citation.source_indices[0]]
             value = source.get("resource") if isinstance(source, dict) else None
-            if isinstance(value, str) and value:
+            if isinstance(value, str) and value.strip():
                 resource = value
         status: Literal["matched", "unmatched", "ambiguous", "invalid_resource"] = (
             citation.status

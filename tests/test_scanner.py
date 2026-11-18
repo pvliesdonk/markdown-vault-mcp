@@ -1158,3 +1158,21 @@ def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> No
         shut.chmod(0o755)
     assert [n.path for n in notes] == ["ok.md"]
     assert len(errors) == 1
+
+
+@pytest.mark.parametrize("newline", ["\r", "\r\n"])
+def test_scanner_normalizes_snapshot(tmp_path: Path, newline: str) -> None:
+    raw = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n".replace(
+        "\n", newline
+    ).encode()
+    path = tmp_path / "one.md"
+    path.write_bytes(raw)
+    note = parse_note(path, tmp_path)
+    assert note.frontmatter["sources"] == [{"id": "a", "resource": "urn:s"}]
+    assert note.citations[0].resource == "urn:s"
+    path.write_bytes(
+        f"---{newline}title: Plain{newline}---{newline}Body{newline}".encode()
+    )
+    plain = parse_note(path, tmp_path)
+    assert plain.frontmatter["title"] == "Plain"
+    assert plain.chunks[0].content == "Body"

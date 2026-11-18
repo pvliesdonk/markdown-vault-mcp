@@ -26,6 +26,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
+    citations.py       -- reverse citation attribution and scoped diagnostics (#1446)
     _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths

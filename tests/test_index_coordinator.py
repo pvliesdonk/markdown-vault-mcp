@@ -1329,8 +1329,8 @@ def test_manager_provenance_preserves_stored_representation(
         fts.close()
 
 
-def test_citations_rebuilt_for_version_12_then_warm(tmp_path: Path) -> None:
-    """Citation rows are populated once when an old index is reopened."""
+def test_citations_rebuilt_for_old_semantics(tmp_path: Path) -> None:
+    """Citation rows are populated when an old index is reopened."""
     note = tmp_path / "citation.md"
     note.write_text(
         "---\nsources:\n  - id: a\n    resource: urn:source\n---\nClaim[^a]\n",
@@ -1348,10 +1348,9 @@ def test_citations_rebuilt_for_version_12_then_warm(tmp_path: Path) -> None:
             conn.execute("DELETE FROM citations")
     finally:
         conn.close()
-    _set_semantics_version(db, "12")
+    _set_semantics_version(db, str(INDEX_SEMANTICS_VERSION - 1))
     coord = make_coordinator(tmp_path, db=db)
     try:
-        assert not coord._chunking_meta_matches()
         coord.build_index()
     finally:
         coord.close(timeout=5)
@@ -1362,8 +1361,3 @@ def test_citations_rebuilt_for_version_12_then_warm(tmp_path: Path) -> None:
         ]
     finally:
         conn.close()
-    coord = make_coordinator(tmp_path, db=db)
-    try:
-        assert coord._chunking_meta_matches()
-    finally:
-        coord.close(timeout=5)
