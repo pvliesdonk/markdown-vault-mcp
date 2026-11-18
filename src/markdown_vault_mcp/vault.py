@@ -1003,8 +1003,8 @@ class Vault:
         Intended to run during server startup before the initial index build.
         No reindex is triggered here: on a cold start build_index() will scan
         the updated working tree, but on a warm restart build_index_async()
-        short-circuits in O(1) on the existing FTS sentinel and scans
-        nothing. In that case the boot reindex (gated by
+        reuses the existing FTS index while sweeping observations. In that
+        case the boot reindex (gated by
         ``config.boot_reindex``, see #1535) is what actually indexes the tree
         this pull just updated — with it disabled, the server accepts the
         index at the resulting HEAD and only reindexes once HEAD moves on.

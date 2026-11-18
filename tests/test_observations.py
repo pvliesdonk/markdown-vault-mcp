@@ -729,3 +729,92 @@ def test_observation_refuses_protected_root_without_removals(
         assert ledger.rows()["note.md"] == first
     finally:
         vault.close()
+
+
+# Keep the concurrent schedule and its cleanup visible together.
+def test_shared_vault_ledgers_serialize_sweeps(  # noqa: PLR0915, RUF100
+    tmp_path: Path, monkeypatch
+) -> None:
+    import threading
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    note = source / "note.md"
+    note.write_text("initial")
+    removed = source / "removed.md"
+    removed.write_text("initial")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(state_dir, target_is_directory=True)
+    index = state_dir / "index.db"
+    a = Vault(
+        source_dir=source,
+        settings=VaultSettings(index_path=index, state_path=state_dir / "state.json"),
+    )
+    b = Vault(
+        source_dir=source,
+        settings=VaultSettings(index_path=index, state_path=alias / "state.json"),
+    )
+    release = threading.Event()
+    threads = []
+    try:
+        ledger_a = a._index_mgr.observations
+        ledger_b = b._index_mgr.observations
+        ledger_a.sweep()
+        first = ledger_a.rows()
+        note.write_text("intermediate")
+        ready = threading.Event()
+        started = threading.Event()
+        entered = threading.Event()
+        errors = []
+        save = ledger_a._save
+        load = ledger_b._load
+
+        def paused_save(rows):
+            ready.set()
+            if not release.wait(10):
+                raise TimeoutError("first sweep not released")
+            save(rows)
+
+        def marked_load():
+            entered.set()
+            return load()
+
+        def run(ledger, started_event=None):
+            try:
+                if started_event is not None:
+                    started_event.set()
+                ledger.sweep()
+            except Exception as exc:
+                errors.append(exc)
+
+        monkeypatch.setattr(ledger_a, "_save", paused_save)
+        monkeypatch.setattr(ledger_b, "_load", marked_load)
+        threads.append(threading.Thread(target=run, args=(ledger_a,)))
+        threads[-1].start()
+        assert ready.wait(5)
+        note.write_text("newest")
+        removed.unlink()
+        threads.append(threading.Thread(target=run, args=(ledger_b, started)))
+        threads[-1].start()
+        assert started.wait(5)
+        assert not entered.wait(0.25)
+        release.set()
+        for thread in threads:
+            thread.join(10)
+            assert not thread.is_alive()
+        assert not errors
+        rows = ledger_b.rows()
+        import hashlib
+
+        assert rows["note.md"].content_digest == hashlib.sha256(b"newest").hexdigest()
+        assert rows["note.md"].first_seen_at == first["note.md"].first_seen_at
+        assert rows["removed.md"].presence == "removed"
+        assert rows["removed.md"].first_seen_at == first["removed.md"].first_seen_at
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(10)
+        b.close()
+        a.close()

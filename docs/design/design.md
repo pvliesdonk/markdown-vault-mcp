@@ -7751,6 +7751,9 @@ Markdown to an instance-local, versioned ledger beside the tracker. It stores
 path, role, content and frontmatter digests, first and last change observation
 times, presence, removal time and origin. Builds (including warm builds),
 reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
+Persistent ledger sweeps for the same resolved path share a process-local lock.
+Shared persistent state has one owning process; independent indexes must not
+share tracker or ledger state.
 The server's pull tick and post-pull reconciliation also sweep on current or
 deferred search state; webhook delivery may sweep twice. A tick reads the full
 observation scope, normally every 600 seconds. The watcher is disabled when

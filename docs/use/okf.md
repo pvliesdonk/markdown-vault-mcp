@@ -258,8 +258,10 @@ previous observation hidden by a symlink or an inaccessible subtree is retained.
 The ledger is instance-local state beside the change tracker. With an in-memory
 index and no configured state path it stays in memory: a restart loses history,
 including evidence of removals during downtime. Back up persistent state to
-retain its history. If a ledger is missing or corrupt, the next sweep starts a
-new history from the files it can read. A newer schema is refused rather than
+retain its history. One process must own a shared persistent state file;
+independent indexes must not share a tracker or ledger. If a ledger is missing
+or corrupt, the next sweep starts a new history from the files it can read. A
+newer schema is refused rather than
 overwritten. A ledger refusal or I/O failure fails the build or reindex before
 search is updated; repair the ledger or its storage and retry. A failed build
 leaves the on-disk completion marker intact if the ledger sweep failed; after

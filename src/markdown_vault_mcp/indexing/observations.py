@@ -18,10 +18,13 @@ from markdown_vault_mcp.bundle_inventory import Role, _components
 from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 
 if TYPE_CHECKING:
+    from _thread import LockType
+
     from markdown_vault_mcp.bundle_inventory import BundleInspector
 
 
 logger = logging.getLogger(__name__)
+_LEDGER_LOCKS: dict[Path, LockType] = {}
 
 
 @dataclass(frozen=True)
@@ -90,7 +93,11 @@ class ObservationLedger:
         self._path = path
         self._inspector = inspector
         self._rows: dict[str, Observation] | None = {} if path is None else None
-        self._lock = threading.Lock()
+        self._lock = (
+            threading.Lock()
+            if path is None
+            else _LEDGER_LOCKS.setdefault(path.resolve(), threading.Lock())
+        )
 
     def _load(self) -> tuple[dict[str, Observation], bool]:
         if self._path is None:
