@@ -119,9 +119,19 @@ platforms. [source: fs400] [source: fs401] [source: fs402] [source: changes]
 ## Where this project departs from the subject
 
 The project chooses eight mutation classes rather than watchdog's unfiltered
-default. Search and observation handlers share the observer and debounce;
-observation also watches search-excluded roots and readable siblings of
-protected paths. The search handler retains root-relative hidden-path checks; see
+default. One handler routes search and observation through a shared debounce.
+Observation-only trees split around internal directories; inherited search
+roots retain their recursive subscriptions. On macOS with watchdog 7.1 and
+Python 3.14, a non-recursive floor delivered root modification notices for
+new, recreated and moved-in directories; a recursive watch did not survive
+deletion and recreation of its root. A later nested `.git` creation was
+delivered to its recursive observation watch. A probe of 400 non-recursive
+registrations added 400 emitter threads; the source for the inspected inotify
+emitter creates an instance per emitter. These probes do not establish native
+Linux behavior. [source: ino7] Non-recursive FSEvents registrations still use
+recursive native streams, so the internal-directory boundary applies to
+registrations. [source: fs402] The
+search handler retains root-relative hidden-path checks; see
 the [watcher design](../design.md). The scheduling pin covers recursive visible
 and dot-roots, the optional floor, excluded children and protected state paths.
 [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]

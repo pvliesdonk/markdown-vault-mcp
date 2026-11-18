@@ -1537,14 +1537,21 @@ file onto a visible note and moves of visible content into hidden or outside
 storage. Hidden-only and root-self noise stays ignored, including below
 intentionally watched dot-roots; other mutations consider only their source.
 
-The observation subscription includes search-excluded and hidden paths, with
-non-recursive watches along internal-directory ancestors to keep readable
-siblings in scope. The root floor discovers new top-level observation roots;
-without that floor, root-level files and newly created top-level directories
-wait for startup, pull or reindex. Search and observation events share one
-debounce: a search reindex performs the observation sweep, with an independent
-sweep as fallback if reindex fails. Observation-only changes do not reindex.
-The inventory enforces access and internal-path boundaries during each sweep.
+The watcher also observes search-excluded and hidden paths, including notes
+beside or beneath configured state-file parents. Observation-only trees split
+into non-recursive internal-directory ancestors and recursive clean subtrees;
+new internal directories cause their observation root to be split again.
+Existing search-owned recursive roots retain their native watch behavior,
+including nested internal directories, whose events are ignored. On macOS a
+non-recursive watchdog registration still uses a recursive native stream; the
+internal-directory guarantee concerns registrations, not the native stream.
+The root floor discovers new top-level observation roots. Without that floor,
+root-level files and newly created top-level directories wait for startup, pull
+or reindex. A new top-level root is observation-only until restart; search
+reindexes on creation but does not watch later edits there. Search and
+observation events share one debounce: reindex sweeps the ledger, with a
+standalone sweep if reindex fails. Inventory enforces access and internal-path
+boundaries during each sweep.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
