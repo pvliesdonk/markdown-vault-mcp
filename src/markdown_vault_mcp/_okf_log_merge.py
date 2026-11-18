@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_it import MarkdownIt
 
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
-from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.scanner import _normalise_line_endings, strip_frontmatter_block
 
 if TYPE_CHECKING:
     from markdown_it.token import Token
@@ -186,10 +186,6 @@ def _duplicate_lines(log: _Log) -> set[int]:
     return duplicates
 
 
-def _normalize_eol(text: str) -> str:
-    return text.replace("\r\n", "\n").replace("\r", "\n")
-
-
 def merge_log_texts(upstream: str, local: str) -> LogMerge:
     """Union complete list entries while retaining upstream formatting.
 
@@ -210,9 +206,10 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
         "reference_definitions"
         if left.refs != right.refs
         else "frontmatter_differs"
-        if _normalize_eol(left.prefix) != _normalize_eol(right.prefix)
+        if _normalise_line_endings(left.prefix) != _normalise_line_endings(right.prefix)
         else "preamble_differs"
-        if _normalize_eol(left.preamble) != _normalize_eol(right.preamble)
+        if _normalise_line_endings(left.preamble)
+        != _normalise_line_endings(right.preamble)
         else ""
     )
     if mismatch:
