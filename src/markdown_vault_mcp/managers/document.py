@@ -29,7 +29,6 @@ from markdown_vault_mcp._commit_scope import (
     auxiliary_commit_writes,
     current_commit_scope,
 )
-from markdown_vault_mcp._okf_author import _header_span
 from markdown_vault_mcp._okf_log_repair import (
     LogRepairCollision,
     LogRepairInterrupted,
@@ -150,17 +149,21 @@ def _read_view(raw: str) -> str:
 
 
 def _head_end(view: str) -> int:
-    """Return the offset just past *view*'s closing YAML fence line, or 0.
+    """Return the offset just past *view*'s closing frontmatter delimiter line.
 
-    0 means no frontmatter block: none, unclosed, or not YAML.
+    Detects the block as the reader does, in any registered format.  0 means
+    no frontmatter block: none, or unclosed.
     """
-    try:
-        span = _header_span(view)
-    except InvalidRequestError:
+    offset = len(view) - len(view.lstrip())
+    candidate = view[offset:]
+    handler = fm.detect_format(candidate, fm.handlers)
+    boundary = None if handler is None else handler.FM_BOUNDARY
+    if boundary is None:
         return 0
-    if span is None:
+    fences = list(itertools.islice(boundary.finditer(candidate), 2))
+    if len(fences) < 2:
         return 0
-    end = view.find("\n", span[1])
+    end = view.find("\n", offset + fences[1].start())
     return len(view) if end < 0 else end + 1
 
 

@@ -1259,6 +1259,10 @@ _CRLF_HEADER = (
     b"  at: 2026-01-01T00:00:00Z\r\nverified:\r\n  - by: human:reviewer\r\n"
     b"    at: 2026-01-02T00:00:00Z\r\n---\r\n"
 )
+_JSON_HEADER = (
+    b'\xef\xbb\xbf{\r\n  "generated": {"by": "agent/1"},\r\n'
+    b'  "verified": [{"by": "human:reviewer"}]\r\n}\r\n'
+)
 
 
 @pytest.mark.parametrize(
@@ -1314,6 +1318,12 @@ _CRLF_HEADER = (
             "title: b",
             b"---\ntitle: b\n---\nBody\n",
         ),
+        (
+            _JSON_HEADER + b"Body.\r\nTail.\r\n",
+            "Body.",
+            "Changed.",
+            _JSON_HEADER + b"Changed.\nTail.\n",
+        ),
     ],
     ids=[
         "crlf-bom-comments",
@@ -1326,6 +1336,7 @@ _CRLF_HEADER = (
         "crlf-cr-fence-blank",
         "cr-fence-two-blank",
         "header-changed",
+        "json-bom-crlf",
     ],
 )
 def test_read_view_edit_keeps_stored_header(
@@ -1372,8 +1383,9 @@ def test_duplicate_across_mixed_endings_is_refused(
         (b"---\r\ntitle: a\r\n---", b"---\r\ntitle: a\r\n---\nBody\n"),
         (b"---\rtitle: a\r---\r\r", b"---\rtitle: a\r---\r\r\nBody\n"),
         (_CRLF_HEADER + b"Body.\r\n", _CRLF_HEADER + b"Body.\nBody\n"),
+        (_JSON_HEADER + b"Body.\r\n", _JSON_HEADER + b"Body.\nBody\n"),
     ],
-    ids=["header-at-eof", "cr-fence-blank", "crlf-bom-comments"],
+    ids=["header-at-eof", "cr-fence-blank", "crlf-bom-comments", "json-bom-crlf"],
 )
 def test_append_keeps_stored_header(
     doc_mgr: DocumentManager, doc_vault: Path, raw: bytes, expected: bytes
@@ -1392,8 +1404,9 @@ def test_append_keeps_stored_header(
     [
         (_CRLF_HEADER, _CRLF_HEADER),
         (b"---\rk: 1\r---\r\r", b"---\rk: 1\r---\r\r\n"),
+        (_JSON_HEADER, _JSON_HEADER),
     ],
-    ids=["crlf-bom-comments", "cr-fence-blank"],
+    ids=["crlf-bom-comments", "cr-fence-blank", "json-bom-crlf"],
 )
 def test_rename_rewrite_keeps_stored_header(
     tmp_path: Path, header: bytes, expected_header: bytes
