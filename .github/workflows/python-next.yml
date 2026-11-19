@@ -1,0 +1,42 @@
+# The newest CPython, ahead of the versions this project claims (#2250).
+#
+# It runs on a schedule and on demand, never on a pull request or a push, so
+# a dependency that has no wheels yet for the new interpreter shows up here,
+# in the Actions tab, instead of as a red check on every pull request and
+# main commit.  A failure does not block anything.  When the interpreter
+# becomes a supported version, it moves into ci.yml's test matrix along with
+# its classifier in pyproject.toml.
+name: Python next
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python 3.15, experimental)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # Same as ci.yml: the release-contract tests need every tag.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
+        with:
+          python-version: "3.15"
+          # onnxruntime (via fastembed) ships no cp315 wheel yet (#2235).
+          # Skipping it keeps this run about this project's code; the
+          # fastembed provider falls back when the import fails.  Drop the
+          # flag once onnxruntime publishes cp315 wheels.
+          sync-args: "--all-extras --all-groups --locked --no-install-package onnxruntime"
+
+      - name: Run tests
+        run: uv run --no-sync --no-build pytest --durations=20
