@@ -637,12 +637,12 @@ class ExportPaths:
         bundle_target = target[len(self.scope) + 1 :]
         if not written.startswith("/") and apparent == bundle_target:
             return None
-        return (
-            _field_internal_replacement(
-                written, path, bundle_target, archive_source, directory_form
-            )
-            + suffix
+        replacement = _field_internal_replacement(
+            written, path, bundle_target, archive_source
         )
+        if directory_form and not replacement.endswith("/"):
+            replacement += "/"
+        return replacement + suffix
 
     def _field_changes(
         self, root: object, source: str
@@ -877,13 +877,8 @@ def _frontmatter_paths(root: object) -> list[ScalarNode]:
 
 
 def _field_internal_replacement(
-    written: str,
-    path: str,
-    bundle_target: str,
-    archive_source: str,
-    directory_form: bool,
+    written: str, path: str, bundle_target: str, archive_source: str
 ) -> str:
-    """Relocate a selected metadata path while retaining its written form."""
     if written.startswith("/"):
         replacement = "/" + bundle_target
     else:
@@ -892,8 +887,6 @@ def _field_internal_replacement(
         )
         if not _FIELD_PATH.match(replacement):
             replacement = "./" + replacement
-    if directory_form and not replacement.endswith("/"):
-        replacement += "/"
     if "%" in written:
         replacement = quote(
             replacement,
