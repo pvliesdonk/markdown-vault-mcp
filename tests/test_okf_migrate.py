@@ -621,3 +621,35 @@ def test_generator_does_not_create_index_in_submodule(
     vault._okf_migrate.generate_index(designated=lambda _folder: True)
     assert "/external/index.md" not in vault.reader.read("index.md").content
     assert vault._doc_mgr.read("external/index.md") is None
+
+
+def test_protected_child_is_omitted_from_generated_parent(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    _write(vault, "child/note.md", "# Note\n")
+    original = vault._doc_mgr.protection_reason
+
+    def reason(path: str, **kwargs: object) -> str | None:
+        if path == "child/index.md":
+            return "protected"
+        return original(path, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(vault._doc_mgr, "protection_reason", reason)
+    with pytest.raises(InvalidRequestError, match=r"child/index\.md"):
+        vault._okf_migrate.generate_index()
+    assert "/child/index.md" not in vault.reader.read("index.md").content
+    assert vault._doc_mgr.read("child/index.md") is None
+
+
+def test_immediate_entries_ignore_other_search_results(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(vault, "a/note.md", "# A\n")
+    _write(vault, "other/note.md", "# Other\n")
+    notes = vault._search_mgr.list()
+    monkeypatch.setattr(vault._search_mgr, "list", lambda **_kwargs: [*notes, object()])
+    entries, children = vault._okf_migrate._immediate_index_entries("a")
+    assert [entry[1] for entry in entries] == ["/a/note.md"]
+    assert children == []

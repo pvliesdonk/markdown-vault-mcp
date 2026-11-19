@@ -30,7 +30,7 @@ same rewrite the tool does (#1401).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+import posixpath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
@@ -48,7 +48,7 @@ from markdown_vault_mcp.okf import (
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -58,17 +58,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class _IndexTraversal:
-    """Shared state for one generated listing's folded subtree."""
-
-    root: str
-    notes: Sequence[object]
-    skipped: dict[str, str]
-    allow_protected: bool
-    designated: Callable[[str], bool] | None
-    sections: dict[str, list[tuple[str, str, str | None]]] = field(default_factory=dict)
-    created: list[str] = field(default_factory=list)
+_IndexEntry = tuple[str, str, str | None]
 
 
 class OkfMigrationManager:
@@ -251,16 +241,10 @@ class OkfMigrationManager:
         self._require_built()
         folder = normalize_folder(folder) or ""
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
-        traversal = _IndexTraversal(
-            folder,
-            self._search_mgr.list(folder=folder or None),
-            skipped,
-            allow_protected,
-            designated,
+        sections, created = self._fold_index(
+            folder, "", skipped, allow_protected, designated
         )
-        self._collect_index_entries(folder, traversal)
-        sections = traversal.sections
-        entries = sections.pop("", [])
+        entries = sections.pop("")
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         with self._doc_mgr.write_scope():
@@ -286,18 +270,19 @@ class OkfMigrationManager:
             path=index_path,
             entries=len(entries) + sum(len(items) for items in sections.values()),
             frontmatter_preserved=preserved,
-            created=tuple(traversal.created),
+            created=tuple(created),
         )
 
-    def _collect_index_entries(self, folder: str, state: _IndexTraversal) -> None:
-        """Collect a folder and fold unindexed descendants into sections."""
+    def _immediate_index_entries(
+        self, folder: str
+    ) -> tuple[list[_IndexEntry], list[str]]:
+        """Return immediate notes and listable child folders."""
         from markdown_vault_mcp.types import NoteInfo
 
         prefix = f"{folder}/" if folder else ""
-        section = folder[len(state.root) :].lstrip("/") if state.root else folder
-        entries = state.sections.setdefault(section, [])
+        entries: list[_IndexEntry] = []
         subfolders: set[str] = set()
-        for note in state.notes:
+        for note in self._search_mgr.list(folder=folder or None):
             if not isinstance(note, NoteInfo) or not note.path.startswith(prefix):
                 continue
             rel = note.path[len(prefix) :]
@@ -307,24 +292,66 @@ class OkfMigrationManager:
                 raw = note.frontmatter.get("description")
                 desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
                 entries.append((note.title, f"/{note.path}", desc))
-        for sub in sorted(subfolders):
-            child = prefix + sub
-            has_index = self._has_index(child)
-            if self._doc_mgr.in_submodule(child) and not has_index:
-                continue
-            if has_index or state.designated is None or state.designated(child):
-                if not has_index:
-                    result = self._generate_index(
-                        child, state.skipped, state.allow_protected, state.designated
-                    )
-                    state.created.extend(
-                        ([result.path] if result.path not in state.skipped else [])
-                        + list(result.created)
-                    )
-                if f"{child}/index.md" not in state.skipped:
-                    entries.append((f"{sub}/", f"/{child}/index.md", None))
+        eligible = [
+            sub
+            for sub in sorted(subfolders)
+            if not self._doc_mgr.in_submodule(prefix + sub)
+            or self._has_index(prefix + sub)
+        ]
+        return entries, eligible
+
+    def _link_index(
+        self,
+        child: str,
+        skipped: dict[str, str],
+        allow_protected: bool,
+        designated: Callable[[str], bool] | None,
+    ) -> tuple[list[_IndexEntry], list[str]]:
+        """Create a missing child index and return its pointer and created paths."""
+        created: list[str] = []
+        if not self._has_index(child):
+            result = self._generate_index(child, skipped, allow_protected, designated)
+            created = ([result.path] if result.path not in skipped else []) + list(
+                result.created
+            )
+        path = f"{child}/index.md"
+        pointer: list[_IndexEntry] = (
+            []
+            if path in skipped
+            else [(f"{posixpath.basename(child)}/", f"/{path}", None)]
+        )
+        return pointer, created
+
+    def _fold_index(
+        self,
+        folder: str,
+        section: str,
+        skipped: dict[str, str],
+        allow_protected: bool,
+        designated: Callable[[str], bool] | None,
+    ) -> tuple[dict[str, list[_IndexEntry]], list[str]]:
+        """Collect this folder and fold descendants up to index boundaries."""
+        entries, subfolders = self._immediate_index_entries(folder)
+        sections = {section: entries}
+        created: list[str] = []
+        for sub in subfolders:
+            child = posixpath.join(folder, sub)
+            if self._has_index(child) or designated is None or designated(child):
+                pointer, made = self._link_index(
+                    child, skipped, allow_protected, designated
+                )
+                entries.extend(pointer)
             else:
-                self._collect_index_entries(child, state)
+                inner, made = self._fold_index(
+                    child,
+                    posixpath.join(section, sub),
+                    skipped,
+                    allow_protected,
+                    designated,
+                )
+                sections.update(inner)
+            created.extend(made)
+        return sections, created
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* has an ``index.md``; an unreadable one counts.
