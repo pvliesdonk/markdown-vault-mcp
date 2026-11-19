@@ -31,18 +31,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unicodedata import normalize
 
+import yaml
+
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.managers.document import _head_end, _keep_head, _read_view
+from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
 )
-from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
 
@@ -176,26 +178,25 @@ def destination_home(folder: str, name: str, source_dir: Path | None) -> str | N
         return None
 
 
-def stored_index_body(doc_mgr: DocumentManager, path: str) -> bytes:
-    """Return a stored index body using the replacement writer's header boundary.
+def read_stored_index(doc_mgr: DocumentManager, path: str) -> str:
+    """Read and validate a stored index snapshot.
 
     Args:
         doc_mgr: Document manager whose path guard resolves the index.
         path: Vault-relative index path.
 
     Returns:
-        Exact UTF-8 body bytes, excluding the preserved header.
+        Exact UTF-8 decoded stored text.
 
     Raises:
         DocumentUnreadableError: If the stored index cannot be read.
     """
     try:
         raw = doc_mgr._validate_path(path).read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        parse_frontmatter(raw)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise DocumentUnreadableError(path, str(exc)) from exc
-    view = _read_view(raw)
-    head = _keep_head(raw, view, view[: _head_end(view)])
-    return raw[len(head) :].encode("utf-8")
+    return raw
 
 
 class ConventionMaintainer:
@@ -497,7 +498,7 @@ class ConventionMaintainer:
             try:
                 if self._doc_mgr._read_note(path, capped=False) is None:
                     continue
-                body = stored_index_body(self._doc_mgr, path)
+                body = stored_body(read_stored_index(self._doc_mgr, path))
             except DocumentUnreadableError:
                 continue  # A concept-triggered refresh reports the failure.
             if compute_etag(body) != digest:

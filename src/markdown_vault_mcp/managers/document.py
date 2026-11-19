@@ -210,6 +210,20 @@ def _keep_head(raw: str, view: str, new: str) -> str:
     return raw[: fence.end()] + tail
 
 
+def stored_body(raw: str) -> bytes:
+    """Return the exact body bytes after the header preserved by replacement.
+
+    Args:
+        raw: UTF-8 decoded stored document, including its header.
+
+    Returns:
+        The stored body encoded as UTF-8.
+    """
+    view = _read_view(raw)
+    head = _keep_head(raw, view, view[: _head_end(view)])
+    return raw[len(head) :].encode("utf-8")
+
+
 def _submodule_links_text(sources: list[str]) -> str:
     """Name backlinks left in submodules or nested repositories (#1564, #1949)."""
     names = ", ".join(repr(s) for s in sources)
@@ -1336,7 +1350,8 @@ class DocumentManager:
         *,
         allow_protected: bool = False,
         allow_designated: bool = False,
-    ) -> bool:
+        if_match: str | None = None,
+    ) -> bool:  # noqa: PLR0913, RUF100 - optimistic etag for the generator's snapshot
         """Replace a note body while preserving an existing header's bytes.
 
         Args:
@@ -1345,19 +1360,26 @@ class DocumentManager:
             body: Replacement Markdown body.
             allow_protected: Allow changes to operator-protected paths.
             allow_designated: Permit generated indexes only.
+            if_match: Require this etag for the existing document.
 
         Returns:
             Whether an existing frontmatter block was preserved.
         """
-        head = (original or "")[: _head_end(original or "")]
+        view = _read_view(original or "")
+        head = view[: _head_end(view)]
         separator = "\n" if head and not head.endswith("\n") else ""
         with self.exact_byte_writes():
             text = head + separator + body
             if original is not None:
-                raw = self._validate_path(path).read_bytes().decode("utf-8")
+                raw = (
+                    original
+                    if if_match is not None
+                    else self._validate_path(path).read_bytes().decode("utf-8")
+                )
                 if head:
                     text = _keep_head(raw, _read_view(raw), text)
                 if raw == text:
+                    check_if_match(self._validate_path(path), path, if_match)
                     return bool(head)
             self.write(
                 path,
@@ -1365,6 +1387,7 @@ class DocumentManager:
                 allow_overwrite=True,
                 allow_protected=allow_protected,
                 allow_designated=allow_designated,
+                if_match=if_match,
             )
         return bool(head)
 

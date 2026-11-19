@@ -34,7 +34,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._okf_convention import stored_index_body
+from markdown_vault_mcp._okf_convention import read_stored_index
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
@@ -42,6 +42,8 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
     NoteTooLargeError,
 )
+from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import (
     OKF_ROOT_INDEX_TITLE,
     OkfConvertResult,
@@ -333,22 +335,31 @@ class OkfMigrationManager:
                 with okf_write_suppressed():
                     existing = self._doc_mgr._read_note(index_path, capped=False)
                     ledger = self._doc_mgr._observations
-                    if not self._index_designated(folder):
-                        ledger = None
-                    if ledger is not None and existing is not None:
-                        old = stored_index_body(self._doc_mgr, index_path)
-                        ledger.observe_navigation(index_path, old, body.encode("utf-8"))
+                    raw = (
+                        read_stored_index(self._doc_mgr, index_path)
+                        if existing is not None
+                        else None
+                    )
+                    generated = body.encode("utf-8")
+                    if ledger is not None:
+                        old = (
+                            stored_body(raw)
+                            if raw is not None and self._index_designated(folder)
+                            else None
+                        )
+                        ledger.observe_navigation(index_path, old, generated)
                     preserved = self._doc_mgr.replace_body(
                         index_path,
-                        existing.content if existing is not None else None,
+                        raw,
                         body,
                         allow_protected=allow_protected,
                         allow_designated=True,
+                        if_match=compute_etag(raw.encode("utf-8"))
+                        if raw is not None
+                        else None,
                     )
                     if ledger is not None:
-                        ledger.record_navigation(
-                            index_path, stored_index_body(self._doc_mgr, index_path)
-                        )
+                        ledger.record_navigation(index_path, generated)
         return OkfIndexResult(
             path=index_path,
             entries=sum(len(items) for items in sections.values()),

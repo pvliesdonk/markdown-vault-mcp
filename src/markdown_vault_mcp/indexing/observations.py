@@ -526,10 +526,12 @@ class ObservationLedger:
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             return dict(generated)
 
-    def observe_navigation(self, path: str, old: bytes, new: bytes) -> None:
+    def observe_navigation(self, path: str, old: bytes | None, new: bytes) -> None:
         """Report an unexpected body before replacing a designated index."""
         with self._lock:
             rows, _, state = self._load_full()
+            if old is None:
+                return
             generated, reported = state["generated"], state["reported"]
             assert isinstance(generated, dict) and isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             desired = compute_etag(new)
@@ -545,7 +547,7 @@ class ObservationLedger:
                 logger.warning("okf_index_divergence path=%s digest=%s", path, observed)
 
     def record_navigation(self, path: str, body: bytes) -> None:
-        """Record a successfully generated designated index body."""
+        """Record a successfully generated index body."""
         with self._lock:
             rows, _, state = self._load_full()
             generated = state["generated"]

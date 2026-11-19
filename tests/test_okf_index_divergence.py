@@ -246,29 +246,40 @@ def test_body_line_endings_are_compared_as_stored(
         vault.close()
 
 
-def test_bare_cr_header_and_leading_newline_body_stay_stable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import markdown_vault_mcp.managers.okf_migrate as migration
+@pytest.mark.parametrize(
+    "header",
+    [
+        b"",
+        b"---\ntitle: Root\n---\n",
+        b"---\r\ntitle: Root\r\n---\r\n",
+        b"---\rtitle: Root\r---\r",
+        b"\xef\xbb\xbf---\ntitle: Root\n---\n",
+    ],
+)
+def test_generated_body_matches_stored_bytes(tmp_path: Path, header: bytes) -> None:
+    from markdown_vault_mcp.managers.document import stored_body
 
     root = tmp_path / "vault"
     root.mkdir()
-    header = b'---\rokf_version: "0.2"\r---\r'
     index = root / "index.md"
     index.write_bytes(header + b"# Original\n")
     vault = designated_vault(root, (".",), index_path=tmp_path / "db")
     try:
         vault.index.build_index()
-        monkeypatch.setattr(migration, "_render_fold", lambda *_args: "\n# Listing\n")
         vault.writer.okf_generate_index(folder="")
         generated = index.read_bytes()
-        assert generated == header + b"\r\n# Listing\n"
+        assert generated.startswith(header)
+        ledger = vault._index_mgr.observations
+        assert ledger is not None
+        from markdown_vault_mcp.hashing import compute_etag
+
+        assert ledger.generated_navigation()["index.md"] == compute_etag(
+            stored_body(generated.decode("utf-8"))
+        )
         vault.writer.okf_generate_index(folder="")
         vault.index.reindex()
         assert index.read_bytes() == generated
-        stats = vault.reader.okf_stats()
-        assert stats is not None
-        assert stats["navigation"]["divergences"]["count"] == 0
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 0
     finally:
         vault.close()
 
@@ -306,5 +317,174 @@ def test_header_only_edit_is_preserved_without_divergence(
         stats = vault.reader.okf_stats()
         assert stats is not None
         assert stats["navigation"]["divergences"]["count"] == 0
+    finally:
+        vault.close()
+
+
+def test_policy_off_generation_updates_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Before\n")
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        manager = vault.writer._okf_migrate
+        assert manager is not None
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_index_designated", lambda _folder: False)
+            (root / "note.md").write_text("# Changed\n")
+            vault.index.reindex()
+            vault.writer.okf_generate_index(folder="")
+        (root / "other.md").write_text("# Other\n")
+        vault.index.reindex()
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 0
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("timing", ["before", "after"])
+def test_external_edit_during_generation_is_not_lost_silently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timing: str
+) -> None:
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    index = root / "index.md"
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        ledger = vault._index_mgr.observations
+        assert ledger is not None
+        with monkeypatch.context() as patch:
+            if timing == "before":
+                original = ledger.observe_navigation
+
+                def change_before(*args: object) -> None:
+                    original(*args)
+                    index.write_text("# External edit\n")
+
+                patch.setattr(ledger, "observe_navigation", change_before)
+                with pytest.raises(ConcurrentModificationError):
+                    vault.writer.okf_generate_index(folder="")
+            else:
+                original_replace = vault._doc_mgr.replace_body
+
+                def change_after(*args: object, **kwargs: object) -> bool:
+                    result = original_replace(*args, **kwargs)
+                    index.write_text("# External edit\n")
+                    return result
+
+                patch.setattr(vault._doc_mgr, "replace_body", change_after)
+                vault.writer.okf_generate_index(folder="")
+        assert index.read_text() == "# External edit\n"
+        vault.index.reindex()
+        assert index.read_text() != "# External edit\n"
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [b"---\ntitle: Changed\n---\n# Edit\n", b"---\ntitle: [broken\n---\n", b"\xff"],
+)
+def test_snapshot_change_after_preliminary_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: bytes
+) -> None:
+    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    index = root / "index.md"
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        original = vault._doc_mgr._read_note
+        with monkeypatch.context() as patch:
+
+            def change_after_read(path: str, capped: bool) -> object:
+                result = original(path, capped)
+                if path == "index.md":
+                    index.write_bytes(replacement)
+                return result
+
+            patch.setattr(vault._doc_mgr, "_read_note", change_after_read)
+            if b"broken" in replacement or replacement == b"\xff":
+                with pytest.raises(DocumentUnreadableError):
+                    vault.writer.okf_generate_index(folder="")
+                assert index.read_bytes() == replacement
+            else:
+                vault.writer.okf_generate_index(folder="")
+                assert index.read_bytes().startswith(b"---\ntitle: Changed\n---\n")
+                assert (
+                    vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+                )
+    finally:
+        vault.close()
+
+
+def test_conflict_during_reindex_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    note = root / "note.md"
+    note.write_text("# Before\n")
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        vault.index.reindex()
+        note.write_text("# After\n")
+        ledger = vault._index_mgr.observations
+        assert ledger is not None
+        original = ledger.observe_navigation
+        with monkeypatch.context() as patch:
+
+            def change_before(path: str, old: bytes | None, new: bytes) -> None:
+                original(path, old, new)
+                index.write_text("# External edit\n")
+
+            patch.setattr(ledger, "observe_navigation", change_before)
+            vault.index.reindex()
+        assert index.read_text() == "# External edit\n"
+        vault.index.reindex()
+        assert "After" in index.read_text()
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()
+
+
+def test_future_ledger_refuses_new_index(tmp_path: Path) -> None:
+    import json
+
+    from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        ledger = vault._index_mgr.observations
+        assert ledger is not None and ledger._path is not None
+        data = json.loads(ledger._path.read_text())
+        data["version"] = 4
+        ledger._path.write_text(json.dumps(data))
+        index = root / "index.md"
+        index.unlink()
+        with pytest.raises(StoreUnsupportedSchemaError):
+            vault.writer.okf_generate_index(folder="")
+        assert not index.is_file()
     finally:
         vault.close()
