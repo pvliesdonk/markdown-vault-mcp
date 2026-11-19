@@ -156,3 +156,41 @@ def test_hidden_and_excluded_logs_are_considered(tmp_path: Path) -> None:
         }
     finally:
         vault.close()
+
+
+def test_alias_target_is_kept(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
+    (root / "log.md").symlink_to("other.md")
+    vault = designated_vault(root, (".",))
+    try:
+        vault.index.build_index()
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert dict(result.kept)["deep/log.md"] == "aliased log"
+        assert path_exists(root / "deep/log.md")
+        assert not path_exists(root / "other.md")
+    finally:
+        vault.close()
+
+
+def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "deep/log.md").write_text(
+        "---\ntitle: source\n---\n# Log\n\n## 2025-01-01\n\n- source\n"
+    )
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    args = ["okf", "merge-logs", "--source-dir", str(root)]
+    preview = CliRunner().invoke(app, args)
+    assert preview.exit_code == 0, preview.output
+    assert "deep/log.md -> log.md: 1 entries" in preview.output
+    assert "Source frontmatter encountered" in preview.output
+    assert path_exists(root / "deep/log.md")
+    applied = CliRunner().invoke(app, [*args, "--apply"])
+    assert applied.exit_code == 0, applied.output
+    assert "Merged deep/log.md" in applied.output
+    assert not path_exists(root / "deep/log.md")
+    assert (root / "log.md").read_text().startswith("# Log")
