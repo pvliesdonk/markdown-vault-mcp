@@ -13,17 +13,9 @@ from markdown_it import MarkdownIt
 from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import (
-    _collect_reference_definitions,
     _is_external_target,
     _normalise_line_endings,
-    _resolve_link_path,
-    extract_links,
     strip_frontmatter_block,
-)
-from markdown_vault_mcp.utils.links import (
-    apply_link_replacement,
-    compute_new_raw_target,
-    decode_markdown_destination,
 )
 
 if TYPE_CHECKING:
@@ -200,6 +192,29 @@ def _duplicate_lines(log: _Log) -> set[int]:
     return duplicates
 
 
+def _splice(
+    prefix: str,
+    output: list[str],
+    insertions: dict[int, list[str]],
+    eol: str,
+    *,
+    separate_headings: bool = False,
+) -> str:
+    for pos in sorted(insertions, reverse=True):
+        if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
+            output[pos - 1] += eol
+        if (
+            separate_headings
+            and pos
+            and pos < len(output)
+            and output[pos - 1].strip(" \t\r\n")
+            and insertions[pos][0].startswith("## ")
+        ):
+            insertions[pos][0] = eol + insertions[pos][0]
+        output[pos:pos] = insertions[pos]
+    return prefix + "".join(output)
+
+
 def merge_log_texts(upstream: str, local: str) -> LogMerge:
     """Union complete list entries while retaining upstream formatting.
 
@@ -237,11 +252,7 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
     output = [
         "" if index in duplicates else line for index, line in enumerate(left.lines)
     ]
-    for pos in sorted(insertions, reverse=True):
-        if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
-            output[pos - 1] += eol
-        output[pos:pos] = insertions[pos]
-    merged = left.prefix + "".join(output)
+    merged = _splice(left.prefix, output, insertions, eol)
     check, reason = _parse(merged)
     if (
         check is None
@@ -273,7 +284,7 @@ class LogMigration:
 
 
 def _relocation_notes(text: str) -> set[str]:
-    """Describe URLs the shared rewriter does not change."""
+    """Describe destinations whose meaning can change after migration."""
     notes: set[str] = set()
     for token in MarkdownIt("commonmark").parse(text):
         for item in (token, *(token.children or [])):
@@ -285,13 +296,15 @@ def _relocation_notes(text: str) -> set[str]:
                 )
             ):
                 notes.add("HTML URL not rewritten; check after merge")
-            if item.type == "image":
-                destination = item.attrGet("src")
+            if item.type in {"image", "link_open"}:
+                destination = item.attrGet("src" if item.type == "image" else "href")
                 if destination is not None and not (
                     _is_external_target(str(destination))
                     or str(destination).startswith(("/", "#"))
                 ):
-                    notes.add("relative image URL not rewritten; check after merge")
+                    notes.add("relative destination kept as written; check after merge")
+            if item.type == "text" and re.search(r"\[\[[^\]#][^\]]*\]\]", item.content):
+                notes.add("wiki destination kept as written; check after merge")
     return notes
 
 
@@ -300,68 +313,21 @@ def _migration_text(target: str | None, source: str) -> tuple[str | None, int, s
     right, reason = _parse(source)
     if right is None:
         return None, 0, reason
-    if target is None:
-        return (
-            source[len(right.prefix) :],
-            sum(len(s.entries) for s in right.sections),
-            "",
-        )
-    left, reason = _parse(target)
-    if left is None:
+    left, reason = _parse(target) if target is not None else (None, "")
+    if target is not None and left is None:
         return None, 0, "target: " + reason
-    return _combine_migration(left, right, target)
+    text, count, reason, _ = _merge_migration(left, right, source, target)
+    return text, count, reason
 
 
-def _relocate_links(source: str, source_path: str, target_path: str) -> str:
-    """Use the shared link scanner and rewriter to retain relative destinations."""
-    for raw in _collect_reference_definitions(_normalise_line_endings(source)).values():
-        decoded = decode_markdown_destination(raw)
-        if _is_external_target(decoded) or decoded.startswith("#"):
-            continue
-        resolved, fragment = _resolve_link_path(raw, source_path, decode_markdown=True)
-        old_path = resolved
-        if resolved == source_path and target_path:
-            resolved = target_path
-        destination = compute_new_raw_target(
-            "reference",
-            raw,
-            fragment,
-            resolved,
-            source_path=target_path,
-            old_path=old_path,
-        )
-        source = apply_link_replacement(source, "reference", raw, destination)
-    for link in extract_links(source, source_path, attachment_extensions=frozenset()):
-        resolved = (
-            target_path
-            if link.target_path == source_path and target_path
-            else link.target_path
-        )
-        if link.link_type == "wikilink" and not (
-            link.raw_target.startswith(("./", "../")) or resolved != link.target_path
-        ):
-            continue
-        if link.link_type not in {"markdown", "wikilink"}:
-            continue
-        destination = compute_new_raw_target(
-            link.link_type,
-            link.raw_target,
-            link.fragment,
-            resolved,
-            source_path=target_path,
-            old_path=link.target_path,
-        )
-        source = apply_link_replacement(
-            source, link.link_type, link.raw_target, destination
-        )
-    return source
-
-
-def _combine_migration(
-    left: _Log, right: _Log, target: str
-) -> tuple[str | None, int, str]:
-    """Insert every source entry into the target's dated sections."""
-    eol_match = re.search(r"\r\n|\r|\n", target)
+def _merge_migration(
+    left: _Log | None, right: _Log, source: str, target: str | None
+) -> tuple[str | None, int, str, _Log | None]:
+    if left is None:
+        text = source[len(right.prefix) :]
+        checked, reason = _parse(text)
+        return text, sum(len(s.entries) for s in right.sections), reason, checked
+    eol_match = re.search(r"\r\n|\r|\n", target or "")
     eol = eol_match.group() if eol_match else "\n"
     insertions, _, count = _insertions(left, right, eol, dedupe=False)
     if right.preamble and _normalise_line_endings(
@@ -370,20 +336,17 @@ def _combine_migration(
         insertions.setdefault(left.sections[0].start, []).insert(
             0, right.preamble + eol + eol
         )
-    output = left.lines[:]
-    for pos in sorted(insertions, reverse=True):
-        if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
-            output[pos - 1] += eol
-        output[pos:pos] = insertions[pos]
-    merged = left.prefix + "".join(output)
+    merged = _splice(
+        left.prefix, left.lines[:], insertions, eol, separate_headings=True
+    )
     checked, reason = _parse(merged)
     if (
         checked is None
         or sum(len(s.entries) for s in checked.sections)
         != sum(len(s.entries) for s in left.sections) + count
     ):
-        return None, 0, "self-check: " + reason
-    return merged, count, ""
+        return None, 0, "self-check: " + reason, None
+    return merged, count, "", checked
 
 
 def migrate_logs(
@@ -430,16 +393,10 @@ def migrate_logs(
             try:
                 runner.process(source)
             except _LogMigrationInterrupted as exc:
-                exc.completed = tuple(runner.merged)
+                exc.partial = runner.result()
                 exc.pending = tuple(sources[index:])
                 raise
-    return LogMigration(
-        tuple(runner.merged),
-        tuple(runner.kept),
-        tuple(sorted(runner.headers)),
-        tuple(sorted(runner.source_headers)),
-        tuple(sorted(runner.unrewritten)),
-    )
+    return runner.result()
 
 
 class _LogMigrationRunner:
@@ -457,7 +414,16 @@ class _LogMigrationRunner:
         self.headers: set[str] = set()
         self.source_headers: set[str] = set()
         self.unrewritten: set[tuple[str, str]] = set()
-        self.simulated: dict[str, str] = {}
+        self.simulated: dict[str, tuple[str, _Log]] = {}
+
+    def result(self) -> LogMigration:
+        return LogMigration(
+            tuple(self.merged),
+            tuple(self.kept),
+            tuple(sorted(self.headers)),
+            tuple(sorted(self.source_headers)),
+            tuple(sorted(self.unrewritten)),
+        )
 
     def process(self, source: str) -> None:
         """Choose a destination and record a source's outcome."""
@@ -474,6 +440,24 @@ class _LogMigrationRunner:
             self.kept.append((source, str(exc)))
 
     def _move(self, source: str, target: str, folder: str, parent: str) -> None:
+        self._validate_move(source, target, folder, parent)
+        doc = self.doc
+        cached = self.simulated.get(target) if not self.apply else None
+        src = doc._read_note(source, capped=False)
+        dst = doc._read_note(target, capped=False) if not cached else None
+        if (
+            src is None
+            or src.path != source
+            or (dst is not None and dst.path != target)
+        ):
+            raise InvalidRequestError("missing or aliased log")
+        if strip_frontmatter_block(src.content) != src.content:
+            self.source_headers.add(source)
+        self._merge_source(target, src, dst is not None, cached)
+
+    def _validate_move(
+        self, source: str, target: str, folder: str, parent: str
+    ) -> None:
         from markdown_vault_mcp._okf_convention import destination_home
 
         doc = self.doc
@@ -484,43 +468,59 @@ class _LogMigrationRunner:
         for path in (source, target):
             doc._refuse_submodule(doc._validate_path(path), "path", path)
             doc.refuse_protected(path, allow_protected=self.allow_protected)
-        src = doc._read_note(source, capped=False)
-        dst = doc._read_note(target, capped=False)
-        if (
-            src is None
-            or src.path != source
-            or (dst is not None and dst.path != target)
-        ):
-            raise InvalidRequestError("missing or aliased log")
-        if strip_frontmatter_block(src.content) != src.content:
-            self.source_headers.add(source)
-        relocated = _relocate_links(src.content, source, target)
-        self.unrewritten.update((source, note) for note in _relocation_notes(relocated))
-        raw_target = self.doc._okf_author_snapshot(target)[1] if dst else None
-        previous = self.simulated.get(target, raw_target)
-        self._note_ref_collisions(source, relocated, previous)
+
+    def _merge_source(
+        self,
+        target: str,
+        src: Any,
+        present: bool,
+        cached: tuple[str, _Log] | None,
+    ) -> None:
+        source = src.path
+        self.unrewritten.update(
+            (source, note) for note in _relocation_notes(src.content)
+        )
+        raw_target, target_etag = self._raw_target(target, present)
+        previous = cached[0] if cached else raw_target
+        right, reason = _parse(src.content)
+        if right is None:
+            raise InvalidRequestError(reason)
+        left, reason = (
+            (cached[1], "")
+            if cached
+            else (_parse(previous) if previous is not None else (None, ""))
+        )
+        if previous is not None and left is None:
+            raise InvalidRequestError("target: " + reason)
+        if left is not None:
+            self._note_ref_collisions(source, right, left)
         if previous is not None and strip_frontmatter_block(previous) != previous:
             self.headers.add(target)
-        text, count, reason = _migration_text(previous, relocated)
-        if text is None:
+        text, count, reason, parsed = _merge_migration(
+            left, right, src.content, previous
+        )
+        if text is None or parsed is None:
             raise InvalidRequestError(reason)
         if self.apply:
-            self._write(
-                source, target, text, src.etag, (dst.etag if dst else None, raw_target)
-            )
+            self._write(source, target, text, src.etag, (target_etag, raw_target))
         else:
-            self.simulated[target] = text
+            self.simulated[target] = (text, parsed)
         self.merged.append(LogMove(source, target, count))
 
+    def _raw_target(self, target: str, present: bool) -> tuple[str | None, str | None]:
+        from markdown_vault_mcp.hashing import compute_etag
+
+        if not present:
+            return None, None
+        raw = self.doc._validate_path(target).read_bytes()
+        try:
+            return raw.decode("utf-8"), compute_etag(raw)
+        except UnicodeDecodeError as exc:
+            raise InvalidRequestError(f"Cannot read {target}: {exc}") from exc
+
     def _note_ref_collisions(
-        self, source: str, relocated: str, previous: str | None
+        self, source: str, source_log: _Log, target_log: _Log
     ) -> None:
-        if previous is None:
-            return
-        source_log, _ = _parse(relocated)
-        target_log, _ = _parse(previous)
-        if source_log is None or target_log is None:
-            return
         for label, (href, _) in source_log.refs.items():
             if label in target_log.refs and target_log.refs[label][0] != href:
                 self.unrewritten.add(
@@ -601,5 +601,5 @@ class _LogMigrationRunner:
 class _LogMigrationInterrupted(InvalidRequestError):
     """A target may have changed before source removal failed."""
 
-    completed: tuple[LogMove, ...] = ()
+    partial: LogMigration = LogMigration((), (), (), (), ())
     pending: tuple[str, ...] = ()

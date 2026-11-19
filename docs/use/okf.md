@@ -227,7 +227,13 @@ A `verified` entry records the reviewer and time in the portable format. `okf_ve
 
 Run `markdown-vault-mcp okf merge-logs` to preview descendant logs outside designated folders and their nearest designated ancestor targets. The root is always a target. Each row shows the source, target and entry count; add `--apply` to write the result and remove successfully merged sources. Configure the vault with `--source-dir` when needed. The library exposes the same operation as `vault.writer.okf_merge_logs(apply=True)`.
 
-Entries remain under date headings in newest-first order, including repeated entries. The command reports source frontmatter and omits it from the target; it preserves existing target frontmatter. It relocates relative Markdown links, reference definitions and explicit relative wiki links, and keeps distinct source introductions. Inline image and HTML URLs remain as written and are reported for checking after the merge. Conflicting reference definitions are reported; source links use the target definition. It keeps and reports logs it cannot parse. Protected paths remain protected. If source removal fails, the command restores the target when both files still match; otherwise it reports an uncertain result. Inspect both files before retrying an uncertain result.
+Entries remain under date headings in newest-first order, including repeated entries. Entry text and distinct source introductions are kept as written; line endings may follow the target. The command reports source frontmatter and omits it from the target; it preserves existing target frontmatter bytes.
+
+Relative Markdown links, reference links, wiki links, images and HTML URLs may point somewhere different after the move. Review the destination warnings: the command leaves those links as written. When reference definitions conflict, source links use the target definition.
+
+Logs the parser cannot handle, including reference definitions after entries, are kept and reported. Protected paths remain protected.
+
+If source removal fails, the command restores the target when both files still match; otherwise it reports an uncertain result. A hard interruption between writing and deleting can leave both files. Inspect both before retrying, to avoid duplicate entries.
 
 ### Keeping `log.md` and `index.md` current
 

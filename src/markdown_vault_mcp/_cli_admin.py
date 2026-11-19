@@ -305,16 +305,14 @@ def merge_logs(
             )
         )
         try:
-            built.vault.index.build_index()
+            if apply:
+                built.vault.index.build_index()
             result = built.vault.writer.okf_merge_logs(apply=apply)
         finally:
             built.close()
         _print_log_migration(result, source_dir, apply)
     except _LogMigrationInterrupted as exc:
-        for move in exc.completed:
-            typer.echo(
-                f"Merged {terminal_text(move.source)} -> {terminal_text(move.target)}: {move.entries} entries"
-            )
+        _print_log_migration(exc.partial, source_dir, True)
         for path in exc.pending:
             typer.echo(f"Pending or uncertain: {terminal_text(path)}")
         typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)

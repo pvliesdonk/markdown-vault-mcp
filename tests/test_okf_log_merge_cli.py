@@ -10,6 +10,67 @@ from markdown_vault_mcp.utils.fs import path_exists
 from tests.fixtures.designated_index import designated_vault
 
 
+def test_entries_keep_literal_links_and_code(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    entry = "- [link](note.md) `[link](note.md)` ![img](image.png)\n"
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n" + entry)
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert entry in (root / "log.md").read_text()
+        assert any("relative destination" in note for _, note in result.unrewritten)
+    finally:
+        vault.close()
+
+
+def test_existing_target_above_read_limit_is_merged(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "log.md").write_text("# Log\n\n## 2024-01-01\n\n- " + "x" * 1000 + "\n")
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
+    vault = designated_vault(root, (".",))
+    try:
+        vault._doc_mgr._max_note_read_bytes = 100
+        assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
+        assert "- source" in (root / "log.md").read_text()
+    finally:
+        vault.close()
+
+
+def test_multiple_sources_report_conflicts_and_keep_trailing_definitions(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "vault"
+    for name in ("a", "b", "c"):
+        (root / name).mkdir(parents=True)
+    index = root / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    index_bytes = index.read_bytes()
+    (root / "log.md").write_text("# Log\n\n[r]: /root.md\n\n## 2024-01-01\n\n- root\n")
+    for name in ("a", "b"):
+        (root / name / "log.md").write_text(
+            f"# Log\n\n  [r]: {name}.md\n\n## 2025-01-01\n\n- [{name}][r]\n"
+        )
+    (root / "c/log.md").write_text("# Log\n\n## 2025-01-01\n\n- c\n\n[r]: note.md\n")
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert {m.source for m in result.merged} == {"a/log.md", "b/log.md"}
+        assert dict(result.kept)["c/log.md"] == "unaccounted_content"
+        assert {
+            path for path, note in result.unrewritten if "target defines" in note
+        } == {"a/log.md", "b/log.md"}
+        merged = (root / "log.md").read_text()
+        assert "  [r]: a.md" in merged and "  [r]: b.md" in merged
+        assert "- [a][r]" in merged and "- [b][r]" in merged
+        assert index.read_bytes() == index_bytes
+    finally:
+        vault.close()
+
+
 def test_preview_and_apply_keep_repeated_entries(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
@@ -28,6 +89,24 @@ def test_preview_and_apply_keep_repeated_entries(tmp_path: Path) -> None:
         text = (root / "log.md").read_text()
         assert text.count("- same") == 2
         assert not path_exists(root / "deep/log.md")
+    finally:
+        vault.close()
+
+
+def test_apply_notifies_target_write_and_source_deletion(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- item\n")
+    vault = designated_vault(root, (".",))
+    events: list[tuple[str, str]] = []
+    try:
+        vault._doc_mgr._notifier._callback = lambda path, _content, operation: (
+            events.append((path.relative_to(root).as_posix(), operation))
+        )
+        vault.writer.okf_merge_logs(apply=True)
+        assert ("log.md", "write") in events
+        assert ("deep/log.md", "delete") in events
     finally:
         vault.close()
 
@@ -122,13 +201,13 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     assert preview.exit_code == 0, preview.output
     assert "deep/log.md -> log.md: 1 entries" in preview.output
     assert "Source frontmatter encountered" in preview.output
-    assert "relative image URL not rewritten" in preview.output
+    assert "relative destination kept as written" in preview.output
     assert "HTML URL not rewritten" in preview.output
     assert path_exists(root / "deep/log.md")
     applied = CliRunner().invoke(app, [*args, "--apply"])
     assert applied.exit_code == 0, applied.output
     assert "Merged deep/log.md" in applied.output
-    assert "relative image URL not rewritten" in applied.output
+    assert "relative destination kept as written" in applied.output
     assert "HTML URL not rewritten" in applied.output
     assert not path_exists(root / "deep/log.md")
     assert (root / "log.md").read_text().startswith("# Log")
@@ -260,7 +339,7 @@ def test_retry_after_delete_failure_preserves_multiplicity(
         vault.close()
 
 
-def test_merge_relocates_links_and_keeps_different_preamble(tmp_path: Path) -> None:
+def test_merge_keeps_links_and_different_preamble(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
@@ -277,7 +356,7 @@ def test_merge_relocates_links_and_keeps_different_preamble(tmp_path: Path) -> N
         assert len(result.merged) == 1
         target = (root / "log.md").read_text()
         assert "source intro" in target and "# Deep log" in target
-        assert "[note](deep/note.md#part)" in target
+        assert "[note](note.md#part)" in target
         assert (
             target.index("source intro")
             < target.index("## 2025-01-01")
@@ -313,7 +392,7 @@ def test_interruption_reports_completed_and_pending(
         monkeypatch.setattr(vault._doc_mgr, "delete", fail_b)
         with pytest.raises(_LogMigrationInterrupted) as caught:
             vault.writer.okf_merge_logs(apply=True)
-        assert [move.source for move in caught.value.completed] == ["a/log.md"]
+        assert [move.source for move in caught.value.partial.merged] == ["a/log.md"]
         assert caught.value.pending == ("b/log.md", "c/log.md")
         assert "- a" in (root / "log.md").read_text()
         assert "- b" not in (root / "log.md").read_text()
@@ -321,19 +400,19 @@ def test_interruption_reports_completed_and_pending(
         vault.close()
 
 
-def test_relocation_preserves_destination_spelling() -> None:
-    from markdown_vault_mcp._okf_log_merge import _relocate_links
-
-    source = (
-        "[parent](../b.md#h) [sibling](sib.md) [space](<my note.md>)\n"
-        "![image][img] [[./note#part|Name]]\n\n[img]: ./z%20q.md\n"
-    )
-    moved = _relocate_links(source, "x/y/log.md", "x/log.md")
-    assert "[parent](b.md#h)" in moved
-    assert "[sibling](y/sib.md)" in moved
-    assert "[space](<y/my note.md>)" in moved
-    assert "[img]: y/z%20q.md" in moved
-    assert "[[x/y/note#part|Name]]" in moved
+def test_relative_wiki_link_is_reported_without_rewriting(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    entry = "- [[./note#part|Name]]\n"
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n" + entry)
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert entry in (root / "log.md").read_text()
+        assert any("wiki destination" in note for _, note in result.unrewritten)
+    finally:
+        vault.close()
 
 
 def test_cli_interruption_prints_progress(tmp_path: Path, monkeypatch) -> None:
@@ -359,6 +438,54 @@ def test_cli_interruption_prints_progress(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 1
     assert "Merged a/log.md" in result.output
     assert "Pending or uncertain: b/log.md" in result.output
+
+
+def test_cli_interruption_reports_kept_and_notes(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.managers.document import DocumentManager
+
+    root = tmp_path / "vault"
+    for name in ("a", "b", "c"):
+        (root / name).mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "a/log.md").write_text("not a log\n")
+    (root / "b/log.md").write_text("# Log\n\n## 2025-01-01\n\n- [note](n.md)\n")
+    (root / "c/log.md").write_text("# Log\n\n## 2025-01-01\n\n- c\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    delete = DocumentManager.delete
+
+    def fail_c(self, path, *args, **kwargs):
+        if path == "c/log.md":
+            raise PermissionError("denied")
+        return delete(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(DocumentManager, "delete", fail_c)
+    result = CliRunner().invoke(
+        app, ["okf", "merge-logs", "--source-dir", str(root), "--apply"]
+    )
+    assert result.exit_code == 1
+    assert "Keep a/log.md:" in result.output
+    assert "Merged b/log.md" in result.output
+    assert "b/log.md: relative destination kept as written" in result.output
+    assert "Pending or uncertain: c/log.md" in result.output
+
+
+def test_cli_preview_does_not_build_index(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.facets.index import IndexFacet
+
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- item\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+
+    def fail_build(*_args, **_kwargs):
+        raise AssertionError("preview built index")
+
+    monkeypatch.setattr(IndexFacet, "build_index", fail_build)
+    result = CliRunner().invoke(app, ["okf", "merge-logs", "--source-dir", str(root)])
+    assert result.exit_code == 0, result.output
+    assert "Would merge deep/log.md" in result.output
+    assert path_exists(root / "deep/log.md")
 
 
 def test_self_log_links_point_at_target(tmp_path: Path) -> None:
@@ -409,7 +536,7 @@ def test_relocation_notes_for_images_and_html() -> None:
     from markdown_vault_mcp._okf_log_merge import _relocation_notes
 
     notes = _relocation_notes('![inline](a.png) <img src="a.png">')
-    assert "relative image URL not rewritten; check after merge" in notes
+    assert "relative destination kept as written; check after merge" in notes
     assert "HTML URL not rewritten; check after merge" in notes
     assert not _relocation_notes(
         "# Log\n\n## 2025-01-01\n\n- <br> <kbd>key</kbd> <!-- src=x -->\n"
