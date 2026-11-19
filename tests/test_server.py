@@ -821,6 +821,7 @@ class TestToolManifest:
             "okf_generate_index",
             "okf_inventory",
             "okf_navigation",
+            "okf_propose_log_entry",
             "okf_seed_log",
             "okf_validate",
             "okf_verify",
