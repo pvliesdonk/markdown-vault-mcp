@@ -370,21 +370,30 @@ class ConventionMaintainer:
             previous = self._checkpoint.load()
             old = previous or {}
             changed = {
-                p
-                for p in current.keys() | old.keys()
-                if current.get(p) != old.get(p) and not self._is_reserved(p)
+                p for p in current.keys() | old.keys() if current.get(p) != old.get(p)
             }
-            arrivals = changed & (current.keys() - old.keys())
-            removed = changed & (old.keys() - current.keys())
-            boundaries = (self._removed_index_boundary(folder_of(p)) for p in removed)
-            owners = {p: self._owner(folder_of(p)) for p in changed - removed}
+            vanished = changed - current.keys()
+            safe = set()
+            for path in changed - vanished:
+                try:
+                    if not self._is_reserved(path):
+                        safe.add(path)
+                except InvalidRequestError:
+                    vanished.add(path)
+            vanished = {p for p in vanished if not is_okf_reserved_file(p)}
+            arrivals = safe - old.keys()
+            boundaries = (
+                self._removed_index_boundary(self._live_folder(folder_of(p)))
+                for p in vanished
+            )
+            owners = {p: self._owner(folder_of(p)) for p in safe}
             folders = [folder for folder in owners.values() if folder is not None]
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
             success = self.refresh_indexes(
                 folders,
-                trigger_paths=changed,
+                trigger_paths=safe,
                 create={
                     self.indexed_anchor(owner)
                     for p in arrivals
@@ -394,6 +403,16 @@ class ConventionMaintainer:
             if success and previous != current:
                 self._checkpoint.save(current)
             return success
+
+    def _live_folder(self, folder: str) -> str:
+        """Find the nearest folder whose current target stays inside the vault."""
+        while folder:
+            try:
+                self._canonical(folder)
+                break
+            except InvalidRequestError:
+                folder = folder_of(folder)
+        return folder
 
     def _owner(self, folder: str) -> str | None:
         """Find a designated owner without crossing a preserved index."""

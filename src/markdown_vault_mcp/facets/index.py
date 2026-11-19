@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.indexing import IndexWriteCoordinator
     from markdown_vault_mcp.managers.index import IndexManager
     from markdown_vault_mcp.types import IndexStats, ReindexResult, SkippedFile
+
+
+_T = TypeVar("_T")
 
 
 class IndexFacet:
@@ -38,6 +41,7 @@ class IndexFacet:
         coordinator: IndexWriteCoordinator,
         index_mgr: IndexManager,
         after_reindex: Callable[[], None] | None = None,
+        paused: Callable[[], bool] | None = None,
     ) -> None:
         """Hold the collaborators the index operations delegate to.
 
@@ -47,10 +51,12 @@ class IndexFacet:
             index_mgr: The shared :class:`IndexManager`, queried by
                 :meth:`IndexFacet.embeddings_status`.
             after_reindex: Optional convergence callback run after a reindex.
+            paused: Whether this caller holds the vault write pause.
         """
         self._coordinator = coordinator
         self._index_mgr = index_mgr
         self._after_reindex = after_reindex
+        self._paused = paused
         self._convergence_executor = (
             ThreadPoolExecutor(max_workers=1, thread_name_prefix="okf-converge")
             if after_reindex is not None
@@ -163,7 +169,10 @@ class IndexFacet:
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
         """
-        return self._coordinator.build_index(force=force)
+        result = self._coordinator.build_index(force=force)
+        if force and self._after_reindex is not None:
+            self._after_reindex()
+        return result
 
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
@@ -210,7 +219,8 @@ class IndexFacet:
         Returns:
             ``concurrent.futures.Future`` carrying the :class:`IndexStats`.
         """
-        return self._coordinator.build_index_async(force=force)
+        pending = self._coordinator.build_index_async(force=force)
+        return self._converge_after(pending) if force else pending
 
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
@@ -219,20 +229,28 @@ class IndexFacet:
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
         failures are surfaced via :meth:`IndexFacet.get_index_status` (#561).
         """
-        pending = self._coordinator.reindex_async()
+        return self._converge_after(self._coordinator.reindex_async())
+
+    def _converge_after(self, pending: Future[_T]) -> Future[_T]:
         if self._convergence_executor is None:
             return pending
 
-        def finish() -> ReindexResult:
+        def finish() -> _T:
             result = pending.result()
             if self._after_reindex is not None:
                 self._after_reindex()
             return result
 
+        result: Future[_T] = Future()
+        if self._paused is not None and self._paused():
+            try:
+                result.set_result(finish())
+            except BaseException as exc:
+                result.set_exception(exc)
+            return result
         continuation = self._convergence_executor.submit(finish)
-        result: Future[ReindexResult] = Future()
 
-        def publish(done: Future[ReindexResult]) -> None:
+        def publish(done: Future[_T]) -> None:
             if not result.set_running_or_notify_cancel():
                 return
             try:

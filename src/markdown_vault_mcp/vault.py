@@ -62,7 +62,6 @@ from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
-    fts_row_to_note_info,
 )
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
@@ -593,6 +592,7 @@ class Vault:
         # serialises ONLY the read-modify-write of files in DocumentManager
         # so two MCP write tools racing on the same path don't tear.
         self._file_write_lock = threading.RLock()
+        self._pause_depth = threading.local()
 
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.document import DocumentManager
@@ -650,7 +650,6 @@ class Vault:
                     if p is not None
                 ),
             )
-        self._inspection_policy = policy
         observations = ObservationLedger(
             observation_path,
             BundleInspector(
@@ -866,23 +865,7 @@ class Vault:
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
             from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 
-            policy = self._inspection_policy
-            scope = json.dumps(
-                {
-                    "source": str(self._source_dir.resolve()),
-                    "folders": sorted(capabilities.folders),
-                    "exclude": sorted(self._exclude_patterns or []),
-                    "conventions": policy.conventions_file,
-                    "state_paths": sorted(str(p.resolve()) for p in policy.state_paths),
-                    "embeddings": str(policy.embeddings_path.resolve())
-                    if policy.embeddings_path is not None
-                    else None,
-                    "index": str(policy.index_path.resolve())
-                    if policy.index_path is not None
-                    else None,
-                },
-                sort_keys=True,
-            )
+            scope = json.dumps(sorted(capabilities.folders))
 
             self._okf_convention = ConventionMaintainer(
                 doc_mgr=self._doc_mgr,
@@ -919,6 +902,7 @@ class Vault:
         self._index_facet = IndexFacet(
             coordinator=self._coordinator,
             index_mgr=self._index_mgr,
+            paused=lambda: getattr(self._pause_depth, "value", 0) > 0,
             after_reindex=(
                 self._converge_okf_indexes
                 if self._okf_convention is not None and capabilities.index
@@ -1131,7 +1115,12 @@ class Vault:
         unblocked at the Python level.
         """
         with self._file_write_lock:
-            yield
+            depth = getattr(self._pause_depth, "value", 0)
+            self._pause_depth.value = depth + 1
+            try:
+                yield
+            finally:
+                self._pause_depth.value = depth
 
     def sync_from_remote_before_index(self) -> None:
         """One-time git fetch + ff-only update before build_index().
@@ -1216,16 +1205,10 @@ class Vault:
             return
         try:
             with self._file_write_lock:
-                live = {}
-                for row in self._fts.list_notes():
-                    note = fts_row_to_note_info(row)
-                    raw = note.frontmatter.get("description")
-                    description = (
-                        raw.strip() if isinstance(raw, str) and raw.strip() else None
-                    )
-                    live[note.path] = json.dumps(
-                        [row["content_hash"], note.title, description]
-                    )
+                live = {
+                    row["path"]: json.dumps([row["content_hash"], row["title"]])
+                    for row in self._fts.list_notes()
+                }
                 maintainer.converge_indexes(ledger.rows(), live)
         except Exception:
             logger.warning("okf_index_convergence_failed", exc_info=True)

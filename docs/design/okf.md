@@ -487,7 +487,9 @@ The operator controls explicit authoring, review, index and log maintenance inde
   existing anchors, while reserved-file-only changes do not trigger generation.
   A failed refresh or checkpoint save leaves the applied state unchanged for retry. Identical bytes
   are not rewritten. This maintenance creates neither provenance nor log entries.
-  Pull sweeps retain observations until reindex updates search labels.
+  Pull sweeps retain observations until reindex updates search labels. Forced builds
+  also converge; ordinary startup builds wait for reindex. Async reindex submitted
+  inside a write pause completes inline on the pausing thread.
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
   proposed): designed separately with the provenance evidence it depends
   on (#1420); named here so the switch has an owner in this section.

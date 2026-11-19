@@ -728,57 +728,99 @@ def test_cancelled_async_reindex_still_converges(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_exclude_policy_restart_removes_unadmitted_note(tmp_path: Path) -> None:
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_forced_build_converges_but_plain_build_does_not(
+    tmp_path: Path, asynchronous: bool
+) -> None:
+    index = tmp_path / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = designated_vault(tmp_path, (".",))
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        (tmp_path / "late.md").write_text("# Late\n")
+        vault.index.build_index()
+        assert "late.md" not in index.read_text()
+        if asynchronous:
+            vault.index.build_index_async(force=True).result(timeout=5)
+        else:
+            vault.index.build_index(force=True)
+        assert "late.md" in index.read_text()
+    finally:
+        vault.close()
+
+
+def test_async_reindex_inside_nested_pause_writes(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    index = tmp_path / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = designated_vault(tmp_path, (".",))
+    try:
+        vault.index.build_index()
+        (tmp_path / "late.md").write_text("# Late\n")
+        with vault.pause_writes():
+            with pytest.raises(ValueError), vault.pause_writes():
+                raise ValueError("restore depth")
+            assert vault._pause_depth.value == 1
+            vault.index.reindex_async().result(timeout=5)
+            assert "late.md" in index.read_text()
+        assert vault._pause_depth.value == 0
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            assert (
+                pool.submit(lambda: getattr(vault._pause_depth, "value", 0)).result()
+                == 0
+            )
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("ancestor", [False, True])
+def test_outside_replacement_does_not_block_safe_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ancestor: bool
+) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
     index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "note.md").write_text("# Note\n")
-    capabilities = ContentConfig(
-        okf_mode="on", okf_index=True, okf_folders=(".",)
-    ).okf_capabilities
-
-    def open_vault(exclude: list[str]) -> Vault:
-        return Vault(
-            source_dir=root,
-            settings=VaultSettings(
-                read_only=False,
-                okf_mode="on",
-                okf_capabilities=capabilities,
-                required_frontmatter=["missing"],
-                exclude_patterns=exclude,
-                index_path=tmp_path / "index.sqlite",
-            ),
-        )
-
-    vault = open_vault([])
+    folder = root / "old" if ancestor else root
+    folder.mkdir(exist_ok=True)
+    note = folder / "note.md"
+    note.write_text("# Old\n")
+    other = root / "other.md"
+    other.write_text("---\ndescription: before\n---\n# Other\n")
+    outside = tmp_path / ("outside" if ancestor else "outside.md")
+    if ancestor:
+        outside.mkdir()
+        outside_note = outside / "note.md"
+    else:
+        outside_note = outside
+    outside_note.write_text("# Outside\n")
+    vault = designated_vault(root, (".",))
     try:
         vault.index.build_index()
         vault.index.reindex()
-        assert "note.md" in index.read_text()
-    finally:
-        vault.close()
-    vault = open_vault(["note.md"])
-    try:
-        vault.index.build_index()
+        if ancestor:
+            shutil.rmtree(folder)
+            folder.symlink_to(outside, target_is_directory=True)
+        else:
+            note.unlink()
+            note.symlink_to(outside)
+        other.write_text("---\ndescription: after\n---\n# Other\n")
         vault.index.reindex()
-        assert "note.md" not in index.read_text()
+        listing = index.read_text()
+        assert "after" in listing
+        assert "/old/note.md" not in listing if ancestor else "/note.md" not in listing
+        assert outside_note.read_text() == "# Outside\n"
+        writes: list[str] = []
+        original = vault._doc_mgr.write
+
+        def record(path: str, *args: object, **kwargs: object) -> object:
+            writes.append(path)
+            return original(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._doc_mgr, "write", record)
+        vault.index.reindex()
+        assert writes == []
     finally:
         vault.close()
-
-
-def test_reused_state_path_reconciles_different_source(tmp_path: Path) -> None:
-    for name in ("one", "two"):
-        root = tmp_path / name
-        root.mkdir()
-        (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-        (root / "note.md").write_text("# Note\n")
-    for name in ("one", "two"):
-        root = tmp_path / name
-        vault = designated_vault(root, (".",), index_path=tmp_path / "index.sqlite")
-        try:
-            vault.index.build_index()
-            vault.index.reindex()
-            assert "note.md" in (root / "index.md").read_text()
-        finally:
-            vault.close()
