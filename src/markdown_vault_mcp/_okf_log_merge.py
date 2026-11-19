@@ -8,12 +8,14 @@ import posixpath
 import re
 from typing import TYPE_CHECKING, Any
 
+import yaml
 from markdown_it import MarkdownIt
 
 from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import (
     _normalise_line_endings,
+    parse_frontmatter,
     strip_frontmatter_block,
 )
 
@@ -284,8 +286,13 @@ class LogMigration:
 def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
     """Parse a BOM-prefixed target while retaining its original leading bytes."""
     bom = "\ufeff" if text.startswith("\ufeff") else ""
-    parsed, reason = _parse(text[len(bom) :])
+    body = text[len(bom) :]
+    parsed, reason = _parse(body)
     if parsed is not None:
+        try:
+            parse_frontmatter(body)
+        except yaml.YAMLError:
+            return None, "invalid frontmatter"
         parsed.prefix = bom + parsed.prefix
     return parsed, reason
 

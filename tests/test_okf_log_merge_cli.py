@@ -188,7 +188,9 @@ def test_alias_target_is_kept(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("kind", ["directory", "fifo", "invalid_utf8"])
+@pytest.mark.parametrize(
+    "kind", ["directory", "fifo", "invalid_utf8", "malformed_yaml"]
+)
 def test_unsafe_target_is_kept_without_changing_source(
     tmp_path: Path, kind: str
 ) -> None:
@@ -202,16 +204,27 @@ def test_unsafe_target_is_kept_without_changing_source(
         target.mkdir()
     elif kind == "fifo":
         os.mkfifo(target)
-    else:
+    elif kind == "invalid_utf8":
         target.write_bytes(b"\xffinvalid")
+    else:
+        target.write_bytes(b"---\ntitle: [\n---\n# Log\n\n## 2024-01-01\n\n- target\n")
     vault = designated_vault(root, (".",))
     try:
+        if kind == "malformed_yaml":
+            original = target.read_bytes()
+            preview = vault.writer.okf_merge_logs()
+            assert not preview.merged
+            assert "frontmatter" in dict(preview.kept)["deep/log.md"]
+            assert target.read_bytes() == original
         result = vault.writer.okf_merge_logs(apply=True)
         assert not result.merged
         assert "deep/log.md" in dict(result.kept)
         assert "- source" in source.read_text()
         if kind == "invalid_utf8":
             assert target.read_bytes() == b"\xffinvalid"
+        if kind == "malformed_yaml":
+            assert "frontmatter" in dict(result.kept)["deep/log.md"]
+            assert target.read_bytes() == original
     finally:
         vault.close()
 
