@@ -4,8 +4,8 @@ The ``index.md`` / ``log.md`` shapes maintained here are the spec's §8 and §9,
 recorded in ``docs/design/reference/okf-v0.2.md``.
 
 After a successful enforced content write (``write`` / ``edit``), the server
-keeps the affected folder's reserved files current: it appends a dated bullet
-to that folder's ``log.md`` and refreshes its ``index.md`` listing. These are
+keeps reserved files current: it appends a dated bullet to the selected
+ancestor ``log.md`` and refreshes the designated ``index.md`` listing. These are
 *secondary* writes riding the primary write — they flow through the same
 single-writer index path and git-commit callback as any other write (they are
 issued through :class:`DocumentManager`), and any failure degrades to a logged
@@ -172,7 +172,7 @@ def destination_home(folder: str, name: str, source_dir: Path | None) -> str | N
 
 
 class ConventionMaintainer:
-    """Keep a written note's folder ``log.md`` / ``index.md`` current (#964)."""
+    """Maintain the selected ancestor log and designated index (#964)."""
 
     def __init__(
         self,
@@ -257,12 +257,6 @@ class ConventionMaintainer:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
         return self._designated(folder) and self._destination_ok(folder, "index.md")
 
-    def _may_log(self, folder: str) -> bool:
-        """Whether a write into *folder* may append to its ``log.md``."""
-        return self._capabilities.log == "writes" and self._destination_ok(
-            folder, "log.md"
-        )
-
     def _maintain_index(self, folder: str) -> None:
         """Refresh the designated anchor that owns *folder* if allowed."""
         anchor = self.indexed_anchor(folder)
@@ -270,11 +264,11 @@ class ConventionMaintainer:
             self._refresh_index(anchor)
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
-        """Refresh the written note's folder ``log.md`` and its listing.
+        """Update the selected ancestor ``log.md`` and designated listing.
 
         Index maintenance reaches the designated ancestor, whose listing
         preserves an undesignated existing index as a boundary.
-        Log maintenance remains limited to the written folder's designation.
+        Log maintenance selects the nearest designated folder or existing log.
 
         A no-op unless *operation* is a content write (``write`` / ``edit``)
         on an OKF-active vault, and never for a write whose target is itself a
@@ -299,7 +293,7 @@ class ConventionMaintainer:
             return
         folder = folder_of(path := self._canonical(path))
         with okf_write_suppressed(), auxiliary_commit_writes():
-            if self._designated(folder) and self._may_log(folder):
+            if self._capabilities.log == "writes":
                 self._append_log(folder, path, operation)
             # Refresh the listing that owns this note, folding where needed.
             if self._capabilities.index:
@@ -423,8 +417,21 @@ class ConventionMaintainer:
         except OSError:
             return True
 
+    def _log_anchor(self, folder: str) -> str:
+        """Choose the deepest designated folder or existing ancestor log."""
+        current = folder
+        while current:
+            if self._designated(current):
+                return current
+            if self._source_dir is not None and is_regular_file(
+                self._source_dir / current / "log.md"
+            ):
+                return current
+            current = folder_of(current)
+        return ""
+
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
-        """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
+        """Append a dated ``**Update**`` bullet to the selected ancestor log.
 
         Existing frontmatter is retained byte-for-byte during the body edit.
         """
@@ -437,7 +444,11 @@ class ConventionMaintainer:
             # log and clobber each other's bullet (lost update). write()
             # re-enters this same re-entrant lock.
             with self._write_lock:
-                existing = self._doc_mgr.read(log_path)
+                folder = self._log_anchor(folder)
+                log_path = f"{folder}/log.md" if folder else "log.md"
+                if not self._destination_ok(folder, "log.md"):
+                    return
+                existing = self._doc_mgr._read_note(log_path, capped=False)
                 body = (
                     strip_frontmatter_block(existing.content)
                     if existing is not None

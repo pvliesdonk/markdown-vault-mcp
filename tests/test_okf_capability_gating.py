@@ -247,12 +247,15 @@ def test_guidance_follows_independent_maintenance() -> None:
         return " ".join(item.text for item in _domain_snippets(cfg))
 
     index_only = guidance(okf_index=True)
-    assert "server maintains index.md; maintain log.md yourself" in index_only
+    assert "maintains designated indexes" in index_only
+    assert "update 'log.md'" in index_only
     log_only = guidance(okf_log="writes")
-    assert "server maintains log.md; maintain index.md yourself" in log_only
-    assert "Leave 'log.md'/'index.md' to the server" in guidance(
-        okf_index=True, okf_log="writes", okf_folders=("**",)
-    )
+    assert "Leave 'log.md' to the server" in log_only
+    assert "update 'index.md'" in log_only
+    both = guidance(okf_index=True, okf_log="writes", okf_folders=(".", "projects/*"))
+    assert "Leave 'log.md' to the server" in both
+    assert "maintains designated indexes" in both
+    assert "(., projects/*)" in both
     neither = guidance(okf_write=True, okf_index=False, okf_log="off")
     assert "update 'log.md'/'index.md'" in neither
 
