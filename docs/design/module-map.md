@@ -69,6 +69,7 @@ src/markdown_vault_mcp/
     offline_changes.py -- OfflineChanges: whether a scan of every file has reconciled offline changes, for get_index_status (#1542)
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
     head_reconciler.py -- IndexHeadReconciler: reindexes until the index reflects git HEAD, whatever moved it (#1532)
+    _embedding_stage.py -- private temporary staging and repeatable generation replay for full embedding builds
     embedding_reconciler.py -- EmbeddingReconciler: the one writer of embedding rows, built from the keyword index with content_hash tokens; conditional replace, conflicts re-queued (#1768)
     donor.py           -- Donor: a read-only store whose compatible vectors a full build copies by embedding input, refusing an unknown or other identity (#1505)
   facets/
@@ -87,11 +88,11 @@ src/markdown_vault_mcp/
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
-    submodules.py      -- SubmoduleGuard: which vault paths lie in or hold a git submodule (gitlinks from the index), so the write managers refuse them (#1564)
+    submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
@@ -108,11 +109,13 @@ src/markdown_vault_mcp/
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
+  _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
-  _commit_scope.py     -- CommitScope + CommitScopeMiddleware: per-tool-call commit boundary (#1264)
+  _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
+  _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)
   _write_tools.py      -- WRITE_TOOL_NAMES + write_tools_phrase: single source for the user-facing write-tool enumeration (#1009)
   config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
@@ -167,7 +170,7 @@ src/markdown_vault_mcp/
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _cli_options.py      -- shared Typer option aliases (connection, folder, agent, drain) for the read commands
   _cli_reader.py       -- register_read_commands: search plus every read-only command, one unit a CLI mounts whole (#2005)
-  _cli_admin.py        -- the admin group (index, reindex, embeddings import) and the hidden aliases for their old names (#2005)
+  _cli_admin.py        -- the admin group (index, reindex, embeddings import, repair-log #1403) and the hidden aliases for the first three's old names (#2005)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```

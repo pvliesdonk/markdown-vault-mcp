@@ -25,6 +25,10 @@ PUSH_REASON_NO_REMOTE = "no_remote"
 PUSH_REASON_NON_FAST_FORWARD = "non_fast_forward"
 PUSH_REASON_PUSH_FAILED = "push_failed"
 
+# Reason a write tool reports while the working tree holds changes the server
+# has not committed (#1678).  Outranks every remote reason.
+WORKTREE_REASON_UNCOMMITTED_CHANGES = "uncommitted_changes"
+
 # Value of the ``state`` field a write tool reports while the clone cannot
 # reach its remote (#1287).  There is deliberately no ``"ok"`` counterpart:
 # a healthy clone reports nothing at all.

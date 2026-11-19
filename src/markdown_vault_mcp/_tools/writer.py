@@ -870,6 +870,11 @@ def register(mcp: FastMCP) -> None:
         # matching the pre-#862 guard — rather than tripping fetch_url's
         # positive-max_bytes validation on every attachment fetch.
         is_markdown = is_note(path)
+        await asyncio.to_thread(
+            vault._validate_path if is_markdown else vault._validate_attachment_path,
+            path,
+        )
+        await asyncio.to_thread(vault._doc_mgr.refuse_folder_in_submodule, path, "path")
         cap_bytes = (
             0
             if is_markdown or vault.max_attachment_size_mb <= 0

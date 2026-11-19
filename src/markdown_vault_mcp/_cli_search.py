@@ -50,8 +50,11 @@ _SYNONYMS = (
     "outlink outbound outgoing",
     "outline toc",
 )
-# The headings task ranked list above toc without this observed vocabulary.
-_KEYWORDS: dict[tuple[str, ...], str] = {("toc",): "headings"}
+# Observed ambiguities need vocabulary absent from the native command names.
+_KEYWORDS: dict[tuple[str, ...], str] = {
+    ("toc",): "headings",
+    ("links", "to"): "backlinks",
+}
 _SKIP = {
     "cli",
     "serve",
