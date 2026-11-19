@@ -62,8 +62,7 @@ vars:
     default: 5678
     help: "debugpy listen port; the image must be built with `--build-arg DEBUG=true`."
     tags: [debug]
-    # Development-only; read inside core's maybe_start_debugpy, not project
-    # src/. Documented in the env artifacts but offered no wizard control —
+    # Development-only; read by _debug.maybe_start_debugpy (#2335). Documented in the env artifacts but offered no wizard control —
     # `control: none`, not `inferred`, since the value is not derived from
     # anything else.
     wizard: {control: none}

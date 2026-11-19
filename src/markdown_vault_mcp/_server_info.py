@@ -183,7 +183,7 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
             result: Any = upstream_version()
             if inspect.isawaitable(result):
                 result = await result
-        except Exception as exc:
+        except Exception as exc:  # broad: surface as a structured error
             # Redacted on both emit paths, and logged without exc_info: the
             # rendered traceback would print the unredacted message again.
             reason = redact_urls_in_text(str(exc))

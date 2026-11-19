@@ -25,8 +25,6 @@ from fastmcp_pvl_core import (
     get_claims,
     get_current_auth_mode,
     get_subject,
-    maybe_start_debugpy,
-    run_http,
     wire_middleware_stack,
 )
 from fastmcp_pvl_core import __version__ as CORE_VERSION
@@ -51,7 +49,4 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "get_subject",
     # The installed pvl-core version get_server_info reports (#2283).
     "CORE_VERSION",
-    # HTTP serving and debugpy (#2335).
-    "maybe_start_debugpy",
-    "run_http",
 ]
