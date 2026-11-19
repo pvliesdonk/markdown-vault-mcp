@@ -442,6 +442,17 @@ async def test_complex_metadata_review_download_is_refused(
     assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
 
 
+async def test_invalid_tagged_timestamp_download_yields_json_refusal(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    import json
+
+    (source_dir / "note.md").write_text("---\ndate: !!timestamp nope\n---\nBody\n")
+    result = await sink.read("okf-bundle?require_review")
+    assert result.media_type == "application/json"
+    assert json.loads(result.body)["reason"] == "review"
+
+
 async def test_bundle_collision_returns_actionable_refusal(
     sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

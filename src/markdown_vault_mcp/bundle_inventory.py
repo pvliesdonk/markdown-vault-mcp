@@ -12,7 +12,7 @@ import unicodedata
 from bisect import bisect_left
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import frontmatter
 import yaml
@@ -269,8 +269,59 @@ def _role(name: str, conventions_file: str | None) -> Role:
     return "concept_candidate" if is_note(name) else "supporting"
 
 
-def _metadata_too_complex(text: str) -> bool:
-    """Bound YAML work before construction, using the existing delimiter handler."""
+_YAML_EVENT_LIMIT = 4096
+_YAML_ALIAS_LIMIT = 1024
+_YAML_DEPTH_LIMIT = 32
+# Known scalar/tag conversion failures describe the input, not I/O.
+_MALFORMED_METADATA = (
+    yaml.YAMLError,
+    TypeError,
+    ValueError,
+    AttributeError,
+    LookupError,
+)
+
+
+class _YamlExpansion:
+    """Alias-expanded depth and extra weight (events plus scalar text) of a YAML header."""
+
+    def __init__(self, aliases: bool) -> None:
+        self._aliases = aliases
+        self._extra = 0
+        self._anchors: dict[str, tuple[int, int]] = {}
+        self._open: list[list[Any]] = [[None, 0, 0]]  # anchor, weight, height
+
+    def exceeds(self, event: yaml.Event) -> bool:
+        """Account one event; true once expansion passes the alias or depth bound."""
+        if isinstance(event, yaml.events.AliasEvent):
+            # An alias of an unfinished anchor is a cycle: it is not yet known.
+            known = self._anchors.get(event.anchor or "", (_YAML_ALIAS_LIMIT + 1, 0))
+            self._extra += known[0]
+            return not self._aliases or self._add(*known)
+        if isinstance(event, yaml.events.CollectionStartEvent):
+            self._open.append([event.anchor, 1, 0])
+            return len(self._open) - 1 > _YAML_DEPTH_LIMIT
+        if isinstance(event, yaml.events.CollectionEndEvent):
+            anchor, weight, height = self._open.pop()
+            return self._add(weight + 1, height + 1, anchor)
+        return self._add(
+            1 + len(getattr(event, "value", "")), 0, getattr(event, "anchor", None)
+        )
+
+    def _add(self, weight: int, height: int, anchor: str | None = None) -> bool:
+        if anchor:
+            self._anchors[anchor] = (weight, height)
+        top = self._open[-1]
+        top[1] += weight
+        top[2] = max(top[2], height)
+        return (
+            self._extra > _YAML_ALIAS_LIMIT
+            or len(self._open) - 1 + height > _YAML_DEPTH_LIMIT
+        )
+
+
+def _metadata_too_complex(text: str, aliases: bool = False) -> bool:
+    """Bound YAML work before construction; aliases count at expanded size if allowed."""
     handler = YAMLHandler()
     stripped = text.strip()
     if not handler.detect(stripped):
@@ -280,17 +331,9 @@ def _metadata_too_complex(text: str) -> bool:
     except ValueError:
         # An unclosed block is ordinary text to the existing parser.
         return False
-    depth = 0
-    for ordinal, event in enumerate(yaml.parse(header, Loader=yaml.SafeLoader)):
-        if ordinal >= 4096 or isinstance(event, yaml.events.AliasEvent):
-            return True
-        if isinstance(event, yaml.events.CollectionStartEvent):
-            depth += 1
-        elif isinstance(event, yaml.events.CollectionEndEvent):
-            depth -= 1
-        if depth > 32:
-            return True
-    return False
+    expansion = _YamlExpansion(aliases)
+    events = enumerate(yaml.parse(header, Loader=yaml.SafeLoader))
+    return any(n >= _YAML_EVENT_LIMIT or expansion.exceeds(e) for n, e in events)
 
 
 def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
@@ -303,8 +346,7 @@ def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
         return BundleEntry(path, role, "inspected", parse_state="invalid_encoding")
     except (RecursionError, OverflowError):
         return BundleEntry(path, role, reason="metadata_complexity")
-    except (yaml.YAMLError, TypeError, ValueError, AttributeError, LookupError):
-        # Known scalar/tag conversion failures describe the input, not I/O.
+    except _MALFORMED_METADATA:
         return BundleEntry(path, role, "inspected", parse_state="malformed_metadata")
     except Exception:
         # Like scanner's internal_error, this is distinct from malformed input.

@@ -3845,7 +3845,9 @@ and frontmatter parsers. An inventory-only YAML event preflight uses the existin
 frontmatter delimiter handler: aliases, more than 4096 events or collection
 depth above 32 stop before metadata construction, preventing exponential merge
 expansion. Such files remain `not_inspected` with `metadata_complexity`, not
-malformed. General scanner parsing, Markdown bodies and other frontmatter
+malformed. Review-assured export opts in to counting aliases at their expanded
+size (events plus scalar text, 1,024 units in all; unfinished or undefined
+anchors never count as known) under the same event and depth limits. General scanner parsing, Markdown bodies and other frontmatter
 formats retain their existing semantics. Parser recursion/overflow limits also
 remain uninspected. Known tag/value/shape conversion failures become malformed
 metadata; unexpected parser exceptions instead yield unavailable entries with

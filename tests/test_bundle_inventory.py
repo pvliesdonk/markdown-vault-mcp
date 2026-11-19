@@ -635,6 +635,56 @@ def test_metadata_complexity_bounds_precede_construction(
     constructor.assert_not_called()
 
 
+def _alias_header(*lines: str) -> str:
+    return "---\n" + "\n".join(lines) + "\n---\nBody"
+
+
+_DOUBLING = [
+    "a0: &a0 [x, x]",
+    *(f"a{i + 1}: &a{i + 1} [*a{i}, *a{i}]" for i in range(8)),
+]
+_LONG = "x" * 600
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["title: &t Useful title", "other: *t"],
+        ["tags: &t [a, b]", "other: *t"],
+        ["base: &b {type: concept}", "merged:", "  <<: *b"],
+        ["d: &d " + "[" * 30 + "0" + "]" * 30, "e: [*d]"],
+    ],
+)
+def test_bounded_aliases_are_accepted_only_on_request(lines: list[str]) -> None:
+    text = _alias_header(*lines)
+    assert inventory._metadata_too_complex(text) is True
+    assert inventory._metadata_too_complex(text, True) is False
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["b: *a", "a: &a 1"],
+        ["a: &a [*a]"],
+        ["a: &a {k: *a}"],
+        _DOUBLING,
+        [f"t: &t {_LONG}", "u: *t", "v: *t"],
+        ["d: &d " + "[" * 30 + "0" + "]" * 30, "e: [[*d]]"],
+    ],
+)
+def test_expanded_alias_work_is_bounded_before_construction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lines: list[str]
+) -> None:
+    text = _alias_header(*lines)
+    assert inventory._metadata_too_complex(text, True) is True
+    (tmp_path / "note.md").write_text(text)
+    constructor = Mock(side_effect=AssertionError("Complex metadata constructed"))
+    monkeypatch.setattr(inventory, "parse_frontmatter", constructor)
+    entry = inspector(tmp_path).inspect(BundleInspectionRequest(root="")).entries[0]
+    assert entry.reason == "metadata_complexity"
+    constructor.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "text",
     [

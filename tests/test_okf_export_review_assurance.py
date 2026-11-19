@@ -40,7 +40,7 @@ def test_export_requires_matching_review_and_preserves_bytes(tmp_path):
 
 
 def test_check_kind_is_explicit(tmp_path):
-    (tmp_path / "note.md").write_text(reviewed("Body\n", "schema-only"))
+    (tmp_path / "note.md").write_text(reviewed("Body\n", "schema"))
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         with pytest.raises(PublicationRefused):
@@ -51,7 +51,7 @@ def test_check_kind_is_explicit(tmp_path):
             vault,
             ProjectConfig(source_dir=tmp_path),
             require_review=True,
-            require_check="schema-only",
+            require_check="schema",
         )
     finally:
         vault.close()
@@ -238,6 +238,137 @@ def test_malformed_frontmatter_is_withheld(tmp_path):
         vault.close()
 
 
+def test_reviewed_scalar_alias_can_be_published(tmp_path):
+    original = "---\ntitle: &shared Useful title\nother: *shared\n---\nBody\n"
+    (tmp_path / "note.md").write_text(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, state_path=tmp_path.parent / "state"),
+    )
+    try:
+        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
+        reviewed_bytes = (tmp_path / "note.md").read_bytes()
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            require_review=True,
+            review_evidence="local_receipt",
+        )
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("note.md") == reviewed_bytes
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("surface", ["library", "cli"])
+def test_invalid_tagged_timestamp_yields_refusal(tmp_path, surface):
+    import json
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    (tmp_path / "note.md").write_text("---\ndate: !!timestamp nope\n---\nBody\n")
+    if surface == "library":
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+        try:
+            with pytest.raises(PublicationRefused) as exc:
+                build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), require_review=True
+                )
+            assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
+        finally:
+            vault.close()
+        return
+    result = CliRunner().invoke(
+        app,
+        [
+            "export",
+            str(tmp_path.parent / "invalid.zip"),
+            "--source-dir",
+            str(tmp_path),
+            "--require-review",
+        ],
+    )
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["reason"] == "review"
+
+
+@pytest.mark.parametrize(
+    "check, valid",
+    [("x-docs", True), ("links", True), ("x-", False), ("x-two words", False)],
+)
+def test_review_check_selector_follows_the_recorder_vocabulary(check, valid):
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._transfer_sink import _bundle_options
+
+    ref = f"okf-bundle?require_review&require_check={check.replace(' ', '%20')}"
+    if valid:
+        assert _bundle_options(ref)[1]["require_check"] == check
+    else:
+        with pytest.raises(ToolError, match="check"):
+            _bundle_options(ref)
+
+
+def test_reviewed_collection_alias_can_be_published(tmp_path):
+    original = "---\ntags: &shared [a, b]\nother: *shared\n---\nBody\n"
+    (tmp_path / "note.md").write_text(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, state_path=tmp_path.parent / "state"),
+    )
+    try:
+        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), require_review=True
+        )
+        assert result.report.review_assurance.failures == []
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("surface", ["library", "cli", "ref"])
+def test_unknown_review_check_rejected(tmp_path, surface):
+    from fastmcp.exceptions import ToolError
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp._transfer_sink import _bundle_options
+    from markdown_vault_mcp.cli import app
+
+    if surface == "library":
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+        try:
+            with pytest.raises(ValueError, match="check"):
+                build_okf_bundle(
+                    vault,
+                    ProjectConfig(source_dir=tmp_path),
+                    require_review=True,
+                    require_check="human_review",
+                )
+        finally:
+            vault.close()
+        return
+    if surface == "ref":
+        with pytest.raises(ToolError, match="check"):
+            _bundle_options("okf-bundle?require_review&require_check=human_review")
+        return
+    result = CliRunner().invoke(
+        app,
+        [
+            "export",
+            str(tmp_path.parent / "unknown.zip"),
+            "--source-dir",
+            str(tmp_path),
+            "--require-review",
+            "--require-check",
+            "human_review",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "check" in result.output.lower()
+
+
 @pytest.mark.parametrize("changed_after_inventory", [False, True])
 def test_complex_final_metadata_is_withheld_without_snapshot(
     tmp_path, monkeypatch, changed_after_inventory
@@ -277,12 +408,12 @@ def test_complex_final_metadata_is_withheld_without_snapshot(
     "ref, expected",
     [
         (
-            "okf-bundle?require_review&require_check=schema-only&review_evidence=local_receipt:sub",
+            "okf-bundle?require_review&require_check=schema&review_evidence=local_receipt:sub",
             (
                 "sub",
                 {
                     "require_review": True,
-                    "require_check": "schema-only",
+                    "require_check": "schema",
                     "review_evidence": "local_receipt",
                 },
             ),
@@ -312,7 +443,7 @@ def test_transfer_review_options(ref, expected):
 @pytest.mark.parametrize(
     "policy, message",
     [
-        ({"require_check": ""}, "require_check must not be empty"),
+        ({"require_check": ""}, "Unknown check"),
         (
             {"review_evidence": "unknown"},
             "review_evidence must be binding or local_receipt",

@@ -14,15 +14,21 @@ from functools import cache
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-import yaml
-
-from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _metadata_too_complex
+from markdown_vault_mcp.bundle_inventory import (
+    _MALFORMED_METADATA,
+    BundleTreeRequest,
+    _metadata_too_complex,
+)
 from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
 from markdown_vault_mcp.git.query import (
     git_export_snapshot,
     git_snapshot_changes,
 )
-from markdown_vault_mcp.okf import convert_wikilinks_to_markdown, is_okf_reserved_file
+from markdown_vault_mcp.okf import (
+    convert_wikilinks_to_markdown,
+    is_okf_reserved_file,
+    review_actor,
+)
 from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import OkfExportReport, PublicationRefused
@@ -281,8 +287,8 @@ def _review_policy(
         require_check is not None or review_evidence is not None
     ):
         raise ValueError("Pass require_review or remove review selectors")
-    if require_check is not None and not require_check:
-        raise ValueError("require_check must not be empty")
+    if require_check is not None:
+        review_actor("reviewer", require_check)
     if review_evidence is not None and review_evidence not in {
         "binding",
         "local_receipt",
@@ -317,7 +323,9 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             for body and frontmatter destinations outside the selection.
         strict: Refuse publication unless the completed report meets the contract.
         require_review: Require a matching review for every exported concept.
-        require_check: Check kind; requires review, defaults to human-review.
+        require_check: Check kind recorded by the reviewer (human-review, schema,
+            links, source-comparison or x-name); requires review, defaults to
+            human-review.
         review_evidence: Requires review; binding by default or local_receipt.
 
     Returns:
@@ -601,7 +609,7 @@ def _assess_export_review(
     assessments = []
     try:
         content = decode_utf8(raw)
-        if _metadata_too_complex(content):
+        if _metadata_too_complex(content, True):
             report.uninspected[source] = "metadata_complexity"
             raise ValueError("metadata complexity limit exceeded")
         metadata = parse_frontmatter(content).metadata
@@ -610,7 +618,7 @@ def _assess_export_review(
             concept_snapshot(content),
             (lambda: load(source)) if policy.evidence == "local_receipt" else None,
         )
-    except (UnicodeError, ValueError, TypeError, yaml.YAMLError, RecursionError):
+    except (*_MALFORMED_METADATA, RecursionError, OverflowError):
         pass
     if any(
         item["snapshot"] == "matches"
