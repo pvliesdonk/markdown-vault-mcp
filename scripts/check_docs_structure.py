@@ -70,7 +70,6 @@ TEMPLATE_PAGES = frozenset(
         "contribute/index.md",
         "contribute/release-process.md",
         "contribute/repository-protection.md",
-        "contribute/template-updates.md",
         "contribute/integration-branches.md",
         "reference/configuration.md",
         "reference/configuration-generator.md",
