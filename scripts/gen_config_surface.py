@@ -5,7 +5,7 @@ Reads the project's ``project-settings.yml`` and its
 ``config-presentation.yml``, then merges four provenance sources into one
 declaration-ordered variable list:
 
-- ``core`` — from ``fastmcp_pvl_core.server_config_surface()``, which owns
+- ``core`` — from ``markdown_vault_mcp._config_surface.server_config_surface()``, which owns
   the help text and tags for every ``ServerConfig`` field.
 - ``template`` / ``external`` — from ``config-presentation.yml``, the
   template-owned vars core does not know about.
@@ -212,7 +212,7 @@ def _import_project_config(project_root: Path, python_module: str) -> type | Non
 
     Only ``sys.path`` is restored before returning. ``sys.modules`` is
     deliberately left alone here: `typing.get_type_hints` (used inside
-    `fastmcp_pvl_core.domain_env_surface`, which the caller runs against the
+    `markdown_vault_mcp._config_surface.domain_env_surface`, which the caller runs against the
     returned class right after this) resolves a class's annotations via
     ``sys.modules[cls.__module__]``, so popping the module before that scan
     runs would turn every annotation lookup into a `NameError`. The caller
@@ -264,7 +264,7 @@ def _discover_domain_vars(
 ) -> tuple[Var, ...]:
     """Auto-discover domain vars from the project's own ``ProjectConfig``.
 
-    Scans the config tree via ``fastmcp_pvl_core.domain_env_surface`` (core
+    Scans the config tree via ``markdown_vault_mcp._config_surface.domain_env_surface`` (core
     ≥ 4.6.1), which AST-walks ``from_env`` in ``ProjectConfig`` *and every
     composed sub-config* and returns one metadata-carrying record per read —
     so a var contributed by a composed section documents with the same
@@ -317,7 +317,7 @@ def _discover_domain_vars(
         if project_config_cls is None:
             return ()
 
-        from fastmcp_pvl_core import domain_env_surface
+        from markdown_vault_mcp._config_surface import domain_env_surface
 
         try:
             records = domain_env_surface(project_config_cls)
@@ -366,7 +366,7 @@ def _discover_domain_vars(
 
 
 # Helpers whose literal suffix argument the core AST scan
-# (`fastmcp_pvl_core.domain_env_surface`) recognizes inside `from_env`.
+# (`markdown_vault_mcp._config_surface.domain_env_surface`) recognizes inside `from_env`.
 _SCANNED_READ_HELPERS = frozenset({"env", "env_int", "env_float"})
 
 # A string literal shaped like an env-var suffix or full name: all-caps with
@@ -570,7 +570,7 @@ def collect_vars(
     declaration-ordered tuple for exactly this reason — never iterate a
     ``set``/``frozenset`` here.
     """
-    from fastmcp_pvl_core import server_config_surface
+    from markdown_vault_mcp._config_surface import server_config_surface
 
     project_root = Path(project_root)
     env_prefix = _require_env_prefix(answers)
@@ -3248,7 +3248,7 @@ def write_artifacts(
     bare `KeyError`.
 
     *vars_*, when given, is used as-is instead of calling `collect_vars`
-    internally — `collect_vars` re-imports `fastmcp_pvl_core`, reloads and
+    internally — `collect_vars` re-imports the config-surface module, reloads and
     re-substitutes both presentation YAMLs, and re-runs
     `_discover_domain_vars` (which imports the project's own `config` module
     and can print a warning to stderr), so calling it twice in one process —

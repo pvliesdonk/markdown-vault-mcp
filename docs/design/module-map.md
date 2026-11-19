@@ -135,6 +135,7 @@ src/markdown_vault_mcp/
     transfer.py          -- TransferConfig: TRANSFER_* link TTL default/max, grace window, lease and upload cap (#2321)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _auth.py             -- build_auth / build_bearer_auth / OIDC remote and proxy builders / resolve_auth_mode: the six auth modes and their provider dispatch (#2277)
+  _config_surface.py   -- server_config_surface / domain_env_surface / domain_env_suffixes: AST introspection of from_env reads for scripts/gen_config_surface.py (#2289)
   _connection.py       -- connection_identity: protocol revision and client name/version of the current request (#2333)
   _debug.py            -- maybe_start_debugpy: DEBUG_PORT / DEBUG_WAIT remote-debugger listener (#2335)
   _env.py              -- env/env_int/env_float/parse_bool/parse_list: every {PREFIX}_{NAME} read; imports no server stack (#2275, #2016)
