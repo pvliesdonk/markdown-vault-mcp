@@ -117,7 +117,18 @@ OKF_RESERVED_WEIGHT = 0.5
 #: ``filters`` keys that carry OKF semantics on an active bundle (phase 2,
 #: #961). String ``type`` values use the ordinary indexed tag lookup;
 #: null ``type`` is routed separately to the missing-type post-filter.
-OKF_FILTER_KEYS: tuple[str, ...] = ("status", "stale", "trust_tier")
+OKF_FILTER_KEYS: tuple[str, ...] = (
+    "status",
+    "stale",
+    "trust_tier",
+    "freshness",
+    "review",
+)
+
+EVIDENCE_FILTER_VALUES = {
+    "freshness": frozenset({"missing", "malformed", "unexpired", "expired"}),
+    "review": frozenset({"none", "malformed", "recorded"}),
+}
 
 #: Accepted spellings for the boolean ``stale`` filter value.
 _STALE_TRUE = frozenset({"true", "1", "yes"})
@@ -622,6 +633,13 @@ def matches_okf_filters(
                 return False
         elif key == "stale":
             if value is None or annotation["stale"] is not parse_stale_filter(value):
+                return False
+        elif key in EVIDENCE_FILTER_VALUES:
+            state = annotation[key]["state"]
+            if value == "none" and key == "review":
+                if state not in ("missing", "empty"):
+                    return False
+            elif state != value:
                 return False
         elif annotation.get(key) != value:
             return False

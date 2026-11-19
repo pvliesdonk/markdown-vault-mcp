@@ -71,7 +71,10 @@ def register(mcp: FastMCP) -> None:
                 matches when it holds the value. On an OKF bundle, status (draft, stable
                 or deprecated; stable includes notes with none), stale (`"true"` or
                 `"false"`) and trust_tier (unverified, machine-confirmed or
-                human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes
+                human-reviewed) filter too. `freshness` selects missing, malformed, unexpired or
+                expired; `review` selects none, malformed or recorded. None includes missing
+                and empty reviews; recorded describes supplied metadata only. Evidence filters
+                exclude reserved files. Use `{"type": null}` on an active OKF bundle for searchable notes
                 without a non-empty string type, excluding reserved files.
             chunks_per_file: Maximum sections per note, at least 1; omit for the server
                 default.
@@ -351,7 +354,10 @@ def register(mcp: FastMCP) -> None:
                 attachments never match. On an OKF bundle, status (draft, stable or
                 deprecated; stable includes notes with none), stale (`"true"` or `"false"`)
                 and trust_tier (unverified, machine-confirmed or human-reviewed) filter
-                too. Use `{"type": null}` on an active OKF bundle for searchable notes without
+                too. Evidence filters `freshness` (missing, malformed, unexpired, expired) and
+                `review` (none, malformed, recorded) exclude reserved files. None includes
+                missing and empty reviews; recorded describes supplied metadata only.
+                Use `{"type": null}` on an active OKF bundle for searchable notes without
                 a non-empty string type, excluding reserved files.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
@@ -627,7 +633,10 @@ def register(mcp: FastMCP) -> None:
             filters: Frontmatter values to match, all of them, such as
                 `{"type": "resource"}`; any key works and a list field matches when it holds the
                 value. On an OKF bundle, status (stable includes notes with none), stale
-                (`"true"` or `"false"`) and trust_tier filter too.
+                (`"true"` or `"false"`) and trust_tier filter too. `freshness` selects missing,
+                malformed, unexpired or expired; `review` selects none, malformed or recorded.
+                None includes missing and empty reviews; recorded describes supplied metadata
+                only. Evidence filters exclude reserved files.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

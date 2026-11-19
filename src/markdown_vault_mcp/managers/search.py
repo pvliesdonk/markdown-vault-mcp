@@ -56,6 +56,7 @@ from markdown_vault_mcp.managers._ranking import (
     group_by_path as _group_by_path,
 )
 from markdown_vault_mcp.okf import (
+    EVIDENCE_FILTER_VALUES,
     OKF_FILTER_KEYS,
     derive_annotation,
     is_okf_reserved_file,
@@ -641,6 +642,10 @@ class SearchManager:
                 plain[key] = value
         if "stale" in okf_filters:
             parse_stale_filter(cast("str", okf_filters["stale"]))
+        for key, allowed in EVIDENCE_FILTER_VALUES.items():
+            if key in okf_filters and okf_filters[key] not in allowed:
+                choices = ", ".join(sorted(allowed))
+                raise InvalidRequestError(f"{key} filter must be one of {choices}")
         return (plain or None), okf_filters
 
     def _path_matches_okf(self, path: str, okf_filters: dict[str, str | None]) -> bool:
@@ -656,7 +661,9 @@ class SearchManager:
         note_row = self._fts.get_note(path)
         if note_row is None:
             return False
-        if "type" in okf_filters and is_okf_reserved_file(path):
+        if (
+            "type" in okf_filters or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+        ) and is_okf_reserved_file(path):
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
         return matches_okf_filters(metadata, okf_filters)
@@ -1179,6 +1186,7 @@ class SearchManager:
             candidate_limit=candidate_limit,
             enough=(lambda rows: len({row.path for row in rows}) >= limit)
             if "type" in okf_filters
+            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
             else None,
         )
         downweighted = _apply_length_downweight(
@@ -1302,6 +1310,7 @@ class SearchManager:
             candidate_limit=candidate_limit,
             enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
             if "type" in okf_filters
+            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
             else None,
         )
         rows = self._adapt_semantic_rows(raw)
@@ -1359,6 +1368,7 @@ class SearchManager:
             candidate_limit=fts_candidate_limit,
             enough=(lambda rows: len({row.path for row in rows}) >= limit)
             if "type" in okf_filters
+            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
             else None,
         )
         fts_results: list[FTSResult] = _apply_length_downweight(
@@ -1374,6 +1384,7 @@ class SearchManager:
             candidate_limit=vec_candidate_limit,
             enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
             if "type" in okf_filters
+            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
             else None,
         )
         vec_rows = _apply_length_downweight(
@@ -1536,7 +1547,13 @@ class SearchManager:
             note_infos = [
                 n
                 for n in note_infos
-                if not ("type" in okf_filters and is_okf_reserved_file(n.path))
+                if not (
+                    (
+                        "type" in okf_filters
+                        or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+                    )
+                    and is_okf_reserved_file(n.path)
+                )
                 and matches_okf_filters(n.frontmatter, okf_filters)
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)

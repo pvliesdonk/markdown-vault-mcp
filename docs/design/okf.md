@@ -307,6 +307,11 @@ existing `filters` → `document_tags` subquery path (AND semantics unchanged):
   after candidate retrieval (documented as such; acceptable because trust
   filtering is a triage operation, not a hot search path).
 
+- `freshness` selects `missing`, `malformed`, `unexpired`, or `expired` evidence.
+- `review` selects `none` (missing or empty), `malformed`, or `recorded`. Recorded describes supplied metadata, not certification or snapshot applicability.
+
+Evidence selectors exclude reserved `index.md` and `log.md` files, compose with other filters using AND, and do not depend on retrieval purpose. In inactive bundles these keys retain ordinary frontmatter equality semantics.
+
 A stale/deprecated listing (filterable `list_documents`) is the data source
 for a future `triage-stale` prompt (docs phase).
 

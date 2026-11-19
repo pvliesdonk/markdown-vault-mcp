@@ -426,3 +426,5 @@ the reserved note penalty only; `review` removes these OKF penalties. Each
 result reports the multipliers in `retrieval_policy`. The multipliers affect positive scores only. Zero and negative scores are
 unchanged. Length and folder weights also affect ranking. Terminal search
 uses the default purpose.
+
+Evidence filters select concepts by supplied metadata: `freshness` accepts `missing`, `malformed`, `unexpired`, or `expired`; `review` accepts `none`, `malformed`, or `recorded`. `none` includes missing and empty reviews. `recorded` does not certify a review or its applicability to the current snapshot. These filters exclude reserved index and log files and combine with other filters and any search purpose.

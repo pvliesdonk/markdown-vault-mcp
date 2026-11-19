@@ -145,3 +145,5 @@ The full decision log lives in the [design document](docs/design/design.md).
 - [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/) and its [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt)
 - [FastMCP](https://gofastmcp.com) and [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/), which this server is built on
 - [fastmcp-server-template](https://github.com/pvliesdonk/fastmcp-server-template), which generated this repository
+
+On active OKF bundles, search filters can select `freshness` (`missing`, `malformed`, `unexpired`, `expired`) and `review` (`none`, `malformed`, `recorded`) evidence. `none` includes missing and empty reviews; `recorded` describes supplied metadata only. Reserved index and log files are excluded.
