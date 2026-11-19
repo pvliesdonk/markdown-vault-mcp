@@ -11,6 +11,9 @@ git pull is disabled (``GIT_PULL_INTERVAL_S=0`` or not set) AND no webhook
 can actually deliver — credentials set *and* an HTTP/SSE transport to mount
 their route on, which is what
 :func:`markdown_vault_mcp._webhooks.webhook_routes_active` answers (#1263).
+
+Subscription semantics and the dependency floor are recorded in
+``docs/design/reference/watchdog-event-filtering.md``.
 """
 
 from __future__ import annotations
@@ -34,12 +37,34 @@ try:
         EVENT_TYPE_DELETED,
         EVENT_TYPE_MODIFIED,
         EVENT_TYPE_MOVED,
+        DirCreatedEvent,
+        DirDeletedEvent,
+        DirModifiedEvent,
+        DirMovedEvent,
+        FileCreatedEvent,
+        FileDeletedEvent,
+        FileModifiedEvent,
+        FileMovedEvent,
         FileSystemEvent,
         FileSystemEventHandler,
     )
     from watchdog.observers import Observer
 
     _WATCHDOG_AVAILABLE = True
+
+    # Filter before native queueing (#2045). DirModifiedEvent retains
+    # IN_CLOSE_WRITE; adding FileClosedEvent would also request read-close
+    # notifications on watchdog 4.x.
+    _MUTATING_EVENT_CLASSES: list[type[FileSystemEvent]] = [
+        FileCreatedEvent,
+        DirCreatedEvent,
+        FileModifiedEvent,
+        DirModifiedEvent,
+        FileMovedEvent,
+        DirMovedEvent,
+        FileDeletedEvent,
+        DirDeletedEvent,
+    ]
 
     # Only these event types represent an actual mutation of the vault.
     # Read-only events (``opened``, ``closed``, ``closed_no_write``, access)
@@ -97,7 +122,7 @@ def _is_hidden_relative_to_root(abs_path: str, watch_root: Path) -> bool:
     reduces to the old ``rel = path.relative_to(source_dir)`` behavior exactly.
 
     Args:
-        abs_path: Absolute ``src_path`` from a watchdog event.
+        abs_path: Absolute endpoint path from a watchdog event.
         watch_root: The directory the delivering watch was scheduled on.
 
     Returns:
@@ -493,7 +518,12 @@ class VaultFileWatcher:
         for root in roots:
             handler = _VaultEventHandler(self._schedule, root.path)
             try:
-                observer.schedule(handler, str(root.path), recursive=root.recursive)
+                observer.schedule(
+                    handler,
+                    str(root.path),
+                    recursive=root.recursive,
+                    event_filter=_MUTATING_EVENT_CLASSES,
+                )
             except Exception:
                 # A single root can fail (e.g. watchdog cannot watch a symlinked
                 # child's target); keep the rest, notably the source_dir floor.
@@ -580,10 +610,21 @@ if _WATCHDOG_AVAILABLE:
             self._watch_root = watch_root
 
         def on_any_event(self, event: FileSystemEvent) -> None:
+            """Schedule a mutating event when an endpoint belongs to this root.
+
+            Moves consider both endpoints; other mutations consider only source.
+
+            Args:
+                event: The filesystem event delivered under this watch root.
+            """
             if event.event_type not in _MUTATING_EVENT_TYPES:
                 return
-            path = getattr(event, "src_path", "") or ""
-            if _is_hidden_relative_to_root(path, self._watch_root):
+            paths = [getattr(event, "src_path", "") or ""]
+            if event.event_type == EVENT_TYPE_MOVED:
+                paths.append(getattr(event, "dest_path", "") or "")
+            if all(
+                _is_hidden_relative_to_root(path, self._watch_root) for path in paths
+            ):
                 return
             self._schedule()
 
