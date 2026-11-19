@@ -1199,8 +1199,9 @@ def register(mcp: FastMCP) -> None:
                 positions in verified) and a reason; replace_generated takes by
                 (the new actor) and a reason. Replacing generated changes the
                 concept snapshot. Do not combine producer with replace_generated.
-                Binding claims stay in x-mvmcp.reviews. Shared review identities,
-                aliased or duplicate-key fields being edited, comments within
+                Matching binding claims move into review_history; receipts stay
+                local. Shared review identities, YAML merge keys, aliased or
+                duplicate-key fields being edited, comments within
                 archived structures, and commented flow review lists are refused.
                 Trailing comments remain as standalone lines. Read the note and
                 use its etag.

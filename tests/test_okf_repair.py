@@ -263,3 +263,128 @@ def test_refuses_unsafe_existing_evidence(
             None,
             repair={"retire_reviews": {"indices": indices, "reason": "fix"}},
         )
+
+
+def test_retired_bindings_do_not_attach_to_later_reviews(tmp_path) -> None:
+    from markdown_vault_mcp._okf_receipts import ReceiptStore, assess_reviews
+    from markdown_vault_mcp._okf_review import bind_review, concept_snapshot
+
+    text = "---\ntype: concept\n---\nBody\n"
+    entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
+    snapshot = concept_snapshot(text)
+    receipts = [{**entry, "check": "schema", "snapshot": snapshot}]
+    store = ReceiptStore(None, tmp_path)
+    store.append({**receipts[0], "path": "note.md"})
+    text = bind_review(text, entry, receipts[0])
+    for check in ("links", "source-comparison"):
+        text = author_text(
+            text,
+            {},
+            None,
+            repair={"retire_reviews": {"indices": [0], "reason": "retired"}},
+        )
+        metadata = parse_frontmatter(text).metadata
+        assert metadata["x-mvmcp"]["review_history"][-1]["binding"] == receipts[-1]
+        claim = {**entry, "check": check, "snapshot": snapshot}
+        receipts.append(claim)
+        store.append({**claim, "path": "note.md"})
+        text = bind_review(text, entry, claim)
+        meta = parse_frontmatter(text).metadata
+        items = assess_reviews(meta, snapshot, lambda: store.receipts("note.md"))
+        assert [(item["check"], item["origin"]) for item in items] == [
+            (check, "local_receipt")
+        ]
+        assert assess_reviews(meta, snapshot, lambda: [])[0]["origin"] == "supplied"
+    assert len(receipts) == 3
+    assert len(store.receipts("note.md")) == 3
+
+
+def test_retire_all_shared_identity_archives_claims_once() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}, {by: 'human:a', at: '2026-01-01T00:00:00Z'}]\nx-mvmcp: {reviews: [{by: 'human:a', at: '2026-01-01T00:00:00Z', check: links, amount: 0.1234567890123456789}]}\n---\nBody\n"
+    with pytest.raises(InvalidRequestError, match="identity"):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+        )
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [0, 1], "reason": "fix"}}
+    )
+    ext = parse_frontmatter(result).metadata["x-mvmcp"]
+    assert ext["reviews"] == []
+    assert len(ext["review_history"]) == 3
+    assert sum("binding" in item for item in ext["review_history"]) == 1
+    assert "0.1234567890123456789" in result
+
+
+def test_retirement_indices_include_malformed_siblings() -> None:
+    text = "---\nverified: [broken, {by: 'human:a', at: '2026-01-01T00:00:00Z'}]\n---\nBody\n"
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [1], "reason": "fix"}}
+    )
+    assert parse_frontmatter(result).metadata["verified"] == ["broken"]
+
+
+@pytest.mark.parametrize("target", ["verified", "generated", "x-mvmcp"])
+@pytest.mark.parametrize("action", ["retire_reviews", "replace_generated"])
+def test_merge_keys_refused_for_repairs(target: str, action: str) -> None:
+    fields = {
+        "verified": "[{by: 'human:a', at: '2026-01-01T00:00:00Z'}]",
+        "generated": "{by: old/1}",
+        "x-mvmcp": "{}",
+    }
+    inherited = fields.pop(target)
+    text = (
+        "---\nbase: &base {"
+        + target
+        + ": "
+        + inherited
+        + "}\n<<: *base\n"
+        + "".join(f"{key}: {value}\n" for key, value in fields.items())
+        + "---\nBody\n"
+    )
+    request = (
+        {"indices": [0], "reason": "fix"}
+        if action == "retire_reviews"
+        else {"by": "new/1", "reason": "fix"}
+    )
+    with pytest.raises(InvalidRequestError, match="merge"):
+        author_text(text, {}, None, repair={action: request})
+
+
+def test_retirement_preserves_unmatched_and_malformed_claims() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}]\nx-mvmcp: {reviews: [broken, {by: 'human:b', at: '2026-01-01T00:00:00Z', check: other}, {by: 'human:a', at: '2026-01-01T00:00:00Z', check: links}]}\n---\nBody\n"
+    result = author_text(
+        text, {}, "tool/1", repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+    )
+    meta = parse_frontmatter(result).metadata
+    assert meta["generated"]["by"] == "tool/1"
+    assert len(meta["x-mvmcp"]["reviews"]) == 2
+    assert meta["x-mvmcp"]["reviews"][0] == "broken"
+    assert meta["x-mvmcp"]["review_history"][1]["binding"]["check"] == "links"
+
+
+def test_preserves_alias_in_unselected_bindings() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}]\nx-mvmcp:\n  reviews:\n    - &claim {by: 'human:b', at: '2026-01-01T00:00:00Z'}\n    - *claim\n    - {by: 'human:a', at: '2026-01-01T00:00:00Z', check: links}\n---\nBody\n"
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+    )
+    assert "*claim" in result
+
+
+def test_refuses_alias_of_selected_binding() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}]\nx-mvmcp:\n  reviews:\n    - &claim {by: 'human:a', at: '2026-01-01T00:00:00Z', check: links}\n    - *claim\n---\nBody\n"
+    with pytest.raises(InvalidRequestError, match="alias"):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+        )
+
+
+@pytest.mark.parametrize("action", ["retire_reviews", "replace_generated"])
+def test_merge_key_in_extension_is_refused(action: str) -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}]\ngenerated: {by: old/1}\nx-mvmcp:\n  defaults: &defaults {reviews: []}\n  <<: *defaults\n---\nBody\n"
+    request = (
+        {"indices": [0], "reason": "fix"}
+        if action == "retire_reviews"
+        else {"by": "new/1", "reason": "fix"}
+    )
+    with pytest.raises(InvalidRequestError, match="merge"):
+        author_text(text, {}, None, repair={action: request})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,7 +14,12 @@ from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 from markdown_vault_mcp._okf_receipts import _review_key
 from markdown_vault_mcp._okf_review import _review_nodes
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
+from markdown_vault_mcp.okf import (
+    OKF_STATUS_VALUES,
+    _parse_stale_after,
+    okf_timestamp,
+    verified_entries,
+)
 from markdown_vault_mcp.scanner import parse_frontmatter
 
 _FIELDS = frozenset(
@@ -135,10 +141,12 @@ def _generated_edits(
     return edits
 
 
-def _comments_in_span(source: str, start: int, end: int) -> str:
+def _comments_in_span(
+    source: str, start: int, end: int, tokens: list[Any] | None = None
+) -> str:
     # Block-scalar header comments precede its data, despite sharing a token.
     scalars = []
-    for token in yaml.scan(source):
+    for token in tokens if tokens is not None else yaml.scan(source):
         if isinstance(token, yaml.ScalarToken):
             start_data = token.start_mark.index
             if token.style in {"|", ">"}:
@@ -234,8 +242,7 @@ def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
 def _retire_entries(
     previous: Any, request: dict[str, Any], history: list[Any]
 ) -> list[Any]:
-    if isinstance(previous, dict):
-        previous = [previous]
+    previous = verified_entries({"verified": previous})
     indices = request["indices"]
     if (
         not isinstance(previous, list)
@@ -258,6 +265,15 @@ def _retire_entries(
         {"review": previous[i], "reason": request["reason"]} for i in sorted(selected)
     )
     return [item for i, item in enumerate(previous) if i not in selected]
+
+
+def _claim_indices(metadata: dict[str, Any], indices: list[int]) -> list[int]:
+    entries = verified_entries(metadata)
+    keys = {_review_key(entries[i]) for i in indices} - {None}
+    claims = metadata.get("x-mvmcp", {}).get("reviews", [])
+    if not isinstance(claims, list):
+        return []
+    return [i for i, claim in enumerate(claims) if _review_key(claim) in keys]
 
 
 def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[str, Any]:
@@ -294,6 +310,16 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
         entries = list(entries)
         if action == "retire_reviews":
             changes[key] = _retire_entries(previous, request, entries)
+            claims = extension.get("reviews", [])
+            matched = _claim_indices(metadata, request["indices"])
+            if matched:
+                entries.extend(
+                    {"binding": claims[i], "reason": request["reason"]} for i in matched
+                )
+                selected_claims = set(matched)
+                extension["reviews"] = [
+                    claim for i, claim in enumerate(claims) if i not in selected_claims
+                ]
         else:
             actor = request["by"]
             if (
@@ -310,39 +336,54 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
     return changes
 
 
-def _raw_flow(source: str, node: Any) -> str:
+def _raw_flow(source: str, node: Any, tokens: list[Any], positions: list[int]) -> str:
     """Represent a node using its original scalar spellings."""
     if isinstance(node, ScalarNode):
         if node.style is None and node.tag != "tag:yaml.org,2002:str":
             return source[node.start_mark.index : node.end_mark.index]
         return _render(node.value)
-    tokens = [
+    start = bisect_left(positions, node.start_mark.index)
+    end = bisect_left(positions, node.end_mark.index)
+    relevant = [
         token
-        for token in yaml.scan(source)
-        if node.start_mark.index <= token.start_mark.index < node.end_mark.index
-        and not isinstance(token, (yaml.BlockEndToken, yaml.FlowEntryToken))
+        for token in tokens[start:end]
+        if not isinstance(token, (yaml.BlockEndToken, yaml.FlowEntryToken))
     ]
     content_end = max(
-        (token.end_mark.index for token in tokens), default=node.start_mark.index
+        (token.end_mark.index for token in relevant), default=node.start_mark.index
     )
-    if _comments_in_span(source, node.start_mark.index, content_end):
+    if _comments_in_span(source, node.start_mark.index, content_end, relevant):
         raise InvalidRequestError("Cannot safely archive evidence containing comments")
-    if any(isinstance(token, yaml.AliasToken) for token in tokens):
+    if any(isinstance(token, yaml.AliasToken) for token in relevant):
         raise InvalidRequestError("Cannot archive aliased evidence")
     if isinstance(node, SequenceNode):
-        return "[" + ", ".join(_raw_flow(source, item) for item in node.value) + "]"
+        return (
+            "["
+            + ", ".join(
+                _raw_flow(source, item, tokens, positions) for item in node.value
+            )
+            + "]"
+        )
     _review_nodes(node)
     return (
         "{"
         + ", ".join(
-            _raw_flow(source, key) + ": " + _raw_flow(source, value)
+            _raw_flow(source, key, tokens, positions)
+            + ": "
+            + _raw_flow(source, value, tokens, positions)
             for key, value in node.value
         )
         + "}"
     )
 
 
+def _reject_merge(node: MappingNode) -> None:
+    if any(k.tag == "tag:yaml.org,2002:merge" for k, _ in node.value):
+        raise InvalidRequestError("Cannot repair fields with a YAML merge key")
+
+
 def _touched(node: MappingNode, key: str) -> Any:
+    _reject_merge(node)
     value = _review_nodes(node).get(key)
     if value is not None:
         key_node = next(k for k, _ in node.value if k.value == key)
@@ -395,9 +436,13 @@ def _append_history(source: str, history: str, items: list[str], newline: str) -
     return source[:start] + value + source[end:]
 
 
-def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
+def _remove_reviews(
+    source: str, node: Any, selected: set[int], tokens: list[Any]
+) -> str:
     if isinstance(node, MappingNode) or len(selected) == len(node.value):
-        comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
+        comments = _comments_in_span(
+            source, node.start_mark.index, node.end_mark.index, tokens
+        )
         newline = "\r\n" if "\r\n" in source else "\n"
         end = (
             node.end_mark.index
@@ -412,7 +457,9 @@ def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
             for i, item in enumerate(node.value)
             if i not in selected
         ]
-        if _comments_in_span(source, node.start_mark.index, node.end_mark.index):
+        if _comments_in_span(
+            source, node.start_mark.index, node.end_mark.index, tokens
+        ):
             raise InvalidRequestError("Cannot safely edit a commented flow review list")
         return (
             source[: node.start_mark.index]
@@ -429,42 +476,77 @@ def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
             if i + 1 < len(node.value)
             else _line_insertion(source, node.end_mark.index)
         )
-        comments = _comments_in_span(source, start, end)
+        comments = _comments_in_span(source, start, end, tokens)
         source = source[:start] + comments + source[end:]
     return source
 
 
+def _selected_nodes(node: Any, indices: list[int]) -> list[Any]:
+    members = node.value if isinstance(node, SequenceNode) else [node]
+    if any(
+        members[i].start_mark.index < node.start_mark.index
+        or (i > 0 and members[i].start_mark.index < members[i - 1].end_mark.index)
+        for i in indices
+    ):
+        raise InvalidRequestError("Cannot archive aliased evidence")
+    return members
+
+
 def _repair_header(
-    source: str, repair: dict[str, Any], changes: dict[str, Any], newline: str
+    source: str,
+    repair: dict[str, Any],
+    changes: dict[str, Any],
+    newline: str,
+    metadata: dict[str, Any],
 ) -> str:
     root = _parse_root(source)
+    ext = _touched(root, "x-mvmcp")
+    if isinstance(ext, MappingNode):
+        _reject_merge(ext)
+    tokens = list(yaml.scan(source))
+    positions = [token.start_mark.index for token in tokens]
     retire = repair.get("retire_reviews")
     replace = repair.get("replace_generated")
     if retire is not None:
         node = _touched(root, "verified")
-        members = node.value if isinstance(node, SequenceNode) else [node]
-        if any(
-            members[i].start_mark.index < node.start_mark.index
-            or (i > 0 and members[i].start_mark.index < members[i - 1].end_mark.index)
-            for i in retire["indices"]
-        ):
-            raise InvalidRequestError("Cannot archive aliased reviews")
+        members = _selected_nodes(node, retire["indices"])
         items = [
             "{review: "
-            + _raw_flow(source, members[i])
+            + _raw_flow(source, members[i], tokens, positions)
             + ", reason: "
             + _render(retire["reason"])
             + "}"
             for i in sorted(retire["indices"])
         ]
-        source = _remove_reviews(source, node, set(retire["indices"]))
+        matched = _claim_indices(metadata, retire["indices"])
+        if matched:
+            claims_node = _touched(ext, "reviews")
+            claim_members = _selected_nodes(claims_node, matched)
+            items.extend(
+                "{binding: "
+                + _raw_flow(source, claim_members[i], tokens, positions)
+                + ", reason: "
+                + _render(retire["reason"])
+                + "}"
+                for i in matched
+            )
+        source = _remove_reviews(source, node, set(retire["indices"]), tokens)
+        if matched:
+            root = _parse_root(source)
+            ext = _touched(root, "x-mvmcp")
+            claims_node = _touched(ext, "reviews")
+            source = _remove_reviews(
+                source, claims_node, set(matched), list(yaml.scan(source))
+            )
         source = _append_history(source, "review_history", items, newline)
     if replace is not None:
         root = _parse_root(source)
         node = _touched(root, "generated")
+        tokens = list(yaml.scan(source))
+        positions = [token.start_mark.index for token in tokens]
         item = (
             "{generated: "
-            + _raw_flow(source, node)
+            + _raw_flow(source, node, tokens, positions)
             + ", reason: "
             + _render(replace["reason"])
             + "}"
@@ -531,7 +613,9 @@ def author_text(
             start, end = span
             source = _edit_header(text[start:end], changes, newline)
             if repair is not None:
-                source = _repair_header(source, repair, repair_changes, newline)
+                source = _repair_header(
+                    source, repair, repair_changes, newline, original.metadata
+                )
             result = text[:start] + source + text[end:]
         parsed = parse_frontmatter(result.removeprefix("\ufeff"))
         expected = dict(original.metadata)
