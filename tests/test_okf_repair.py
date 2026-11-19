@@ -64,11 +64,9 @@ def test_refuses_ambiguous_repairs(repair: dict) -> None:
     "text",
     [
         NOTE.replace("other: keep", "other: keep\n  other: lost"),
-        NOTE.replace("other: keep", "other: &anchor keep\n  alias: *anchor"),
         NOTE.replace("review_history", "unused").replace(
             "other: keep", "review_history: broken"
         ),
-        NOTE.replace("- {by: 'human:one', at: yesterday, detail: keep}", "- malformed"),
     ],
 )
 def test_refuses_unsafe_existing_evidence(text: str) -> None:
@@ -213,13 +211,6 @@ def test_refuse_partial_retirement_of_duplicate_identity() -> None:
 
 def test_replacement_rejects_invalid_actor_and_repair_type() -> None:
     with pytest.raises(InvalidRequestError):
-        author_text(
-            NOTE,
-            {},
-            None,
-            repair={"replace_generated": {"by": "tool/version/extra", "reason": "r"}},
-        )
-    with pytest.raises(InvalidRequestError):
         author_text(NOTE, {}, "tool/1", repair=123)  # type: ignore[arg-type]
 
 
@@ -266,3 +257,90 @@ def test_retire_all_block_reviews_before_next_field() -> None:
     meta = parse_frontmatter(result).metadata
     assert meta["verified"] == []
     assert meta["other"] == "keep"
+
+
+@pytest.mark.parametrize("note", ["x, y", "x]", "line one\n      line two"])
+def test_archive_flow_sensitive_strings(note: str) -> None:
+    value = "|\n      " + note if "\n" in note else note
+    text = f"---\ngenerated:\n  by: old/1\n  note: {value}\nverified:\n  - by: human:a\n    note: {value}\n---\nBody\n"
+    original = parse_frontmatter(text).metadata
+    result = author_text(
+        text,
+        {},
+        None,
+        repair={
+            "retire_reviews": {"indices": [0], "reason": "fix"},
+            "replace_generated": {"by": "new/1", "reason": "fix"},
+        },
+    )
+    ext = parse_frontmatter(result).metadata["x-mvmcp"]
+    assert ext["review_history"][0]["review"] == original["verified"][0]
+    assert ext["generated_history"][0]["generated"] == original["generated"]
+
+
+@pytest.mark.parametrize(
+    "extra", ["custom: {2026: annual}", "custom: &v {hello: world}\nother: *v"]
+)
+def test_unrelated_metadata_does_not_block_repair(extra: str) -> None:
+    text = f"---\ngenerated: old\nverified: [malformed]\n{extra}\n---\nBody\n"
+    result = author_text(
+        text,
+        {},
+        None,
+        repair={
+            "retire_reviews": {"indices": [0], "reason": "fix"},
+            "replace_generated": {"by": "new/1", "reason": "fix"},
+        },
+    )
+    meta = parse_frontmatter(result).metadata
+    assert meta["x-mvmcp"]["review_history"][0]["review"] == "malformed"
+    assert meta["x-mvmcp"]["generated_history"][0]["generated"] == "old"
+    assert meta["custom"] == parse_frontmatter(text).metadata["custom"]
+
+
+def test_distinct_invalid_review_times_do_not_collide() -> None:
+    text = "---\nverified: [{by: 'human:a', at: yesterday}, {by: 'human:a', at: today}]\n---\nBody\n"
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+    )
+    assert len(parse_frontmatter(result).metadata["verified"]) == 1
+
+
+@pytest.mark.parametrize("actor", ["org/team/1.0", "a:b/c"])
+def test_replacement_accepts_original_actor_grammar(actor: str) -> None:
+    result = author_text(
+        NOTE, {}, None, repair={"replace_generated": {"by": actor, "reason": "fix"}}
+    )
+    assert parse_frontmatter(result).metadata["generated"]["by"] == actor
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\nverified: [{by: a, by: b}]\n---\nBody\n",
+        "---\nother: &a {by: human:a}\nverified: [*a]\n---\nBody\n",
+        "---\nother: &x {}\nverified: [{by: human:a}]\nx-mvmcp: *x\n---\nBody\n",
+    ],
+)
+def test_refuse_ambiguous_touched_evidence(text: str) -> None:
+    with pytest.raises(InvalidRequestError):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+        )
+
+
+def test_trailing_review_comment_survives_retirement() -> None:
+    text = "---\nverified:\n  - by: human:a\n    note: value  # inline\n  # trailing\nother: keep\n---\nBody\n"
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+    )
+    assert "# inline" in result and "# trailing" in result
+    assert parse_frontmatter(result).metadata["other"] == "keep"
+
+
+def test_refuse_selected_alias_of_an_earlier_review() -> None:
+    text = "---\nverified:\n  - &review {by: 'human:a', at: yesterday}\n  - *review\n---\nBody\n"
+    with pytest.raises(InvalidRequestError, match="alias"):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [1], "reason": "fix"}}
+        )

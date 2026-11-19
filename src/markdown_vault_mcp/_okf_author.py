@@ -12,7 +12,6 @@ from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import (
-    _ACTOR_RE,
     OKF_STATUS_VALUES,
     _parse_stale_after,
     okf_timestamp,
@@ -22,7 +21,7 @@ from markdown_vault_mcp.scanner import parse_frontmatter
 _FIELDS = frozenset(
     {"type", "title", "description", "tags", "status", "stale_after", "sources"}
 )
-_ACTOR = _ACTOR_RE
+_ACTOR = re.compile(r"(?:human:|process:)\S+|[^\s/]+/\S+")
 
 
 def _valid_sources(value: Any) -> bool:
@@ -168,9 +167,7 @@ def _replacement(source: str, key: Any, node: Any, value: Any) -> str:
 
 
 def _collect_edits(
-    source: str,
-    root: MappingNode,
-    changes: dict[str, Any],
+    source: str, root: MappingNode, changes: dict[str, Any]
 ) -> tuple[list[tuple[int, int, str]], list[str]]:
     nodes = {}
     for key, value in root.value:
@@ -236,24 +233,6 @@ def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     return source
 
 
-def _check_repair_nodes(node: Any, seen: set[int] | None = None) -> None:
-    """Refuse duplicate keys or aliases in a repair's source header."""
-    seen = set() if seen is None else seen
-    if id(node) in seen:
-        raise InvalidRequestError("Cannot repair frontmatter containing aliases")
-    seen.add(id(node))
-    if isinstance(node, MappingNode):
-        keys: set[str] = set()
-        for key, value in node.value:
-            if key.tag != "tag:yaml.org,2002:str" or key.value in keys:
-                raise InvalidRequestError("Cannot repair ambiguous frontmatter keys")
-            keys.add(key.value)
-            _check_repair_nodes(value, seen)
-    elif isinstance(node, SequenceNode):
-        for value in node.value:
-            _check_repair_nodes(value, seen)
-
-
 def _retire_entries(
     previous: Any, request: dict[str, Any], history: list[Any]
 ) -> list[Any]:
@@ -268,15 +247,10 @@ def _retire_entries(
         or len(set(indices)) != len(indices)
     ):
         raise InvalidRequestError("Invalid review indices")
-    if any(not isinstance(previous[i], dict) for i in indices):
-        raise InvalidRequestError("Selected reviews must be mappings")
     selected = set(indices)
-    identities = [
-        (item.get("by"), _parse_stale_after(item.get("at")))
-        if isinstance(item, dict)
-        else None
-        for item in previous
-    ]
+    from markdown_vault_mcp._okf_receipts import _review_key
+
+    identities = [_review_key(item) for item in previous]
     if any(
         identities[i] is not None and identities[i] == identities[j]
         for i in selected
@@ -327,12 +301,12 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
         else:
             actor = request["by"]
             if (
-                not isinstance(previous, dict)
+                previous is None
                 or not isinstance(actor, str)
                 or not _ACTOR.fullmatch(actor)
             ):
                 raise InvalidRequestError(
-                    "Replacement requires existing generated mapping and valid actor"
+                    "Replacement requires a non-null generated value and valid actor"
                 )
             entries.append({"generated": previous, "reason": request["reason"]})
             changes[key] = {"by": actor, "at": okf_timestamp(datetime.now(UTC))}
@@ -340,21 +314,40 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
     return changes
 
 
-def _raw_flow(source: str, node: Any) -> str:
+def _raw_flow(source: str, node: Any, seen: set[int] | None = None) -> str:
     """Represent a node using its original scalar spellings."""
+    seen = set() if seen is None else seen
+    if id(node) in seen:
+        raise InvalidRequestError("Cannot archive aliased evidence")
+    seen.add(id(node))
     if isinstance(node, ScalarNode):
-        raw = source[node.start_mark.index : node.end_mark.index]
-        if node.style in {"|", ">"}:
-            raise InvalidRequestError("Cannot safely archive block scalar evidence")
-        return raw
-    if _comments_in_span(source, node.start_mark.index, node.end_mark.index):
+        if node.style is None and node.tag != "tag:yaml.org,2002:str":
+            return source[node.start_mark.index : node.end_mark.index]
+        return _render(node.value)
+    tokens = [
+        token
+        for token in yaml.scan(source)
+        if node.start_mark.index <= token.start_mark.index < node.end_mark.index
+        and not isinstance(token, (yaml.BlockEndToken, yaml.FlowEntryToken))
+    ]
+    content_end = max(
+        (token.end_mark.index for token in tokens), default=node.start_mark.index
+    )
+    if _comments_in_span(source, node.start_mark.index, content_end):
         raise InvalidRequestError("Cannot safely archive evidence containing comments")
     if isinstance(node, SequenceNode):
-        return "[" + ", ".join(_raw_flow(source, item) for item in node.value) + "]"
+        if any(item.start_mark.index < node.start_mark.index for item in node.value):
+            raise InvalidRequestError("Cannot archive aliased evidence")
+        return (
+            "[" + ", ".join(_raw_flow(source, item, seen) for item in node.value) + "]"
+        )
+    _mapping_nodes(node)
+    if any(value.start_mark.index < key.end_mark.index for key, value in node.value):
+        raise InvalidRequestError("Cannot archive aliased evidence")
     return (
         "{"
         + ", ".join(
-            _raw_flow(source, key) + ": " + _raw_flow(source, value)
+            _raw_flow(source, key, seen) + ": " + _raw_flow(source, value, seen)
             for key, value in node.value
         )
         + "}"
@@ -362,7 +355,20 @@ def _raw_flow(source: str, node: Any) -> str:
 
 
 def _mapping_nodes(node: MappingNode) -> dict[str, Any]:
-    return {key.value: value for key, value in node.value}
+    from markdown_vault_mcp._okf_review import _review_nodes
+
+    return _review_nodes(node)
+
+
+def _touched(node: MappingNode, key: str) -> Any:
+    value = _mapping_nodes(node).get(key)
+    if value is not None:
+        key_node = next(k for k, _ in node.value if k.value == key)
+        if value.start_mark.index < key_node.end_mark.index:
+            raise InvalidRequestError(
+                f"Cannot repair aliased {key}; remove the alias first"
+            )
+    return value
 
 
 def _line_insertion(source: str, position: int) -> int:
@@ -383,7 +389,7 @@ def _insert_mapping(
 
 def _append_history(source: str, history: str, items: list[str], newline: str) -> str:
     root = _parse_root(source)
-    ext = _mapping_nodes(root).get("x-mvmcp")
+    ext = _touched(root, "x-mvmcp")
     if ext is None:
         return _insert_mapping(
             source,
@@ -394,7 +400,7 @@ def _append_history(source: str, history: str, items: list[str], newline: str) -
         )
     if not isinstance(ext, MappingNode):
         raise InvalidRequestError("x-mvmcp must be a mapping before repair")
-    existing = _mapping_nodes(ext).get(history)
+    existing = _touched(ext, history)
     if existing is None:
         return _insert_mapping(
             source, ext, history, "[" + ", ".join(items) + "]", newline
@@ -412,17 +418,9 @@ def _append_history(source: str, history: str, items: list[str], newline: str) -
 
 
 def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
-    if isinstance(node, MappingNode):
-        end = (
-            node.end_mark.index
-            if node.flow_style
-            else _line_insertion(source, node.end_mark.index)
-        )
-        suffix = "" if node.flow_style else ("\r\n" if "\r\n" in source else "\n")
-        return source[: node.start_mark.index] + "[]" + suffix + source[end:]
-    if not isinstance(node, SequenceNode):
+    if not isinstance(node, (MappingNode, SequenceNode)):
         raise InvalidRequestError("Existing verified must be a list or mapping")
-    if len(selected) == len(node.value):
+    if isinstance(node, MappingNode) or len(selected) == len(node.value):
         comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
         newline = "\r\n" if "\r\n" in source else "\n"
         end = (
@@ -470,12 +468,17 @@ def _repair_header(
     source: str, repair: dict[str, Any], changes: dict[str, Any], newline: str
 ) -> str:
     root = _parse_root(source)
-    nodes = _mapping_nodes(root)
     retire = repair.get("retire_reviews")
     replace = repair.get("replace_generated")
     if retire is not None:
-        node = nodes["verified"]
+        node = _touched(root, "verified")
         members = node.value if isinstance(node, SequenceNode) else [node]
+        if any(
+            members[i].start_mark.index < node.start_mark.index
+            or (i > 0 and members[i].start_mark.index < members[i - 1].end_mark.index)
+            for i in retire["indices"]
+        ):
+            raise InvalidRequestError("Cannot archive aliased reviews")
         items = [
             "{review: "
             + _raw_flow(source, members[i])
@@ -488,7 +491,7 @@ def _repair_header(
         source = _append_history(source, "review_history", items, newline)
     if replace is not None:
         root = _parse_root(source)
-        node = _mapping_nodes(root)["generated"]
+        node = _touched(root, "generated")
         item = (
             "{generated: "
             + _raw_flow(source, node)
@@ -539,8 +542,6 @@ def author_text(
     newline = line_end.group() if line_end else "\n"
     try:
         original = parse_frontmatter(text.removeprefix("\ufeff"))
-        if repair is not None and span is not None:
-            _check_repair_nodes(_parse_root(text[span[0] : span[1]]))
         repair_changes = (
             _repair_changes(original.metadata, repair) if repair is not None else {}
         )

@@ -1198,7 +1198,11 @@ def register(mcp: FastMCP) -> None:
             repair: Optional repair mapping. retire_reviews takes indices (zero-based
                 positions in verified) and a reason; replace_generated takes by
                 (the new actor) and a reason. Replacing generated changes the
-                concept snapshot. Read the note and use its etag.
+                concept snapshot. Do not combine producer with replace_generated.
+                Binding claims stay in x-mvmcp.reviews. Shared review identities,
+                aliased or duplicate-key fields being edited, comments inside
+                archived values, and commented flow review lists are refused.
+                Read the note and use its etag.
             producer: Explicit producer actor: <producer>/<version>, process:<id>
                 or human:<id>, such as codex/6.1 or process:importer; omit to
                 leave generation metadata unchanged.
