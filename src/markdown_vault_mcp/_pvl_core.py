@@ -44,7 +44,6 @@ from fastmcp_pvl_core import (
     get_current_auth_mode,
     get_subject,
     instructions_for,
-    is_tool_boundary,
     maybe_start_debugpy,
     normalise_http_path,
     register_health_routes,
@@ -53,7 +52,6 @@ from fastmcp_pvl_core import (
     register_server_info_tool,
     register_transfer_routes,
     run_http,
-    tool_boundary,
     utf16_code_units,
     wire_middleware_stack,
 )
@@ -84,14 +82,12 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "register_health_routes",
     "register_server_info_tool",
     "run_http",
-    # Tool boundary and the server-instructions builder (#2280).
+    # The server-instructions builder (#2305).
     "CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16",
     "GENERATED_INSTRUCTIONS_TARGET_UTF16",
     "InstructionRole",
     "finalize_instructions",
     "instructions_for",
-    "is_tool_boundary",
-    "tool_boundary",
     "utf16_code_units",
     # Long-running jobs (#2281).
     "Jobs",

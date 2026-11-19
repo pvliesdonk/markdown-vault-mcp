@@ -1313,7 +1313,7 @@ the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredEr
 is a change of request.
 
 The table is applied in one place. Every tool is `@mcp.tool` over
-pvl-core's `@tool_boundary` over `@library_outcomes`
+`@tool_boundary` (`_tool_boundary.py`) over `@library_outcomes`
 (`_tools/_outcomes.py`); a long-running tool's coroutine takes
 `@library_outcomes` under `register_long_running_tool`, which carries the
 boundary itself. `library_outcomes` raises each "change the request" and

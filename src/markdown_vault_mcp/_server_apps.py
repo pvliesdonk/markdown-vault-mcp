@@ -28,7 +28,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from markdown_vault_mcp._pvl_core import tool_boundary
+from markdown_vault_mcp._tool_boundary import tool_boundary
 
 try:
     from fastmcp.apps import AppConfig

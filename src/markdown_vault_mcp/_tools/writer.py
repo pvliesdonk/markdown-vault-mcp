@@ -33,7 +33,8 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from markdown_vault_mcp._pvl_core import fetch_url, tool_boundary
+from markdown_vault_mcp._pvl_core import fetch_url
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (

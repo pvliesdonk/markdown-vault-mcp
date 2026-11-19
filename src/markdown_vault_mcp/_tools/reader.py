@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 
 from markdown_vault_mcp._cli_read import read_payload
-from markdown_vault_mcp._pvl_core import tool_boundary
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
