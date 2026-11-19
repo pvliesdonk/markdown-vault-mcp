@@ -13,10 +13,12 @@ internal surface (``close``, ``writer``, ``require_built``,
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from concurrent.futures import Future
 
     from markdown_vault_mcp.indexing import IndexWriteCoordinator
@@ -36,6 +38,7 @@ class IndexFacet:
         *,
         coordinator: IndexWriteCoordinator,
         index_mgr: IndexManager,
+        after_reindex: Callable[[], None] | None = None,
     ) -> None:
         """Hold the collaborators the index operations delegate to.
 
@@ -47,6 +50,17 @@ class IndexFacet:
         """
         self._coordinator = coordinator
         self._index_mgr = index_mgr
+        self._after_reindex = after_reindex
+        self._convergence_executor = (
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="okf-converge")
+            if after_reindex is not None
+            else None
+        )
+
+    def close(self) -> None:
+        """Wait for asynchronous reindex continuations before closing the writer."""
+        if self._convergence_executor is not None:
+            self._convergence_executor.shutdown(wait=True)
 
     def is_queryable(self) -> bool:
         """Return True when the FTS index is queryable (precondition snapshot).
@@ -160,7 +174,10 @@ class IndexFacet:
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
         """
-        return self._coordinator.reindex()
+        result = self._coordinator.reindex()
+        if self._after_reindex is not None:
+            self._after_reindex()
+        return result
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -202,7 +219,17 @@ class IndexFacet:
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
         failures are surfaced via :meth:`IndexFacet.get_index_status` (#561).
         """
-        return self._coordinator.reindex_async()
+        pending = self._coordinator.reindex_async()
+        if self._convergence_executor is None:
+            return pending
+
+        def finish() -> ReindexResult:
+            result = pending.result()
+            if self._after_reindex is not None:
+                self._after_reindex()
+            return result
+
+        return self._convergence_executor.submit(finish)
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.

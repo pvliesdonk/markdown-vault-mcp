@@ -43,9 +43,10 @@ from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
     from contextlib import AbstractContextManager
 
+    from markdown_vault_mcp.indexing.observations import Observation
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
     from markdown_vault_mcp.okf import OkfDetector
@@ -219,6 +220,7 @@ class ConventionMaintainer:
             write_lock if write_lock is not None else nullcontext()
         )
         self._today = today
+        self._applied: dict[str, tuple[str, str]] | None = None
         self._source_dir = source_dir
         self._capabilities = (
             capabilities or ContentConfig(okf_write=True).okf_capabilities
@@ -305,7 +307,7 @@ class ConventionMaintainer:
         *,
         trigger_paths: Iterable[str],
         create: Iterable[str] = (),
-    ) -> None:
+    ) -> bool:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
         The index anchor for a folder in *folders* is refreshed only if it
@@ -322,16 +324,62 @@ class ConventionMaintainer:
             trigger_paths: The vault-relative paths the change touched.
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
+
+        Returns:
+            Whether every attempted refresh succeeded.
         """
         if not self._capabilities.index or not self._maintains_after(trigger_paths):
-            return
+            return True
         anchors = (self.indexed_anchor(f) for f in folders)
         wanted = [f for f in anchors if self._may_index(f) and self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
+            success = True
             for folder in dict.fromkeys(
                 [*wanted, *(f for f in create if self._may_index(f))]
             ):
-                self._refresh_index(self._canonical(folder))
+                success = self._refresh_index(self._canonical(folder)) and success
+            return success
+
+    def converge_indexes(self, rows: Mapping[str, Observation]) -> bool:
+        """Refresh existing designated indexes affected by observed notes.
+
+        Args:
+            rows: Current locally observed Markdown state.
+
+        Returns:
+            Whether the attempted refreshes succeeded.
+        """
+        with self._write_lock:
+            current = {
+                p: (row.presence, row.content_digest)
+                for p, row in rows.items()
+                if row.role == "concept_candidate" and not self._is_reserved(p)
+            }
+            previous = self._applied
+            if previous is None:
+                success = self.refresh_indexes(
+                    self.subtree_folders(""), trigger_paths=()
+                )
+            else:
+                changed = {
+                    p
+                    for p in current.keys() | previous.keys()
+                    if current.get(p) != previous.get(p)
+                }
+                arrivals = {
+                    p
+                    for p in changed
+                    if current.get(p, ("removed", ""))[0] == "present"
+                    and previous.get(p, ("removed", ""))[0] != "present"
+                }
+                success = self.refresh_indexes(
+                    [folder_of(p) for p in changed],
+                    trigger_paths=changed,
+                    create={self.indexed_anchor(folder_of(p)) for p in arrivals},
+                )
+            if success:
+                self._applied = current
+            return success
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -465,14 +513,16 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
-    def _refresh_index(self, folder: str) -> None:
+    def _refresh_index(self, folder: str) -> bool:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
             if self._sync_index is not None:
                 self._sync_index()
             self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
+            return True
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
             )
+            return False

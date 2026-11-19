@@ -879,7 +879,9 @@ class Vault:
             okf_detector=self._okf,
         )
         self._index_facet = IndexFacet(
-            coordinator=self._coordinator, index_mgr=self._index_mgr
+            coordinator=self._coordinator,
+            index_mgr=self._index_mgr,
+            after_reindex=self._converge_okf_indexes if self._okf_convention else None,
         )
         self._head_reconciler = self._build_head_reconciler()
         # Summarize facet is present only when a backend was supplied (the
@@ -1164,6 +1166,18 @@ class Vault:
             return "failed"
         return outcome
 
+    def _converge_okf_indexes(self) -> None:
+        """Apply observed changes to generated navigation on the caller's thread."""
+        maintainer = self._okf_convention
+        ledger = self._index_mgr.observations
+        if maintainer is None or ledger is None or not self._okf.state().active:
+            return
+        try:
+            with self._file_write_lock:
+                maintainer.converge_indexes(ledger.rows())
+        except Exception:
+            logger.warning("okf_index_convergence_failed", exc_info=True)
+
     def _sweep_observations(self, source: str) -> bool:
         """Sweep the ledger outside a reindex; report failure without raising."""
         if self._index_mgr.observations is None:
@@ -1285,6 +1299,9 @@ class Vault:
         # 0. Stop the pull loop start() launched: its ticks call back into
         # this vault, and the strategy object itself stays its owner's (#1765).
         self.stop()
+
+        if hasattr(self, "_index_facet"):
+            self._index_facet.close()
 
         # 1. Close the coordinator: it closes the single-owner IndexWriter,
         # draining pending jobs, and reports whether the worker stopped.

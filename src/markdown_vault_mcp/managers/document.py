@@ -1281,9 +1281,12 @@ class DocumentManager:
         separator = "\n" if head and not head.endswith("\n") else ""
         with self.exact_byte_writes():
             text = head + separator + body
-            if head:
+            if original is not None:
                 raw = self._validate_path(path).read_bytes().decode("utf-8")
-                text = _keep_head(raw, _read_view(raw), text)
+                if head:
+                    text = _keep_head(raw, _read_view(raw), text)
+                if raw == text:
+                    return bool(head)
             self.write(
                 path,
                 text,
