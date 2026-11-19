@@ -8,7 +8,6 @@ import re
 import tempfile
 import threading
 from contextlib import suppress
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -26,6 +25,7 @@ from markdown_vault_mcp.okf import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
 
 
 def _snapshot_pair(value: Any) -> tuple[str, str] | None:
@@ -73,10 +73,7 @@ def _assess_claim(
 
 
 def _review_key(row: Any) -> tuple[str, Any] | None:
-    if not isinstance(row, dict) or not isinstance(row.get("by"), str):
-        return None
-    instant = _parse_stale_after(row.get("at"))
-    return (row["by"], instant) if isinstance(instant, datetime) else None
+    return (row["by"], _parse_stale_after(row["at"])) if _review_recorded(row) else None
 
 
 def _receipt_tuple(row: Any) -> tuple[Any, ...] | None:
@@ -105,20 +102,26 @@ def assess_reviews(
     groups: dict[tuple[str, Any], list[dict[str, Any]]] = {}
     for entry in verified_entries(metadata):
         if _review_recorded(entry):
-            key = _review_key(entry)
-            if key is not None:
-                groups.setdefault(key, []).append(entry)
+            key = (entry["by"], _parse_stale_after(entry["at"]))
+            groups.setdefault(key, []).append(entry)
     raw = _review_claims(metadata)
-    malformed = raw is None or any(_review_key(row) is None for row in raw)
-    claims = [row for row in raw or [] if _review_key(row) in groups]
+    malformed = raw is None
+    claims: dict[tuple[str, Any], list[dict[str, Any]]] = {}
+    for row in raw or []:
+        claim_key = _review_key(row)
+        if claim_key is None:
+            malformed = True
+        elif claim_key in groups:
+            claims.setdefault(claim_key, []).append(row)
     rows = (load() if load is not None else None) if claims else None
     receipts = {_receipt_tuple(row) for row in rows or []}
     result = []
     for key, entries in groups.items():
-        selected = [claim for claim in claims if _review_key(claim) == key]
+        selected = claims.get(key, [])
         for claim in selected:
             item = _assess_claim(entries[0], claim, snapshot, malformed)
-            if _receipt_tuple(claim) is not None and _receipt_tuple(claim) in receipts:
+            receipt = _receipt_tuple(claim)
+            if receipt is not None and receipt in receipts:
                 item["origin"] = "local_receipt"
                 item["local_evidence"] = "available"
             result.append(item)
@@ -230,16 +233,13 @@ class ReceiptStore:
         actors = {entry["by"] for entry in latest_entries}
         if len(actors) != len(latest_entries):
             return {"state": "unavailable"}
-        try:
-            with self._lock:
-                rows = self._load()
-        except (OSError, StoreUnsupportedSchemaError):
+        rows = self.receipts(path)
+        if rows is None:
             return {"state": "unavailable"}
         matching = [
             row
             for row in rows
-            if row.get("path") == path
-            and _parse_stale_after(row.get("at")) == latest
+            if _parse_stale_after(row.get("at")) == latest
             and isinstance(row.get("by"), str)
             and row["by"] in actors
         ]

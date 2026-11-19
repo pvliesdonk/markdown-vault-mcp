@@ -206,13 +206,16 @@ frontmatter blob; not persisted):
   With an assessed binding and no unknown item it reports `review: assessed`,
   `basis: per_review`. Unsupported or malformed bindings take precedence with
   `review: unknown` and their respective basis. Compact results with a claim
-  but no concept bytes report `review: unknown`, `basis: snapshot_not_available`. Each assessment carries `by`, `at`, `snapshot`,
+  but no concept bytes report `review: unknown`, `basis: snapshot_not_available`. Each assessment carries `by`, `at`,
+  `snapshot`,
   `check`, `origin`, and `local_evidence` (`available` or `unavailable`).
   Unsupported algorithms use `snapshot_basis: unsupported_algorithm` and make
   the aggregate unknown; malformed bindings or review containers use
   `malformed_binding`. Claims join recorded reviewers and instants without
   consuming receipts; a receipt establishes the tuple at this path, not an
-  event count or file incarnation. Missing, unreadable or newer stores leave
+  event count or file incarnation. `recorded_entries` counts portable entries;
+  assessments count matching claims plus unbound entries, so their lengths can differ.
+  Missing, unreadable or newer stores leave
   local evidence unavailable. Freshness and local receipt origin remain separate.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
