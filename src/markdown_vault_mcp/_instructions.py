@@ -202,7 +202,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                     else "For edits, update 'index.md'."
                 )
                 upkeep = (
-                    "Record related edits with 'okf_log_event'; do not hand-edit 'log.md'. "
+                    "Record related edits with 'okf_log_event'; 'log.md' stays editable. "
                     + index_advice
                 )
             elif index and log and caps.folders == ("**",):

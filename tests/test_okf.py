@@ -1204,4 +1204,15 @@ def test_event_logging_guidance():
     caps = ContentConfig(okf_log="events").okf_capabilities
     text = _guidance(read_only=False, okf_mode="on", okf_capabilities=caps)
     assert "Record related edits with 'okf_log_event'" in text
-    assert "do not hand-edit 'log.md'" in text
+    assert "'log.md' stays editable" in text
+
+
+@pytest.mark.parametrize("index", [False, True])
+def test_event_guidance_allows_curation(index):
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    caps = ContentConfig(okf_log="events", okf_index=index).okf_capabilities
+    text = _guidance(read_only=False, okf_mode="on", okf_capabilities=caps)
+    assert "'log.md' stays editable" in text
+    assert "hand-edit" not in text
+    assert ("Server maintains designated indexes" in text) == index

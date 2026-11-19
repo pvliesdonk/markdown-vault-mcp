@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import string
 import unicodedata
 from contextlib import contextmanager
@@ -10,6 +11,7 @@ from contextvars import ContextVar
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from markdown_it import MarkdownIt
 
@@ -33,6 +35,8 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp.managers.document import DocumentManager
+
+_UNSAFE_LAYOUT = "Log layout cannot take an event safely (check `log.md` for an unclosed code fence or raw HTML block); unchanged."
 
 _deferred: ContextVar[bool] = ContextVar("okf_deferred_event", default=False)
 
@@ -62,7 +66,14 @@ def _description(text: str) -> str:
     lead = "**Deprecation**"
     if text.startswith(lead) and (len(text) == len(lead) or text[len(lead)] in " :"):
         return lead + _literal(text[len(lead) :])
-    return _literal(text)
+    literal = _literal(text)
+    return re.sub(
+        r"^(\d+)\.|^>",
+        lambda match: (
+            "\\" + match.group() if match.group() == ">" else match.group(1) + r"\."
+        ),
+        literal,
+    )
 
 
 def _unsafe(text: str) -> bool:
@@ -75,7 +86,7 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
     new = updated.splitlines()
     visible = list(_unfenced_lines([*old, ""]))
     if not visible or visible[-1][0] != len(old):
-        raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
+        raise InvalidRequestError(_UNSAFE_LAYOUT)
     prefix = 0
     while prefix < min(len(old), len(new)) and old[prefix] == new[prefix]:
         prefix += 1
@@ -87,7 +98,7 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
         suffix += 1
     unmatched = old[prefix : len(old) - suffix if suffix else len(old)]
     if any(line.strip() for line in unmatched):
-        raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
+        raise InvalidRequestError(_UNSAFE_LAYOUT)
     prefix += len(unmatched)
     new_prefix = prefix - len(unmatched)
     inserted = new[new_prefix : len(new) - suffix if suffix else len(new)]
@@ -119,7 +130,7 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
         for t in tokens
     )
     if not has_item or not has_text:
-        raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
+        raise InvalidRequestError(_UNSAFE_LAYOUT)
     return result
 
 
@@ -233,9 +244,9 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
                 "The selected log is an alias; choose a safe log destination."
             )
         log_path = f"{folder}/log.md" if folder else "log.md"
-        # The shared builder preserves escapes; encode literal % and entities first.
+        # Filesystem names are URL path data, not Markdown escapes or fragments.
         links = ", ".join(
-            f"[{_literal(p)}](/{build_plain_destination(p.replace('%', '%25').replace('&', '%26'))})"
+            f"[{_literal(p)}](/{build_plain_destination(quote(p, safe='/'))})"
             for p in canonical
         )
         summary = f"{_description(description.strip())} — {links}"
@@ -247,8 +258,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         updated = append_okf_log_entry(
             body, date=(today or date.today()).isoformat(), summary=summary
         )
-        if body is not None:
-            updated = _insert_preserving(body, updated, f"- {summary}")
+        updated = _insert_preserving(body or "", updated, f"- {summary}")
         with okf_write_suppressed():
             doc_mgr.replace_body(log_path, raw, updated, if_match=etag)
         return log_path

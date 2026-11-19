@@ -63,9 +63,34 @@ def test_event_groups_paths_and_keeps_same_day_entries(tmp_path):
         assert not log.startswith("---")
         assert log.count("\n- ") == 2
         assert (
-            "/area/a%20one.md" in log and r"/area/b\#.md" in log and "/area/c.md" in log
+            "/area/a%20one.md" in log and "/area/b%23.md" in log and "/area/c.md" in log
         )
         assert "Changed policy" in log and "Second event" in log
+        from urllib.parse import unquote, urlsplit
+
+        from markdown_it import MarkdownIt
+
+        from markdown_vault_mcp.scanner import extract_links
+
+        tokens = MarkdownIt("commonmark").parse(log)
+        hrefs = [
+            c.attrGet("href")
+            for token in tokens
+            if token.children
+            for c in token.children
+            if c.type == "link_open"
+        ]
+        assert all(
+            not urlsplit(href).query and not urlsplit(href).fragment for href in hrefs
+        )
+        assert [unquote(urlsplit(href).path).lstrip("/") for href in hrefs] == [
+            *paths,
+            paths[0],
+        ]
+        assert [link.target_path for link in extract_links(log, "area/log.md")] == [
+            *paths,
+            paths[0],
+        ]
         assert vault._write_callback.drain()
         assert calls.count("log.md") == 2
     finally:
@@ -570,5 +595,126 @@ def test_event_destination_resolves_literal_filename(tmp_path, name):
         target = decode_link_target(link.attrGet("href"))
         assert target == "/" + name
         assert is_regular_file(tmp_path / target.lstrip("/"))
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "2026. Policy now stricter",
+        "1. first",
+        "> quoted",
+        "# h",
+        "- i",
+        "*urgent* x",
+        "1) p",
+    ],
+)
+@pytest.mark.parametrize("existing", [False, True])
+def test_leading_markers_render_as_one_event(tmp_path, description, existing):
+    from markdown_it import MarkdownIt
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = b"# Log\n\n## 2025-01-01\n\n- Old\n"
+    if existing:
+        log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(
+            vault._doc_mgr,
+            ["a.md"],
+            description,
+            (".",),
+            "> Alice",
+            today=date(2026, 3, 3),
+        )
+        record_event(vault._doc_mgr, ["a.md"], "Second", (".",), today=date(2026, 3, 3))
+        text = log.read_text()
+        tokens = MarkdownIt("commonmark").parse(text)
+        assert not any(
+            t.type in {"ordered_list_open", "blockquote_open", "hr"} for t in tokens
+        )
+        rendered = MarkdownIt("commonmark").render(text)
+        from html import escape
+
+        assert escape(description) in rendered
+        assert "(proposed by &gt; Alice)" in rendered
+        assert rendered.count('<a href="/a.md">') == 2
+        if existing:
+            assert b"- Old\n" in log.read_bytes()
+    finally:
+        vault.close()
+
+
+def test_unsafe_new_log_formatter_refused_before_write(tmp_path, monkeypatch):
+    import markdown_vault_mcp._okf_log_event as event
+
+    (tmp_path / "a.md").write_text("# A\n")
+    calls = []
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False),
+        on_write=lambda path, _content, _op: calls.append(path.name),
+    )
+
+    def hidden(_body, *, date, summary):
+        return f"# Log\n\n<!--\n## {date}\n\n- {summary}\n-->\n"
+
+    try:
+        monkeypatch.setattr(event, "append_okf_log_entry", hidden)
+        with pytest.raises(InvalidRequestError, match="unchanged"):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        assert not is_regular_file(tmp_path / "log.md")
+        assert vault._write_callback.drain()
+        assert "log.md" not in calls
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["a#1.md", "a?x.md", "a%23.md", "a\\\\b.md", "a space.md", "a (1).md", "é.md"],
+)
+def test_event_url_destinations_are_paths_not_query_or_fragment(tmp_path, name):
+    from urllib.parse import unquote, urlsplit
+
+    from markdown_it import MarkdownIt
+
+    from markdown_vault_mcp.scanner import extract_links
+    from markdown_vault_mcp.utils.links import decode_link_target
+
+    (tmp_path / "team").mkdir()
+    (tmp_path / "team" / name).write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        result = record_event(vault._doc_mgr, ["team/" + name], "Change", (".",))
+        text = (tmp_path / result).read_text()
+        tokens = MarkdownIt("commonmark").parse(text)
+        link = next(
+            c for t in tokens if t.children for c in t.children if c.type == "link_open"
+        )
+        url = urlsplit(link.attrGet("href"))
+        assert not url.query and not url.fragment
+        assert unquote(url.path) == "/team/" + name
+        assert decode_link_target(url.path) == "/team/" + name
+        assert [x.target_path for x in extract_links(text, result)] == ["team/" + name]
+    finally:
+        vault.close()
+
+
+def test_writes_mode_keeps_automatic_and_editorial_entries(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    caps = ContentConfig(okf_log="writes").okf_capabilities
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.writer.write("a.md", "# A\n")
+        vault.writer.okf_log_event(["a.md"], "Editorial")
+        text = (tmp_path / "log.md").read_text()
+        assert "**Update**" in text and "Editorial" in text
     finally:
         vault.close()
