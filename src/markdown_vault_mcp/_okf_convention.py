@@ -196,8 +196,8 @@ class ConventionMaintainer:
                 for the ``index.md`` refresh.
             detector: OKF detector; ``active`` is re-probed per write.
             sync_index: Optional preflight hook for existing integrations.
-                Its return value is ignored. Vault leaves it unset because
-                ``generate_index`` owns the required index refresh (#1464).
+                Its return value is ignored. Vault leaves it unset; index
+                generation reads live inventory without a search refresh.
             write_lock: The vault's shared (re-entrant) write lock. The
                 ``log.md`` read-modify-write is held under it so concurrent
                 writes into the same folder cannot lost-update the log;

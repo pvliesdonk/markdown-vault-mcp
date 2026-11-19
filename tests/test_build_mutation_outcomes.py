@@ -86,12 +86,15 @@ def test_failed_build_prevents_all_mutations_and_retry_recovers(
         with monkeypatch.context() as patch:
             patch.setattr(target, method, fail)
             _failed_build(vault, kind)
-            with pytest.raises(
-                IndexUnavailableError, match="injected failure"
-            ) as error:
+            if operation == "generate":
                 _mutate(vault, operation)
-            assert error.value.reason == "build_failed"
-            assert _files(vault) == before
+            else:
+                with pytest.raises(
+                    IndexUnavailableError, match="injected failure"
+                ) as error:
+                    _mutate(vault, operation)
+                assert error.value.reason == "build_failed"
+                assert _files(vault) == before
         vault.index.build_index()
         _mutate(vault, operation)
     finally:
@@ -129,9 +132,12 @@ def test_pending_build_never_authorizes_mutation(
             assert build.cancel()
         before = _files(vault)
         error = IndexUnavailableError if state == "cancelled" else TimeoutError
-        with pytest.raises(error):
+        if operation == "generate":
             _mutate(vault, operation)
-        assert _files(vault) == before
+        else:
+            with pytest.raises(error):
+                _mutate(vault, operation)
+            assert _files(vault) == before
         release.set()
         assert vault.index.wait_for_drain(timeout=5)
         monkeypatch.setattr(vault._doc_mgr, "_sync_index", original_sync)
@@ -258,7 +264,7 @@ def test_warm_check_preserves_queryability_until_reuse_is_confirmed(
 
 
 @pytest.mark.parametrize("kind", ["sync", "async", "legacy"])
-def test_failed_build_keeps_primary_okf_write_and_existing_listing(
+def test_failed_build_keeps_primary_okf_write_and_updates_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
@@ -277,7 +283,7 @@ def test_failed_build_keeps_primary_okf_write_and_existing_listing(
         _failed_build(col, kind)
         col.writer.write("notes/new.md", "# New\n")
         assert "# New" in (tmp_path / "notes/new.md").read_text()
-        assert listing.read_text() == "# Existing listing\n"
+        assert "[New](/notes/new.md)" in listing.read_text()
         assert "new.md" in (tmp_path / "notes/log.md").read_text()
     finally:
         col.close()
@@ -331,11 +337,15 @@ def test_runner_cancellation_is_terminal_without_becoming_scan_failure(
     try:
         with pytest.raises(CancelledError):
             vault.index.build_index_async().result(5)
-        with pytest.raises(IndexUnavailableError) as error:
+        if operation == "generate":
             _mutate(vault, operation)
-        assert error.value.reason == "never_built"
+        else:
+            with pytest.raises(IndexUnavailableError) as error:
+                _mutate(vault, operation)
+            assert error.value.reason == "never_built"
         assert vault._coordinator._readiness.error is None
-        assert _files(vault) == before
+        if operation != "generate":
+            assert _files(vault) == before
     finally:
         vault.close()
 

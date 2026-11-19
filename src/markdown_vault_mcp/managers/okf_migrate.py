@@ -246,6 +246,13 @@ class OkfMigrationManager:
                 cannot be read; it is left untouched (#1608).
         """
         folder = normalize_folder(folder) or ""
+        try:
+            BundleTreeRequest(root=folder)
+        except ValueError as exc:
+            raise InvalidRequestError(
+                f"Invalid folder {folder!r}. Pass a vault-relative folder with plain "
+                "path components to okf_generate_index, or omit folder for the root."
+            ) from exc
         if designated is None:
             verdict = self._doc_mgr.index_designation(folder)
             if verdict is False:
@@ -257,9 +264,18 @@ class OkfMigrationManager:
             if verdict:
                 designated = self._index_designated
         skipped: dict[str, str] = {}
-        result = self._generate_index(folder, skipped, allow_protected, designated)
-        if designated is not None and result.path not in skipped:
-            self._connect_parent(folder, skipped, allow_protected, designated)
+        self._doc_mgr.ensure_writable()
+        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
+        tree = self._index_tree(folder)
+        parent = self._parent_to_connect(folder, designated)
+        parent_tree = self._index_tree(parent) if parent is not None else None
+        result = self._generate_index(
+            folder, skipped, allow_protected, designated, tree
+        )
+        if designated is not None and result.path not in skipped and parent is not None:
+            self._generate_index(
+                parent, skipped, allow_protected, designated, parent_tree
+            )
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
             raise InvalidRequestError(
@@ -268,20 +284,15 @@ class OkfMigrationManager:
             )
         return result
 
-    def _connect_parent(
-        self,
-        folder: str,
-        skipped: dict[str, str],
-        allow_protected: bool,
-        designated: Callable[[str], bool],
-    ) -> None:
-        """Link a boundary from its nearest existing designated ancestor."""
-        while folder and self._doc_mgr.index_may_fold():
+    def _parent_to_connect(
+        self, folder: str, designated: Callable[[str], bool] | None
+    ) -> str | None:
+        """Find the existing designated ancestor that needs a refreshed link."""
+        while folder and designated is not None and self._doc_mgr.index_may_fold():
             folder = posixpath.dirname(folder)
             if self._has_index(folder):
-                if designated(folder):
-                    self._generate_index(folder, skipped, allow_protected, designated)
-                return
+                return folder if designated(folder) else None
+        return None
 
     def _index_designated(self, folder: str) -> bool:
         """Return whether an index may be generated under the active policy."""
@@ -341,7 +352,17 @@ class OkfMigrationManager:
             page = self._doc_mgr.inspect_bundle(
                 BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
             )
+            if page.state == "unavailable" or page.enumeration == "unavailable":
+                raise InvalidRequestError(
+                    f"Cannot inspect all of folder {folder!r}; no index was written. "
+                    "Choose an accessible folder for okf_generate_index or ask the operator to restore access."
+                )
             for entry in page.entries:
+                if entry.role == "directory" and self._doc_mgr.in_submodule(entry.path):
+                    self._add_inventory_entry(
+                        tree, folder, prefix, f"{entry.path}/index.md"
+                    )
+                    continue
                 if (
                     entry.role
                     not in {"concept_candidate", "navigation", "history", "support"}
@@ -369,18 +390,10 @@ class OkfMigrationManager:
             tree.setdefault(parent, ([], set()))
         if is_okf_reserved_file(parts[-1]):
             return
-        try:
-            note = self._doc_mgr.read(path)
-        except (DocumentUnreadableError, NoteTooLargeError):
-            note = None
-        if note is None:
-            title = posixpath.splitext(parts[-1])[0]
-            desc = None
-        else:
-            title = note.title
-            raw = note.frontmatter.get("description")
-            desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
-        tree[parent][0].append((title, f"/{path}", desc))
+        metadata = self._doc_mgr._index_metadata(path)
+        if metadata is not None:
+            title, desc = metadata
+            tree[parent][0].append((title, f"/{path}", desc))
 
     def _fold_index(
         self,

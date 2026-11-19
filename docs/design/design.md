@@ -1565,7 +1565,7 @@ classification remain intact.
 
 | Captured build state | Index-dependent mutation policy |
 | --- | --- |
-| No build requested | Refresh known dirty paths; retain disk-only rename/move support. OKF generators still require a built index. |
+| No build requested | Refresh known dirty paths; retain disk-only rename/move support. Link conversion still requires a built index; index generation reads live inventory. |
 | Pending or running | Wait within the shared build/refresh deadline. |
 | Succeeded, including marker publication | Wait for the queued refresh, then proceed. |
 | Failed during submission, scan, or marker I/O | Raise `IndexUnavailableError(reason="build_failed")` before mutation. |
@@ -1592,8 +1592,7 @@ worker-originated submissions; normal shutdown still permits internal follow-ups
 [Python Future completion and cancellation](reference/python-futures.md) records
 the external ordering this design depends on.
 
-**Index-dependent mutations (#1464).** Link conversion, reserved-index
-generation, note rename with `update_links=True`, and folder move refresh
+**Index-dependent mutations (#1464).** Link conversion, note rename with `update_links=True`, and folder move refresh
 prior queued writes before reading index data. `DocumentManager` receives
 `IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
 migration manager uses the same hook, covering both library and MCP calls.

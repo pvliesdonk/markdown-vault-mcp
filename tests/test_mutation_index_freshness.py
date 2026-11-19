@@ -67,8 +67,11 @@ def test_mutation_waits_for_prior_writes(
             assert started.wait(5)
             vault.writer.write("links/source.md", "See [[target]].\n")
             mutation = pool.submit(_mutate, vault, operation)
-            with pytest.raises(TimeoutError):
-                mutation.result(timeout=0.1)
+            if operation == "generate":
+                mutation.result(timeout=2)
+            else:
+                with pytest.raises(TimeoutError):
+                    mutation.result(timeout=0.1)
             release.set()
             mutation.result(timeout=5)
         finally:
@@ -104,13 +107,16 @@ def test_failed_graph_refresh_aborts_before_mutation(
     with monkeypatch.context() as patch:
         patch.setattr(vault._fts, "resolve_vault_wikilinks", fail_resolution)
         vault._coordinator.writer.mark_dirty(["links/source.md"])
-        with pytest.raises(OSError, match="graph refresh failed"):
+        if operation == "generate":
             _mutate(vault, operation)
-        assert vault.index.get_index_status()["dirty_paths"] == 1
-        assert {
-            p.relative_to(vault.source_dir): p.read_bytes()
-            for p in vault.source_dir.rglob("*.md")
-        } == before
+        else:
+            with pytest.raises(OSError, match="graph refresh failed"):
+                _mutate(vault, operation)
+            assert vault.index.get_index_status()["dirty_paths"] == 1
+            assert {
+                p.relative_to(vault.source_dir): p.read_bytes()
+                for p in vault.source_dir.rglob("*.md")
+            } == before
     # The failed job retains its work, and the next mutation retries it.
     _mutate(vault, operation)
 
@@ -289,8 +295,11 @@ def test_okf_refresh_waits_behind_initial_build(
                     mutation = pool.submit(col.writer.write, "notes/new.md", "# New\n")
                 else:
                     mutation = pool.submit(_mutate, col, operation)
-                with pytest.raises(TimeoutError):
-                    mutation.result(timeout=0.1)
+                if operation in {"generate", "maintain"}:
+                    mutation.result(timeout=2)
+                else:
+                    with pytest.raises(TimeoutError):
+                        mutation.result(timeout=0.1)
                 release.set()
                 build.result(timeout=5)
                 mutation.result(timeout=5)
@@ -312,9 +321,13 @@ def test_okf_refresh_still_rejects_never_built_index(
 
     col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        with pytest.raises(IndexUnavailableError, match="Index not built"):
-            _mutate(col, operation)
-        assert not list(tmp_path.rglob("*.md"))
+        if operation == "generate":
+            assert col.writer.okf_generate_index().path == "index.md"
+            assert not col.index.is_queryable()
+        else:
+            with pytest.raises(IndexUnavailableError, match="Index not built"):
+                _mutate(col, operation)
+            assert not list(tmp_path.rglob("*.md"))
     finally:
         col.close()
 

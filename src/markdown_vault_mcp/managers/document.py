@@ -70,8 +70,10 @@ from markdown_vault_mcp.managers._write_notifier import (
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
+    _resolve_title,
     extract_section,
     list_section_headings,
+    parse_frontmatter,
     parse_note,
 )
 from markdown_vault_mcp.source_probe import require_vault_root
@@ -98,7 +100,9 @@ from markdown_vault_mcp.utils import (
 from markdown_vault_mcp.utils.fs import (
     is_directory,
     is_regular_file,
+    open_directory_nofollow,
     path_exists,
+    read_regular_nofollow,
     walk_files_strict,
 )
 from markdown_vault_mcp.utils.links import (
@@ -348,6 +352,25 @@ class DocumentManager:
                 logger.debug("inventory_search_state_unavailable", exc_info=True)
                 return inspection
         return inspection
+
+    def _index_metadata(self, path: str) -> tuple[str, str | None] | None:
+        """Read current listing metadata without chunking or the response-size cap."""
+        parts = path.split("/")
+        try:
+            with open_directory_nofollow(self._source_dir, parts[:-1]) as parent:
+                raw = read_regular_nofollow(parent, parts[-1], -1).decode("utf-8-sig")
+            post = parse_frontmatter(raw)
+            title = _resolve_title(
+                post.metadata, post.content, Path(path), self._title_field
+            )
+            description = post.metadata.get("description")
+            return title, description.strip() if isinstance(
+                description, str
+            ) and description.strip() else None
+        except FileNotFoundError:
+            return None
+        except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError):
+            return Path(path).stem, None
 
     # ------------------------------------------------------------------
     # Validation helpers
