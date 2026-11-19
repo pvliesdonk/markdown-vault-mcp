@@ -79,7 +79,12 @@ def record_event(
     with doc_mgr.write_scope():
         canonical = []
         for path in paths:
+            doc_mgr._validate_path(path)
             target = canonical_path(path, doc_mgr._source_dir)
+            if any(unicodedata.category(c) in {"Cc", "Zl", "Zp"} for c in target):
+                raise InvalidRequestError(
+                    "Concept paths must not contain control or line separator characters."
+                )
             if is_okf_reserved_file(target) or is_okf_reserved_file(path):
                 raise InvalidRequestError("Event paths must identify concept notes.")
             if doc_mgr._read_note(target, capped=False) is None:
