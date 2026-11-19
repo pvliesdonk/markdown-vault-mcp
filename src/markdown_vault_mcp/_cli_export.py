@@ -1,10 +1,53 @@
 """Local OKF publication command."""
 
+import json
+import os
+import tempfile
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
 import typer
+
+
+def _check_destination(destination: Path, root: Path) -> None:
+    """Refuse vault paths and existing hard links to vault files."""
+    resolved = destination.resolve()
+    if resolved.is_relative_to(root.resolve()):
+        raise ValueError("Export destination must be outside the vault")
+    try:
+        target = resolved.stat()
+    except FileNotFoundError:
+        return
+    if target.st_nlink < 2:
+        return
+
+    def fail(error: OSError) -> None:
+        raise error
+
+    for directory, _, files in os.walk(root, onerror=fail):
+        for name in files:
+            try:
+                item = (Path(directory) / name).stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if (item.st_dev, item.st_ino) == (target.st_dev, target.st_ino):
+                raise ValueError("Export destination aliases a vault file")
+
+
+def _write_destination(destination: Path, root: Path, data: bytes) -> None:
+    """Atomically replace an external destination with the completed archive."""
+    _check_destination(destination, root)
+    fd, temporary = tempfile.mkstemp(prefix=".okf-export-", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+        _check_destination(destination, root)
+        Path(temporary).replace(destination)
+    finally:
+        with suppress(FileNotFoundError):
+            Path(temporary).unlink()
 
 
 def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
@@ -49,6 +92,8 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         index_path=None,
         state_path=None,
         summarize_provider=None,
+        read_only=True,
+        okf_write=False,
     )
     built = _build_reader_vault(config, source_dir, True)
     try:
@@ -62,6 +107,8 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
             original_settings.index_path,
         )
         try:
+            _check_destination(destination, config.source_dir)
+            built.vault.index.build_index()
             result = build_okf_bundle(
                 built.vault,
                 config,
@@ -74,6 +121,17 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         except (ExportCollisionError, PublicationRefused) as exc:
             typer.echo(refusal_document(exc).decode("utf-8"))
             raise typer.Exit(1) from exc
-        destination.write_bytes(result.data)
+        _write_destination(destination, config.source_dir, result.data)
+        if result.report.snapshot.uncommitted_paths:
+            typer.echo(
+                "WARNING: uncommitted paths were not included in the Git snapshot: "
+                + json.dumps(
+                    result.report.snapshot.uncommitted_paths, ensure_ascii=True
+                ),
+                err=True,
+            )
+    except (ValueError, OSError) as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from exc
     finally:
         built.close()

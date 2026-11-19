@@ -320,6 +320,10 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         or report.ambiguous_path
         or report.broken_links
         or report.snapshot.inconsistent_paths
+        or any(
+            reason in {"metadata_complexity", "metadata_encoding", "body_encoding"}
+            for reason in report.uninspected.values()
+        )
     ):
         raise PublicationRefused(report)
     return result

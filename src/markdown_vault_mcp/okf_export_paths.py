@@ -646,6 +646,29 @@ class ExportPaths:
             )
         return replacement + suffix
 
+    def _root_dependency(self, value: str, source: str) -> bool:
+        """Check a root-export metadata path without rewriting its bytes."""
+        written, _ = _field_parts(value)
+        try:
+            if _RE_REFUSED_ESCAPE.search(written):
+                return True
+            unquote(written, errors="strict")
+        except UnicodeDecodeError:
+            return True
+        path = decode_link_target(written)
+        target = (
+            posixpath.normpath(path).lstrip("/")
+            if path.startswith("/")
+            else posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
+        )
+        if target == ".":
+            target = ""
+        return (
+            target == ".."
+            or target.startswith("../")
+            or (target not in self.members and target not in self._directories)
+        )
+
     def _field_changes(
         self, root: object, source: str
     ) -> tuple[list[tuple[ScalarNode, str]], list[Dependency], list[Dependency]]:
@@ -658,9 +681,12 @@ class ExportPaths:
             if not value or _is_external_target(value) or _FIELD_URL.match(value):
                 continue
             if not _FIELD_PATH.match(value):
-                ambiguous.append(
-                    Dependency(source[len(self.scope) + 1 :], _safe_text(value))
-                )
+                archive_source = source[len(self.scope) + 1 :] if self.scope else source
+                ambiguous.append(Dependency(archive_source, _safe_text(value)))
+                continue
+            if not self.scope:
+                if self._root_dependency(value, source):
+                    dependencies.append(Dependency(source, _safe_text(value)))
                 continue
             replacement = self._field_replacement(value, source, dependencies)
             if replacement is not None and replacement != value:
@@ -685,7 +711,7 @@ class ExportPaths:
         """
         candidate = prefix.removeprefix("\ufeff").lstrip()
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-        if not self.scope or handler is None:
+        if handler is None:
             return prefix
         header, _ = handler.split(candidate)
         offset = len(prefix) - len(candidate) + candidate.index(header)
