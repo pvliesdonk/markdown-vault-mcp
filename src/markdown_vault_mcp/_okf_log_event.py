@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import os
+import re
 import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -12,14 +14,13 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp._okf_convention import (
     canonical_path,
     destination_home,
-    folder_is_designated,
+    log_anchor,
 )
 from markdown_vault_mcp._okf_write import okf_write_suppressed
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.okf import append_okf_log_entry, is_okf_reserved_file
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of
-from markdown_vault_mcp.utils.fs import is_regular_file
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 
 if TYPE_CHECKING:
@@ -43,6 +44,26 @@ def deferred_event() -> Iterator[None]:
 def event_deferred() -> bool:
     """Return whether automatic write bullets are deferred in this context."""
     return _deferred.get()
+
+
+def _inline_text(text: str) -> str:
+    """Escape literal prose so it cannot consume generated links."""
+    escaped = re.sub(r"([\\`*_{}\[\]()|~])", r"\\\1", text)
+    return html.escape(escaped, quote=False)
+
+
+def _description(text: str) -> str:
+    """Preserve the conventional deprecation lead and escape the remaining prose."""
+    text = text.strip()
+    lead = "**Deprecation**"
+    if text.startswith(lead) and (len(text) == len(lead) or text[len(lead)] in " :"):
+        return lead + _inline_text(text[len(lead) :])
+    return _inline_text(text)
+
+
+def _link_label(path: str) -> str:
+    """Render a literal path in a Markdown link label."""
+    return html.escape(escape_link_text(path).replace("`", r"\`"), quote=False)
 
 
 def record_event(
@@ -87,28 +108,29 @@ def record_event(
                 )
             if is_okf_reserved_file(target) or is_okf_reserved_file(path):
                 raise InvalidRequestError("Event paths must identify concept notes.")
-            if doc_mgr._read_note(target, capped=False) is None:
+            guarded = doc_mgr._read_guard(target)
+            if guarded is None:
                 raise InvalidRequestError(
                     f"Concept {path!r} was not found; read it before recording the event."
                 )
+            try:
+                with guarded[0].open("rb"):
+                    pass
+            except OSError as exc:
+                raise DocumentUnreadableError(path, str(exc)) from exc
             if target not in canonical:
                 canonical.append(target)
-        folder = os.path.commonpath([folder_of(p) for p in canonical])
-        while (
-            folder
-            and not folder_is_designated(folder, folders)
-            and not is_regular_file(doc_mgr._source_dir / folder / "log.md")
-        ):
-            folder = folder_of(folder)
+        common = os.path.commonpath([folder_of(p) for p in canonical])
+        folder = log_anchor(common, folders, doc_mgr._source_dir)
         if destination_home(folder, "log.md", doc_mgr._source_dir) is None:
             raise InvalidRequestError(
                 "The selected log is an alias; choose a safe log destination."
             )
         log_path = f"{folder}/log.md" if folder else "log.md"
         links = ", ".join(
-            f"[{escape_link_text(p)}](/{build_plain_destination(p)})" for p in canonical
+            f"[{_link_label(p)}](/{build_plain_destination(p)})" for p in canonical
         )
-        summary = f"{description}: {links}"
+        summary = f"{_description(description)} — {links}"
         existing = doc_mgr._read_note(log_path, capped=False)
         body = (
             strip_frontmatter_block(existing.content) if existing is not None else None

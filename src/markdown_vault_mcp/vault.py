@@ -882,6 +882,7 @@ class Vault:
             receipt_store=receipt_store,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
+            event_policy=(capabilities, self._okf),
             # The overwrite breadcrumb (#1137) reads git state, so it is the
             # git-query manager's answer — bound here rather than handing the
             # write facet the store itself.
@@ -1034,7 +1035,7 @@ class Vault:
                 elif (
                     name == "author"
                     or (name == "verify" and configured not in ("elicit", "trust-auth"))
-                    or (name == "log" and configured != "writes")
+                    or (name == "log" and configured not in ("events", "writes"))
                 ):
                     reason = "not_implemented"
                 elif name in ("index", "log") and not caps.folders:

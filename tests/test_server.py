@@ -820,6 +820,7 @@ class TestToolManifest:
             "okf_convert_links",
             "okf_generate_index",
             "okf_inventory",
+            "okf_log_event",
             "okf_navigation",
             "okf_seed_log",
             "okf_validate",

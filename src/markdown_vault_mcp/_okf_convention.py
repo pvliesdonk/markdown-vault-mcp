@@ -174,6 +174,27 @@ def destination_home(folder: str, name: str, source_dir: Path | None) -> str | N
         return None
 
 
+def log_anchor(folder: str, patterns: tuple[str, ...], source_dir: Path | None) -> str:
+    """Choose the deepest designated folder or existing ancestor log.
+
+    Args:
+        folder: Canonical vault-relative folder.
+        patterns: Designated folder patterns.
+        source_dir: Vault root, or None to skip existing-log checks.
+
+    Returns:
+        The selected folder, or an empty string for root.
+    """
+    current = folder
+    while current:
+        if folder_is_designated(current, patterns):
+            return current
+        if source_dir is not None and is_regular_file(source_dir / current / "log.md"):
+            return current
+        current = folder_of(current)
+    return ""
+
+
 class ConventionMaintainer:
     """Maintain the selected ancestor log and designated index (#964)."""
 
@@ -577,19 +598,6 @@ class ConventionMaintainer:
         except OSError:
             return True
 
-    def _log_anchor(self, folder: str) -> str:
-        """Choose the deepest designated folder or existing ancestor log."""
-        current = folder
-        while current:
-            if self._designated(current):
-                return current
-            if self._source_dir is not None and is_regular_file(
-                self._source_dir / current / "log.md"
-            ):
-                return current
-            current = folder_of(current)
-        return ""
-
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
         """Append a dated ``**Update**`` bullet to the selected ancestor log.
 
@@ -604,7 +612,9 @@ class ConventionMaintainer:
             # log and clobber each other's bullet (lost update). write()
             # re-enters this same re-entrant lock.
             with self._write_lock:
-                folder = self._log_anchor(folder)
+                folder = log_anchor(
+                    folder, self._capabilities.folders, self._source_dir
+                )
                 log_path = f"{folder}/log.md" if folder else "log.md"
                 if not self._destination_ok(folder, "log.md"):
                     return

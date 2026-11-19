@@ -99,7 +99,7 @@ async def test_mcp_reports_write_state(
                 (False, "not_implemented"),
                 (True, None),
                 (True, None),
-                (False, "not_implemented"),
+                (True, None),
             ],
         ),
         (

@@ -50,6 +50,7 @@ _ATTACHING_NOT_DRIVEN = (
     "okf_author",
     "okf_convert_links",
     "okf_generate_index",
+    "okf_log_event",
     "okf_seed_log",
     "okf_verify",
 )

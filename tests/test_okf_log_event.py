@@ -137,7 +137,7 @@ def test_routes_to_common_ancestor_and_preserves_existing_log(tmp_path):
             vault._doc_mgr,
             ["team/one/a.md", "team/two/b.md"],
             "Coordinated change",
-            (".", "**"),
+            (".",),
             today=date(2026, 1, 2),
         )
         assert result == "team/log.md"
@@ -158,5 +158,113 @@ def test_refuses_missing_reserved_and_aliased_log(tmp_path):
             with pytest.raises(InvalidRequestError):
                 record_event(vault._doc_mgr, paths, "Change", (".",))
         assert (tmp_path / "other.md").read_text() == "# Other\n"
+    finally:
+        vault.close()
+
+
+def test_library_event_uses_configured_scope_and_mode(tmp_path):
+    (tmp_path / "area").mkdir()
+    (tmp_path / "area" / "a.md").write_text("# A\n")
+    caps = ContentConfig(okf_log="events", okf_folders=("area",)).okf_capabilities
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        assert vault.writer.okf_log_event(["area/a.md"], "Policy") == "area/log.md"
+    finally:
+        vault.close()
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
+    )
+    try:
+        with pytest.raises(InvalidRequestError):
+            vault.writer.okf_log_event(["area/a.md"], "Policy")
+    finally:
+        vault.close()
+
+
+def test_event_rendering_and_malformed_frontmatter(tmp_path):
+    from markdown_it import MarkdownIt
+
+    names = ["a`1.md", "b`2.md", "c.md"]
+    for name in names:
+        (tmp_path / name).write_text("---\ninvalid: [\n---\n# Note\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(
+            vault._doc_mgr,
+            names,
+            "  **Deprecation** <script> [fake](/evil) `unclosed  ",
+            (".",),
+            today=date(2026, 1, 2),
+        )
+        record_event(
+            vault._doc_mgr, [names[2]], "Next.", (".",), today=date(2026, 1, 2)
+        )
+        text = (tmp_path / "log.md").read_text()
+        rendered = MarkdownIt("commonmark").render(text)
+        assert rendered.count("<a href=") == 4
+        assert "<strong>Deprecation</strong>" in rendered
+        assert "&lt;script&gt;" in rendered and "/evil" in rendered
+        assert "Next.:" not in text
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "<script>",
+        "```",
+        "[fake](/evil.md)",
+        "Unclosed `code",
+        "**Deprecation** Retired.",
+    ],
+)
+def test_description_cannot_consume_generated_links(tmp_path, description):
+    from markdown_it import MarkdownIt
+
+    for name in ("a.md", "b.md", "c.md"):
+        (tmp_path / name).write_text("# Concept\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(
+            vault._doc_mgr,
+            ["a.md", "b.md", "c.md"],
+            description,
+            (".",),
+            today=date(2026, 1, 2),
+        )
+        record_event(vault._doc_mgr, ["a.md"], "Next.", (".",), today=date(2026, 1, 2))
+        rendered = MarkdownIt("commonmark").render((tmp_path / "log.md").read_text())
+        assert rendered.count("<a href=") == 4
+        assert 'href="/evil.md"' not in rendered
+        assert "<script>" not in rendered
+        if description.startswith("**Deprecation**"):
+            assert "<strong>Deprecation</strong>" in rendered
+    finally:
+        vault.close()
+
+
+def test_unreadable_concept_refuses_event_without_writing(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+
+    (tmp_path / "a.md").write_text("# A\n")
+    original_open = Path.open
+
+    def denied(path, *args, **kwargs):
+        if path.name == "a.md":
+            raise PermissionError("denied")
+        return original_open(path, *args, **kwargs)
+
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        monkeypatch.setattr(Path, "open", denied)
+        with pytest.raises(DocumentUnreadableError):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        assert not is_regular_file(tmp_path / "log.md")
     finally:
         vault.close()
