@@ -31,21 +31,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unicodedata import normalize
 
-import yaml
-
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
-from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
 )
-from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
-from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -175,28 +172,6 @@ def destination_home(folder: str, name: str, source_dir: Path | None) -> str | N
         return home if target == (f"{home}/{name}" if home else name) else None
     except InvalidRequestError:
         return None
-
-
-def read_stored_index(doc_mgr: DocumentManager, path: str) -> str:
-    """Read and validate a stored index snapshot.
-
-    Args:
-        doc_mgr: Document manager whose path guard resolves the index.
-        path: Vault-relative index path.
-
-    Returns:
-        Exact UTF-8 decoded stored text.
-
-    Raises:
-        DocumentUnreadableError: If the stored index cannot be read.
-    """
-    try:
-        data = doc_mgr._validate_path(path).read_bytes()
-        raw = data.decode("utf-8")
-        parse_frontmatter(decode_utf8(data))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise DocumentUnreadableError(path, str(exc)) from exc
-    return raw
 
 
 class ConventionMaintainer:

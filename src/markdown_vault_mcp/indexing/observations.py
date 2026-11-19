@@ -13,7 +13,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING, cast, get_args
 
 from markdown_vault_mcp.bundle_inventory import Role, _components
 from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
@@ -176,10 +176,9 @@ class ObservationLedger:
         rows, valid, _ = self._load_full()
         return rows, valid
 
-    def _load_full(self) -> tuple[dict[str, Observation], bool, dict[str, object]]:
-        empty: dict[str, object] = {"generated": {}, "reported": {}}
-        if self._path is None:
-            return (self._rows or {}).copy(), True, copy.deepcopy(self._navigation)
+    def _read_document(self) -> dict[str, object] | None:
+        """Read and validate the durable ledger envelope."""
+        assert self._path is not None  # noqa: S101, RUF100 - persistent ledger invariant
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             version = data["version"]
@@ -194,16 +193,41 @@ class ObservationLedger:
                 )
             if version not in (1, 2, 3) or not isinstance(data["rows"], dict):
                 raise ValueError("Invalid observation ledger")
-            rows = {key: Observation(**row) for key, row in data["rows"].items()}
-            if any(not _valid_row(key, row) for key, row in rows.items()):
-                raise ValueError("Invalid observation row")
-            navigation = self._parse_navigation(data.get("navigation"), version)
-            return rows, True, navigation
+            return cast("dict[str, object]", data)
         except FileNotFoundError:
-            return {}, False, empty
+            return None
         except (ValueError, TypeError, KeyError, AttributeError):
             logger.warning("observation_ledger_reset path=%s", self._path)
-            return {}, False, empty
+            return None
+
+    def _load_navigation(self) -> tuple[dict[str, object], dict[str, object]]:
+        """Read navigation and the untouched durable rows from one envelope."""
+        if self._path is None:
+            return {}, copy.deepcopy(self._navigation)
+        data = self._read_document()
+        if data is None:
+            return {}, {"generated": {}, "reported": {}}
+        rows, version = data["rows"], data["version"]
+        assert isinstance(rows, dict) and type(version) is int  # noqa: S101, RUF100 - validated envelope
+        return rows, self._parse_navigation(data.get("navigation"), version)
+
+    def _load_full(self) -> tuple[dict[str, Observation], bool, dict[str, object]]:
+        if self._path is None:
+            return (self._rows or {}).copy(), True, copy.deepcopy(self._navigation)
+        data = self._read_document()
+        if data is None:
+            return {}, False, {"generated": {}, "reported": {}}
+        raw, version = data["rows"], data["version"]
+        assert isinstance(raw, dict) and type(version) is int  # noqa: S101, RUF100 - validated envelope
+        navigation = self._parse_navigation(data.get("navigation"), version)
+        try:
+            rows = {key: Observation(**row) for key, row in raw.items()}
+            if any(not _valid_row(key, row) for key, row in rows.items()):
+                raise ValueError("Invalid observation row")
+            return rows, True, navigation
+        except (ValueError, TypeError, KeyError, AttributeError):
+            logger.warning("observation_ledger_reset path=%s", self._path)
+            return {}, False, navigation
 
     def _parse_navigation(self, state: object, version: int) -> dict[str, object]:
         empty: dict[str, object] = {"generated": {}, "reported": {}}
@@ -301,7 +325,7 @@ class ObservationLedger:
             if self._path is None:
                 self._rows = rows
             elif rows != previous or not valid:
-                self._save(rows, navigation)
+                self._save({k: vars(v) for k, v in rows.items()}, navigation)
             self._consume_evidence(pending, removals, previous, states)
 
     @staticmethod
@@ -488,7 +512,7 @@ class ObservationLedger:
             if self._path is None:
                 self._rows = result
             elif result != previous or not valid:
-                self._save(result, navigation)
+                self._save({k: vars(v) for k, v in result.items()}, navigation)
             self._consume_evidence(
                 {path: hint for path, hint in pending.items() if path in contradicted},
                 removals,
@@ -522,7 +546,7 @@ class ObservationLedger:
     def observe_navigation(self, path: str, old: bytes | None, new: bytes) -> None:
         """Report an unexpected body before replacing a designated index."""
         with self._lock:
-            rows, _, state = self._load_full()
+            rows, state = self._load_navigation()
             if old is None:
                 return
             generated, reported = state["generated"], state["reported"]
@@ -542,7 +566,7 @@ class ObservationLedger:
     def record_navigation(self, path: str, body: bytes) -> None:
         """Record a successfully generated index body."""
         with self._lock:
-            rows, _, state = self._load_full()
+            rows, state = self._load_navigation()
             generated = state["generated"]
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             digest = compute_etag(body)
@@ -551,7 +575,7 @@ class ObservationLedger:
                 self._save_navigation(rows, state)
 
     def _save_navigation(
-        self, rows: dict[str, Observation], state: dict[str, object]
+        self, rows: dict[str, object], state: dict[str, object]
     ) -> None:
         if self._path is None:
             self._navigation = state
@@ -561,7 +585,7 @@ class ObservationLedger:
     def navigation_stats(self) -> dict[str, object]:
         """Return the cumulative count and bounded examples of local divergences."""
         with self._lock:
-            reported = self._load_full()[2]["reported"]
+            reported = self._load_navigation()[1]["reported"]
             assert isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             count = sum(len(digests) for digests in reported.values())
             examples: list[dict[str, str]] = []
@@ -572,9 +596,7 @@ class ObservationLedger:
                     examples.append({"path": path, "digest": digest})
             return {"count": count, "examples": examples}
 
-    def _save(
-        self, rows: dict[str, Observation], navigation: dict[str, object] | None = None
-    ) -> None:
+    def _save(self, rows: dict[str, object], navigation: dict[str, object]) -> None:
         # Private type invariant for persistent ledgers, not an authorization check.
         assert self._path is not None  # noqa: S101, RUF100
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -587,10 +609,8 @@ class ObservationLedger:
                     json.dumps(
                         {
                             "version": 3,
-                            "rows": {k: vars(v) for k, v in rows.items()},
-                            "navigation": navigation
-                            if navigation is not None
-                            else self._load_full()[2],
+                            "rows": rows,
+                            "navigation": navigation,
                         },
                         sort_keys=True,
                     )

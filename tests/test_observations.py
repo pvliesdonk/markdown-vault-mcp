@@ -1131,3 +1131,153 @@ def test_reconciliation_uses_one_validated_ledger_snapshot(
             after["rows"]["note.md"]["content_digest"]
             != original["rows"]["note.md"]["content_digest"]
         )
+
+
+def test_navigation_operations_skip_row_validation(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.indexing import observations
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = observations.ObservationLedger(
+        path, BundleInspector(root, (), frozenset(), 0)
+    )
+    ledger.sweep()
+    data = json.loads(path.read_text())
+    row = data["rows"].pop("note.md")
+    for number in range(500):
+        name = f"note{number}.md"
+        data["rows"][name] = {**row, "path": name}
+    path.write_text(json.dumps(data))
+    original_rows = ledger.rows()
+    validations = 0
+    saves = 0
+    validate = observations._valid_row
+    save = ledger._save
+
+    def count_validation(*args):
+        nonlocal validations
+        validations += 1
+        return validate(*args)
+
+    def count_save(*args):
+        nonlocal saves
+        saves += 1
+        return save(*args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(observations, "_valid_row", count_validation)
+        patch.setattr(ledger, "_save", count_save)
+        for number in range(20):
+            name = f"folder{number}/index.md"
+            ledger.observe_navigation(name, None, b"# Generated\n")
+            ledger.record_navigation(name, b"# Generated\n")
+        assert ledger.navigation_stats()["count"] == 0
+    assert validations == 0
+    assert saves == 20
+    assert ledger.rows() == original_rows
+
+
+@pytest.mark.parametrize("operation", ["refresh_many", "sweep"])
+def test_bad_observation_row_preserves_navigation_history(
+    tmp_path: Path, operation: str
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.hashing import compute_etag
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    inspector = BundleInspector(root, (), frozenset(), 0)
+    ledger = ObservationLedger(path, inspector)
+    ledger.sweep()
+    ledger.record_navigation("index.md", b"# Before\n")
+    ledger.observe_navigation("index.md", b"# Edit\n", b"# Before\n")
+    data = json.loads(path.read_text())
+    data["rows"]["note.md"]["content_digest"] = "bad"
+    path.write_text(json.dumps(data))
+    assert ledger.navigation_stats()["count"] == 1
+    ledger.record_navigation("index.md", b"# After\n")
+    if operation == "sweep":
+        ledger.sweep()
+    else:
+        ledger.refresh_many({"note.md"})
+    restarted = ObservationLedger(path, inspector)
+    state = json.loads(path.read_text())
+    assert state["navigation"]["generated"]["index.md"] == compute_etag(b"# After\n")
+    assert restarted.rows()["note.md"].content_digest != "bad"
+    restarted.observe_navigation("index.md", b"# Edit\n", b"# After\n")
+    assert restarted.navigation_stats()["count"] == 1
+    restarted.observe_navigation("index.md", b"# Another edit\n", b"# After\n")
+    restarted.observe_navigation("index.md", b"# Another edit\n", b"# After\n")
+    assert restarted.navigation_stats()["count"] == 2
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_optional_row_defaults_survive_navigation_save(
+    tmp_path: Path, version: int
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    data = json.loads(path.read_text())
+    data["version"] = version
+    data.pop("navigation")
+    for key in ("presence", "removed_observed_at", "origin", "moved_from", "moved_to"):
+        data["rows"]["note.md"].pop(key)
+    path.write_text(json.dumps(data))
+    before = ledger.rows()
+    ledger.record_navigation("index.md", b"# Index\n")
+    assert json.loads(path.read_text())["version"] == 3
+    assert ledger.rows() == before
+    ledger.sweep()
+    assert ledger.rows() == before
+
+
+@pytest.mark.parametrize("version", [0, -1, True, "3", 4])
+def test_invalid_ledger_envelope_resets_or_refuses(
+    tmp_path: Path, version: object
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    ledger.record_navigation("index.md", b"# Index\n")
+    data = json.loads(path.read_text())
+    data["version"] = version
+    path.write_text(json.dumps(data))
+    original = path.read_bytes()
+    if type(version) is int and version == 4:
+        with pytest.raises(StoreUnsupportedSchemaError):
+            ledger.observe_navigation("missing.md", None, b"# Index\n")
+        assert path.read_bytes() == original
+    else:
+        assert ledger.rows() == {}
+        assert ledger.navigation_stats() == {"count": 0, "examples": []}
+        ledger.sweep()
+        result = json.loads(path.read_text())
+        assert result["navigation"] == {"generated": {}, "reported": {}}

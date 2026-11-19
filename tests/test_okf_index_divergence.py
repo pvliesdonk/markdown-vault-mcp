@@ -138,20 +138,20 @@ def _refuse_raw_after_parse(
     vault: Vault, index: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original_read = Path.read_bytes
-    original_note = vault._doc_mgr._read_note
+    original_guard = vault._doc_mgr._read_guard
 
     def refuse_raw(path: Path) -> bytes:
         if path == index:
             raise PermissionError("temporary read failure")
         return original_read(path)
 
-    def arm_raw_failure(path: str, capped: bool) -> object:
-        note = original_note(path, capped)
+    def arm_raw_failure(path: str) -> object:
+        note = original_guard(path)
         if path == "b/index.md":
             monkeypatch.setattr(Path, "read_bytes", refuse_raw)
         return note
 
-    monkeypatch.setattr(vault._doc_mgr, "_read_note", arm_raw_failure)
+    monkeypatch.setattr(vault._doc_mgr, "_read_guard", arm_raw_failure)
 
 
 @pytest.mark.parametrize("bad", [b"\xff", b"---\ntitle: [broken\n---\n", None])
@@ -427,16 +427,16 @@ def test_snapshot_change_after_preliminary_read(
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
-        original = vault._doc_mgr._read_note
+        original = vault._doc_mgr._read_guard
         with monkeypatch.context() as patch:
 
-            def change_after_read(path: str, capped: bool) -> object:
-                result = original(path, capped)
+            def change_after_read(path: str) -> object:
+                result = original(path)
                 if path == "index.md":
                     index.write_bytes(replacement)
                 return result
 
-            patch.setattr(vault._doc_mgr, "_read_note", change_after_read)
+            patch.setattr(vault._doc_mgr, "_read_guard", change_after_read)
             if b"broken" in replacement or replacement == b"\xff":
                 with pytest.raises(DocumentUnreadableError):
                     vault.writer.okf_generate_index(folder="")
@@ -538,5 +538,66 @@ def test_generation_alias_shares_canonical_history(
         index.write_text("# Unexpected\n")
         vault.writer.okf_generate_index(folder=first)
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()
+
+
+def test_generation_does_not_parse_full_note_for_existing_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.managers.document as document
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        assert vault.index.wait_for_drain(timeout=10.0)
+        original = document.parse_note
+        index_parses = 0
+
+        def count_parse(path: Path, *args: object, **kwargs: object) -> object:
+            nonlocal index_parses
+            if path == root / "index.md":
+                index_parses += 1
+            return original(path, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(document, "parse_note", count_parse)
+            vault.writer.okf_generate_index(folder="")
+        assert index_parses == 0
+    finally:
+        vault.close()
+
+
+def test_index_disappearing_before_snapshot_is_recreated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    index = root / "index.md"
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        assert vault.index.wait_for_drain(timeout=10.0)
+        original = Path.read_bytes
+        removed = False
+
+        def remove_before_read(path: Path) -> bytes:
+            nonlocal removed
+            if path == index and not removed:
+                removed = True
+                path.unlink()
+            return original(path)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "read_bytes", remove_before_read)
+            vault.writer.okf_generate_index(folder="")
+        assert removed
+        assert index.is_file()
     finally:
         vault.close()

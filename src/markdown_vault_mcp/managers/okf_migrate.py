@@ -34,7 +34,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._okf_convention import canonical_path, read_stored_index
+from markdown_vault_mcp._okf_convention import canonical_path
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
@@ -355,12 +355,7 @@ class OkfMigrationManager:
                 skipped[index_path] = reason
             else:
                 with okf_write_suppressed():
-                    existing = self._doc_mgr._read_note(index_path, capped=False)
-                    raw = (
-                        read_stored_index(self._doc_mgr, index_path)
-                        if existing is not None
-                        else None
-                    )
+                    raw = self._doc_mgr._read_snapshot(index_path)
                     generated = body.encode("utf-8")
                     self._observe_index(folder, raw, generated)
                     preserved = self._doc_mgr.replace_body(

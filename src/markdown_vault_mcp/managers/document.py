@@ -75,6 +75,7 @@ from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
+    parse_frontmatter,
     parse_note,
 )
 from markdown_vault_mcp.source_probe import require_vault_root
@@ -115,6 +116,7 @@ from markdown_vault_mcp.utils.links import (
 from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
 )
+from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.utils.text import (
     find_closest_match as _find_closest_match,
 )
@@ -958,14 +960,12 @@ class DocumentManager:
 
         return self._read_note(path, capped=True)
 
-    def _read_note(self, path: str, capped: bool) -> NoteContent | None:
-        """Read a whole note, applying the configured byte limit when capped."""
+    def _read_guard(self, path: str) -> tuple[Path, os.stat_result] | None:
+        """Resolve and stat a readable regular file within the source."""
         reject_nul(path)
         abs_path = (self._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._source_dir.resolve()):
             return None
-        # stat() rather than is_file(): on Python 3.14 is_file() answers False
-        # for a path it cannot stat, which would report a fault as absence.
         try:
             file_stat = abs_path.stat()
         except (FileNotFoundError, NotADirectoryError):
@@ -974,6 +974,29 @@ class DocumentManager:
             raise DocumentUnreadableError(path, str(exc)) from exc
         if not stat.S_ISREG(file_stat.st_mode):
             return None
+
+        return abs_path, file_stat
+
+    def _read_snapshot(self, path: str) -> str | None:
+        """Read exact index bytes and validate their frontmatter."""
+        if self._read_guard(path) is None:
+            return None
+        try:
+            data = self._validate_path(path).read_bytes()
+            raw = data.decode("utf-8")
+            parse_frontmatter(decode_utf8(data))
+            return raw
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+
+    def _read_note(self, path: str, capped: bool) -> NoteContent | None:
+        """Read a whole note, applying the configured byte limit when capped."""
+        guarded = self._read_guard(path)
+        if guarded is None:
+            return None
+        abs_path, file_stat = guarded
 
         # Enforce MAX_NOTE_READ_BYTES (.md whole-document reads only — section=
         # reads short-circuit with an early return above; non-.md paths fall
