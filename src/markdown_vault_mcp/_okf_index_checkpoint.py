@@ -88,7 +88,7 @@ class IndexCheckpoint:
         """Atomically persist a successfully applied concept snapshot.
 
         Args:
-            concepts: Present concept paths and their content digests.
+            concepts: Present concept paths and their generation-input fingerprints.
         """
         if self._path is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
