@@ -173,35 +173,42 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
         }:
             raise _reject("Invalid or repeated OKF bundle option.")
         if key == "external_base":
-            if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
-                raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.")
-            try:
-                values[key] = unquote(value, errors="strict")
-            except UnicodeDecodeError:
-                raise _reject(
-                    "Pass external_base as a percent-encoded HTTP(S) URL."
-                ) from None
-            try:
-                ExportPaths("", set(), values[key])
-            except ValueError as exc:
-                raise _reject(str(exc)) from None
+            values[key] = _external_base_option(equals, value)
         elif key in {"require_check", "review_evidence"}:
-            if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
-                raise _reject("Pass a valid value for the OKF review option.")
-            try:
-                values[key] = unquote(value, errors="strict")
-            except UnicodeDecodeError:
-                raise _reject("Pass a valid value for the OKF review option.") from None
-            if key == "review_evidence" and values[key] not in {
-                "binding",
-                "local_receipt",
-            }:
-                raise _reject("Pass review_evidence=binding or local_receipt.")
+            values[key] = _review_option(key, equals, value)
         elif equals:
             raise _reject("OKF bundle flags take no value.")
         else:
             values[key] = True
     return scope.strip("/") if separator else "", values
+
+
+def _external_base_option(equals: str, value: str) -> str:
+    """Decode and validate an external bundle URL."""
+    if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
+        raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.")
+    try:
+        decoded = unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.") from None
+    try:
+        ExportPaths("", set(), decoded)
+    except ValueError as exc:
+        raise _reject(str(exc)) from None
+    return decoded
+
+
+def _review_option(key: str, equals: str, value: str) -> str:
+    """Decode and validate one review policy option."""
+    if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
+        raise _reject("Pass a valid value for the OKF review option.")
+    try:
+        decoded = unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        raise _reject("Pass a valid value for the OKF review option.") from None
+    if key == "review_evidence" and decoded not in {"binding", "local_receipt"}:
+        raise _reject("Pass review_evidence=binding or local_receipt.")
+    return decoded
 
 
 def _validate_destination(

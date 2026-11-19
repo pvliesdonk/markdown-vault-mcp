@@ -14,6 +14,8 @@ from functools import cache
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+import yaml
+
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
 from markdown_vault_mcp.git.query import (
@@ -576,7 +578,7 @@ def _assess_export_review(
             if store is not None and policy.evidence == "local_receipt"
             else None,
         )
-    except (UnicodeError, ValueError, TypeError):
+    except (UnicodeError, ValueError, TypeError, yaml.YAMLError, RecursionError):
         pass
     if any(
         item["snapshot"] == "matches"

@@ -241,3 +241,41 @@ def test_transfer_review_options():
     )
     with pytest.raises(ToolError):
         _bundle_options("okf-bundle?review_evidence=other")
+
+
+def test_malformed_frontmatter_is_withheld(tmp_path):
+    (tmp_path / "note.md").write_text("---\ntype: [broken\n---\nBody\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(PublicationRefused) as exc:
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), require_review=True
+            )
+        assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "okf-bundle?require_check",
+        "okf-bundle?require_check=%XX",
+        "okf-bundle?require_check=%FF",
+    ],
+)
+def test_transfer_rejects_invalid_review_value(ref):
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._transfer_sink import _bundle_options
+
+    with pytest.raises(ToolError):
+        _bundle_options(ref)
+
+
+def test_transfer_external_base_with_review():
+    from markdown_vault_mcp._transfer_sink import _bundle_options
+
+    assert _bundle_options(
+        "okf-bundle?external_base=https%3A%2F%2Fexample.org&require_review"
+    ) == ("", {"external_base": "https://example.org", "require_review": True})
