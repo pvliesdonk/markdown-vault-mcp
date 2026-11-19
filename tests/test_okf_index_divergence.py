@@ -8,9 +8,7 @@ import pytest
 from tests.fixtures.designated_index import designated_vault
 
 
-def test_external_edit_is_reported_once_and_regenerated(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_external_edit_is_reported_once_and_regenerated(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
@@ -24,8 +22,7 @@ def test_external_edit_is_reported_once_and_regenerated(
         vault.index.reindex()
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 0
         index.write_bytes(header + b"# Hand edited\n")
-        with caplog.at_level(logging.WARNING):
-            vault.index.reindex()
+        vault.index.reindex()
         assert index.read_bytes().startswith(header)
         assert b"Hand edited" not in index.read_bytes()
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
@@ -170,5 +167,56 @@ def test_invalid_history_is_reset_and_future_version_refused(tmp_path: Path) -> 
         with pytest.raises(StoreUnsupportedSchemaError):
             vault.writer.okf_generate_index(folder="")
         assert index.read_text() == header + "# Must survive\n"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("bad", [b"\xff", b"---\ntitle: [broken\n---\n"])
+def test_unreadable_index_does_not_block_other_folders_and_retries(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, bad: bytes
+) -> None:
+    root = tmp_path / "vault"
+    for folder in ("a", "b"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "note.md").write_text("---\ntitle: Before\n---\n# Note\n")
+    vault = designated_vault(root, ("a", "b"), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="a")
+        vault.writer.okf_generate_index(folder="b")
+        vault.index.reindex()
+        index_b = root / "b/index.md"
+        index_b.write_bytes(bad)
+        for folder in ("a", "b"):
+            (root / folder / "note.md").write_text("---\ntitle: After\n---\n# Note\n")
+        with caplog.at_level(logging.WARNING):
+            vault.index.reindex()
+        assert "After" in (root / "a/index.md").read_text()
+        assert index_b.read_bytes() == bad
+        assert any("path=b/index.md" in record.message for record in caplog.records)
+        index_b.write_text("# Repaired manually\n")
+        vault.index.reindex()
+        assert "After" in index_b.read_text()
+        stats = vault.reader.okf_stats()
+        assert stats is not None
+        assert stats["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()
+
+
+def test_unchanged_explicit_generation_leaves_history_in_place(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="")
+        ledger = vault._index_mgr.observations
+        assert ledger is not None and ledger._path is not None
+        vault.index.reindex()
+        before = ledger._path.stat().st_mtime_ns
+        vault.writer.okf_generate_index(folder="")
+        assert ledger._path.stat().st_mtime_ns == before
     finally:
         vault.close()

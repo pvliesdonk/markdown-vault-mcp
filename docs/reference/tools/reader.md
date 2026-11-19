@@ -373,7 +373,9 @@ Dict with the following fields:
   `index.md` / `log.md` files are counted apart as
   `reserved_count`. `write_configured` is the configured OKF write
   flag; `write_effective` is true when that flag is enabled, OKF
-  is active, and the vault is not read-only.
+  is active, and the vault is not read-only. navigation.divergences
+  gives a local cumulative count and up to ten path/digest examples
+  of index bodies differing from both the last generated and new output.
 
 Index freshness rides in the response's `_meta.index_stale`
 field: True when the IndexWriter was non-idle, a write completed

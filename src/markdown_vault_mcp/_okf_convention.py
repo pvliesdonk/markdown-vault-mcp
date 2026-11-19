@@ -35,7 +35,8 @@ from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
+from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
@@ -446,32 +447,48 @@ class ConventionMaintainer:
             )
             anchors = {p: self._anchor_of(p) for p in safe}
             folders = [folder for folder in anchors.values() if folder is not None]
+            failed: set[str] = set()
             ledger = self._doc_mgr._observations
             if ledger is not None:
                 generated = ledger.generated_navigation()
                 for path, row in rows.items():
-                    if row.presence != "present" or Path(path).name != "index.md":
+                    if (
+                        row.presence != "present"
+                        or Path(path).name != "index.md"
+                        or path not in generated
+                    ):
                         continue
                     folder = folder_of(path)
                     if not self._may_index(folder):
                         continue
-                    note = self._doc_mgr._read_note(path, capped=False)
-                    if note is not None and path in generated:
+                    try:
+                        note = self._doc_mgr._read_note(path, capped=False)
+                    except DocumentUnreadableError as exc:
+                        logger.warning(
+                            "okf_index_observation_failed path=%s reason=%s", path, exc
+                        )
+                        failed.add(folder)
+                        continue
+                    if note is not None:
                         body = strip_frontmatter_block(note.content, preserve_body=True)
-                        if hashlib.sha256(body.encode()).hexdigest() != generated[path]:
+                        if compute_etag(body.encode()) != generated[path]:
                             folders.append(folder)
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
             success = self.refresh_indexes(
-                folders,
+                (folder for folder in folders if folder not in failed),
                 trigger_paths=safe,
-                create={a for p in arrivals if (a := anchors[p]) is not None},
+                create={
+                    a
+                    for p in arrivals
+                    if (a := anchors[p]) is not None and a not in failed
+                },
                 designated=None if arrivals else self._has_designated_index,
             )
-            if success and previous != current:
+            if success and not failed and previous != current:
                 self._checkpoint.save(current)
-            return success
+            return success and not failed
 
     def _has_designated_index(self, folder: str) -> bool:
         """Whether *folder* already has a designated index, so a listing may keep it.

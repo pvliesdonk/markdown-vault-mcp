@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import logging
 import os
@@ -18,6 +17,7 @@ from typing import TYPE_CHECKING, get_args
 
 from markdown_vault_mcp.bundle_inventory import Role, _components
 from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+from markdown_vault_mcp.hashing import compute_etag
 
 if TYPE_CHECKING:
     from _thread import LockType
@@ -544,10 +544,8 @@ class ObservationLedger:
             state = self._navigation_state()
             generated, reported = state["generated"], state["reported"]
             assert isinstance(generated, dict) and isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
-            desired = hashlib.sha256(new.encode()).hexdigest()
-            observed = (
-                hashlib.sha256(old.encode()).hexdigest() if old is not None else None
-            )
+            desired = compute_etag(new.encode())
+            observed = compute_etag(old.encode()) if old is not None else None
             seen = reported.get(path, [])
             if (
                 path in generated
@@ -564,8 +562,10 @@ class ObservationLedger:
             state = self._navigation_state()
             generated = state["generated"]
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
-            generated[path] = hashlib.sha256(body.encode()).hexdigest()
-            self._save_navigation(state)
+            digest = compute_etag(body.encode())
+            if generated.get(path) != digest:
+                generated[path] = digest
+                self._save_navigation(state)
 
     def _save_navigation(self, state: dict[str, object]) -> None:
         self._navigation = state
