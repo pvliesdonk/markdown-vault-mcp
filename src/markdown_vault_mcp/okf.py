@@ -156,11 +156,10 @@ class OkfState:
 class OkfDetector:
     """Probe the vault's OKF declaration from disk on demand.
 
-    Pure disk I/O with zero index coupling (the ``ConventionsResolver``
-    pattern): each :meth:`state` call reads at most the first
-    :data:`_MAX_READ_CHARS` characters of the root ``index.md``, so
-    detection works before the index exists (managed-git mode) and a
-    mid-session declaration takes effect on the next call.
+    With zero index coupling, :meth:`state` reads at most the first
+    :data:`_MAX_READ_CHARS` characters of the root ``index.md`` or supplied
+    text. Disk detection works before the index exists, and a mid-session
+    declaration takes effect on the next call.
 
     Args:
         source_dir: Root directory of the markdown vault.
@@ -178,8 +177,12 @@ class OkfDetector:
         """The configured OKF mode."""
         return self._mode
 
-    def state(self) -> OkfState:
+    def state(self, text: str | None = None) -> OkfState:
         """Return the current detection snapshot.
+
+        Args:
+            text: Declaration text instead of reading the root index; an
+                empty string means no declaration.
 
         Returns:
             The mode, declared version (probed unless mode is ``"off"``),
@@ -187,7 +190,7 @@ class OkfDetector:
         """
         if self._mode == "off":
             return OkfState(mode=self._mode, declared_version=None, active=False)
-        version, failed = self._probe()
+        version, failed = self._probe(text)
         self._warn_unknown(version)
         active = self._mode == "on" or version is not None
         return OkfState(
@@ -215,7 +218,7 @@ class OkfDetector:
                 ",".join(KNOWN_OKF_VERSIONS),
             )
 
-    def _probe(self) -> tuple[str | None, bool]:
+    def _probe(self, text: str | None = None) -> tuple[str | None, bool]:
         """Read ``okf_version`` from the root ``index.md`` frontmatter.
 
         Returns:
@@ -226,7 +229,11 @@ class OkfDetector:
         """
         file_path = self._source_dir / _ROOT_INDEX
         try:
-            raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
+            raw = (
+                text[:_MAX_READ_CHARS]
+                if text is not None
+                else read_text_utf8(file_path, limit=_MAX_READ_CHARS)
+            )
         except FileNotFoundError:
             return None, False
         except (OSError, UnicodeDecodeError) as exc:

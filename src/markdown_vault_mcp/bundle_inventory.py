@@ -450,7 +450,11 @@ class BundleInspector:
 
     @staticmethod
     def _check_snapshot_access(
-        root: Path, parts: tuple[str, ...], limit: int = 0
+        root: Path,
+        parts: tuple[str, ...],
+        limit: int = 0,
+        *,
+        allow_symlink: bool = False,
     ) -> bytes | None:
         """Check existing components without following symlinks; absent is allowed."""
         try:
@@ -462,6 +466,8 @@ class BundleInspector:
                         parts[-1], dir_fd=parent, follow_symlinks=False
                     ).st_mode
                 except FileNotFoundError:
+                    return None
+                if allow_symlink and stat.S_ISLNK(mode):
                     return None
                 if not stat.S_ISREG(mode):
                     raise OSError("Snapshot path is not a regular file")
@@ -623,7 +629,9 @@ class BundleInspector:
                     ):
                         pass
                 elif path in snapshot.changed:
-                    self._check_snapshot_access(self._absolute_source, parts)
+                    self._check_snapshot_access(
+                        self._absolute_source, parts, allow_symlink=True
+                    )
                 elif path in snapshot.entries:
                     raw = self._check_snapshot_access(
                         self._absolute_source, parts, sys.maxsize

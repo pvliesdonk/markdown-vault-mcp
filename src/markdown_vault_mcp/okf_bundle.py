@@ -8,12 +8,12 @@ import logging
 import os
 import stat
 import zipfile
-from contextlib import closing, nullcontext
+from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _parsed
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
 from markdown_vault_mcp.git.query import (
     git_export_snapshot,
@@ -34,7 +34,7 @@ from markdown_vault_mcp.utils.fs import open_directory_nofollow
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
@@ -199,58 +199,35 @@ def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _SnapshotLinks:
     return _SnapshotLinks(members, aliases)
 
 
-def _snapshot_outlinks(
-    body: str,
-    source: str,
-    index: _SnapshotLinks,
-    extensions: frozenset[str],
-) -> list[OutlinkInfo]:
-    result = []
-    for link in extract_links(body, source, attachment_extensions=extensions):
-        if link.link_type != "wikilink":
-            continue
-        target = link.target_path
+def _admitted_notes(
+    vault: Vault,
+    snapshot: GitExportSnapshot,
+    entries: Iterable[BundleEntry],
+    active: bool,
+) -> Iterator[tuple[str, bytes]]:
+    for entry in entries:
         if (
-            not link.raw_target.startswith(("./", "../"))
-            and target not in index.members
+            entry.path.endswith(".md")
+            and entry.visibility == "visible"
+            and (
+                entry.parse_state == "valid"
+                or entry.reason
+                in {"note_limit", "metadata_complexity", "lfs_unavailable"}
+            )
         ):
-            target = (
-                resolve_wikilink_target(
-                    link.raw_target.split("#", 1)[0],
-                    source,
-                    index.members,
-                    index.members,
-                    index.aliases,
-                )
-                or target
-            )
-        result.append(
-            OutlinkInfo(
-                target,
-                link.link_text,
-                "wikilink",
-                link.fragment,
-                link.raw_target,
-                target in index.members,
-            )
-        )
-    return result
+            raw = snapshot.read(entry.path)
+            if _snapshot_admitted(vault, entry, raw, active):
+                yield entry.path, raw
 
 
-def _snapshot_searchable(entry: BundleEntry, raw: bytes) -> bool:
-    if entry.visibility != "visible":
-        return False
-    if entry.reason == "note_limit":
-        return _parsed(entry.path, entry.role, raw).parse_state == "valid"
-    return entry.parse_state == "valid"
-
-
-def _snapshot_admitted(vault: Vault, entry: BundleEntry, raw: bytes) -> bool:
+def _snapshot_admitted(
+    vault: Vault, entry: BundleEntry, raw: bytes, active: bool
+) -> bool:
     """Whether the index would admit this committed note, from its bytes alone.
 
     Adds the vault's own required-frontmatter gate, read from the private
     setting the index is built from, and its OKF reserved-file exception to
-    the visibility and parse eligibility of :func:`_snapshot_searchable`.
+    the visibility and parse eligibility of the committed entry.
     """
     if entry.visibility != "visible":
         return False
@@ -260,15 +237,24 @@ def _snapshot_admitted(vault: Vault, entry: BundleEntry, raw: bytes) -> bool:
             metadata = parse_frontmatter(decode_utf8(raw)).metadata
         except Exception:
             return False
-    elif not _snapshot_searchable(entry, raw):
+    elif entry.parse_state != "valid":
         return False
     elif not required:
         return True
     else:
         metadata = parse_frontmatter(decode_utf8(raw)).metadata
-    if not required or (is_okf_reserved_file(entry.path) and vault.okf.state().active):
+    if not required or (is_okf_reserved_file(entry.path) and active):
         return True
     return all(key in metadata for key in required)
+
+
+def _snapshot_okf_active(vault: Vault, snapshot: GitExportSnapshot) -> bool:
+    text = ""
+    entry = snapshot.entries.get("index.md")
+    if vault.okf.mode == "auto" and entry and entry[0] in {"100644", "100755"}:
+        with suppress(UnicodeError):
+            text = decode_utf8(snapshot.read("index.md"))
+    return vault.okf.state(text).active
 
 
 # The public API keeps its established explicit options.
@@ -322,6 +308,11 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
+    active = bool(
+        snapshot
+        and vault._required_frontmatter
+        and _snapshot_okf_active(vault, snapshot)
+    )
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
@@ -413,73 +404,61 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             extensions,
         )
         snapshot_index: _SnapshotLinks | None = None
+        admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}
-        root_entries_by_path: dict[str, BundleEntry] | None = None
+        root_by_path: dict[str, BundleEntry] = {}
+
+        def member(path: str) -> bool:
+            if path not in admitted:
+                entry = selected_entries.get(path)
+                if entry is None:
+                    if not root_by_path:
+                        root_by_path.update(
+                            (item.path, item) for item in root_inventory()
+                        )
+                    entry = root_by_path.get(path)
+                admitted[path] = (
+                    snapshot is not None
+                    and entry is not None
+                    and any(_admitted_notes(vault, snapshot, (entry,), active))
+                )
+            return admitted[path]
 
         def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
-            nonlocal snapshot_index, root_entries_by_path
-            if "[[" not in body:
-                return []
-            links = extract_links(body, source, attachment_extensions=extensions)
-            if snapshot is not None and all(
-                link.link_type != "wikilink"
-                or link.raw_target.startswith(("./", "../"))
-                or (
-                    link.target_path in snapshot.entries
-                    and resolve_wikilink_target(
-                        link.raw_target.split("#", 1)[0],
-                        source,
-                        (),
-                        {link.target_path},
-                        {},
+            nonlocal snapshot_index
+            if snapshot is None:
+                raise ValueError("Snapshot links require a Git snapshot")
+            result = []
+            for link in extract_links(body, source, attachment_extensions=extensions):
+                if link.link_type != "wikilink":
+                    continue
+                target = link.target_path
+                if not link.raw_target.startswith(("./", "../")) and not member(target):
+                    if snapshot_index is None:
+                        snapshot_index = _snapshot_link_index(
+                            _admitted_notes(vault, snapshot, root_inventory(), active)
+                        )
+                    target = (
+                        resolve_wikilink_target(
+                            link.raw_target.split("#", 1)[0],
+                            source,
+                            snapshot_index.members,
+                            snapshot_index.members,
+                            snapshot_index.aliases,
+                        )
+                        or target
                     )
-                    == link.target_path
-                )
-                for link in links
-            ):
-                targets = {
-                    link.target_path for link in links if link.link_type == "wikilink"
-                }
-                if not targets <= paths.members and root_entries_by_path is None:
-                    root_entries_by_path = {
-                        item.path: item for item in root_inventory()
-                    }
-                candidates = root_entries_by_path or selected_entries
-                members = {
-                    item.path
-                    for path in targets
-                    if (item := candidates.get(path)) is not None
-                    if item.path.endswith(".md")
-                    if item.visibility == "visible"
-                    if item.parse_state == "valid"
-                    or item.reason
-                    in {"note_limit", "metadata_complexity", "lfs_unavailable"}
-                    if _snapshot_admitted(vault, item, snapshot.read(item.path))
-                }
-                if all(
-                    link.link_type != "wikilink"
-                    or link.raw_target.startswith(("./", "../"))
-                    or link.target_path in members
-                    for link in links
-                ):
-                    return _snapshot_outlinks(
-                        body, source, _SnapshotLinks(members, {}), extensions
+                result.append(
+                    OutlinkInfo(
+                        target,
+                        link.link_text,
+                        "wikilink",
+                        link.fragment,
+                        link.raw_target,
+                        member(target),
                     )
-            if snapshot_index is None:
-                if snapshot is None:
-                    raise ValueError("Snapshot links require a Git snapshot")
-                snapshot_notes = (
-                    (entry.path, raw)
-                    for entry in root_inventory()
-                    if entry.path.endswith(".md") and entry.visibility == "visible"
-                    if entry.parse_state == "valid"
-                    or entry.reason
-                    in {"note_limit", "metadata_complexity", "lfs_unavailable"}
-                    for raw in (snapshot.read(entry.path),)
-                    if _snapshot_admitted(vault, entry, raw)
                 )
-                snapshot_index = _snapshot_link_index(snapshot_notes)
-            return _snapshot_outlinks(body, source, snapshot_index, extensions)
+            return result
 
         def graph_links(_body: str, source: str) -> list[OutlinkInfo]:
             return vault.graph.get_outlinks(source)
@@ -500,7 +479,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             else:
                 _observe_export(item, report)
                 searchable = (
-                    _snapshot_admitted(vault, item, raw)
+                    _snapshot_admitted(vault, item, raw, active)
                     if snapshot is not None
                     else item.search_state == "searchable"
                 )

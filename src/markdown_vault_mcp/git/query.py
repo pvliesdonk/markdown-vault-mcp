@@ -121,7 +121,8 @@ class GitExportSnapshot:
     def read(self, path: str) -> bytes:
         """Read a selected blob; an LFS pointer yields the live bytes it pins."""
         blob = self._read_object(path)
-        return self._lfs_content(path, blob) if is_lfs_pointer(blob) else blob
+        pinned = _lfs_object(blob)
+        return self._lfs_content(path, pinned) if pinned else blob
 
     def size(self, path: str) -> int:
         """Content size; an LFS pointer is sized by the object it pins."""
@@ -131,11 +132,10 @@ class GitExportSnapshot:
         pinned = _lfs_object(self._read_object(path))
         return pinned[1] if pinned else size
 
-    def _lfs_content(self, path: str, pointer: bytes) -> bytes:
+    def _lfs_content(self, path: str, pinned: tuple[str, int]) -> bytes:
         """Return the live file only if it is the object the pointer names."""
-        pinned = _lfs_object(pointer)
         live = None
-        if pinned and self.source is not None:
+        if self.source is not None:
             parts = path.split("/")
             try:
                 with open_directory_nofollow(self.source, parts[:-1]) as parent:
@@ -143,8 +143,7 @@ class GitExportSnapshot:
             except OSError:
                 pass
         if (
-            pinned
-            and live is not None
+            live is not None
             and len(live) == pinned[1]
             and hashlib.sha256(live).hexdigest() == pinned[0]
         ):
@@ -2044,8 +2043,8 @@ def _per_commit_diffs(
 # working tree gets the real bytes only because the smudge filter ran at
 # checkout, which a revision read does not go through.
 _LFS_POINTER_PREFIXES = (
-    "version https://git-lfs.github.com/spec/v1",
-    "version https://hawser.github.com/spec/v1",
+    b"version https://git-lfs.github.com/spec/v1",
+    b"version https://hawser.github.com/spec/v1",
 )
 
 
@@ -2055,14 +2054,19 @@ _LFS_POINTER_LIMIT = 1024
 
 def is_lfs_pointer(blob: bytes) -> bool:
     """Whether *blob* is a Git LFS pointer in either supported spelling."""
-    return blob.startswith(tuple(p.encode() for p in _LFS_POINTER_PREFIXES))
+    return _lfs_object(blob) is not None
 
 
 def _lfs_object(blob: bytes) -> tuple[str, int] | None:
     """Return the SHA-256 and size a pointer names, or None if it names none."""
     oid = re.search(rb"^oid sha256:([0-9a-f]{64})$", blob, re.MULTILINE)
     size = re.search(rb"^size (\d+)$", blob, re.MULTILINE)
-    if not is_lfs_pointer(blob) or not oid or not size:
+    if (
+        len(blob) >= _LFS_POINTER_LIMIT
+        or blob.split(b"\n", 1)[0] not in _LFS_POINTER_PREFIXES
+        or not oid
+        or not size
+    ):
         return None
     return oid[1].decode("ascii"), int(size[1])
 
@@ -2397,7 +2401,7 @@ def _note_text(blob: bytes, path: str, where: str) -> str:
         raise DocumentUnreadableError(
             path, f"its content as {where} is not valid UTF-8"
         ) from exc
-    if text.startswith(_LFS_POINTER_PREFIXES):
+    if is_lfs_pointer(blob):
         raise DocumentUnreadableError(
             path,
             f"{where} is stored in Git LFS, so git holds a pointer "

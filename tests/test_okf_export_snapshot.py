@@ -1020,6 +1020,49 @@ def test_git_snapshot_resolves_against_admitted_commit_notes(tmp_path: Path) -> 
         assert archive.read("target.md") == b"[[index]]\n"
 
 
+@pytest.mark.parametrize(
+    ("committed_active", "mode", "expected"),
+    [
+        (True, "auto", True),
+        (False, "auto", False),
+        (False, "on", True),
+        (True, "off", False),
+    ],
+)
+def test_git_reserved_admission_uses_committed_index(
+    tmp_path: Path, committed_active: bool, mode: str, expected: bool
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    declaration = "---\nokf_version: '0.2'\n---\n"
+    (tmp_path / "index.md").write_text(
+        declaration if committed_active else "inactive\n"
+    )
+    (tmp_path / "log.md").write_text("[[target]]\n")
+    (tmp_path / "target.md").write_text("---\ntitle: Target\n---\n[[log]]\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    (tmp_path / "index.md").write_text(
+        "inactive\n" if committed_active else declaration
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode=mode, required_frontmatter=["title"]),
+    )
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("log.md") == (
+            b"[target](/target.md)\n" if expected else b"[[target]]\n"
+        )
+        assert archive.read("target.md").endswith(
+            b"[log](/log.md)\n" if expected else b"[[log]]\n"
+        )
+
+
 def test_git_flagged_required_clean_filter_failure_refuses_export(
     tmp_path: Path,
 ) -> None:
@@ -1408,3 +1451,107 @@ def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
             archive.read("source.md")
             == f"[{target}](https://example.org/vault/target.md)\n".encode()
         )
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_git_scoped_dirty_symlink_is_reported_without_following_target(
+    tmp_path: Path, staged: bool
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "base.md").write_text("base\n")
+    (tmp_path / "docs" / "deleted").mkdir()
+    (tmp_path / "docs" / "deleted" / "note.md").write_text("deleted\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    missing_target = tmp_path.parent / "no-such-symlink-target"
+    (tmp_path / "docs" / "new.md").symlink_to(missing_target)
+    (tmp_path / "docs" / "ignored.bin").symlink_to(missing_target)
+    (tmp_path / "docs" / "deleted" / "note.md").unlink()
+    (tmp_path / "docs" / "deleted").rmdir()
+    (tmp_path / "outside.md").symlink_to(missing_target)
+    internal = tmp_path / "docs" / ".markdown_vault_mcp"
+    internal.mkdir(exist_ok=True)
+    (internal / "secret.md").symlink_to(missing_target)
+    assert "docs/.markdown_vault_mcp/secret.md" in _git(
+        tmp_path, "ls-files", "--others"
+    )
+    if staged:
+        _git(tmp_path, "add", "docs/new.md")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="docs"
+        )
+    finally:
+        vault.close()
+    assert result.report.snapshot.uncommitted_paths == [
+        "docs/deleted/note.md",
+        "docs/new.md",
+    ]
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert sorted(archive.namelist()) == ["base.md", "deleted/note.md"]
+
+
+def test_git_dirty_report_omits_unreadable_file_but_keeps_symlink(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "base.md").write_text("base\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    denied = tmp_path / "denied.md"
+    denied.write_text("unreadable\n")
+    (tmp_path / "link.md").symlink_to(tmp_path / "missing")
+    denied.chmod(0)
+    try:
+        try:
+            denied.read_bytes()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("filesystem permits reading chmod-000 files")
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+        try:
+            result = okf_bundle.build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path)
+            )
+        finally:
+            vault.close()
+        assert result.report.snapshot.uncommitted_paths == ["link.md"]
+    finally:
+        denied.chmod(0o600)
+
+
+@pytest.mark.parametrize("name", ["note.md", "image.png"])
+@pytest.mark.parametrize("version", ["git-lfs.github.com", "hawser.github.com"])
+@pytest.mark.parametrize("suffix", ["", "oid", "unknown", "long", "v1x"])
+def test_git_lfs_version_prefix_without_pointer_fields_is_content(
+    tmp_path: Path, name: str, version: str, suffix: str
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    first = f"version https://{version}/spec/v1"
+    fields = "oid sha256:" + "a" * 64 + "\nsize 10\n"
+    content = {
+        "": first + "\n",
+        "oid": first + "\noid sha256:" + "a" * 64 + "\n",
+        "unknown": first[:-1] + "2\n" + fields,
+        "long": first + "\n" + "ordinary prose " * 100,
+        "v1x": first + "x\n" + fields,
+    }[suffix].encode()
+    (tmp_path / name).write_bytes(content)
+    _git(tmp_path, "add", name)
+    _git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read(name) == content
