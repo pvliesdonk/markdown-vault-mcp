@@ -13,17 +13,22 @@ Two layers:
 
 from __future__ import annotations
 
+import logging
 from datetime import date
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import frontmatter as fm
 import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
+from tests.fixtures.git import make_superproject
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,6 +68,10 @@ class _FakeDoc:
         self.raise_on_write = False
         #: Stands in for an existing log.md: ``(body, frontmatter)`` or None.
         self.existing: tuple[str, dict[str, Any]] | None = None
+
+    def in_submodule(self, _path: str) -> bool:
+        "Return false for a document manager without a git guard."
+        return False
 
     def read(self, _path: str) -> Any:
         """Model ``DocumentManager.read``: ``content`` is the *whole file*.
@@ -143,6 +152,41 @@ class TestMaintainerGuards:
         with okf_write_suppressed():
             m.maintain("note.md", "write")
         assert doc.writes == [] and migrate.index_calls == []
+
+
+def _maintain(m: ConventionMaintainer, path: str) -> None:
+    m.maintain(path, "write")
+
+
+def _refresh(m: ConventionMaintainer, path: str) -> None:
+    m.refresh_indexes(["guides"], trigger_paths=[path])
+
+
+class TestMaintainerNativePathGuard:
+    """The reserved-file guard keeps the caller's native ``Path`` parsing (#1268).
+
+    No Windows host runs this suite, so ``PureWindowsPath`` stands in for the
+    module's ``Path`` to model a native backslash path a Windows caller accepts.
+    """
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    @pytest.mark.parametrize("path", [r"guides\index.md", r"guides\log.md"])
+    def test_windows_reserved_path_triggers_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any, path: str
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, path)
+        assert doc.writes == [] and migrate.index_calls == []
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    def test_windows_note_path_still_triggers(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, r"guides\note.md")
+        assert doc.writes or migrate.index_calls
 
 
 class TestMaintainerFailureIsolation:
@@ -504,6 +548,28 @@ def _index_links_broken(vault: Vault) -> list[str]:
 
 
 class TestIndexRefreshOnStructuralChanges:
+    def test_move_folder_forwards_maintainer_folders(
+        self, enforced_vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        enforced_vault.writer.write("guides/sub/child/a.md", "# A\n\nx\n")
+        wait_for_writer_drain(enforced_vault)
+        maintainer = enforced_vault.writer._convention_maintainer
+        assert maintainer is not None
+        folders = ["b", "b/child"]
+        walk = Mock(return_value=folders)
+        refresh = Mock()
+        monkeypatch.setattr(maintainer, "subtree_folders", walk)
+        monkeypatch.setattr(maintainer, "refresh_indexes", refresh)
+
+        enforced_vault.writer.move_folder("guides/sub", "b")
+
+        walk.assert_called_once_with("b")
+        refresh.assert_called_once_with(
+            [*folders, "guides"],
+            trigger_paths=["guides/sub", "b"],
+            create=[""],
+        )
+
     def test_delete_drops_the_note_from_its_folder_index(
         self, enforced_vault: Vault
     ) -> None:
@@ -577,14 +643,54 @@ class TestRefreshIndexesGuards:
         maintainer.refresh_indexes(["a"], trigger_paths=["a/index.md"])
         assert migrate.index_calls == []
 
-    def test_one_failure_does_not_stop_the_others(self) -> None:
+    def test_one_failure_does_not_stop_the_others(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         maintainer, migrate = self._maintainer()
         migrate.raise_on_index = True
         maintainer.refresh_indexes(["a", "b"], trigger_paths=["a/x.md"])
         assert migrate.index_calls == []  # both attempted, both raised, none raised out
+        failures = [
+            r for r in caplog.records if r.msg.startswith("okf_convention_index_failed")
+        ]
+        assert len(failures) == 2
+        assert all(r.levelno == logging.WARNING and r.exc_info for r in failures)
 
 
 class TestMaintainerFolderWalks:
+    @pytest.mark.parametrize(
+        ("root", "expected"),
+        [
+            ("b", ["b", "b/alpha", "b/subway", "b/subway/deep"]),
+            ("b/sub", []),
+            ("b/sub/deeper", []),
+            ("", ["", "b", "b/alpha", "b/subway", "b/subway/deep"]),
+        ],
+    )
+    def test_subtree_folders_omits_submodules(
+        self, tmp_path: Path, root: str, expected: list[str]
+    ) -> None:
+        source = make_superproject(tmp_path, sub="b/sub")
+        for rel in ("b/sub/deeper", "b/subway/deep", "b/alpha", "b/.hidden/child"):
+            (source / rel).mkdir(parents=True, exist_ok=True)
+        vault = Vault(
+            source_dir=source,
+            settings=VaultSettings(read_only=False),
+            git_strategy=GitWriteStrategy(
+                enable_pull=False, enable_push=False, git_lfs=False, repo_path=source
+            ),
+        )
+        try:
+            maintainer = ConventionMaintainer(
+                doc_mgr=vault._doc_mgr,
+                okf_migrate=_FakeMigrate(),  # type: ignore[arg-type]
+                detector=_FakeDetector(True),  # type: ignore[arg-type]
+                source_dir=source,
+            )
+            assert maintainer.subtree_folders(root) == expected
+        finally:
+            vault.close()
+
     def _maintainer(self, source_dir: Path | None) -> ConventionMaintainer:
         return ConventionMaintainer(
             doc_mgr=_FakeDoc(),  # type: ignore[arg-type]
@@ -630,6 +736,30 @@ class TestMaintainerFolderWalks:
 
 
 class TestIndexRefreshEdgeCases:
+    def test_move_reserved_named_folders_preserves_handwritten_index(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "vault"
+        (root / "index.md").mkdir(parents=True)
+        (root / "index.md/note.md").write_text("# Note\n", encoding="utf-8")
+        (root / "index.md/index.md").write_text(
+            "# Precious index\n\nUnique hand-written content.\n", encoding="utf-8"
+        )
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+        )
+        vault.index.build_index()
+        try:
+            vault.writer.move_folder("index.md/", "log.md/")
+            wait_for_writer_drain(vault)
+            assert (root / "log.md/note.md").is_file()
+            assert "Unique hand-written content." in (
+                root / "log.md/index.md"
+            ).read_text(encoding="utf-8")
+        finally:
+            vault.close()
+
     def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
         self, enforced_vault: Vault
     ) -> None:

@@ -206,7 +206,8 @@ def _build_vault(
         shared_files: Leave the index files on disk as they are, since a
             running server may own them: an on-disk index opens read-only
             (#1758) and an unusable vector sidecar makes a search raise
-            instead of being rebuilt (#1734).
+            instead of being rebuilt (#1734). Managed Git settings are ignored
+            so a read never bootstraps or synchronizes the server's checkout.
         scratch_index: Keep the keyword index and its state in memory and
             open the configured vector store read-only, where it is
             configured, for a dry run that writes nothing (#1505).
@@ -232,6 +233,11 @@ def _build_vault(
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
+    if shared_files:
+        # Like the other local readers, search uses the checkout as it is.
+        # Managed bootstrap would reject a service-owned checkout when invoked
+        # as root through docker exec (#1999), or attempt to clone an empty one.
+        config = dataclasses.replace(config, git_repo_url=None, git_token=None)
     # A batch command over an absent or inaccessible directory would index
     # nothing and exit 0; refuse with the reason, the way ``serve`` reports a
     # configuration error (a missing directory names the variable to set).
@@ -305,7 +311,9 @@ def index(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotConfiguredError,
         EmbeddingsNotPublishedError,
+        EmbeddingsRebuildFailedError,
         StoreBusyError,
+        StoreOpenError,
     )
 
     quiet_http_loggers()
@@ -324,11 +332,14 @@ def index(
             typer.echo(f"Embedded {n} chunks")
         except EmbeddingsNotConfiguredError:
             pass  # embeddings not configured
-        except EmbeddingsNotPublishedError as exc:
+        except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
             typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
             raise typer.Exit(1) from exc
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, "admin index"), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
@@ -372,14 +383,17 @@ def _build_owning_vault(
         The built vault.
 
     Raises:
-        typer.Exit: With code 1 when another process owns a store.
+        typer.Exit: With code 1 when a store cannot be opened.
     """
-    from markdown_vault_mcp.exceptions import StoreBusyError
+    from markdown_vault_mcp.exceptions import StoreBusyError, StoreOpenError
 
     try:
         return _build_vault(source_dir, index_path, **options)
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, command), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -553,6 +567,7 @@ def reindex(
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotConfiguredError,
         StoreBusyError,
+        StoreOpenError,
     )
 
     quiet_http_loggers()
@@ -580,6 +595,9 @@ def reindex(
             pass  # embeddings not configured
     except StoreBusyError as exc:
         typer.echo(_busy_message(exc, "admin reindex"), err=True)
+        raise typer.Exit(1) from exc
+    except StoreOpenError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         built.close()
@@ -632,6 +650,7 @@ def embeddings_import(
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp.exceptions import (
         EmbeddingsNotPublishedError,
+        EmbeddingsRebuildFailedError,
         StoreOpenError,
     )
     from markdown_vault_mcp.managers.embedding_import import (
@@ -657,7 +676,7 @@ def embeddings_import(
     except ImportRefused as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
-    except EmbeddingsNotPublishedError as exc:
+    except (EmbeddingsNotPublishedError, EmbeddingsRebuildFailedError) as exc:
         typer.echo(f"ERROR: {exc} Retry when the provider recovers.", err=True)
         raise typer.Exit(1) from exc
     except StoreOpenError as exc:

@@ -13,7 +13,10 @@ tool under pvl-core's ``tool_boundary``:
   WARNING, because it heals itself;
 - a full embedding build that kept the existing embeddings because provider
   batches failed (``EmbeddingsNotPublishedError``) tells it the request was
-  fine and to retry later, at WARNING (#1505).
+  fine and to retry later, at WARNING (#1505);
+- a model change whose rebuild published nothing
+  (``EmbeddingsRebuildFailedError``) tells it search by meaning is
+  unavailable for now and to retry later, at WARNING (#1946).
 
 :func:`maps_library_outcomes` lets a test check that every tool carries it.
 
@@ -35,6 +38,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
     EditConflictError,
     EmbeddingsNotPublishedError,
+    EmbeddingsRebuildFailedError,
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
@@ -90,6 +94,13 @@ def outcome_error(exc: Exception) -> ToolError | None:
             "Some embedding requests failed, so the existing embeddings were kept "
             "unchanged; the request was fine. Retry later, and tell the user if "
             "it keeps failing.",
+            log_level=logging.WARNING,
+        )
+    if isinstance(exc, EmbeddingsRebuildFailedError):
+        return ToolError(
+            "Rebuilding the embeddings for the changed model failed, so search "
+            "by meaning is unavailable; the request was fine. Retry later, or "
+            "search by keyword, and tell the user if it keeps failing.",
             log_level=logging.WARNING,
         )
     if isinstance(exc, IndexUnavailableError) and exc.reason in _TRANSIENT_INDEX:

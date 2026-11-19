@@ -67,7 +67,6 @@ async def test_read_return_example_lists_the_live_keys(
     """
     from fastmcp import Client
 
-    from tests.conftest import _CLEAR_VARS
     from tests.server_factory import make_server
 
     vault = tmp_path / "vault"
@@ -76,8 +75,6 @@ async def test_read_return_example_lists_the_live_keys(
         "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body.\n",
         encoding="utf-8",
     )
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
 
@@ -107,14 +104,11 @@ async def test_index_status_returns_list_documents_every_live_key(
     """
     from fastmcp import Client
 
-    from tests.conftest import _CLEAR_VARS
     from tests.server_factory import make_server
 
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / "note.md").write_text("# Note\n", encoding="utf-8")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
 
