@@ -7,8 +7,7 @@ description: >-
   implementation planning for work not yet refined into one ready feature.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on copier update. Project-specific
-     additions go inside the DOMAIN-ROADMAPPING sentinel at the end. ===== -->
+<!-- Project-specific additions go inside the DOMAIN-ROADMAPPING block at the end. -->
 
 # Roadmapping
 
@@ -388,5 +387,5 @@ Name the violation and give the concrete fix.
 <!-- DOMAIN-ROADMAPPING-START -->
 <!-- Project-specific roadmapping conventions (extra issue kinds, package
      naming notes, where cross-repo dependencies are recorded) go here.
-     This block survives copier update. -->
+     -->
 <!-- DOMAIN-ROADMAPPING-END -->

@@ -5,7 +5,7 @@ kind: explanation
 
 # Repository Protection
 
-The template ships GitHub repository rulesets that gate the branches a
+This repository keeps GitHub repository rulesets that gate the branches a
 release can ship from. The rules live as JSON files in `.github/rulesets/`
 and the `bootstrap.yml` workflow applies them, so the effective protection
 state is checked in, reviewed, and re-applied rather than clicked together
@@ -43,8 +43,8 @@ The reasoning per branch class:
   Child pull requests need a pull request and `CI Success`, and force pushes
   are blocked because a rebase would rewrite the commits every open child is
   based on. Deletion stays open, so GitHub's automatic head-branch deletion
-  can remove the branch once its final pull request merges. The checks
-  listed in `extra_required_checks` (below) are not required here: they come
+  can remove the branch once its final pull request merges. The extra checks
+  the main and release rulesets require (below) are not required here: they come
   from workflows the project owns, which may not run on `integration/*`, and
   the final pull request to `main` has to pass them anyway.
 - **`v*` tags** are the identity of every shipped release: package
@@ -75,7 +75,7 @@ owned by a personal account.
 
 Ruleset bypass lists name roles, teams, apps, or deploy keys, not user
 accounts. The shipped entry grants bypass to the **repository admin role**
-(`actor_id` 5, the one actor a template can name without knowing your
+(`actor_id` 5, the one actor a checked-in file can name without knowing an
 account), with `bypass_mode: always`.
 
 The release flow depends on this. `RELEASE_TOKEN` is a personal access
@@ -130,7 +130,7 @@ The apply step needs `administration: write`, a permission the default
 `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`,
 matching the permission set the README already asks for.
 
-## Requiring a check the template does not own
+## Requiring a check outside `ci.yml`
 
 `CI Success` is the only context the shipped rulesets require, and it is an
 aggregate: it passes when every job in the generated `ci.yml` passed, so
@@ -140,26 +140,23 @@ job in its own `needs:`, so a domain workflow the project added itself
 cannot join the aggregate: it runs, it shows red on the pull request, and
 nothing stops the merge.
 
-List its context in the `extra_required_checks` copier answer instead:
+List its context in the `required_status_checks` array of
+`.github/rulesets/protect-main.json` and `protect-release-branches.json`
+instead, next to `CI Success`:
 
-```yaml
-# .copier-answers.yml
-extra_required_checks:
-  - SPA sources
+```json
+{ "context": "CI Success" },
+{ "context": "SPA source up-to-date" }
 ```
 
-Each name renders into the `required_status_checks` array of both release
-branch rulesets, alongside `CI Success`, and applies to `main` and
-`release/*` alike. Integration branches require `CI Success` alone. The answer is the project's own, so the rulesets stay template-owned
-and a `copier update` re-renders them with the project's checks intact. An
-empty answer, the default, renders exactly the single-context form every
-project already had.
+The name then applies to `main` and `release/*` alike. Integration branches
+require `CI Success` alone.
 
 Write each name as the check appears on the pull request. That is the job's
 `name:` when it has one and the job id otherwise, not the workflow's name,
 and not the file it lives in.
 
-The rendered files reach GitHub the same way as any other ruleset change:
+The edited files reach GitHub the same way as any other ruleset change:
 commit them and push, and the `.github/rulesets/` path filter starts
 `bootstrap.yml`; a `workflow_dispatch` run applies them on demand.
 
@@ -184,8 +181,8 @@ commit them and push, and the `.github/rulesets/` path filter starts
 ### `coverage/patch`, if you require it
 
 CI requires the full test suite to pass on Python 3.11 through 3.14.
-It also runs it on Python 3.15, as an experimental job that cannot fail
-`CI Success`.
+The scheduled `Python next` workflow runs it on Python 3.15 each week,
+outside pull requests.
 Only the Python 3.14 job collects branch coverage, using
 `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters
 run `uv run pytest --durations=20`. The coverage job retains the 80% total
@@ -197,9 +194,9 @@ Python 3.14 supports branch measurement with coverage.py's
 [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core).
 Python 3.12 and 3.13 cannot use that core for branch coverage.
 
-`coverage/patch` is the one context this rule applies to that the template
-itself ships, and it is worth knowing how it reaches a pull request before
-you add it to `extra_required_checks`.
+`coverage/patch` is the one context this rule applies to that `ci.yml`
+itself posts, and it is worth knowing how it reaches a pull request before
+you add it to the rulesets' `required_status_checks`.
 
 Two workflows post it. `ci.yml` posts it directly for a pull request from a
 branch in this repository. A pull request from a fork gets a read-only token,
@@ -227,12 +224,11 @@ security-settings failure show up apart:
 | Secret scanning push protection | Blocks a push that contains a recognised secret | Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure |
 
 Without private vulnerability reporting, a researcher's only path is a public
-issue asking for a private one, which is how a project generated from this
-template was contacted. `SECURITY.md` at the repository root is the policy
+issue asking for a private one, which is how another project built from the same template was
+contacted. `SECURITY.md` at the repository root is the policy
 GitHub shows next to that button. It covers the reporting path, the response
 targets, the supported versions, and where a fix lands. The response targets
-and the scope live inside its `DOMAIN-SECURITY` block, which a project edits
-once and keeps across template updates.
+and the scope live inside its `DOMAIN-SECURITY` block.
 
 The job runs with `RELEASE_TOKEN`, the same `administration: write` the
 rulesets need. Each call is idempotent, so a re-run converges on the same
