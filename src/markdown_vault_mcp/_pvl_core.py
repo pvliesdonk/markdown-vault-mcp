@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from fastmcp_pvl_core import (
     ConfigurationError,
-    HealthCheck,
     ServerConfig,
     build_auth,
     build_bearer_auth,
@@ -27,8 +26,6 @@ from fastmcp_pvl_core import (
     get_current_auth_mode,
     get_subject,
     maybe_start_debugpy,
-    normalise_http_path,
-    register_health_routes,
     run_http,
     wire_middleware_stack,
 )
@@ -54,10 +51,7 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "get_subject",
     # The installed pvl-core version get_server_info reports (#2283).
     "CORE_VERSION",
-    # HTTP serving (#2335) and health routes (#2334).
-    "HealthCheck",
+    # HTTP serving and debugpy (#2335).
     "maybe_start_debugpy",
-    "normalise_http_path",
-    "register_health_routes",
     "run_http",
 ]
