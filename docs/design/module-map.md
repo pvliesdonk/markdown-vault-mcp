@@ -16,6 +16,7 @@ file, and keeping them true is part of the change that moves the code.
 
 ```
 src/markdown_vault_mcp/
+  _okf_log_merge.py  -- conservative date-grouped log entry union for Git conflict recovery (#1395)
   __init__.py        -- minimal template-skeleton root (docstring + __version__); import from submodules, not the root (#665, #903)
   utils/
     __init__.py        -- shared path-traversal guard (resolve_inside + validate_path variants) + attachment/exclusion helpers re-exported for managers and facets (#876)
@@ -83,13 +84,13 @@ src/markdown_vault_mcp/
     summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)
   git/
     __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
-    _run.py            -- low-level git subprocess + credential plumbing; literal_pathspec (#1303)
+    _run.py            -- low-level git subprocess + credential plumbing; literal pathspecs, index-write scope, diff rendering and NUL stream decoding (#1303, #1310)
     interfaces.py      -- HistorySource/RevisionReader/SyncHealthReporter/Syncer/Versioner/VersionedStore: the versioning seam; GitWriteStrategy is the one implementation (#1229)
-    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock (#893)
+    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock; holds in-memory pending generated indexes (#893)
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
-    conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
+    conflict.py        -- rebase-conflict resolution (caller holds the strategy lock)
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants

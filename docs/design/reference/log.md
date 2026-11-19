@@ -3,6 +3,9 @@
 ## 2026-11-18
 
 - Rechecked the [OKF reference](okf-v0.2.md) against the neutral repository v0.3 draft; retained the v0.2 baseline.
+- [Git staging and commits](git-staging-and-commits.md): checked the index stage
+  records for an upstream delete during rebase against `git-ls-files(1)` and
+  the real-Git recovery fixture. Other claims and review date unchanged.
 
 ## 2026-11-17
 

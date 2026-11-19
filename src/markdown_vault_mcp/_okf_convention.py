@@ -257,6 +257,41 @@ class ConventionMaintainer:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
         return self._designated(folder) and self._destination_ok(folder, "index.md")
 
+    def generated_index(self, path: Path) -> bool:
+        """Return whether this vault may regenerate the given index path.
+
+        Args:
+            path: Absolute candidate path.
+
+        Returns:
+            Whether this active vault designates the index for generation.
+        """
+        if (
+            self._source_dir is None
+            or path.name != "index.md"
+            or not self._capabilities.index
+        ):
+            return False
+        try:
+            folder = self._canonical(str(path.parent))
+            return self._detector.state().active and self._may_index(folder)
+        except (ValueError, InvalidRequestError):
+            return False
+
+    def refresh_generated(self, paths: list[Path]) -> None:
+        """Regenerate still-designated, existing pending index paths.
+
+        Args:
+            paths: Absolute paths awaiting regeneration.
+        """
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            for path in paths:
+                if not self.generated_index(path):
+                    continue
+                folder = self._canonical(str(path.parent))
+                if self._has_index(folder):
+                    self._refresh_index(folder)
+
     def _maintain_index(self, folder: str) -> None:
         """Refresh the designated anchor that owns *folder* if allowed."""
         anchor = self.indexed_anchor(folder)

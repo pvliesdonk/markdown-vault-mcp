@@ -828,8 +828,8 @@ class TestBatchCommitsForReal:
         repo = _repo(tmp_path)
         if backlinks:
             (repo / "source.md").write_text("[Note](note.md)\n", encoding="utf-8")
-            run_git(str(repo), "add", "source.md")
-            run_git(str(repo), "commit", "-m", "seed backlink")
+            run_git(repo, "add", pathspecs=["source.md"])
+            run_git(repo, "commit", "-m", "seed backlink", whole_repo=True)
         strategy = self._strategy(repo)
         vault = Vault(
             source_dir=repo,
@@ -884,7 +884,7 @@ class TestBatchCommitsForReal:
 
         repo = _repo(tmp_path)
         (repo / "note.md").write_text("[Me](note.md)\n", encoding="utf-8")
-        run_git(str(repo), "commit", "-am", "self link")
+        run_git(repo, "commit", "-am", "self link", whole_repo=True)
 
         self._run_in_scope(
             repo,
@@ -934,8 +934,8 @@ class TestBatchCommitsForReal:
         (repo / "a").mkdir()
         (repo / "a" / "x.md").write_text("x\n", encoding="utf-8")
         (repo / "a" / "y.md").write_text("y\n", encoding="utf-8")
-        run_git(str(repo), "add", "a")
-        run_git(str(repo), "commit", "-m", "folder")
+        run_git(repo, "add", pathspecs=["a"])
+        run_git(repo, "commit", "-m", "folder", whole_repo=True)
 
         self._run_in_scope(
             repo, "move_folder", lambda v: v.writer.move_folder("a", "b")

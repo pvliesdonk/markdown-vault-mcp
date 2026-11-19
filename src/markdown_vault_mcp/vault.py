@@ -44,6 +44,7 @@ from markdown_vault_mcp.facets import (
     SummarizeFacet,
     WriterFacet,
 )
+from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
@@ -855,6 +856,12 @@ class Vault:
                 source_dir=self._source_dir,
                 capabilities=capabilities,
             )
+        if self._okf_convention is not None and isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            self._git_strategy.set_generated_index_policy(
+                self._okf_convention.generated_index
+            )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
             receipt_store=receipt_store,
@@ -1162,6 +1169,8 @@ class Vault:
         outcome = self._head_reconciler.reconcile(source=source)
         if outcome != "reindexed" and not self._sweep_observations(source):
             return "failed"
+        if outcome in ("current", "reindexed"):
+            self._regenerate_recovered_indexes()
         return outcome
 
     def _sweep_observations(self, source: str) -> bool:
@@ -1174,6 +1183,20 @@ class Vault:
             logger.error("observation_sweep_failed source=%s", source, exc_info=True)
             return False
         return True
+
+    def _regenerate_recovered_indexes(self) -> None:
+        if self._okf_convention is None or not isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            return
+        pending = self._git_strategy.take_generated_indexes()
+        if not pending:
+            return
+        try:
+            self._okf_convention.refresh_generated(pending)
+        except Exception:
+            logger.warning("git_pending_index_regeneration_failed", exc_info=True)
+        self._write_callback.drain()
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.
