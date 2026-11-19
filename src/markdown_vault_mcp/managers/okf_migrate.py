@@ -243,8 +243,8 @@ class OkfMigrationManager:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
 
         Raises:
-            InvalidRequestError: If the target is undesignated, a visible folder
-                cannot be listed (nothing written), or protected paths were
+            InvalidRequestError: If the target is undesignated, server-owned, or
+                a visible folder cannot be listed (nothing written), or protected paths were
                 skipped; eligible writes remain.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
@@ -361,7 +361,7 @@ class OkfMigrationManager:
                 raw = note.frontmatter.get("description")
                 desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
                 labels[note.path] = (note.title, desc)
-        paths = self._doc_mgr.index_note_paths(top)
+        paths = self._doc_mgr.index_note_paths(top, folder)
         if folder != top:
             paths.append(f"{folder}/index.md")
         tree: _IndexTree = {top: ([], {}), folder: ([], {})}
@@ -395,7 +395,7 @@ class OkfMigrationManager:
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
             visible = self._may_hold_index(child, subfolders[sub])
-            has_index = visible and self._has_index(child)
+            has_index = visible and subfolders[sub]
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
             if not visible or not (

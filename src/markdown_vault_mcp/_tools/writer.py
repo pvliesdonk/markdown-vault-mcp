@@ -1115,6 +1115,7 @@ def register(mcp: FastMCP) -> None:
                 or its index destination is an alias. Protected paths are refused;
                 indexes already written remain if a later write is refused. A
                 visible folder that cannot be listed refuses before any write.
+                A folder holding server state is not indexed.
             TimeoutError: If queued writes do not reach the index within 60 seconds;
                 earlier index writes may remain.
             IndexUnavailableError: If a scheduled index build failed or was

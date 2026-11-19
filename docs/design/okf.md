@@ -507,8 +507,16 @@ followed where the scanner follows them, but a link that resolves outside the
 vault is omitted, as is anything the inspection policy owner holds as server
 state (index, tracker, vector and state paths, with their aliases and
 hardlinks). An existing subfolder `index.md` is a boundary only when that walk lists
-it, so a server-owned one is not. A visible directory that cannot be listed refuses the whole call
-before any write and is named in the refusal. The optional maintainer
+it, so a server-owned one is not. The walk stops at a boundary: a parent only
+links it, so nothing below it is read, and an unreadable folder below a boundary
+does not block the call. A visible directory outside any boundary that cannot be
+listed still refuses the whole call before any write and is named in the
+refusal, because its notes belong in the listing. A selected folder, parent or
+destination `index.md` that the server owns, directly or by alias, is refused
+before any write. Directory membership extends `walk_files_strict`'s `prune`
+hook rather than the scanner's `iter_markdown_files`, which prunes only
+excluded subtrees and cannot stop at hidden, server-owned or boundary
+directories. The optional maintainer
 preflight hook remains available to existing integrations.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
