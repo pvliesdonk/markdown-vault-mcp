@@ -670,3 +670,16 @@ Copy vectors from another store into the configured one, embedding only what it 
 | `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
 | `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
 | `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
+
+## `markdown-vault-mcp okf`
+
+Migrate OKF vault conventions.
+
+## `markdown-vault-mcp okf collapse-indexes`
+
+Preview or remove obsolete deep generated indexes.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
+| `--apply` |  | False | Remove generated indexes and refresh their parents. |

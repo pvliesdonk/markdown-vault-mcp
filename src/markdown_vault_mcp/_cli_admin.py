@@ -182,3 +182,64 @@ def _apply(path: str, source_dir: str | None, etag: str) -> None:
         f"{'' if blocks == 1 else 's'}. The complete original is at "
         f"{result.recovery_path}; inspect both before deleting it."
     )
+
+
+def register_okf_commands(app: typer.Typer) -> None:
+    """Register one-off OKF migration commands.
+
+    Args:
+        app: The application receiving the OKF group.
+    """
+    group = typer.Typer(help="Migrate OKF vault conventions.", no_args_is_help=True)
+    group.command("collapse-indexes")(collapse_indexes)
+    app.add_typer(group, name="okf")
+
+
+def collapse_indexes(
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Remove generated indexes and refresh their parents."
+    ),
+) -> None:
+    """Preview or remove obsolete deep generated indexes."""
+    import shlex
+
+    from markdown_vault_mcp._cli_output import terminal_text
+    from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
+    from markdown_vault_mcp.exceptions import MarkdownMCPError
+
+    try:
+        built = (
+            _build_owning_vault("okf collapse-indexes", source_dir)
+            if apply
+            else _build_vault(
+                source_dir, ":memory:", scratch_state=True, shared_files=True
+            )
+        )
+        try:
+            built.vault.index.build_index()
+
+            result = built.vault.writer.okf_collapse_indexes(
+                apply=apply, allow_protected=apply
+            )
+        finally:
+            built.close()
+        for path, _ in result.removable:
+            typer.echo(
+                f"{'Removed' if apply else 'Would remove'} {terminal_text(path)}"
+            )
+        for path, reason in result.kept:
+            typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
+        if apply:
+            for parent in result.parents:
+                typer.echo(f"Regenerated {terminal_text(parent or '.')}")
+        else:
+            words = ["markdown-vault-mcp", "okf", "collapse-indexes"]
+            if source_dir:
+                words += ["--source-dir", source_dir]
+            typer.echo(f"To apply, run: {shlex.join([*words, '--apply'])}")
+    except MarkdownMCPError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1) from exc

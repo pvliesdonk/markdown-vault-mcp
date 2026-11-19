@@ -120,6 +120,8 @@ src/markdown_vault_mcp/
   _okf_write.py        -- review subject resolution and maintenance suppression context
   _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
+  _okf_index_collapse.py -- preview and apply legacy generated index collapse (#1611)
+
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)

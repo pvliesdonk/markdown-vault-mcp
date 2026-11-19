@@ -729,3 +729,6 @@ phase owns.
 ### Snapshot-bound review recording
 
 `okf_verify` validates the reviewed snapshot before confirmation and again after confirmation, then uses the fresh read etag for the write. Portable `verified` entries retain `{by, at}`; `x-mvmcp.reviews` appends the check and snapshot as supplied claims. A matching instance-local receipt is stored beside the observation ledger, outside the bundle. Bound reviews require YAML frontmatter (or no frontmatter); JSON and TOML must be converted to YAML. The snapshot excludes `verified` and `x-mvmcp`. Receipts must be outside the vault, and last only for the process without a state path. A receipt failure after the note write leaves the claim without local evidence and raises an error identifying the partial outcome.
+
+The `okf collapse-indexes` operator command previews and removes obsolete
+undesignated generated index boundaries, refreshing their designated parents.

@@ -211,6 +211,21 @@ class OkfMigrationManager:
             notes_scanned=scanned,
         )
 
+    def index_body(self, folder: str) -> str:
+        """Return the generator body for a folder without writing any indexes.
+
+        Args:
+            folder: Vault-relative folder.
+
+        Returns:
+            The body generated against existing index boundaries.
+        """
+        self._doc_mgr.ensure_index_current()
+        tree = self._index_tree(folder, folder)
+        sections, _ = self._fold_index(folder, tree, {}, False, lambda _: False)
+        heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
+        return _render_fold(heading, sections)
+
     def generate_index(
         self,
         *,

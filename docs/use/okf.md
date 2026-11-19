@@ -417,3 +417,23 @@ An unavailable directory boundary with reason `depth_limit` remains in filtered 
 A whole-note read reports `okf.observation` separately from supplied review claims and trust tier. When the latest recorded reviews match local receipts unambiguously one-to-one, the server compares the current concept snapshot with each matched snapshot. `later_change_observed: true` means the current concept differs from every one of those snapshots. It does not say when the change happened or who made it. A matching snapshot reports `unavailable`, because an intervening edit and revert cannot be excluded. It does not judge a review invalid. Observation matches the path, reviewer and instant of the latest recorded reviews; an assessment also needs a claim with a matching check and snapshot for local origin. Observation may be available when an unbound assessment has no local evidence. Ambiguous, missing, malformed or unsupported matching receipts report `unavailable`, as does a missing or unreadable receipt store. A fresh instance needs no Git history, but starts without local receipts.
 
 Inventory includes locally observed removed concept paths as `presence: removed` within the selected scope and current access policy. Live observations and removal probes share a 1,000-observation page budget; follow `next_cursor` even when a page is empty. The ledger is instance-local and does not travel with the bundle. `removal_history` is `available` when the local ledger is usable, and `unavailable` when it is missing, corrupt, unreadable, newer or detached. This status does not establish complete history. Ledger availability does not overwrite `enumeration`. A removal probe checks presence only and reads no file content.
+
+## Collapsing deep generated indexes
+
+Older versions could create an `index.md` in every folder. To review which
+indexes outside designated folders can be folded into designated parents, run:
+
+```sh
+markdown-vault-mcp okf collapse-indexes --source-dir /path/to/vault
+```
+
+The preview leaves the vault unchanged. Review the reported paths, then repeat
+with `--apply` to remove matching generated indexes and refresh their designated
+parents. The root index is never removed; if designated, its body can be
+refreshed and its frontmatter is preserved. An index with a different body is
+kept as authored, as are indexes below a surviving boundary outside designated folders or
+without a designated parent. Comparison ignores frontmatter, so applying also
+removes the frontmatter of any deleted index. `OKF_FOLDERS` determines which
+folders are designated; `projects/*` does not designate the root.
+
+See the [security model](../security-model.md) for the command's write scope.

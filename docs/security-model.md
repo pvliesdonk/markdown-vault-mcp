@@ -82,3 +82,8 @@ One more kind of route answers without an MCP credential, and checks a credentia
 
 - **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](use/git-integration.md#push-triggered-pull-webhooks).
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->
+
+The [`okf collapse-indexes` command](use/okf.md#collapsing-deep-generated-indexes)
+previews vault changes by default. Applying it removes matching generated
+indexes and refreshes designated parent indexes under the same vault path and
+write protections as other library writes.

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
+    from markdown_vault_mcp._okf_index_collapse import CollapsePlan
     from markdown_vault_mcp._okf_log_repair import (
         LogRepairPreview,
         LogRepairResult,
@@ -320,6 +321,28 @@ class WriterFacet:
         return self._migrate().convert_links(
             folder=folder, allow_protected=allow_protected
         )
+
+    def okf_collapse_indexes(
+        self, *, apply: bool = False, allow_protected: bool = False
+    ) -> CollapsePlan:
+        """Preview or remove obsolete generated indexes.
+
+        Args:
+            apply: Delete the planned indexes and refresh their parents.
+            allow_protected: Permit changes to protected paths.
+
+        Returns:
+            The removal plan, or the result of applying it.
+        """
+        from markdown_vault_mcp._okf_index_collapse import apply_collapse, plan_collapse
+
+        migrate = self._migrate()
+        plan = plan_collapse(self._doc_mgr, migrate, allow_protected=allow_protected)
+        if apply:
+            return apply_collapse(
+                self._doc_mgr, migrate, plan, allow_protected=allow_protected
+            )
+        return plan
 
     def okf_generate_index(
         self, *, folder: str = "", allow_protected: bool = False
