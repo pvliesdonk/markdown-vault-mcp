@@ -17,6 +17,8 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import functools
 import json
 import logging
 import os
@@ -47,7 +49,6 @@ from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
-    literal_pathspec,
     redact,
     resolve_tracking_ref,
     run_git,
@@ -66,6 +67,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
     PULL_REASON_DIVERGED,
     PULL_REASON_FETCH_FAILED,
+    PULL_REASON_GROUP_OPEN,
     PULL_REASON_NO_REMOTE,
     PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
     PULL_REASON_PULL_DISABLED,
@@ -96,6 +98,18 @@ class _PullEntry:
 
     log_prefix: str
     timer_driven: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ConflictRecovery:
+    git_root: Path
+    env: dict[str, str] | None
+    saved: list[tuple[str, str]]
+    conflicted: set[str]
+    ref: str
+    from_sha: str
+    rebase_in_progress: bool
+    detail: str | None
 
 
 _INTERACTIVE_PULL = _PullEntry("Git force_pull")
@@ -291,6 +305,8 @@ class GitWriteStrategy:
         self._worktree_wanted = False
         self._worktree_checked = False
         self._worktree_retry_at: float | None = None
+        self._generated_index_policy: Callable[[Path], bool] | None = None
+        self._pending_generated: set[Path] = set()
         # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
@@ -319,6 +335,10 @@ class GitWriteStrategy:
             Callable[[], contextlib.AbstractContextManager[None]] | None
         ) = None
         self._drain_writes: Callable[[], bool] | None = None
+        self._group_pull_guard: Callable[
+            [], contextlib.AbstractContextManager[bool]
+        ] = lambda: contextlib.nullcontext(False)
+        self._pull_deferrals = 0
         self._on_pull: Callable[[], object] | None = None
         self._on_tick: Callable[[], object] | None = None
         self._commit_observer: Callable[[str, str], None] | None = None
@@ -1086,8 +1106,48 @@ class GitWriteStrategy:
                 to_sha="",
                 reason=PULL_REASON_PULL_DISABLED,
             )
-        git_root = self.resolve_force_repo()
+        repo_path = self.resolve_force_repo()
+        git_root = self._ensure_git_root(repo_path) or repo_path
         return self._pull_pipeline(git_root, dry_run=dry_run)
+
+    def set_group_pull_guard(
+        self, guard: Callable[[], contextlib.AbstractContextManager[bool]]
+    ) -> None:
+        """Wire the dispatcher guard used to defer automatic pulls.
+
+        Args:
+            guard: Context manager yielding whether a group is open. A guard
+                that can yield True must serialize all its invocations.
+        """
+        self._group_pull_guard = guard
+
+    def automatic_pull(self) -> PullResult:
+        """Pull for a webhook, deferring briefly while a group is open.
+
+        Returns:
+            The pull result, or a deferred result when a group is open.
+        """
+        if not self._enable_pull:
+            return self.force_pull()
+        repo_path = self.resolve_force_repo()
+        git_root = self._ensure_git_root(repo_path) or repo_path
+        return self._automatic_pull(git_root, _INTERACTIVE_PULL)
+
+    def _automatic_pull(self, git_root: Path, entry: _PullEntry) -> PullResult:
+        """Bound consecutive deferrals using the group guard."""
+        with self._group_pull_guard() as open_groups:
+            if open_groups and self._pull_deferrals < 3:
+                self._pull_deferrals += 1
+                logger.info(
+                    "git_pull_deferred reason=%s deferrals=%d",
+                    PULL_REASON_GROUP_OPEN,
+                    self._pull_deferrals,
+                )
+                return PullResult(
+                    False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN
+                )
+            self._pull_deferrals = 0
+            return self._pull_pipeline(git_root, entry=entry)
 
     def _pull_pipeline(
         self,
@@ -1281,6 +1341,98 @@ class GitWriteStrategy:
             to_sha=remote_sha,
         )
 
+    def set_generated_index_policy(
+        self, is_generated: Callable[[Path], bool] | None
+    ) -> None:
+        """Set the vault's authority check for conflict recovery."""
+        self._generated_index_policy = is_generated
+
+    def take_generated_indexes(self) -> list[Path]:
+        """Take paths awaiting regeneration under the strategy lock."""
+        with self._lock:
+            paths = list(self._pending_generated)
+            self._pending_generated.clear()
+            return paths
+
+    def _split_conflicts(
+        self, git_root: Path, conflicted: set[str], saved: list[tuple[str, str]]
+    ) -> tuple[set[str], list[tuple[str, str]]]:
+        generated = {
+            path
+            for path in conflicted
+            if self._generated_index_policy is not None
+            and self._generated_index_policy(git_root / path)
+        }
+        return generated, [item for item in saved if item[0] not in generated]
+
+    def _finish_conflicts(
+        self, recovery: _ConflictRecovery
+    ) -> tuple[PullResult | None, list[tuple[str, str]]]:
+        git_root, env, saved = recovery.git_root, recovery.env, recovery.saved
+        ref, from_sha = recovery.ref, recovery.from_sha
+        rebase_in_progress, detail = recovery.rebase_in_progress, recovery.detail
+        if rebase_in_progress and not conflict.abort_in_progress_rebase(
+            git_root, env, token=self._token
+        ):
+            return PullResult.head_unchanged_failure(
+                from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
+            ), []
+        generated, authored = self._split_conflicts(
+            git_root, recovery.conflicted, saved
+        )
+        if rebase_in_progress:
+            authored = conflict.restore_upstream_paths(
+                git_root, env, authored, ref, token=self._token
+            )
+        else:
+            self._pending_generated.update(git_root / p for p in generated)
+        unsaved = recovery.conflicted - generated - {p for p, _ in saved}
+        if unsaved or not authored:
+            return self._conflicts_unrecovered(
+                recovery, generated, authored, unsaved
+            ), []
+        return None, authored
+
+    def _conflicts_unrecovered(
+        self,
+        recovery: _ConflictRecovery,
+        generated: set[str],
+        authored: list[tuple[str, str]],
+        unsaved: set[str],
+    ) -> PullResult:
+        """Report a pull that recovered fewer conflicts than it found.
+
+        A generated-only conflict with the rebase completed is a ``rebased``
+        success. Otherwise it is ``conflict_resolution_failed``, even when
+        *unsaved* paths (a local deletion or an unreadable local blob, so no
+        bytes were saved) accompany saved siblings: those siblings are still
+        written and reported.
+        """
+        git_root, env, from_sha = recovery.git_root, recovery.env, recovery.from_sha
+        if (
+            generated
+            and not unsaved
+            and not recovery.rebase_in_progress
+            and self.head_sha(git_root) != from_sha
+        ):
+            return self._build_pull_result_advanced(
+                git_root, env, from_sha=from_sha, reason=PULL_REASON_REBASED
+            )
+        failure = PullResult.head_unchanged_failure(
+            from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, recovery.detail
+        )
+        written = conflict.write_conflict_files(
+            git_root,
+            authored,
+            env,
+            commit_name=self._commit_name,
+            commit_email=self._commit_email,
+            token=self._token,
+        )
+        return dataclasses.replace(
+            failure, to_sha=self.head_sha(git_root), conflict_files=tuple(written or ())
+        )
+
     def _force_pull_rebase_fallback(
         self,
         *,
@@ -1360,8 +1512,14 @@ class GitWriteStrategy:
             # ``conflict.resolve_conflicts_safely`` wraps that in a defensive
             # abort so a subsequent ``force_pull`` (or any per-write commit
             # path) does not trip over the leftover ``rebase-merge`` directory.
+            conflicted: set[str] = set()
+            resolve_fn = functools.partial(
+                conflict.resolve_rebase_conflicts,
+                conflicted=conflicted,
+                generated_index=self._generated_index_policy,
+            )
             saved, early_exit = conflict.resolve_conflicts_safely(
-                git_root, env, from_sha, token=self._token
+                git_root, env, from_sha, token=self._token, resolve_fn=resolve_fn
             )
             if early_exit is not None:
                 return early_exit
@@ -1379,28 +1537,27 @@ class GitWriteStrategy:
                 git_root, env, token=self._token
             )
 
-            if rebase_in_progress:
-                if not conflict.abort_in_progress_rebase(
-                    git_root, env, token=self._token
-                ):
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
+            result, saved = self._finish_conflicts(
+                _ConflictRecovery(
+                    git_root,
+                    env,
+                    saved,
+                    conflicted,
+                    ref,
+                    from_sha,
+                    rebase_in_progress,
+                    detail,
+                )
+            )
+            if result is not None:
+                if result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED:
+                    # DEBUG since #1287: this repeats every pull cycle while the
+                    # divergence stands. SyncHealthTracker logs the unsynced
+                    # state once at ERROR.
+                    logger.debug(
+                        "git_conflict_resolution_failed strategy=%s", log_prefix
                     )
-                saved = conflict.restore_upstream_paths(
-                    git_root, env, saved, ref, token=self._token
-                )
-
-            if not saved:
-                # DEBUG since #1287: this repeats every pull cycle while the
-                # divergence stands.  Entering the unsynced state is logged
-                # once at ERROR by SyncHealthTracker, which this outcome feeds.
-                logger.debug(
-                    "git_conflict_resolution_failed strategy=%s",
-                    log_prefix,
-                )
-                return PullResult.head_unchanged_failure(
-                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
-                )
+                return result
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD
             # has advanced even if the sibling-files commit below fails.
@@ -1749,8 +1906,10 @@ class GitWriteStrategy:
                     "git_tracking_ref_unresolved context=sync_once action=skip_fetch"
                 )
                 return False
-            result = self._pull_pipeline(
-                git_root, entry=_LOOP_PULL if timer_driven else _STARTUP_PULL
+            result = (
+                self._automatic_pull(git_root, _LOOP_PULL)
+                if timer_driven
+                else self._pull_pipeline(git_root, entry=_STARTUP_PULL)
             )
         except FileNotFoundError:
             logger.info(
@@ -2259,12 +2418,7 @@ def _is_tracked(root: str, path: Path) -> bool:
     Returns:
         ``True`` when the path is in the index.
     """
-    result = subprocess.run(
-        ["git", "-C", root, "ls-files", "--", literal_pathspec(str(path))],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = run_git_capturing(Path(root), "ls-files", pathspecs=[str(path)])
     return bool(result.stdout.strip())
 
 
@@ -2359,9 +2513,7 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
             function fixes.
 
     Returns:
-        The pathspec that was staged, in
-        :func:`~markdown_vault_mcp.git._run.literal_pathspec` form because that
-        is what its consumers pass back to git, or ``None`` when both sides
+        The raw paths that were staged, or ``None`` when both sides
         were ignored and untrackable — there is then nothing for this operation
         to commit, and the caller must not fall through to a diff check at all.
         An **empty** list is git's own spelling of "the whole repository" and
@@ -2370,18 +2522,8 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
     """
     if old_path is None:
         logger.debug("git_stage_rename_unscoped path=%s", path)
-        subprocess.run(
-            ["git", "-C", root, "add", "-u"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", root, "add", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        run_git(Path(root), "add", "-u", whole_repo=True)
+        run_git(Path(root), "add", pathspecs=[str(path)])
         return []
 
     ignored = _ignored_paths(root, (old_path, path))
@@ -2391,23 +2533,18 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
         logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
     elif str(old_path) in ignored:
         logger.debug("git_stage_rename_old_tracked_but_ignored old_path=%s", old_path)
-        deletions.append(literal_pathspec(str(old_path)))
+        deletions.append(str(old_path))
     else:
-        pathspec.append(literal_pathspec(str(old_path)))
+        pathspec.append(str(old_path))
 
     if str(path) in ignored:
         logger.debug("git_stage_rename_new_ignored path=%s", path)
     else:
-        pathspec.append(literal_pathspec(str(path)))
+        pathspec.append(str(path))
 
     for args, spec in (("-u", deletions), ("-A", pathspec)):
         if spec:
-            subprocess.run(
-                ["git", "-C", root, "add", args, "--", *spec],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            run_git(Path(root), "add", args, pathspecs=spec)
     staged = deletions + pathspec
     if not staged:
         return None
@@ -2432,8 +2569,7 @@ def _stage_one(
         old_path: For a rename, the absolute path the file moved from.
 
     Returns:
-        The pathspec that was staged (literal form, as
-        :func:`_stage_rename` returns), for the caller to scope its
+        The raw paths that were staged, for the caller to scope its
         "did anything actually change" check to (#1249), or ``None`` when a
         rename had nothing stageable — the caller must then bail out rather
         than committing whatever else happened to be staged. An **empty**
@@ -2442,25 +2578,15 @@ def _stage_one(
     """
     if operation == "delete":
         # File already removed from disk; stage the deletion.
-        subprocess.run(
-            ["git", "-C", root, "add", "-u", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        run_git(Path(root), "add", "-u", pathspecs=[str(path)])
     elif operation == "rename":
         staged = _stage_rename(root, path, old_path)
         if staged is None:
             logger.debug("git_stage_rename_noop path=%s", path)
         return staged
     else:
-        subprocess.run(
-            ["git", "-C", root, "add", "--", literal_pathspec(str(path))],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    return [literal_pathspec(str(path))]
+        run_git(Path(root), "add", pathspecs=[str(path)])
+    return [str(path)]
 
 
 def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
@@ -2475,7 +2601,7 @@ def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
 
     Args:
         root: Git repository root, as a string for ``git -C``.
-        pathspec: The pathspecs the operation staged, literal-form as the
+        pathspec: The raw paths the operation staged, as the
             staging helpers return them. **Empty means the whole
             repository**, matching git's own reading of an empty pathspec;
             only the unscoped legacy rename branch produces it.
@@ -2484,9 +2610,13 @@ def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
         ``True`` when the index matches ``HEAD`` across *pathspec*, so there
         is nothing for this operation to commit.
     """
-    result = subprocess.run(
-        ["git", "-C", root, "diff", "--cached", "--quiet", "--", *pathspec],
-        capture_output=True,
+    result = run_git_capturing(
+        Path(root),
+        "diff",
+        "--cached",
+        "--quiet",
+        pathspecs=pathspec or None,
+        whole_repo=not pathspec,
     )
     return result.returncode == 0
 
@@ -2760,7 +2890,7 @@ def _commit_staged(
         root: Git repository root, as a string for ``git -C``.
         commit_msg: The commit subject.
         identity: Committer and author identity for the commit.
-        pathspec: The pathspecs this operation staged, literal-form as the
+        pathspec: The raw paths this operation staged, as the
             staging helpers return them. **Empty commits the whole
             index**, matching git's own reading of an empty pathspec; only
             the unscoped legacy rename branch produces it, and it has no
@@ -2801,24 +2931,19 @@ def _commit_staged(
 
     # ``--only`` with no paths is rejected outside ``--amend``, so the
     # unscoped branch keeps the historic whole-index invocation.
-    scope_args = ["--only", "--", *pathspec] if pathspec else []
+    scope_args = ["--only"] if pathspec else []
 
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            root,
-            "-c",
-            f"user.name={commit_name}",
-            "-c",
-            f"user.email={commit_email}",
-            "commit",
-            "-m",
-            commit_msg,
-            *author_args,
-            *scope_args,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+    run_git(
+        Path(root),
+        "-c",
+        f"user.name={commit_name}",
+        "-c",
+        f"user.email={commit_email}",
+        "commit",
+        "-m",
+        commit_msg,
+        *author_args,
+        *scope_args,
+        pathspecs=pathspec or None,
+        whole_repo=not pathspec,
     )

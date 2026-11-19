@@ -6971,8 +6971,11 @@ still pending. Automatic results remain available to the owner until the
 server process exits. Timers stop when the dispatcher closes.
 
 Ordinary scopes keep their per-call behavior. A drain flushes open groups before
-a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
-deferral. The result carries the last SHA and summed path counts. Writes remain
+a pull, so a group spanning a drain can produce multiple commits. Automatic
+timer and webhook pulls defer up to three consecutive attempts while a group is
+open; the fourth proceeds and may split it. Explicit pulls remain immediate.
+Deferred triggers reconcile search, but defer generated-index repair until the
+group closes. The result carries the last SHA and summed path counts. Writes remain
 immediately readable, and indexing proceeds independently of the commit.
 Callbacks that do not opt into groups flush ordinary batches or individual
 writes and report `no_changes`. MCP clients open a group with `begin_transaction`,

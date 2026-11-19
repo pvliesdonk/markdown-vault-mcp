@@ -12,18 +12,21 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import literal_pathspec, run_git_capturing
+from markdown_vault_mcp.git._run import run_git, run_git_capturing
 from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
 )
+from markdown_vault_mcp.managers._write_kernel import atomic_write
+from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -37,6 +40,9 @@ logger = logging.getLogger(__name__)
 def resolve_rebase_conflicts(
     git_root: Path,
     env: dict[str, str] | None,
+    *,
+    conflicted: set[str] | None = None,
+    generated_index: collections.abc.Callable[[Path], bool] | None = None,
 ) -> list[tuple[str, str]]:
     """Resolve rebase conflicts by accepting theirs and saving ours.
 
@@ -46,6 +52,14 @@ def resolve_rebase_conflicts(
     ``REBASE_HEAD``, then accepts the upstream version via
     ``git checkout --ours``.  Continues the rebase, looping if
     multiple commits conflict.
+    A designated index deleted upstream keeps its local copy for regeneration;
+    any other reserved file stays deleted, its local bytes returned as saved.
+
+    Args:
+        git_root: Working-tree root.
+        env: Optional Git environment.
+        conflicted: Optional collector for all unmerged paths.
+        generated_index: Optional authority check for generated index recovery.
 
     Returns:
         A list of ``(relative_path, saved_content)`` tuples for the
@@ -87,15 +101,21 @@ def resolve_rebase_conflicts(
             )
             return list(saved.items())
 
+        if conflicted is not None:
+            conflicted.update(conflicting)
         for rel_path in conflicting:
             # Save the MCP version (the commit being rebased).
-            show_result = subprocess.run(
-                ["git", "-C", root, "show", f"REBASE_HEAD:{rel_path}"],
-                capture_output=True,
-                text=True,
+            show_result = run_git_capturing(
+                git_root,
+                "show",
+                f"REBASE_HEAD:{rel_path}",
+                preserve_newlines=True,
                 env=env,
             )
             if show_result.returncode == 0:
+                if not is_okf_reserved_file(rel_path):
+                    # Preserve the existing failure on invalid UTF-8 in concept notes.
+                    os.fsencode(show_result.stdout).decode("utf-8")
                 saved[rel_path] = show_result.stdout
             else:
                 logger.warning(
@@ -103,31 +123,7 @@ def resolve_rebase_conflicts(
                     rel_path,
                 )
 
-            # Accept upstream's version.  During rebase, --ours is the
-            # branch being rebased onto (upstream), --theirs is the
-            # commit being replayed (our local MCP commit).
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    root,
-                    "checkout",
-                    "--ours",
-                    "--",
-                    literal_pathspec(rel_path),
-                ],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", root, "add", "--", literal_pathspec(rel_path)],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
+            _accept_upstream(git_root, rel_path, env, generated_index)
 
         # Continue the rebase.  If another commit conflicts, the loop
         # iterates again.  ``--no-edit`` avoids opening an editor for
@@ -157,6 +153,76 @@ def resolve_rebase_conflicts(
         len(saved),
     )
     return list(saved.items())
+
+
+def _accept_upstream(
+    git_root: Path,
+    rel_path: str,
+    env: dict[str, str] | None,
+    generated_index: collections.abc.Callable[[Path], bool] | None,
+) -> None:
+    """Take upstream's side of one conflicting path and stage the result.
+
+    During a rebase ``--ours`` is the branch being rebased onto (upstream) and
+    ``--theirs`` the commit being replayed (our local MCP commit). A reserved
+    file upstream deleted is the one exception to taking upstream: a designated
+    generated index keeps the local copy for regeneration, any other stays
+    deleted with its local bytes already saved for a sibling. A concept
+    deleted upstream still raises.
+
+    Args:
+        git_root: Working-tree root.
+        rel_path: Conflicting path, relative to *git_root*.
+        env: Optional Git environment.
+        generated_index: Optional authority check for generated indexes.
+
+    Raises:
+        subprocess.CalledProcessError: A git step failed and no exception applies.
+    """
+    try:
+        run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
+    except subprocess.CalledProcessError:
+        if _upstream_deleted_generated(git_root, rel_path, env, generated_index):
+            run_git(git_root, "checkout", "--theirs", pathspecs=[rel_path], env=env)
+        elif is_okf_reserved_file(rel_path) and _upstream_deleted(
+            git_root, rel_path, env
+        ):
+            run_git(git_root, "rm", pathspecs=[rel_path], env=env)
+            return
+        else:
+            raise
+    run_git(git_root, "add", pathspecs=[rel_path], env=env)
+
+
+def _upstream_deleted_generated(
+    git_root: Path,
+    rel_path: str,
+    env: dict[str, str] | None,
+    generated_index: collections.abc.Callable[[Path], bool] | None,
+) -> bool:
+    """Recognize a designated index with an absent upstream conflict stage."""
+    return (
+        generated_index is not None
+        and generated_index(git_root / rel_path)
+        and _upstream_deleted(git_root, rel_path, env)
+    )
+
+
+def _upstream_deleted(
+    git_root: Path, rel_path: str, env: dict[str, str] | None
+) -> bool:
+    """Recognize a conflict whose upstream stage is absent and local stage present."""
+    result = run_git_capturing(
+        git_root, "ls-files", "--unmerged", "-z", pathspecs=[rel_path], env=env
+    )
+    if result.returncode:
+        return False
+    stages = {
+        entry.partition("\t")[0].split()[-1]
+        for entry in result.stdout.split("\0")
+        if entry
+    }
+    return "2" not in stages and "3" in stages
 
 
 def resolve_conflicts_safely(
@@ -354,8 +420,7 @@ def restore_upstream_paths(
             git_root,
             "checkout",
             ref,
-            "--",
-            literal_pathspec(rel_path),
+            pathspecs=[rel_path],
             env=env,
         )
         if checkout_proc.returncode != 0:
@@ -379,9 +444,10 @@ def write_conflict_files(
     commit_email: str,
     token: str | None,
 ) -> list[str] | None:
-    """Write conflict files and add ``conflict_with`` frontmatter to both sides.
+    """Write conflict siblings and annotate concept conflicts on both sides.
 
-    For each ``(relative_path, content)`` in *saved*:
+    Reserved index and log siblings preserve the local text verbatim without
+    reading or annotating the original. For other saved paths:
 
     1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
        with ``conflict_with`` and ``conflict_date`` frontmatter.
@@ -399,7 +465,6 @@ def write_conflict_files(
         implying a successful conflict-resolution commit.  Returns an
         empty list when *saved* is empty (nothing to do).
     """
-    root = str(git_root)
     now = datetime.datetime.now(tz=datetime.UTC)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     conflict_date = now.isoformat(timespec="seconds")
@@ -413,6 +478,10 @@ def write_conflict_files(
         original = Path(rel_path)
         conflict_name = f"{original.stem}.conflict-mcp-{timestamp}{original.suffix}"
         conflict_rel = str(original.parent / conflict_name)
+
+        if is_okf_reserved_file(rel_path):
+            written.append(_write_reserved_sibling(git_root, conflict_rel, mcp_content))
+            continue
 
         # --- Write conflict file (MCP version) ---
         try:
@@ -494,13 +563,7 @@ def write_conflict_files(
     # staged for it (the upstream version), which the pathspec-less commit
     # below still captures.
     paths_to_add = updated_originals + written
-    subprocess.run(
-        ["git", "-C", root, "add", "--", *map(literal_pathspec, paths_to_add)],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
-    )
+    run_git(git_root, "add", pathspecs=paths_to_add, env=env)
 
     n = len(written)
     file_list = ", ".join(written)
@@ -513,22 +576,17 @@ def write_conflict_files(
     # or by the ``checkout <ref>`` (``origin/<branch>``) restore on the
     # rebase-abort path). It
     # relies on the caller holding ``_lock`` so no unrelated change is staged.
-    commit_result = subprocess.run(
-        [
-            "git",
-            "-C",
-            root,
-            "-c",
-            f"user.name={commit_name}",
-            "-c",
-            f"user.email={commit_email}",
-            "commit",
-            "-m",
-            f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
-        ],
-        capture_output=True,
-        text=True,
+    commit_result = run_git_capturing(
+        git_root,
+        "-c",
+        f"user.name={commit_name}",
+        "-c",
+        f"user.email={commit_email}",
+        "commit",
+        "-m",
+        f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
         env=env,
+        whole_repo=True,
     )
     if commit_result.returncode != 0:
         # DEBUG for the reason given at the loop-cap line above (#1287): this
@@ -544,3 +602,10 @@ def write_conflict_files(
         return None
 
     return written
+
+
+def _write_reserved_sibling(git_root: Path, conflict_rel: str, content: str) -> str:
+    target = git_root / conflict_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(target, os.fsencode(content))
+    return conflict_rel

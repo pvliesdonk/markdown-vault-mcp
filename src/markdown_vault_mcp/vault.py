@@ -7,6 +7,7 @@ LangChain wrappers, and CLI commands all go through this class.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -45,6 +46,7 @@ from markdown_vault_mcp.facets import (
     SummarizeFacet,
     WriterFacet,
 )
+from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
@@ -64,6 +66,8 @@ from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
 )
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+_defer_navigation = contextvars.ContextVar("defer_navigation", default=False)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -746,6 +750,10 @@ class Vault:
         # so the interactive force_pull is covered even when the periodic pull
         # loop is disabled. drain is late-bound to the dispatcher just built.
         if self._git_strategy is not None:
+            if isinstance(self._git_strategy, GitWriteStrategy):
+                self._git_strategy.set_group_pull_guard(
+                    self._write_callback.guard_open_groups
+                )
             self._git_strategy.set_write_quiescer(
                 pause_writes=self.pause_writes,
                 drain_writes=self._write_callback.drain,
@@ -877,6 +885,10 @@ class Vault:
                 capabilities=capabilities,
                 checkpoint=IndexCheckpoint(self._okf_checkpoint_path, scope),
             )
+        if self._okf_convention is not None and isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            self._git_strategy.set_generated_index_policy(self._is_generated_index)
         self._writer_facet = WriterFacet(
             self._doc_mgr,
             receipt_store=receipt_store,
@@ -1163,7 +1175,7 @@ class Vault:
 
     def _reconcile_on_tick(self) -> None:
         """Pull-loop hook: reconcile the index with HEAD after every tick."""
-        self.reconcile_index_with_head(source="pull_loop")
+        self.reconcile_index_with_head(source="pull_loop", defer_group_recovery=True)
 
     def git_head(self) -> str | None:
         """Return the working tree's current git HEAD.
@@ -1180,7 +1192,9 @@ class Vault:
             logger.debug("git_head_unreadable path=%s", self._source_dir, exc_info=True)
             return None
 
-    def reconcile_index_with_head(self, *, source: str) -> ReconcileOutcome:
+    def reconcile_index_with_head(
+        self, *, source: str, defer_group_recovery: bool = False
+    ) -> ReconcileOutcome:
         """Reindex when the index does not yet reflect the current git HEAD.
 
         Level-triggered (#1532): a reindex lost after a pull (the index still
@@ -1193,21 +1207,41 @@ class Vault:
 
         Args:
             source: Which caller asked, for the log line.
+            defer_group_recovery: Leave generated-index repair pending while
+                a group is open; automatic triggers use this policy.
 
         Returns:
             What happened; ``"current"`` without a git strategy.
         """
         if self._head_reconciler is None:
             return "current"
-        outcome = self._head_reconciler.reconcile(source=source)
-        if outcome != "reindexed" and not self._sweep_observations(source, outcome):
-            return "failed"
-        return outcome
+        guard = (
+            self._write_callback.guard_open_groups()
+            if defer_group_recovery
+            else contextlib.nullcontext(False)
+        )
+        with guard as open_groups:
+            token = _defer_navigation.set(open_groups)
+            try:
+                outcome = self._head_reconciler.reconcile(source=source)
+                if outcome != "reindexed" and not self._sweep_observations(
+                    source, outcome
+                ):
+                    return "failed"
+                if not open_groups and outcome in ("current", "reindexed"):
+                    self._regenerate_recovered_indexes(defer_group_recovery=False)
+                return outcome
+            finally:
+                _defer_navigation.reset(token)
 
     def _converge_okf_indexes(self) -> None:
         """Apply observed changes to generated navigation on the caller's thread."""
         maintainer = self._okf_convention
-        if maintainer is None or not self._okf.state().active:
+        if (
+            maintainer is None
+            or _defer_navigation.get()
+            or not self._okf.state().active
+        ):
             return
         try:
             with self._file_write_lock:
@@ -1241,6 +1275,59 @@ class Vault:
             return False
         return True
 
+    def _is_generated_index(self, path: Path) -> bool:
+        """Identify a designated index eligible for recovery."""
+        maintainer = self._okf_convention
+        if (
+            maintainer is None
+            or path.name != "index.md"
+            or not self._okf_capabilities.index
+        ):
+            return False
+        try:
+            folder = maintainer._canonical(str(path.parent))
+            return self._okf.state().active and maintainer._may_index(folder)
+        except ValueError:
+            return False
+
+    def _refresh_recovered_indexes(self, paths: list[Path]) -> None:
+        """Repair recovered indexes through the current index generator."""
+        from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
+        from markdown_vault_mcp._okf_write import okf_write_suppressed
+
+        maintainer = self._okf_convention
+        if maintainer is None:
+            return
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            for path in paths:
+                if self._is_generated_index(path):
+                    folder = maintainer._canonical(str(path.parent))
+                    if maintainer._has_index(folder):
+                        maintainer._refresh_index(folder, maintainer._may_index)
+
+    def _regenerate_recovered_indexes(self, *, defer_group_recovery: bool) -> None:
+        """Repair recovered indexes, deferring for open groups when requested."""
+        if self._okf_convention is None or not isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            return
+        guard = (
+            self._write_callback.guard_open_groups()
+            if defer_group_recovery
+            else contextlib.nullcontext(False)
+        )
+        with guard as open_groups:
+            if open_groups:
+                return
+            pending = self._git_strategy.take_generated_indexes()
+            if not pending:
+                return
+            try:
+                self._refresh_recovered_indexes(pending)
+            except Exception:
+                logger.warning("git_pending_index_regeneration_failed", exc_info=True)
+            self._write_callback.drain()
+
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.
 
@@ -1269,9 +1356,7 @@ class Vault:
     def force_pull(self) -> PullResult | None:
         """Pull from the git remote synchronously.
 
-        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`
-        used by the GitHub webhook handler so the store stays an implementation
-        detail.
+        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`.
 
         The strategy self-quiesces around its own merge: it pauses new writes
         (via the :meth:`pause_writes` callable wired in :meth:`__init__` through
@@ -1304,6 +1389,14 @@ class Vault:
                 )
                 raise
         return result
+
+    def _automatic_pull(self) -> PullResult | None:
+        """Run a webhook pull with the automatic group deferral policy."""
+        if self._git_strategy is None:
+            return None
+        if isinstance(self._git_strategy, GitWriteStrategy):
+            return self._git_strategy.automatic_pull()
+        return self._git_strategy.force_pull()
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.
