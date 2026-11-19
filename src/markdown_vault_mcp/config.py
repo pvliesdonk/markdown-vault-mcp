@@ -925,7 +925,8 @@ class ProjectConfig:
                 "Keep the non-recursive watch on the vault root; set false "
                 "to register zero source-dir-rooted FSEvents streams (avoids "
                 "repeated macOS access prompts on a home-rooted vault) at "
-                "the cost of root-level files relying on scans."
+                "the cost of root-level files and new top-level folders "
+                "relying on scans."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection"},
