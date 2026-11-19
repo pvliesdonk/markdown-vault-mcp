@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import os
 import subprocess
 import zipfile
 from pathlib import Path
@@ -1063,6 +1064,44 @@ def test_git_reserved_admission_uses_committed_index(
         )
 
 
+def test_git_denied_root_index_cannot_enable_scoped_admission(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    index = tmp_path / "index.md"
+    index.write_text("---\nokf_version: '0.2'\n---\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "log.md").write_text("[[docs/target]]\n")
+    (tmp_path / "docs" / "target.md").write_text("---\ntitle: Target\n---\nBody\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    index.chmod(0)
+    try:
+        try:
+            index.read_bytes()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("filesystem permits reading chmod-000 files")
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(okf_mode="auto", required_frontmatter=["title"]),
+        )
+        try:
+            try:
+                result = okf_bundle.build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder="docs"
+                )
+            except (OSError, ValueError):
+                return
+        finally:
+            vault.close()
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            assert archive.read("log.md") == b"[[docs/target]]\n"
+    finally:
+        index.chmod(0o600)
+
+
 def test_git_flagged_required_clean_filter_failure_refuses_export(
     tmp_path: Path,
 ) -> None:
@@ -1404,7 +1443,7 @@ def test_git_included_excluded_complex_note_stays_unadmitted(tmp_path: Path) -> 
 
 @pytest.mark.parametrize(
     ("target", "root_target"),
-    [("../target", True), ("target", True), ("target", False)],
+    [("../target", True), ("target", True), ("target", False), ("alias", False)],
 )
 def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
     tmp_path: Path,
@@ -1430,7 +1469,7 @@ def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
     other.unlink()
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        if not root_target:
+        if target == "alias":
             with pytest.raises(ValueError, match="LFS"):
                 okf_bundle.build_okf_bundle(
                     vault, ProjectConfig(source_dir=tmp_path), folder="docs"
@@ -1447,9 +1486,10 @@ def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
     finally:
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-        assert (
-            archive.read("source.md")
-            == f"[{target}](https://example.org/vault/target.md)\n".encode()
+        assert archive.read("source.md") == (
+            f"[{target}](https://example.org/vault/target.md)\n".encode()
+            if root_target
+            else b"[target](/target.md)\n"
         )
 
 
@@ -1525,6 +1565,66 @@ def test_git_dirty_report_omits_unreadable_file_but_keeps_symlink(
         assert result.report.snapshot.uncommitted_paths == ["link.md"]
     finally:
         denied.chmod(0o600)
+
+
+@pytest.mark.parametrize("kind", ["symlink", "nonregular"])
+def test_git_visible_replacement_refusal_names_path_and_reason(
+    tmp_path: Path, kind: str
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    note = tmp_path / "a.md"
+    note.write_text("committed\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    note.unlink()
+    if kind == "symlink":
+        note.symlink_to(tmp_path / "missing")
+    else:
+        os.mkfifo(note)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(OSError) as failure:
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    assert "a.md" in str(failure.value)
+    assert kind in str(failure.value)
+
+
+@pytest.mark.parametrize("denied_directory", [False, True])
+def test_git_denied_entry_refusal_withholds_names(
+    tmp_path: Path, denied_directory: bool
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    directory = tmp_path / "private-folder"
+    directory.mkdir()
+    note = directory / "secret.md"
+    note.write_text("committed\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    denied = directory if denied_directory else note
+    denied.chmod(0)
+    try:
+        try:
+            note.read_bytes()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("filesystem permits reading chmod-000 paths")
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+        try:
+            with pytest.raises(ValueError) as failure:
+                okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+        finally:
+            vault.close()
+        assert "private-folder" not in str(failure.value)
+        assert "secret.md" not in str(failure.value)
+    finally:
+        denied.chmod(0o700 if denied_directory else 0o600)
 
 
 @pytest.mark.parametrize("name", ["note.md", "image.png"])

@@ -687,7 +687,7 @@ def resolve_wikilink_target(
     stem: str,
     source: str,
     doc_paths: Iterable[str],
-    doc_set: set[str],
+    doc_set: Collection[str],
     alias_map: dict[str, list[str]],
 ) -> str | None:
     """Resolve a wikilink against candidate document paths and aliases.
@@ -696,7 +696,7 @@ def resolve_wikilink_target(
         stem: Link target without its fragment.
         source: Vault-relative path of the source note.
         doc_paths: Candidate vault-relative document paths.
-        doc_set: The same paths as a set for exact lookup.
+        doc_set: The same paths as a membership collection for exact lookup.
         alias_map: Lowercase aliases mapped to candidate paths.
 
     Returns:

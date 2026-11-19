@@ -10,6 +10,7 @@ import stat
 import zipfile
 from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass, replace
+from functools import cache
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikili
 from markdown_vault_mcp.okf_export_report import OkfExportReport
 from markdown_vault_mcp.scanner import (
     extract_links,
+    missing_required,
     parse_frontmatter,
     strip_frontmatter_block,
 )
@@ -47,6 +49,7 @@ logger = logging.getLogger(__name__)
 # A fixed zip entry timestamp so re-exporting an unchanged vault yields identical
 # bytes (the DOS epoch zipfile clamps to). Export fidelity, not wall-clock.
 _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+_SUBMOD = "Git submodule {} is unavailable; run git submodule update --init and retry."
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,22 @@ def _require_complete(page: BundleInspection, folder: str) -> None:
         )
 
 
+def _inspect_page(
+    vault: Vault,
+    folder: str,
+    snapshot: GitExportSnapshot | None,
+    cursor: str | None = None,
+    limit: int = 1000,
+) -> BundleInspection:
+    """Observe one inventory page under the export's access policy."""
+    request = BundleTreeRequest(
+        root=folder, entry_limit=limit, cursor=cursor, snapshot=snapshot
+    )
+    page = vault.reader.inspect_bundle_tree(request)
+    _require_complete(page, folder)
+    return page
+
+
 def _note_bytes(
     raw: bytes,
     selection: tuple[BundleEntry, str],
@@ -179,13 +198,10 @@ def _note_bytes(
     return result
 
 
-@dataclass
-class _SnapshotLinks:
-    members: set[str]
-    aliases: dict[str, list[str]]
+_LinkIndex = tuple[set[str], dict[str, list[str]]]
 
 
-def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _SnapshotLinks:
+def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _LinkIndex:
     aliases: dict[str, list[str]] = {}
     members: set[str] = set()
     for path, raw in notes:
@@ -196,7 +212,7 @@ def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _SnapshotLinks:
             continue
         for alias in normalized_aliases(metadata):
             aliases.setdefault(alias.lower(), []).append(path)
-    return _SnapshotLinks(members, aliases)
+    return members, aliases
 
 
 def _admitted_notes(
@@ -229,32 +245,29 @@ def _snapshot_admitted(
     setting the index is built from, and its OKF reserved-file exception to
     the visibility and parse eligibility of the committed entry.
     """
-    if entry.visibility != "visible":
+    complex_ = entry.reason in {"metadata_complexity", "note_limit"}
+    if entry.visibility != "visible" or not (complex_ or entry.parse_state == "valid"):
         return False
     required = vault._required_frontmatter
-    if entry.reason in {"metadata_complexity", "note_limit"}:
-        try:
-            metadata = parse_frontmatter(decode_utf8(raw)).metadata
-        except Exception:
-            return False
-    elif entry.parse_state != "valid":
-        return False
-    elif not required:
+    exempt = is_okf_reserved_file(entry.path) and active
+    if not complex_ and (not required or exempt):
         return True
-    else:
+    try:
         metadata = parse_frontmatter(decode_utf8(raw)).metadata
-    if not required or (is_okf_reserved_file(entry.path) and active):
-        return True
-    return all(key in metadata for key in required)
+    except Exception:
+        return False
+    return exempt or not missing_required(metadata, required)
 
 
-def _snapshot_okf_active(vault: Vault, snapshot: GitExportSnapshot) -> bool:
-    text = ""
+def _root_declaration(vault: Vault, snapshot: GitExportSnapshot) -> str:
+    """The committed root index text, if inventory access admits that path."""
     entry = snapshot.entries.get("index.md")
     if vault.okf.mode == "auto" and entry and entry[0] in {"100644", "100755"}:
-        with suppress(UnicodeError):
-            text = decode_utf8(snapshot.read("index.md"))
-    return vault.okf.state(text).active
+        root = replace(snapshot, entries={"index.md": entry})
+        if _inspect_page(vault, "", root, limit=1).entries:
+            with suppress(UnicodeError):
+                return decode_utf8(snapshot.read("index.md"))
+    return ""
 
 
 # The public API keeps its established explicit options.
@@ -311,14 +324,12 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     active = bool(
         snapshot
         and vault._required_frontmatter
-        and _snapshot_okf_active(vault, snapshot)
+        and vault.okf.state(_root_declaration(vault, snapshot)).active
     )
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
-                raise ValueError(
-                    f"Git submodule {path} is unavailable; run git submodule update --init and retry."
-                )
+                raise ValueError(_SUBMOD.format(path))
     report = OkfExportReport()
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
@@ -328,15 +339,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     selected = []
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         while True:
-            page = vault.reader.inspect_bundle_tree(
-                BundleTreeRequest(
-                    root=folder,
-                    entry_limit=1000,
-                    cursor=cursor,
-                    snapshot=snapshot,
-                )
-            )
-            _require_complete(page, folder)
+            page = _inspect_page(vault, folder, snapshot, cursor)
             for item in page.entries:
                 if item.role == "directory":
                     continue
@@ -353,9 +356,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     continue
                 if item.state in {"unavailable", "missing"}:
                     if item.reason == "submodule":
-                        raise ValueError(
-                            f"Git submodule {item.path} is unavailable; run git submodule update --init and retry."
-                        )
+                        raise ValueError(_SUBMOD.format(item.path))
                     raise OSError(
                         f"Cannot export {item.path}: {item.reason or item.state}"
                     )
@@ -364,28 +365,16 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 break
             cursor = page.next_cursor
 
-        root_entries: list[BundleEntry] | None = None
-
+        @cache
         def root_inventory() -> list[BundleEntry]:
-            nonlocal root_entries
-            if root_entries is None:
-                root_entries = []
-                cursor = None
-                while True:
-                    page = vault.reader.inspect_bundle_tree(
-                        BundleTreeRequest(
-                            root="",
-                            entry_limit=1000,
-                            cursor=cursor,
-                            snapshot=snapshot,
-                        )
-                    )
-                    _require_complete(page, "")
-                    root_entries.extend(page.entries)
-                    if page.next_cursor is None:
-                        break
-                    cursor = page.next_cursor
-            return root_entries
+            entries: list[BundleEntry] = []
+            cursor = None
+            while True:
+                page = _inspect_page(vault, "", snapshot, cursor)
+                entries.extend(page.entries)
+                if page.next_cursor is None:
+                    return entries
+                cursor = page.next_cursor
 
         def inventory() -> set[str]:
             return {
@@ -403,20 +392,16 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             inventory,
             extensions,
         )
-        snapshot_index: _SnapshotLinks | None = None
         admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}
-        root_by_path: dict[str, BundleEntry] = {}
+
+        @cache
+        def root_by_path() -> dict[str, BundleEntry]:
+            return {item.path: item for item in root_inventory()}
 
         def member(path: str) -> bool:
             if path not in admitted:
-                entry = selected_entries.get(path)
-                if entry is None:
-                    if not root_by_path:
-                        root_by_path.update(
-                            (item.path, item) for item in root_inventory()
-                        )
-                    entry = root_by_path.get(path)
+                entry = selected_entries.get(path) or root_by_path().get(path)
                 admitted[path] = (
                     snapshot is not None
                     and entry is not None
@@ -424,8 +409,13 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 )
             return admitted[path]
 
+        @cache
+        def snapshot_index() -> _LinkIndex:
+            assert snapshot is not None
+            notes = _admitted_notes(vault, snapshot, root_inventory(), active)
+            return _snapshot_link_index(notes)
+
         def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
-            nonlocal snapshot_index
             if snapshot is None:
                 raise ValueError("Snapshot links require a Git snapshot")
             result = []
@@ -434,20 +424,16 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     continue
                 target = link.target_path
                 if not link.raw_target.startswith(("./", "../")) and not member(target):
-                    if snapshot_index is None:
-                        snapshot_index = _snapshot_link_index(
-                            _admitted_notes(vault, snapshot, root_inventory(), active)
-                        )
-                    target = (
-                        resolve_wikilink_target(
-                            link.raw_target.split("#", 1)[0],
-                            source,
-                            snapshot_index.members,
-                            snapshot_index.members,
-                            snapshot_index.aliases,
-                        )
-                        or target
+                    stem = link.raw_target.split("#", 1)[0]
+                    found = resolve_wikilink_target(
+                        stem, source, root_by_path(), root_by_path(), {}
                     )
+                    if found is None or not member(found):
+                        members, aliases = snapshot_index()
+                        found = resolve_wikilink_target(
+                            stem, source, members, members, aliases
+                        )
+                    target = found or target
                 result.append(
                     OutlinkInfo(
                         target,
@@ -507,22 +493,14 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 ):
                     child_changed, child_flagged = git_snapshot_changes(child, commit)
             except (OSError, ValueError) as exc:
-                raise ValueError(
-                    f"Git submodule {prefix} is unavailable; run git submodule update --init and retry."
-                ) from exc
+                raise ValueError(_SUBMOD.format(prefix)) from exc
             changed.update(prefix + "/" + path for path in child_changed)
             flagged.update(
                 {prefix + "/" + path: absent for path, absent in child_flagged.items()}
             )
         changed.update({path + "/" for path in changed if path in snapshot.children})
-        page = vault.reader.inspect_bundle_tree(
-            BundleTreeRequest(
-                root=folder,
-                entry_limit=1,
-                snapshot=replace(snapshot, changed=changed, flagged=flagged),
-            )
-        )
-        _require_complete(page, folder)
+        dirty = replace(snapshot, changed=changed, flagged=flagged)
+        page = _inspect_page(vault, folder, dirty, limit=1)
         report.snapshot.uncommitted_paths.extend(page.uncommitted)
     for path, digest in digests.items():
         try:

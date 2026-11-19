@@ -34,6 +34,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -117,6 +118,15 @@ class GitExportSnapshot:
     _process: dict[Path, subprocess.Popen[bytes]] = field(
         default_factory=dict, repr=False, compare=False
     )
+
+    @cached_property
+    def ordered(self) -> list[tuple[str, tuple[str, str]]]:
+        """Return entries sorted once for all pages.
+
+        Returns:
+            The snapshot entries in full-path order.
+        """
+        return sorted(self.entries.items())
 
     def read(self, path: str) -> bytes:
         """Read a selected blob; an LFS pointer yields the live bytes it pins."""

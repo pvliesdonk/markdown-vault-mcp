@@ -292,6 +292,20 @@ def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
     )
 
 
+def _snapshot_note(
+    snapshot: GitExportSnapshot, path: str, role: Role
+) -> tuple[BundleEntry, int]:
+    try:
+        raw = snapshot.read(path)
+        return _parsed(path, role, raw), len(raw)
+    except ValueError:
+        from markdown_vault_mcp.git.query import is_lfs_pointer
+
+        if not is_lfs_pointer(snapshot._read_object(path)):
+            raise
+        return BundleEntry(path, role, reason="lfs_unavailable"), 0
+
+
 def _same_file(first: Path, second: Path) -> bool:
     try:
         return first.samefile(second)
@@ -461,16 +475,12 @@ class BundleInspector:
             with open_directory_nofollow(
                 root, parts[:-1], source_resolved=True
             ) as parent:
-                try:
-                    mode = os.stat(
-                        parts[-1], dir_fd=parent, follow_symlinks=False
-                    ).st_mode
-                except FileNotFoundError:
-                    return None
+                mode = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False).st_mode
                 if allow_symlink and stat.S_ISLNK(mode):
                     return None
                 if not stat.S_ISREG(mode):
-                    raise OSError("Snapshot path is not a regular file")
+                    reason = "symlink" if stat.S_ISLNK(mode) else "nonregular"
+                    raise OSError(errno.ENOTSUP, reason)
                 return read_regular_nofollow(parent, parts[-1], limit)
         except FileNotFoundError:
             # A removed directory has no live permissions to bypass; its nearest
@@ -526,7 +536,7 @@ class BundleInspector:
         ):
             return BundleInspection(request, "inspected", "unavailable")
         enumeration: Enumeration = "complete"
-        for path, (mode, _) in sorted(snapshot.entries.items()):
+        for path, (mode, _) in snapshot.ordered:
             if scope and not path.startswith(scope + "/"):
                 continue
             if request.cursor is not None and path <= request.cursor:
@@ -566,7 +576,12 @@ class BundleInspector:
             return BundleEntry(path, state="unavailable", reason=reason), 0
         if not self._visible_file(path):
             return None, 0
-        self._check_snapshot_access(self._absolute_source, parts)
+        try:
+            self._check_snapshot_access(self._absolute_source, parts)
+        except OSError as exc:
+            if exc.errno != errno.ENOTSUP:
+                raise
+            return BundleEntry(path, state="unavailable", reason=exc.strerror), 0
         if not is_note(path):
             return BundleEntry(path, "supporting", reason="supporting"), 0
         role = _role(parts[-1], self._policy.conventions_file)
@@ -574,17 +589,7 @@ class BundleInspector:
         size = snapshot.size(path)
         if size > self._note_limit:
             return BundleEntry(path, role, reason="note_limit"), min(size, limit)
-        try:
-            raw = snapshot.read(path)
-            entry = _parsed(path, role, raw)
-        except ValueError:
-            from markdown_vault_mcp.git.query import is_lfs_pointer
-
-            if not is_lfs_pointer(snapshot._read_object(path)):
-                raise
-            raw = b""
-            entry = BundleEntry(path, role, reason="lfs_unavailable")
-        return entry, len(raw)
+        return _snapshot_note(snapshot, path, role)
 
     def _flagged_clean(
         self, snapshot: GitExportSnapshot, path: str, raw: bytes | None

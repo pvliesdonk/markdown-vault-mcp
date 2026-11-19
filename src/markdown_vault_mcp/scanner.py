@@ -2246,6 +2246,21 @@ class CategorizedSkip:
     content_hash: str | None = None
 
 
+def missing_required(
+    frontmatter: dict[str, Any], required: list[str] | None
+) -> list[str]:
+    """Return the required frontmatter keys the note lacks.
+
+    Args:
+        frontmatter: The note's parsed metadata.
+        required: Keys required by the vault, or None.
+
+    Returns:
+        Missing keys in their configured order.
+    """
+    return [key for key in required or () if key not in frontmatter]
+
+
 def parse_note_categorized(
     abs_path: Path,
     source_dir: Path,
@@ -2343,7 +2358,7 @@ def parse_note_categorized(
         )
 
     if required_frontmatter and not exempt_required_frontmatter:
-        missing = [f for f in required_frontmatter if f not in note.frontmatter]
+        missing = missing_required(note.frontmatter, required_frontmatter)
         if missing:
             return CategorizedSkip(
                 SkippedFile(
