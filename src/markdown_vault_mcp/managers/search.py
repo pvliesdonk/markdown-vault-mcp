@@ -17,6 +17,8 @@ import mimetypes
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+import yaml
+
 from markdown_vault_mcp._path_search import search_paths
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import (
@@ -58,6 +60,7 @@ from markdown_vault_mcp.managers._ranking import (
 from markdown_vault_mcp.okf import (
     EVIDENCE_FILTER_VALUES,
     OKF_FILTER_KEYS,
+    assess_needs_review,
     derive_annotation,
     is_okf_reserved_file,
     matches_okf_filters,
@@ -182,7 +185,11 @@ class _RebuildFailedError(Exception):
 
 def _concept_only_filter(filters: Mapping[str, str | None]) -> bool:
     """Whether selectors exclude reserved files and require pool expansion."""
-    return "type" in filters or bool(filters.keys() & EVIDENCE_FILTER_VALUES.keys())
+    return (
+        "type" in filters
+        or "needs_review" in filters
+        or bool(filters.keys() & EVIDENCE_FILTER_VALUES.keys())
+    )
 
 
 class SearchManager:
@@ -647,6 +654,19 @@ class SearchManager:
                 plain[key] = value
         if "stale" in okf_filters:
             parse_stale_filter(cast("str", okf_filters["stale"]))
+        if "needs_review" in okf_filters:
+            try:
+                parse_stale_filter(cast("str", okf_filters["needs_review"]))
+            except InvalidRequestError as exc:
+                raise InvalidRequestError(
+                    str(exc).replace("stale filter", "needs_review filter")
+                ) from exc
+        if "required_check" in okf_filters:
+            from markdown_vault_mcp.okf import review_actor
+
+            if "needs_review" not in okf_filters:
+                raise InvalidRequestError("required_check requires needs_review")
+            review_actor("validation", cast("str", okf_filters["required_check"]))
         for key, allowed in EVIDENCE_FILTER_VALUES.items():
             if key in okf_filters and okf_filters[key] not in allowed:
                 choices = ", ".join(sorted(allowed))
@@ -669,7 +689,38 @@ class SearchManager:
         if _concept_only_filter(okf_filters) and is_okf_reserved_file(path):
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
-        return matches_okf_filters(metadata, okf_filters)
+        ordinary = {
+            k: v
+            for k, v in okf_filters.items()
+            if k not in ("needs_review", "required_check")
+        }
+        if not matches_okf_filters(metadata, ordinary):
+            return False
+        if "needs_review" not in okf_filters:
+            return True
+        assessment = self._needs_review(path, okf_filters)
+        return assessment is not None and assessment["needed"] is parse_stale_filter(
+            cast("str", okf_filters["needs_review"])
+        )
+
+    def _needs_review(
+        self, path: str, filters: Mapping[str, str | None]
+    ) -> dict[str, Any] | None:
+        """Assess a live note, or omit a note that can no longer be read."""
+        from markdown_vault_mcp._okf_receipts import assess_reviews
+        from markdown_vault_mcp._okf_review import concept_snapshot
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        try:
+            self._validate_path(path)
+            content = (self._source_dir / path).read_text(encoding="utf-8")
+            metadata = dict(parse_frontmatter(content).metadata)
+            assessments = assess_reviews(metadata, concept_snapshot(content), None)
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
+            return None
+        return assess_needs_review(
+            metadata, assessments, filters.get("required_check") or "human-review"
+        )
 
     def _filter_rows_okf(
         self, rows: builtins.list[FTSResult], okf_filters: dict[str, str | None]
@@ -1031,6 +1082,9 @@ class SearchManager:
                 okf_filters=okf_filters,
                 weights=policy["weights"],
             )
+        for result in results:
+            if "needs_review" in okf_filters:
+                result.needs_review = self._needs_review(result.path, okf_filters)
         return [
             RankedSearchResult(
                 **vars(result),
@@ -1552,8 +1606,11 @@ class SearchManager:
                 if not (
                     _concept_only_filter(okf_filters) and is_okf_reserved_file(n.path)
                 )
-                and matches_okf_filters(n.frontmatter, okf_filters)
+                and self._path_matches_okf(n.path, okf_filters)
             ]
+        if "needs_review" in okf_filters:
+            for note in note_infos:
+                note.needs_review = self._needs_review(note.path, okf_filters)
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
 
         if not include_attachments or filters:
@@ -1933,9 +1990,13 @@ class SearchManager:
         groups = _group_by_path(downweighted, chunks_per_file=eff_cpf, file_limit=limit)
 
         # snippet_words=0: similarity results return full section content.
-        return self._assemble_grouped_results(
+        results = self._assemble_grouped_results(
             groups, query="", snippet_words=0, search_type="semantic"
         )
+        if "needs_review" in okf_filters:
+            for result in results:
+                result.needs_review = self._needs_review(result.path, okf_filters)
+        return results
 
     def _context_backlinks(
         self, path: str, link_limit: int

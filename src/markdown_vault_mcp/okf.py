@@ -123,6 +123,8 @@ OKF_FILTER_KEYS: tuple[str, ...] = (
     "trust_tier",
     "freshness",
     "review",
+    "needs_review",
+    "required_check",
 )
 
 EVIDENCE_FILTER_VALUES = {
@@ -597,6 +599,37 @@ def parse_stale_filter(value: str) -> bool:
     if normalized in _STALE_FALSE:
         return False
     raise InvalidRequestError(f"stale filter must be true or false, got {value!r}")
+
+
+def assess_needs_review(
+    metadata: dict[str, Any],
+    assessments: list[dict[str, Any]],
+    required_check: str = "human-review",
+) -> dict[str, Any]:
+    """Describe the independent conditions requiring review of a snapshot.
+
+    Args:
+        metadata: Current concept metadata.
+        assessments: Per-review snapshot assessments.
+        required_check: Required kind of check.
+
+    Returns:
+        The rule, its decision, and the conditions that held.
+    """
+    freshness = derive_annotation(metadata)["freshness"]["state"]
+    conditions = []
+    if freshness != "unexpired":
+        conditions.append("freshness_" + freshness)
+    if not any(
+        item.get("snapshot") == "matches" and item.get("check") == required_check
+        for item in assessments
+    ):
+        conditions.append("no_matching_review")
+    return {
+        "needed": bool(conditions),
+        "required_check": required_check,
+        "conditions": conditions,
+    }
 
 
 def matches_okf_filters(

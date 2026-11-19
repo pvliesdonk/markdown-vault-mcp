@@ -76,7 +76,11 @@ def register(mcp: FastMCP) -> None:
                 and empty reviews; malformed means no usable review record, while a mixed list
                 is recorded. Recorded describes supplied metadata only. Evidence filters
                 exclude reserved files. On active bundles those two keys select evidence, not
-                literal frontmatter. Use `{"type": null}` on an active OKF bundle for searchable notes
+                literal frontmatter.
+                Use `needs_review` as "true" or "false" to filter by expiry and a
+                matching review of the current snapshot. `required_check` selects the
+                check kind and defaults to human-review. Each hit reports conditions.
+                Use `{"type": null}` on an active OKF bundle for searchable notes
                 without a non-empty string type, excluding reserved files.
             chunks_per_file: Maximum sections per note, at least 1; omit for the server
                 default.
@@ -361,6 +365,9 @@ def register(mcp: FastMCP) -> None:
                 missing and empty reviews; malformed means no usable review record, while a mixed
                 list is recorded. Recorded describes supplied metadata only. On active
                 bundles these keys select evidence, not literal frontmatter.
+                Use `needs_review` as "true" or "false" to filter by expiry and a
+                matching review of the current snapshot. `required_check` selects the
+                check kind and defaults to human-review. Each hit reports conditions.
                 Use `{"type": null}` on an active OKF bundle for searchable notes without
                 a non-empty string type, excluding reserved files.
             wait_for_pending_writes: When True, wait until your recent

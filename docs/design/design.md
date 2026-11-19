@@ -2138,6 +2138,15 @@ the spec itself says, dated and sourced, in
   each node, extracted from metadata already fetched for labels (hub
   nodes stay untyped: their construction deliberately avoids per-node
   metadata reads) — only on an active bundle.
+- **Review triage (#1447)**: `needs_review` is a boolean selector for
+  search, listing and similarity on active bundles. It evaluates the live
+  concept snapshot and supplied review assessments independently of origin.
+  Expired, missing or malformed freshness and absence of a matching review of
+  `required_check` (default `human-review`) are independent conditions; each
+  hit reports the conditions. Candidate discovery remains index-based. The
+  selector does not change trust tiers or ranking. These two names are reserved
+  on active bundles; literal field queries remain available through exact
+  queries or with OKF mode off.
 - **Conformance audit (phase 3, #962)**: ``okf_validate`` reports bundle
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
