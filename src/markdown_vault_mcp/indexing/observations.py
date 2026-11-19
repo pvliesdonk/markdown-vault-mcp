@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -159,6 +160,11 @@ class ObservationLedger:
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
         self._inspector = inspector
+        self._navigation: dict[str, object] = {
+            "version": 1,
+            "generated": {},
+            "reported": {},
+        }
         self._pending: dict[str, _WriteHint] = {}
         self._removals: _Evidence = {}
         self._pending_lock = threading.Lock()
@@ -471,7 +477,112 @@ class ObservationLedger:
                 states,
             )
 
-    def _save(self, rows: dict[str, Observation]) -> None:
+    def _navigation_state(self) -> dict[str, object]:
+        if self._path is None:
+            return copy.deepcopy(self._navigation)
+        try:
+            self._load()  # Refuse a ledger written by a newer server.
+            state = json.loads(self._path.read_text(encoding="utf-8")).get("navigation")
+            if state is None:
+                return {"version": 1, "generated": {}, "reported": {}}
+            version = state["version"]
+            if type(version) is int and version > 1:
+                raise StoreUnsupportedSchemaError(
+                    "Unsupported navigation history schema. Upgrade the server or move the ledger aside.",
+                    backend="observations",
+                    location=str(self._path),
+                )
+            generated, reported = state["generated"], state["reported"]
+            if (
+                type(version) is not int
+                or version != 1
+                or not isinstance(generated, dict)
+                or not isinstance(reported, dict)
+            ):
+                raise ValueError("invalid navigation history")
+            for path, digest in generated.items():
+                if (
+                    not isinstance(path, str)
+                    or not _components(path)
+                    or not _valid_digest(digest)
+                ):
+                    raise ValueError("invalid generated digest")
+            for path, digests in reported.items():
+                if (
+                    not isinstance(path, str)
+                    or not _components(path)
+                    or not isinstance(digests, list)
+                    or not all(_valid_digest(d) for d in digests)
+                    or len(digests) != len(set(digests))
+                ):
+                    raise ValueError("invalid divergence history")
+            return {"version": version, "generated": generated, "reported": reported}
+        except FileNotFoundError:
+            pass
+        except (ValueError, TypeError, KeyError, AttributeError):
+            logger.warning("okf_navigation_history_reset path=%s", self._path)
+        return {"version": 1, "generated": {}, "reported": {}}
+
+    def navigation_changed(self, path: str, body: str) -> bool:
+        """Return whether a body differs from its locally generated predecessor."""
+        with self._lock:
+            generated = self._navigation_state()["generated"]
+            assert isinstance(generated, dict)
+            digest = hashlib.sha256(body.encode()).hexdigest()
+            return path in generated and generated[path] != digest
+
+    def observe_navigation(self, path: str, old: str | None, new: str) -> None:
+        """Report an unexpected body before replacing a designated index."""
+        with self._lock:
+            state = self._navigation_state()
+            generated, reported = state["generated"], state["reported"]
+            assert isinstance(generated, dict) and isinstance(reported, dict)
+            desired = hashlib.sha256(new.encode()).hexdigest()
+            observed = (
+                hashlib.sha256(old.encode()).hexdigest() if old is not None else None
+            )
+            seen = reported.get(path, [])
+            if (
+                path in generated
+                and observed not in (None, generated[path], desired)
+                and observed not in seen
+            ):
+                reported.setdefault(path, []).append(observed)
+                self._save_navigation(state)
+                logger.warning("okf_index_divergence path=%s digest=%s", path, observed)
+
+    def record_navigation(self, path: str, body: str) -> None:
+        """Record a successfully generated designated index body."""
+        with self._lock:
+            state = self._navigation_state()
+            generated = state["generated"]
+            assert isinstance(generated, dict)
+            generated[path] = hashlib.sha256(body.encode()).hexdigest()
+            self._save_navigation(state)
+
+    def _save_navigation(self, state: dict[str, object]) -> None:
+        self._navigation = state
+        if self._path is not None:
+            rows, _ = self._load()
+            self._save(rows, state)
+
+    def navigation_stats(self) -> dict[str, object]:
+        """Return the cumulative count and bounded examples of local divergences."""
+        with self._lock:
+            reported = self._navigation_state()["reported"]
+            assert isinstance(reported, dict)
+            count = sum(len(digests) for digests in reported.values())
+            examples: list[dict[str, str]] = []
+            for path, digests in sorted(reported.items()):
+                for digest in digests:
+                    if len(examples) == 10:
+                        return {"count": count, "examples": examples}
+                    examples.append({"path": path, "digest": digest})
+            return {"count": count, "examples": examples}
+
+    def _save(
+        self, rows: dict[str, Observation], navigation: dict[str, object] | None = None
+    ) -> None:
         # Private type invariant for persistent ledgers, not an authorization check.
         assert self._path is not None  # noqa: S101, RUF100
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -482,7 +593,13 @@ class ObservationLedger:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(
                     json.dumps(
-                        {"version": 2, "rows": {k: vars(v) for k, v in rows.items()}},
+                        {
+                            "version": 2,
+                            "rows": {k: vars(v) for k, v in rows.items()},
+                            "navigation": navigation
+                            if navigation is not None
+                            else self._navigation_state(),
+                        },
                         sort_keys=True,
                     )
                 )

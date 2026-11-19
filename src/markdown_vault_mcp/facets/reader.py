@@ -1019,6 +1019,10 @@ class ReaderFacet:
             configured, effective = self._okf_write_state()
             section["write_configured"] = configured
             section["write_effective"] = effective
+        if section is not None and self._doc_mgr._observations is not None:
+            section["navigation"] = {
+                "divergences": self._doc_mgr._observations.navigation_stats()
+            }
         return section
 
     def attachment_size(self, path: str) -> int:

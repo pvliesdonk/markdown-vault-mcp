@@ -446,6 +446,19 @@ class ConventionMaintainer:
             )
             anchors = {p: self._anchor_of(p) for p in safe}
             folders = [folder for folder in anchors.values() if folder is not None]
+            ledger = self._doc_mgr._observations
+            if ledger is not None:
+                for path, row in rows.items():
+                    if row.presence != "present" or Path(path).name != "index.md":
+                        continue
+                    folder = folder_of(path)
+                    if not self._may_index(folder):
+                        continue
+                    note = self._doc_mgr._read_note(path, capped=False)
+                    if note is not None and ledger.navigation_changed(
+                        path, strip_frontmatter_block(note.content, preserve_body=True)
+                    ):
+                        folders.append(folder)
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))

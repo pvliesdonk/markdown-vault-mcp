@@ -51,7 +51,7 @@ from markdown_vault_mcp.okf import (
     convert_wikilinks_to_markdown,
     is_okf_reserved_file,
 )
-from markdown_vault_mcp.scanner import normalize_heading
+from markdown_vault_mcp.scanner import normalize_heading, strip_frontmatter_block
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
@@ -331,6 +331,18 @@ class OkfMigrationManager:
             else:
                 with okf_write_suppressed():
                     existing = self._doc_mgr._read_note(index_path, capped=False)
+                    old_body = (
+                        strip_frontmatter_block(existing.content, preserve_body=True)
+                        if existing is not None
+                        else None
+                    )
+                    ledger = (
+                        self._doc_mgr._observations
+                        if self._doc_mgr.index_designation(folder) is True
+                        else None
+                    )
+                    if ledger is not None:
+                        ledger.observe_navigation(index_path, old_body, body)
                     preserved = self._doc_mgr.replace_body(
                         index_path,
                         existing.content if existing is not None else None,
@@ -338,6 +350,8 @@ class OkfMigrationManager:
                         allow_protected=allow_protected,
                         allow_designated=True,
                     )
+                    if ledger is not None:
+                        ledger.record_navigation(index_path, body)
         return OkfIndexResult(
             path=index_path,
             entries=sum(len(items) for items in sections.values()),
