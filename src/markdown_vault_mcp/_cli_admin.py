@@ -19,6 +19,7 @@ from markdown_vault_mcp.config import _ENV_PREFIX
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from markdown_vault_mcp._okf_index_collapse import CollapsePlan
     from markdown_vault_mcp._okf_log_repair import LogRepairPreview
 
 
@@ -211,9 +212,8 @@ def collapse_indexes(
         source_dir: Optional vault directory override.
         apply: Remove the planned indexes and refresh their parents.
     """
-    import shlex
-
     from markdown_vault_mcp._cli_output import terminal_text
+    from markdown_vault_mcp._okf_index_collapse import CollapseInterrupted
     from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
     from markdown_vault_mcp.exceptions import MarkdownMCPError
 
@@ -231,28 +231,44 @@ def collapse_indexes(
             result = built.vault.writer.okf_collapse_indexes(apply=apply)
         finally:
             built.close()
-        for path, _ in result.removable:
-            typer.echo(
-                f"{'Removed' if apply else 'Would remove'} {terminal_text(path)}"
-            )
-        for path, reason in result.kept:
-            typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
-        if result.removable:
-            typer.echo(
-                "Removing these indexes may break links to them. "
-                "Use markdown-vault-mcp links broken to find broken links."
-            )
-        if apply:
-            for parent in result.parents:
-                typer.echo(f"Regenerated {terminal_text(parent or '.')}")
-        elif result.removable:
-            for parent in result.parents:
-                path = f"{parent}/index.md" if parent else "index.md"
-                typer.echo(f"Would regenerate {terminal_text(path)}")
-            words = ["markdown-vault-mcp", "okf", "collapse-indexes"]
-            if source_dir:
-                words += ["--source-dir", source_dir]
-            typer.echo(f"To apply, run: {shlex.join([*words, '--apply'])}")
-    except MarkdownMCPError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
+        _print_collapse(result, source_dir, apply)
+    except CollapseInterrupted as exc:
+        for owner in exc.written:
+            typer.echo(f"Regenerated owner {terminal_text(owner or '.')}")
+        for path in exc.removed:
+            typer.echo(f"Removed {terminal_text(path)}")
+        for path in exc.pending:
+            typer.echo(f"Pending or possibly changed {terminal_text(path)}")
+        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
         raise typer.Exit(1) from exc
+    except (MarkdownMCPError, OSError) as exc:
+        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
+        raise typer.Exit(1) from exc
+
+
+def _print_collapse(result: CollapsePlan, source_dir: str | None, apply: bool) -> None:
+    """Print the collapse outcome and its applicable next action."""
+    import shlex
+
+    from markdown_vault_mcp._cli_output import terminal_text
+
+    for path, _, _ in result.removable:
+        typer.echo(f"{'Removed' if apply else 'Would remove'} {terminal_text(path)}")
+    for path, reason in result.kept:
+        typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
+    if result.removable:
+        typer.echo(
+            "Removing these indexes may break links to them. "
+            "Use markdown-vault-mcp links broken to find broken links."
+        )
+    for path in result.refresh:
+        typer.echo(
+            f"{'Regenerated' if apply else 'Would regenerate'} {terminal_text(path)}"
+        )
+    if not result.removable:
+        typer.echo("No generated indexes to remove.")
+    elif not apply:
+        words = ["markdown-vault-mcp", "okf", "collapse-indexes"]
+        if source_dir:
+            words += ["--source-dir", source_dir]
+        typer.echo(f"To apply, run: {shlex.join([*words, '--apply'])}")

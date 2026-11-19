@@ -734,7 +734,6 @@ register_bundle_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
 register_okf_commands(app)
 
-
 # DOMAIN-COMMANDS-END
 
 

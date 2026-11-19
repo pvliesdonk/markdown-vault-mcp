@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import posixpath
 import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
@@ -55,7 +56,7 @@ from markdown_vault_mcp.scanner import normalize_heading
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -69,6 +70,17 @@ _IndexEntry = tuple[str, str, str | None]
 # folder -> (its notes, its subfolders); a subfolder maps to whether its own
 # index.md is among the listed paths.
 _IndexTree = dict[str, tuple[list[_IndexEntry], dict[str, bool]]]
+
+
+@dataclass
+class _IndexGeneration:
+    """Per-call generation policy and collected refusals."""
+
+    allow_protected: bool = False
+    designated: Callable[[str], bool] | None = None
+    dissolve: Collection[str] = ()
+    preview: list[str] | None = None
+    skipped: dict[str, str] = field(default_factory=dict)
 
 
 def _render_fold(heading: str, sections: dict[str, list[_IndexEntry]]) -> str:
@@ -222,38 +234,10 @@ class OkfMigrationManager:
         """
         self._doc_mgr.ensure_index_current()
         tree = self._index_tree(folder, folder)
-        sections, _ = self._fold_index(folder, tree, {}, False, lambda _: False)
+        state = _IndexGeneration(designated=lambda _: False)
+        sections, _ = self._fold_index(folder, tree, state)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         return _render_fold(heading, sections)
-
-    def preflight_index_descendants(
-        self, folder: str, *, allow_protected: bool = False
-    ) -> None:
-        """Check missing designated indexes that generation could create.
-
-        Args:
-            folder: Vault-relative subtree to inspect.
-            allow_protected: Permit changes to protected paths.
-
-        Raises:
-            InvalidRequestError: If an index destination is protected.
-        """
-        tree = self._index_tree(folder, folder)
-        for parent, (_, children) in tree.items():
-            for name, listed in children.items():
-                child = posixpath.join(parent, name)
-                if (
-                    not listed
-                    and self._index_designated(child)
-                    and self._may_hold_index(child, False)
-                    and not self._doc_mgr.in_submodule(child)
-                ):
-                    path = f"{child}/index.md"
-                    reason = self._doc_mgr.protection_reason(
-                        path, allow_protected=allow_protected, allow_designated=True
-                    )
-                    if reason:
-                        raise InvalidRequestError(f"Cannot refresh {path}: {reason}")
 
     def generate_index(
         self,
@@ -261,6 +245,8 @@ class OkfMigrationManager:
         folder: str = "",
         allow_protected: bool = False,
         designated: Callable[[str], bool] | None = None,
+        dissolve: Collection[str] = (),
+        preview: list[str] | None = None,
     ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing every visible note in *folder*.
 
@@ -282,6 +268,8 @@ class OkfMigrationManager:
                 descendant indexes; omitted to use the active policy.
 
             allow_protected: Allow this library call to change protected paths.
+            dissolve: Existing index folders to treat as absent.
+            preview: Collect destinations without writing when supplied.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
@@ -316,21 +304,22 @@ class OkfMigrationManager:
                 )
             if verdict:
                 designated = self._index_designated
-        skipped: dict[str, str] = {}
-        self._doc_mgr.ensure_writable()
+        state = _IndexGeneration(allow_protected, designated, dissolve, preview)
+        if preview is None:
+            self._doc_mgr.ensure_writable()
         self._doc_mgr.ensure_index_current()
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         parent = self._parent_to_connect(folder, designated)
-        tree = self._index_tree(folder if parent is None else parent, folder)
-        result = self._generate_index(
-            folder, skipped, allow_protected, designated, tree
-        )
-        if parent is not None and result.path not in skipped:
-            self._generate_index(parent, skipped, allow_protected, designated, tree)
-        written = [p for p in (result.path, *result.created) if p not in skipped]
-        if skipped:
+        tree = self._index_tree(folder if parent is None else parent, folder, dissolve)
+        result = self._generate_index(folder, tree, state)
+        if parent is not None and result.path not in state.skipped:
+            self._generate_index(parent, tree, state)
+        written = [p for p in (result.path, *result.created) if p not in state.skipped]
+        if state.skipped:
+            prefix = "Would generate" if preview is not None else "Generated"
+            refusal = "cannot write" if preview is not None else "did not write"
             raise InvalidRequestError(
-                f"Generated indexes {written!r}; did not write {skipped!r}. "
+                f"{prefix} indexes {written!r}; {refusal} {state.skipped!r}. "
                 "Ask the operator to generate them or change the setting."
             )
         return result
@@ -350,38 +339,32 @@ class OkfMigrationManager:
         return self._doc_mgr.index_designation(folder) is True
 
     def _generate_index(
-        self,
-        folder: str,
-        skipped: dict[str, str],
-        allow_protected: bool,
-        designated: Callable[[str], bool] | None,
-        tree: _IndexTree,
+        self, folder: str, tree: _IndexTree, state: _IndexGeneration
     ) -> OkfIndexResult:
         """Generate eligible indexes and collect protected paths."""
-        sections, created = self._fold_index(
-            folder, tree, skipped, allow_protected, designated
-        )
-
+        sections, created = self._fold_index(folder, tree, state)
         index_path = f"{folder}/index.md" if folder else "index.md"
-        with self._doc_mgr.write_scope():
-            heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
-            body = _render_fold(heading, sections)
-            reason = self._doc_mgr.protection_reason(
-                index_path, allow_protected=allow_protected, allow_designated=True
-            )
-            preserved = False
-            if reason:
-                skipped[index_path] = reason
-            else:
-                with okf_write_suppressed():
-                    existing = self._doc_mgr._read_note(index_path, capped=False)
-                    preserved = self._doc_mgr.replace_body(
-                        index_path,
-                        existing.content if existing is not None else None,
-                        body,
-                        allow_protected=allow_protected,
-                        allow_designated=True,
-                    )
+        heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
+        body = _render_fold(heading, sections)
+        reason = self._doc_mgr.protection_reason(
+            index_path, allow_protected=state.allow_protected, allow_designated=True
+        )
+        preserved = False
+        if reason:
+            state.skipped[index_path] = reason
+        elif state.preview is not None:
+            self._doc_mgr._read_note(index_path, capped=False)
+            state.preview.append(index_path)
+        else:
+            with self._doc_mgr.write_scope(), okf_write_suppressed():
+                existing = self._doc_mgr._read_note(index_path, capped=False)
+                preserved = self._doc_mgr.replace_body(
+                    index_path,
+                    existing.content if existing else None,
+                    body,
+                    allow_protected=state.allow_protected,
+                    allow_designated=True,
+                )
         return OkfIndexResult(
             path=index_path,
             entries=sum(len(items) for items in sections.values()),
@@ -389,7 +372,9 @@ class OkfMigrationManager:
             created=tuple(created),
         )
 
-    def _index_tree(self, top: str, folder: str) -> _IndexTree:
+    def _index_tree(
+        self, top: str, folder: str, dissolve: Collection[str] = ()
+    ) -> _IndexTree:
         """Bucket every visible note under *top* into immediate folders.
 
         Membership comes from the folder's live listing; titles and
@@ -405,7 +390,24 @@ class OkfMigrationManager:
                 raw = note.frontmatter.get("description")
                 desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
                 labels[note.path] = (note.title, desc)
-        paths = self._doc_mgr.index_note_paths(top, folder)
+        paths = list(reversed(self._doc_mgr.index_note_paths(top, folder)))
+        expanded: list[str] = []
+        while paths:
+            path = paths.pop()
+            boundary = posixpath.dirname(path)
+            if path.endswith("/index.md") and boundary in dissolve:
+                paths.extend(
+                    reversed(
+                        [
+                            p
+                            for p in self._doc_mgr.index_note_paths(boundary, boundary)
+                            if p != path
+                        ]
+                    )
+                )
+            else:
+                expanded.append(path)
+        paths = expanded
         if folder != top:
             paths.append(f"{folder}/index.md")
         tree: _IndexTree = {top: ([], {}), folder: ([], {})}
@@ -427,9 +429,7 @@ class OkfMigrationManager:
         self,
         folder: str,
         tree: _IndexTree,
-        skipped: dict[str, str],
-        allow_protected: bool,
-        designated: Callable[[str], bool] | None,
+        state: _IndexGeneration,
     ) -> tuple[dict[str, list[_IndexEntry]], list[str]]:
         """Collect this folder and fold descendants up to index boundaries."""
         notes, subfolders = tree[folder]
@@ -438,28 +438,28 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
-            visible = self._may_hold_index(child, subfolders[sub])
+            visible = (
+                self._doc_mgr.index_path_visible(f"{child}/index.md")
+                if child in state.dissolve
+                else self._may_hold_index(child, subfolders[sub])
+            )
             has_index = visible and subfolders[sub]
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
             if not visible or not (
-                has_index or designated is None or designated(child)
+                has_index or state.designated is None or state.designated(child)
             ):
-                inner, made = self._fold_index(
-                    child, tree, skipped, allow_protected, designated
-                )
+                inner, made = self._fold_index(child, tree, state)
                 sections.update(
                     {posixpath.join(sub, key): value for key, value in inner.items()}
                 )
                 created.extend(made)
                 continue
             if not has_index:
-                result = self._generate_index(
-                    child, skipped, allow_protected, designated, tree
-                )
-                created += [result.path] if result.path not in skipped else []
+                result = self._generate_index(child, tree, state)
+                created += [result.path] if result.path not in state.skipped else []
                 created += result.created
-            if f"{child}/index.md" not in skipped:
+            if f"{child}/index.md" not in state.skipped:
                 entries.append((f"{sub}/", f"/{child}/index.md", None))
         return sections, created
 

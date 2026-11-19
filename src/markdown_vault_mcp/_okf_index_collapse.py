@@ -23,11 +23,37 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CollapsePlan:
-    """Index paths to remove, paths to keep with reasons, and parents to refresh."""
+    """Removal candidates, preserved boundaries and index write destinations."""
 
-    removable: tuple[tuple[str, str], ...]
+    removable: tuple[tuple[str, str, str], ...]
     kept: tuple[tuple[str, str], ...]
-    parents: tuple[str, ...]
+    refresh: tuple[str, ...]
+
+
+class CollapseInterrupted(MarkdownMCPError):
+    """A collapse stopped after some writes or removals may have completed."""
+
+    def __init__(
+        self,
+        written: list[str],
+        removed: list[str],
+        pending: list[str],
+        cause: Exception,
+    ) -> None:
+        """Record completed work and the uncertain remainder.
+
+        Args:
+            written: Owners whose generation completed.
+            removed: Index paths successfully removed.
+            pending: Paths still pending or possibly written.
+            cause: Error that interrupted the operation.
+        """
+        self.written = tuple(written)
+        self.removed = tuple(removed)
+        self.pending = tuple(pending)
+        super().__init__(
+            f"Collapse interrupted: {cause}; written owners {written!r}; removed {removed!r}; pending or possibly written {pending!r}"
+        )
 
 
 def _owner(
@@ -40,9 +66,44 @@ def _owner(
             return current, ""
         if current in boundaries and current not in removed:
             return None, "below a kept index" if current else "no designated parent"
-        if not current:
-            return None, "no designated parent"
         current = posixpath.dirname(current)
+
+
+def _preview(
+    migrate: OkfMigrationManager,
+    removable: list[tuple[str, str, str]],
+    kept: list[tuple[str, str]],
+    allow_protected: bool,
+) -> tuple[str, ...]:
+    """Discard refused owners and preview again against the reduced tree."""
+    while removable:
+        dissolve = {posixpath.dirname(path) for path, _, _ in removable}
+        destinations: list[str] = []
+        refused: dict[str, str] = {}
+        for owner in sorted({owner for _, _, owner in removable}):
+            try:
+                migrate.generate_index(
+                    folder=owner,
+                    allow_protected=allow_protected,
+                    dissolve=dissolve,
+                    preview=destinations,
+                )
+            except (
+                InvalidRequestError,
+                DocumentUnreadableError,
+                NoteTooLargeError,
+            ) as exc:
+                refused[owner] = str(exc)
+        if not refused:
+            return tuple(dict.fromkeys(destinations))
+        survivors = []
+        for path, etag, owner in removable:
+            if owner in refused:
+                kept.append((path, refused[owner]))
+            else:
+                survivors.append((path, etag, owner))
+        removable[:] = survivors
+    return ()
 
 
 def plan_collapse(
@@ -52,19 +113,22 @@ def plan_collapse(
 
     Args:
         doc: Document manager for the vault.
-        migrate: Generator used to compare current bodies.
-        allow_protected: Permit removal of operator-protected paths.
+        migrate: Generator used to compare current bodies and preview writes.
+        allow_protected: Permit changes to operator-protected paths.
 
     Returns:
-        A plan containing etag-guarded removals and preserved boundaries.
+        A plan containing etag-guarded removals and write destinations.
     """
+    if doc.index_designation("") is None:
+        raise InvalidRequestError(
+            "Index designation is inactive; enable OKF index maintenance and configure MARKDOWN_VAULT_MCP_OKF_FOLDERS."
+        )
     doc.ensure_index_current()
     queue = [""]
     boundaries = {""}
     removed: set[str] = set()
-    removable: list[tuple[str, str]] = []
+    removable: list[tuple[str, str, str]] = []
     kept: list[tuple[str, str]] = []
-    parents: set[str] = set()
     while queue:
         top = queue.pop(0)
         paths = doc.index_note_paths(top, top)
@@ -77,11 +141,9 @@ def plan_collapse(
         )
         boundaries.update(children)
         queue.extend(children)
-        if not top:
+        if not top or doc.index_designation(top) is True:
             continue
         path = f"{top}/index.md"
-        if doc.index_designation(top) is True:
-            continue
         reason = doc.protection_reason(path, allow_protected=allow_protected)
         try:
             note = doc.read(path)
@@ -93,14 +155,14 @@ def plan_collapse(
                 else:
                     parent, reason = _owner(top, boundaries, removed, doc)
                     if parent is not None and note.etag is not None:
-                        removable.append((path, note.etag))
+                        removable.append((path, note.etag, parent))
                         removed.add(top)
-                        parents.add(parent)
                         continue
         except (DocumentUnreadableError, NoteTooLargeError):
             reason = "unreadable"
         kept.append((path, reason or "unreadable"))
-    return CollapsePlan(tuple(removable), tuple(kept), tuple(sorted(parents)))
+    refresh = _preview(migrate, removable, kept, allow_protected)
+    return CollapsePlan(tuple(removable), tuple(kept), refresh)
 
 
 def apply_collapse(
@@ -110,7 +172,7 @@ def apply_collapse(
     *,
     allow_protected: bool = False,
 ) -> CollapsePlan:
-    """Apply a plan, preserving files that changed after the preview.
+    """Write planned listings, delete candidates, and reconcile kept boundaries.
 
     Args:
         doc: Document manager for the vault.
@@ -119,51 +181,46 @@ def apply_collapse(
         allow_protected: Permit changes to operator-protected paths.
 
     Returns:
-        The paths removed, paths kept, and refreshed parent folders.
+        The paths removed, paths kept, and refreshed index paths.
     """
     doc.ensure_writable()
-    for parent in plan.parents:
-        path = f"{parent}/index.md" if parent else "index.md"
-        reason = doc.protection_reason(
-            path, allow_protected=allow_protected, allow_designated=True
-        )
-        if reason:
-            raise InvalidRequestError(f"Cannot refresh {path}: {reason}")
-        doc.read(path)
-    for folder in {
-        *(posixpath.dirname(path) for path, _ in plan.removable),
-        *plan.parents,
-    }:
-        migrate.preflight_index_descendants(folder, allow_protected=allow_protected)
-    removed: list[tuple[str, str]] = []
+    owners = sorted({owner for _, _, owner in plan.removable})
+    dissolve = {posixpath.dirname(path) for path, _, _ in plan.removable}
+    written: list[str] = []
+    removed: list[tuple[str, str, str]] = []
     kept = list(plan.kept)
     blocked: list[str] = []
-    with okf_write_suppressed(), doc.write_scope():
-        for path, etag in plan.removable:
-            if any(path.startswith(f"{folder}/") for folder in blocked):
-                kept.append((path, "below a kept index"))
-                continue
-            try:
-                doc.delete(path, if_match=etag, allow_protected=allow_protected)
-                removed.append((path, etag))
-            except (MarkdownMCPError, OSError) as exc:
-                reason = (
-                    "changed since preview"
-                    if isinstance(exc, ConcurrentModificationError)
-                    else f"could not remove: {exc}"
+    try:
+        with okf_write_suppressed():
+            for owner in owners:
+                migrate.generate_index(
+                    folder=owner, allow_protected=allow_protected, dissolve=dissolve
                 )
-                kept.append((path, reason))
-                blocked.append(posixpath.dirname(path))
-        for parent in plan.parents:
-
-            def designated(folder: str, anchor: str = parent) -> bool:
-                return (
-                    bool(folder)
-                    and not anchor.startswith(f"{folder}/")
-                    and doc.index_designation(folder) is True
-                )
-
-            migrate.generate_index(
-                folder=parent, allow_protected=allow_protected, designated=designated
-            )
-    return CollapsePlan(tuple(removed), tuple(kept), plan.parents)
+                written.append(owner)
+            for path, etag, owner in plan.removable:
+                if any(path.startswith(f"{folder}/") for folder in blocked):
+                    kept.append((path, "below a kept index"))
+                    continue
+                try:
+                    doc.delete(path, if_match=etag, allow_protected=allow_protected)
+                    removed.append((path, etag, owner))
+                except (MarkdownMCPError, OSError) as exc:
+                    reason = (
+                        "changed since preview"
+                        if isinstance(exc, ConcurrentModificationError)
+                        else f"could not remove: {exc}"
+                    )
+                    kept.append((path, reason))
+                    blocked.append(posixpath.dirname(path))
+            if len(removed) != len(plan.removable):
+                actual = {posixpath.dirname(path) for path, _, _ in removed}
+                for owner in owners:
+                    migrate.generate_index(
+                        folder=owner, allow_protected=allow_protected, dissolve=actual
+                    )
+    except (MarkdownMCPError, OSError) as exc:
+        completed = [path for path, _, _ in removed]
+        pending = [path for path, _, _ in plan.removable if path not in completed]
+        pending.extend(path for path in plan.refresh if path not in pending)
+        raise CollapseInterrupted(written, completed, pending, exc) from exc
+    return CollapsePlan(tuple(removed), tuple(kept), plan.refresh)
