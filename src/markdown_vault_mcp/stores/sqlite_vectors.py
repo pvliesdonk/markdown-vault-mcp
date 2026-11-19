@@ -225,7 +225,7 @@ def _outcome(kind: type[StoreOpenError], message: str, where: str) -> StoreOpenE
 def _classified(
     exc: sqlite3.Error, where: str, action: str = "opened"
 ) -> StoreOpenError:
-    """Return the outcome a SQLite error stands for, for an open or a read.
+    """Return the outcome a SQLite error stands for on open, read or write.
 
     Damage is corrupt: a file SQLite does not recognise, pages it reports
     corrupt, or a text cell that no longer decodes. Anything else, such as a
@@ -1026,7 +1026,8 @@ class SqliteVectorStore(ResidentStore):
         Raises:
             StoreUnavailableError: If the first write cannot create the
                 database; nothing was written.
-            sqlite3.Error: If the transaction fails; nothing was written.
+            StoreCorruptError: If SQLite reports damaged pages; nothing was written.
+            sqlite3.Error: If another transaction error occurs; nothing was written.
         """
         try:
             conn = self._connection()
@@ -1047,6 +1048,10 @@ class SqliteVectorStore(ResidentStore):
                 op,
                 exc,
             )
+            if isinstance(exc, sqlite3.Error):
+                classified = _classified(exc, self._where, "written")
+                if isinstance(classified, StoreCorruptError):
+                    raise classified from exc
             raise
         if outcome != "conflict":
             self._reset_pending = False
@@ -1063,7 +1068,8 @@ class SqliteVectorStore(ResidentStore):
                 metadata cannot be stored as JSON.
             StoreUnavailableError: If the first write cannot create the
                 database; nothing changed.
-            sqlite3.Error: If the write fails; nothing changed.
+            StoreCorruptError: If SQLite reports damaged pages; nothing changed.
+            sqlite3.Error: If another write error occurs; nothing changed.
         """
         with self._lock:
             snap = self._writable()
@@ -1097,9 +1103,8 @@ class SqliteVectorStore(ResidentStore):
                 *path*; nothing changed.
             StoreIncompatibleError: If a streamed store finds another
                 identity published since open; nothing changed.
-            StoreCorruptError: If a streamed store finds the database
-                damaged; nothing changed.
-            sqlite3.Error: If the write fails; nothing changed.
+            StoreCorruptError: If the database is damaged; nothing changed.
+            sqlite3.Error: If another write error occurs; nothing changed.
         """
         with self._lock:
             snap = self._writable()
@@ -1136,7 +1141,9 @@ class SqliteVectorStore(ResidentStore):
                 dimension, not finite, or its metadata cannot be stored.
             StoreUnavailableError: If the first write cannot create the
                 database; the previous generation stands.
-            sqlite3.Error: If the write fails; the previous generation stands.
+            StoreCorruptError: If SQLite reports damaged pages; the previous
+                generation stands.
+            sqlite3.Error: If another write error occurs; the previous generation stands.
         """
         docs, blocks = validated_generation(identity, documents)
         with self._lock:

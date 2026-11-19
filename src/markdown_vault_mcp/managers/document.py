@@ -3,6 +3,8 @@
 Handles all read/write/edit/append/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
 and no back-reference to :class:`Vault`.
+
+Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -22,6 +24,19 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp._commit_scope import (
+    auxiliary_commit_writes,
+    current_commit_scope,
+)
+from markdown_vault_mcp._okf_log_repair import (
+    LogRepairCollision,
+    LogRepairInterrupted,
+    LogRepairPreview,
+    LogRepairResult,
+    preview_log_repair,
+    require_reviewed,
+    retain_original,
+)
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -399,6 +414,105 @@ class DocumentManager:
         return abs_path
 
     # ------------------------------------------------------------------
+    # Legacy log repair (#1403)
+    # ------------------------------------------------------------------
+
+    def _log_repair_snapshot(self, path: str) -> tuple[Path, bytes]:
+        """Read a bounded raw snapshot of exactly one vault-relative log.md."""
+        if Path(path).is_absolute():
+            raise InvalidRequestError(
+                f"path {path!r} must be vault-relative. Name the affected log.md "
+                "relative to the vault root."
+            )
+        abs_path = self._validate_path(path)
+        if Path(path).name != "log.md" or abs_path.name != "log.md":
+            raise InvalidRequestError(
+                f"path {path!r} must name log.md. Name the vault-relative path "
+                "of the affected log."
+            )
+        try:
+            if not stat.S_ISREG(abs_path.stat().st_mode):
+                raise DocumentNotFoundError.note(path)
+            cap = self._max_note_read_bytes
+            with abs_path.open("rb") as stream:
+                original = stream.read(cap + 1 if cap > 0 else -1)
+            if cap > 0 and len(original) > cap:
+                raise NoteTooLargeError(
+                    f"Log {path!r} exceeds the note read limit. Review and repair "
+                    "it by hand; nothing was changed."
+                )
+            original.decode("utf-8")
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError.note(path) from exc
+        except (OSError, UnicodeDecodeError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+        return abs_path, original
+
+    def okf_preview_log_repair(self, path: str) -> LogRepairPreview:
+        """Preview one legacy log repair without changing files.
+
+        Args:
+            path: Vault-relative path ending in log.md.
+
+        Returns:
+            Exact candidate bytes and span, or an explanation for manual review.
+        """
+        with self.write_scope():
+            _, original = self._log_repair_snapshot(path)
+            return preview_log_repair(path, original)
+
+    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+        """Apply a reviewed splice after retaining the complete original.
+
+        Args:
+            path: Exact vault-relative log.md path used for the preview.
+            etag: The ``etag`` of the preview the operator reviewed.
+
+        Returns:
+            New byte etag and the adjacent complete-original recovery path.
+
+        Raises:
+            ConcurrentModificationError: The log changed since that preview.
+            InvalidRequestError: No candidate remains, or the recovery path
+                is occupied.
+            LogRepairInterrupted: Retention or a later step failed; inspect before retry.
+        """
+        self.ensure_writable()
+        with self.write_scope():
+            abs_path, original = self._log_repair_snapshot(path)
+            self._refuse_submodule(abs_path, "path", path)
+            preview = preview_log_repair(path, original)
+            require_reviewed(preview, etag)
+            recovery = abs_path.with_name("log.md.frontmatter-repair.bak")
+            recovery_path = recovery.relative_to(self._source_dir.resolve()).as_posix()
+            target_attempted = False
+            try:
+                retain_original(recovery, original, recovery_path=recovery_path)
+                self._notifier.fire(recovery, "", "write")
+                check_if_match(abs_path, path, preview.etag)
+                repaired = (
+                    original[: preview.removal_start] + original[preview.removal_end :]
+                )
+                target_attempted = True
+                atomic_write(abs_path, repaired)
+                if self._mark_paths_dirty is not None:
+                    self._mark_paths_dirty([path])
+                self._notifier.fire(abs_path, repaired.decode("utf-8"), "write")
+            except LogRepairCollision:
+                raise
+            except Exception as exc:
+                raise LogRepairInterrupted(
+                    recovery_path, target_may_have_changed=target_attempted
+                ) from exc
+            return LogRepairResult(
+                path=path,
+                etag=compute_etag(repaired),
+                recovery_path=recovery_path,
+                original_etag=preview.etag,
+                removed_blocks=preview.removed_blocks,
+            )
+
+    # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------
 
@@ -759,7 +873,8 @@ class DocumentManager:
         """Create or overwrite a document.
 
         Creates intermediate directories as needed.  If *frontmatter* is
-        provided, it is serialised as a YAML header at the top of the file.
+        provided, it is serialised as a YAML header in mapping insertion order,
+        including nested mappings. YAML comments and formatting are not retained.
 
         Args:
             path: Relative document path.
@@ -802,7 +917,7 @@ class DocumentManager:
 
             if frontmatter is not None:
                 post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post)
+                file_content = fm.dumps(post, sort_keys=False)
             else:
                 file_content = content
 
@@ -1347,8 +1462,9 @@ class DocumentManager:
                     hint = _ATTACHMENT_UPDATE_LINKS_HINT
 
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
-            for src_abs, src_content in backlink_callbacks:
-                self._notifier.fire(src_abs, src_content, "edit")
+            with auxiliary_commit_writes():
+                for src_abs, src_content in backlink_callbacks:
+                    self._notifier.fire(src_abs, src_content, "edit")
 
         return RenameResult(
             old_path=old_path,
@@ -1853,6 +1969,11 @@ class DocumentManager:
                 move_dirty.extend(md_map.values())  # new paths -> reparsed
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
+
+            scope = current_commit_scope()
+            if scope is not None:
+                # All queued callbacks share this scope; set it before firing any.
+                scope.folder_move = (old_abs, new_abs)
 
             # 7. Callbacks: rename for every moved file, edit for every
             #    rewritten source (minus intra-subtree dupes).
