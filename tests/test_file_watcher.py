@@ -18,14 +18,21 @@ Failure modes covered:
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 from watchdog.events import (
+    DirCreatedEvent,
+    DirDeletedEvent,
     DirModifiedEvent,
+    DirMovedEvent,
     FileClosedEvent,
     FileClosedNoWriteEvent,
     FileCreatedEvent,
@@ -33,6 +40,7 @@ from watchdog.events import (
     FileModifiedEvent,
     FileMovedEvent,
     FileOpenedEvent,
+    FileSystemEvent,
 )
 
 from markdown_vault_mcp._file_watcher import (
@@ -52,8 +60,9 @@ from markdown_vault_mcp._file_watcher import (
 def _make_test_lifespan(config: object, transport: str = "stdio") -> object:
     """A config-driven lifespan wrapping the domain ``Service`` (#902).
 
-    The production ``server_lifespan`` is no-arg (``Service()`` reads env and
-    the staged transport); these integration tests need a specific config, so
+    The production ``server_lifespan`` passes the config ``make_server`` bound
+    and leaves the transport to the staged value; these tests need a specific
+    config and transport without building a server, so
     they drive ``Service(config, transport)`` through an equivalent async
     context manager yielding the same context shape. The transport is passed
     explicitly rather than left to the module-level staged default, so the
@@ -150,18 +159,112 @@ def test_read_only_events_do_not_schedule(tmp_path: Path) -> None:
 
 
 def test_mutating_events_schedule(tmp_path: Path) -> None:
-    """A real create/modify/move/delete on a visible path triggers a reindex."""
+    """A real create/modify/delete on a visible path triggers a reindex."""
     visible = str(tmp_path / "note.md")
     for event in (
         FileCreatedEvent(visible),
         FileModifiedEvent(visible),
         FileDeletedEvent(visible),
-        FileMovedEvent(visible, str(tmp_path / "renamed.md")),
         DirModifiedEvent(str(tmp_path / "subdir")),
+        DirCreatedEvent(str(tmp_path / "subdir")),
+        DirMovedEvent(str(tmp_path / "subdir"), str(tmp_path / "renamed")),
+        DirDeletedEvent(str(tmp_path / "subdir")),
     ):
         handler, calls = _record_handler(tmp_path)
         handler.on_any_event(event)
         assert calls == [1], f"{type(event).__name__} should schedule a reindex"
+
+
+def _capture_watch_subscriptions(
+    source_dir: Path, root_floor: bool = True
+) -> list[tuple[Path, bool, list[type[FileSystemEvent]] | None]]:
+    """Capture production registrations without starting native observer threads."""
+    for name in ("notes", ".claude", "excluded", "state"):
+        (source_dir / name).mkdir(exist_ok=True)
+    watcher = VaultFileWatcher(
+        source_dir,
+        lambda: None,
+        root_floor=root_floor,
+        exclude_patterns=["excluded/**"],
+        internal_dirs=[source_dir / "state"],
+    )
+    with patch("markdown_vault_mcp._file_watcher.Observer") as observer:
+        try:
+            watcher.start()
+            return [
+                (
+                    Path(call.args[1]),
+                    call.kwargs["recursive"],
+                    call.kwargs.get("event_filter"),
+                )
+                for call in observer.return_value.schedule.call_args_list
+            ]
+        finally:
+            watcher.stop()
+
+
+@pytest.mark.parametrize("root_floor", [True, False])
+def test_start_filters_mutations_on_every_watch(
+    tmp_path: Path, root_floor: bool
+) -> None:
+    """Every kept child and optional floor subscribe only to concrete mutations."""
+    subscriptions = _capture_watch_subscriptions(tmp_path, root_floor)
+    expected_roots = {
+        (tmp_path.resolve() / "notes", True),
+        (tmp_path.resolve() / ".claude", True),
+    }
+    if root_floor:
+        expected_roots.add((tmp_path.resolve(), False))
+    assert {(path, recursive) for path, recursive, _ in subscriptions} == expected_roots
+    for _, _, event_filter in subscriptions:
+        assert event_filter is not None
+        assert len(event_filter) == 8
+        assert set(event_filter) == {
+            FileCreatedEvent,
+            DirCreatedEvent,
+            FileModifiedEvent,
+            DirModifiedEvent,
+            FileMovedEvent,
+            DirMovedEvent,
+            FileDeletedEvent,
+            DirDeletedEvent,
+        }
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="inotify is Linux-only")
+@pytest.mark.parametrize("recursive", [True, False])
+def test_inotify_watch_mask_suppresses_reads(tmp_path: Path, recursive: bool) -> None:
+    """Production subscriptions remove read traffic while retaining mutation bits."""
+    from watchdog.observers.inotify import InotifyEmitter
+    from watchdog.observers.inotify_c import WATCHDOG_ALL_EVENTS, InotifyConstants
+
+    event_filter = next(
+        events
+        for _, recurse, events in _capture_watch_subscriptions(tmp_path)
+        if recurse == recursive
+    )
+    emitter = SimpleNamespace(
+        _event_filter=event_filter, watch=SimpleNamespace(is_recursive=recursive)
+    )
+    mask = InotifyEmitter.get_event_mask_from_filter(emitter)  # type: ignore[arg-type]
+    if mask is None:
+        mask = WATCHDOG_ALL_EVENTS
+    assert not mask & (
+        InotifyConstants.IN_OPEN
+        | InotifyConstants.IN_CLOSE_NOWRITE
+        | InotifyConstants.IN_ACCESS
+    )
+    for bit in (
+        InotifyConstants.IN_MODIFY,
+        InotifyConstants.IN_ATTRIB,
+        InotifyConstants.IN_CREATE,
+        InotifyConstants.IN_DELETE,
+        InotifyConstants.IN_MOVED_FROM,
+        InotifyConstants.IN_MOVED_TO,
+        InotifyConstants.IN_DELETE_SELF,
+        InotifyConstants.IN_CLOSE_WRITE,
+    ):
+        assert mask & bit, f"missing mutation bit {bit:#x}"
 
 
 def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:
@@ -171,9 +274,104 @@ def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:
     assert calls == [], "mutations inside hidden dirs must not schedule a reindex"
 
 
+@pytest.mark.parametrize("event_type", [FileMovedEvent, DirMovedEvent])
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("notes", "notes/.save.tmp", "notes/today ü.md", [1]),
+        ("notes", "notes/today ü.md", "notes/.save.tmp", [1]),
+        ("notes", "notes/today ü.md", "notes/renamed.md", [1]),
+        ("notes", "notes/.save.tmp", "notes/.other.tmp", []),
+        ("notes", "notes/.staging/save.tmp", "notes/today ü.md", [1]),
+        ("notes", "notes/.staging/save.tmp", "notes/.hidden/today.md", []),
+        ("notes", "outside/save.tmp", "notes/today ü.md", [1]),
+        ("notes", "notes/today ü.md", "outside/save.tmp", [1]),
+        ("notes", "outside/save.tmp", "outside/today.md", []),
+        ("notes", "", "notes/today ü.md", [1]),
+        ("notes", "notes/today ü.md", "", [1]),
+        ("notes", "", "", []),
+        (".claude", ".claude/.save.tmp", ".claude/today ü.md", [1]),
+    ],
+)
+@settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(data=st.data())
+def test_move_endpoint_relevance(
+    tmp_path: Path,
+    event_type: type[FileMovedEvent] | type[DirMovedEvent],
+    case: tuple[str, str, str, list[int]],
+    data: st.DataObject,
+) -> None:
+    """Either eligible move endpoint schedules once across visible basenames.
+
+    The tmp_path fixture supplies only an immutable root; each example uses a
+    fresh handler and call log without creating files.
+    """
+    root_name, source, destination, expected = case
+    if "today ü.md" in (Path(source).name, Path(destination).name):
+        visible_name = data.draw(
+            st.one_of(
+                st.just("today ü.md"),
+                st.text(
+                    alphabet=st.characters(
+                        categories=("L", "N"), include_characters=" "
+                    ),
+                    min_size=1,
+                    max_size=32,
+                ).map(lambda stem: f"{stem}.md"),
+            ),
+            label="visible_name",
+        )
+        source = source.replace("today ü.md", visible_name)
+        destination = destination.replace("today ü.md", visible_name)
+    handler, calls = _record_handler(tmp_path / root_name)
+    handler.on_any_event(
+        event_type(
+            str(tmp_path / source) if source else "",
+            str(tmp_path / destination) if destination else "",
+        )
+    )
+    assert calls == expected
+
+
 # ---------------------------------------------------------------------------
 # Core debounce behaviour
 # ---------------------------------------------------------------------------
+
+
+def test_temp_replacement_delivers_move_endpoints(tmp_path: Path) -> None:
+    """A real replacement from a hidden temp file reaches on_change (#2063)."""
+    vault = tmp_path.resolve() / "vault"
+    notes = vault / "notes"
+    notes.mkdir(parents=True)
+    target = notes / "today.md"
+    source = notes / ".save.tmp"
+    target.write_bytes(b"old note")
+    source.write_bytes(b"replacement note")
+    delivered = threading.Event()
+    changed = threading.Event()
+    original = _VaultEventHandler.on_any_event
+
+    def record_move(handler: _VaultEventHandler, event: FileSystemEvent) -> None:
+        """Record the matching native move while preserving handler processing."""
+        if isinstance(event, FileMovedEvent) and (event.src_path, event.dest_path) == (
+            str(source),
+            str(target),
+        ):
+            delivered.set()
+        original(handler, event)
+
+    watcher = VaultFileWatcher(vault, changed.set, debounce_s=0.1)
+    with patch.object(_VaultEventHandler, "on_any_event", record_move):
+        try:
+            watcher.start()
+            source.replace(target)
+            assert delivered.wait(timeout=2.0)
+            assert changed.wait(timeout=2.0), "hidden-temp replacement must reindex"
+        finally:
+            watcher.stop()
 
 
 def test_file_change_triggers_on_change(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
+from scripts.check_postgres_images import _PGVECTOR, _VCHORD
 
 from markdown_vault_mcp.stores._postgres import MIN_PGVECTOR
 from tests.fixtures.postgres import OLD_PGVECTOR_ENV
@@ -18,8 +19,6 @@ WORKFLOW = ROOT / ".github" / "workflows" / "postgres-range.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GUIDE = ROOT / "docs" / "use" / "postgresql.md"
 PYPROJECT = ROOT / "pyproject.toml"
-_PGVECTOR = re.compile(r"^pgvector/pgvector:(\d+)\.(\d+)\.(\d+)-pg(\d+)$")
-_VCHORD = re.compile(r"^tensorchord/vchord-suite:pg(\d+)-\d{8}$")
 
 
 def _workflow() -> dict[Any, Any]:
@@ -34,7 +33,7 @@ def _images() -> list[str]:
 def _major(image: str) -> int:
     match = _PGVECTOR.match(image) or _VCHORD.match(image)
     assert match is not None, image
-    return int(match.groups()[-1])
+    return int(match.group("postgres_major"))
 
 
 def test_every_image_is_pinned_to_an_exact_tag() -> None:
@@ -62,7 +61,7 @@ def test_the_guide_names_each_major_whose_lowest_pgvector_is_higher() -> None:
     lowest: dict[int, tuple[int, int, int]] = {}
     for match in filter(None, map(_PGVECTOR.match, _images())):
         version = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        major = int(match.group(4))
+        major = int(match.group("postgres_major"))
         lowest[major] = min(lowest.get(major, version), version)
     guide = GUIDE.read_text(encoding="utf-8")
     missing = [
@@ -176,7 +175,7 @@ def test_the_floors_job_runs_the_lowest_and_newest_range_images() -> None:
     def key(image: str) -> tuple[int, ...]:
         match = _PGVECTOR.match(image)
         assert match is not None, image
-        return (int(match.group(4)), *map(int, match.groups()[:3]))
+        return (int(match.group("postgres_major")), *map(int, match.groups()[:3]))
 
     pgvector = sorted((i for i in _images() if _PGVECTOR.match(i)), key=key)
     by_floor = sorted(pgvector, key=lambda i: (key(i)[1:], key(i)[0]))
@@ -223,3 +222,39 @@ def test_checkout_is_pinned_as_ci_pins_it() -> None:
     ours = set(pin.findall(WORKFLOW.read_text(encoding="utf-8")))
     assert ours
     assert ours <= set(pin.findall(CI_WORKFLOW.read_text(encoding="utf-8")))
+
+
+def test_currency_job_runs_only_on_schedule_or_dispatch() -> None:
+    job = _workflow()["jobs"]["currency"]
+    assert (
+        job["if"]
+        == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    )
+    assert any(
+        "scripts/check_postgres_images.py" in step.get("run", "")
+        for step in job["steps"]
+    )
+
+
+def test_currency_job_alone_may_write_issues() -> None:
+    workflow = _workflow()
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["currency"]["permissions"] == {
+        "contents": "read",
+        "issues": "write",
+    }
+    assert all(
+        "permissions" not in job
+        for name, job in workflow["jobs"].items()
+        if name != "currency"
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["currency"]["steps"]
+        if "check_postgres_images.py" in step.get("run", "")
+    )
+    assert "--sync-issue" in step["run"]
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }

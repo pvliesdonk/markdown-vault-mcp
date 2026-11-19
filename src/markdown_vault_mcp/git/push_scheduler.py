@@ -20,7 +20,7 @@ import logging
 import subprocess
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from markdown_vault_mcp.git._run import (
     _build_askpass_env,
@@ -31,10 +31,18 @@ from markdown_vault_mcp.git.health import one_line, push_failure_reason
 from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from markdown_vault_mcp.git.bootstrap import RepoBootstrap
     from markdown_vault_mcp.git.health import SyncHealthTracker
 
 logger = logging.getLogger(__name__)
+
+_Result = TypeVar("_Result")
+
+
+class PushBackendError(Exception):
+    """Sanitized failure from an injected backend operation."""
 
 
 class PushScheduler:
@@ -64,6 +72,10 @@ class PushScheduler:
         enable_push: Whether deferred push behaviour is enabled at all.
         push_delay_s: Seconds of idle before the timer pushes.  ``0``
             disables the timer (push only on ``flush``/``close``).
+        push: Operation for direct composition; raise on failure. Defaults to
+            the git CLI. The backend must redact its own credentials.
+        has_unpushed: Probe for direct composition; raise on failure. Defaults
+            to the git CLI. The backend must redact its own credentials.
     """
 
     def __init__(
@@ -74,7 +86,11 @@ class PushScheduler:
         health: SyncHealthTracker,
         enable_push: bool,
         push_delay_s: float,
+        push: Callable[[Path], None] | None = None,
+        has_unpushed: Callable[[Path], bool] | None = None,
     ) -> None:
+        self._push = push
+        self._has_unpushed = has_unpushed
         self._lock = lock
         self._bootstrap = bootstrap
         self._health = health
@@ -150,14 +166,20 @@ class PushScheduler:
                 exc.returncode,
                 one_line(self._redact(exc.stderr or "")),
             )
+        except PushBackendError as exc:
+            logger.log(
+                logging.DEBUG if retry else logging.WARNING,
+                "git_push_failed error=%s",
+                one_line(str(exc)),
+            )
         except Exception:
             logger.error("git_push_unexpected_error", exc_info=True)
 
     def do_push(self) -> None:
-        """Execute git push and clear the pending flag on success.
+        """Execute the push and clear the pending flag on success.
 
-        ``_push_pending`` is cleared *after* ``_push()`` returns without
-        raising. On failure the flag stays set so the periodic pull loop
+        ``_push_pending`` is cleared *after* the push (the injected ``push``
+        callable, or the CLI ``_push()``) returns without raising. On failure the flag stays set so the periodic pull loop
         retries the push after its rebase step resolves any non-fast-forward
         divergence (#957); previously the flag was cleared before the push,
         so a failed deferred push left commits local with no retry until the
@@ -175,13 +197,16 @@ class PushScheduler:
             if not self._enable_push or not self._push_pending or git_root is None:
                 return
             try:
-                _push(git_root, self._token, self._username)
+                self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
                 # The stderr travels with the reason: ``push_failed`` is the
                 # bucket every unrecognised message lands in, so the reason
                 # alone names a state and not a cause (#1330).
                 stderr = self._redact(exc.stderr or "")
                 self._health.push_failed(push_failure_reason(stderr), stderr.strip())
+                raise
+            except PushBackendError as exc:
+                self._health.push_failed(push_failure_reason(str(exc)), str(exc))
                 raise
             except Exception as exc:
                 # Redacted like the stderr arm: an exception raised while
@@ -205,36 +230,17 @@ class PushScheduler:
             return
 
         try:
-            ref = resolve_tracking_ref(git_root)
-            if ref is None:
-                # No remote-tracking ref resolvable — not an error at startup.
-                logger.debug("git_push_no_remote_ref")
-                return
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(git_root),
-                    "log",
-                    "--oneline",
-                    f"{ref}..HEAD",
-                ],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            logger.debug("git_push_skipped reason=git_not_found")
+            if self._has_unpushed is None:
+                unpushed = _has_unpushed_commits(git_root)
+            else:
+                unpushed = self._call_backend(self._has_unpushed, git_root)
+        except PushBackendError as exc:
+            logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
             return
-
-        if result.returncode != 0:
-            # No remote-tracking ref or no remote — not an error at startup.
-            logger.debug("git_push_no_remote_ref")
-            return
-
-        if result.stdout.strip():
+        if unpushed:
             logger.info("git_startup_push_pending")
             try:
-                _push(git_root, self._token, self._username)
+                self._run_push(git_root)
             except subprocess.CalledProcessError as exc:
                 sanitized_stderr = self._redact(exc.stderr or "")
                 # WARNING for the same reason as the deferred-push leg
@@ -249,8 +255,33 @@ class PushScheduler:
                 self._health.push_failed(
                     push_failure_reason(sanitized_stderr), sanitized_stderr.strip()
                 )
+            except PushBackendError as exc:
+                self._startup_backend_failed(exc)
             else:
                 self._health.push_succeeded()
+
+    def _startup_backend_failed(self, exc: PushBackendError) -> None:
+        """Record a sanitized backend failure while the caller holds the lock."""
+        logger.warning("git_startup_push_failed error=%s", one_line(str(exc)))
+        self._health.push_failed(push_failure_reason(str(exc)), str(exc))
+
+    def _call_backend(self, fn: Callable[[Path], _Result], git_root: Path) -> _Result:
+        """Wrap injected errors without exposing exception context."""
+        try:
+            return fn(git_root)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, subprocess.CalledProcessError):
+                detail = f"{type(exc).__name__}: exit status {exc.returncode} stderr={exc.stderr or ''}"
+            detail = self._redact(detail)
+        raise PushBackendError(detail) from None
+
+    def _run_push(self, git_root: Path) -> None:
+        """Run the injected operation or resolve the CLI helper at call time."""
+        if self._push is not None:
+            self._call_backend(self._push, git_root)
+        else:
+            _push(git_root, self._token, self._username)
 
     def flush(self) -> None:
         """Block until any pending push completes.
@@ -266,6 +297,27 @@ class PushScheduler:
 
         if pending and self._git_root is not None:
             self.do_push_safe()
+
+
+def _has_unpushed_commits(git_root: Path) -> bool:
+    """Check the CLI tracking ref for local commits to push."""
+    try:
+        ref = resolve_tracking_ref(git_root)
+        if ref is None:
+            logger.debug("git_push_no_remote_ref")
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(git_root), "log", "--oneline", f"{ref}..HEAD"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        logger.debug("git_push_skipped reason=git_not_found")
+        return False
+    if result.returncode != 0:
+        logger.debug("git_push_no_remote_ref")
+        return False
+    return bool(result.stdout.strip())
 
 
 def _push(git_root: Path, token: str | None, username: str = "x-access-token") -> None:
