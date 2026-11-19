@@ -205,6 +205,7 @@ def test_oversized_generated_fold_is_readable_by_section(tmp_path: Path) -> None
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
         nav = vault.reader.okf_navigation("")
         assert (nav.source, nav.body, nav.reason) == (None, None, "note_limit")
         headings = [
