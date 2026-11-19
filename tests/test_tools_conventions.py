@@ -19,7 +19,7 @@ from fastmcp import Client
 
 from tests.server_factory import make_server
 
-from .conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
+from .conftest import wait_for_mcp_writer_drain
 
 ROOT_RULES = "Vault-wide: use sentence-case headings."
 RESOURCE_RULES = (
@@ -44,11 +44,11 @@ def conventions_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _conventions_env(conventions_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _conventions_env(
+    _clear_env: None, conventions_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(conventions_vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 def _structured(result: Any) -> dict[str, Any]:

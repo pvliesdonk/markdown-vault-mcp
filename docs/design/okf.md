@@ -158,12 +158,13 @@ skill fixes them at implementation.
 `okf_version` is read from the root `index.md` frontmatter by a small pure
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
-the clone happens inside the server lifespan). The detection result (mode,
-declared version, active state) is exposed via `stats` and
-`config://vault`; the effective write-side state (`OKF_WRITE` and, once
-they exist, the §6.0 switches) is not reported by either today, which the
-`okf` section of both should fix (#1432). `get_server_info` cannot carry it because that tool is
-template-owned; `stats` is the authoritative reporting surface.
+the clone happens inside the server lifespan). `config://vault` reports the
+mode, declared version and active state, as well as `okf_write_configured`
+and `okf_write_effective`. Active `stats.okf` reports the configured and
+effective write layer as `write_configured` and `write_effective`; it is
+absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
+OKF is active, and the vault is not read-only. Independent services remain
+the subject of #1412.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -414,7 +415,8 @@ bytes, and a default-on stamp would make the declaration do exactly that.
 
 **Where the implementation constraints live.** The configured-versus-
 runnable projections and the two reporting surfaces: #1432. The
-instruction snippet's clause: #1431. The read-only warning: #1434. The
+instruction snippet's clause: #1431. Read-only with `OKF_WRITE` enabled is
+accepted and logs `okf_write_inert` at INFO on startup: #1434. The
 reserved-file guard's admission of the server's own generators: #1419.
 A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
@@ -432,6 +434,13 @@ Tool tags following switches: #1412.
   operator lists in `SERVICE_SUBJECTS`; an unmarked, unlisted service-account
   token still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
+
+  Content writes and verification preserve surviving frontmatter fields in
+  order, including nested mappings and mappings inside lists. Replacing
+  `generated` or `verified` retains its slot; an absent field appends, and
+  content writes still remove `verified`. Order and values survive, while
+  comments, quoting and whitespace may change. The serializer boundary is
+  recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
   no parser can read leaves nothing to stamp and the write is **refused**
@@ -772,7 +781,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
-| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
