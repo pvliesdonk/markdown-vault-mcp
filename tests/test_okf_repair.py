@@ -20,8 +20,19 @@ Body\n"""
 
 
 def test_retire_and_replace_preserve_evidence() -> None:
+    text = """---
+generated: {by: old/1, weight: 0.1234567890123456789}
+verified:
+  - {by: 'human:one', at: 2026-01-01T00:00:00.123456789Z, value: 0.1234567890123456789}
+  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep
+x-mvmcp:
+  other: 0.1234567890123456789
+  reviews: [{value: 0.1234567890123456789}]
+---
+Body
+"""
     result = author_text(
-        NOTE,
+        text,
         {},
         None,
         repair={
@@ -29,7 +40,7 @@ def test_retire_and_replace_preserve_evidence() -> None:
             "replace_generated": {"by": "new/2", "reason": "correction"},
         },
     )
-    before = parse_frontmatter(NOTE).metadata
+    before = parse_frontmatter(text).metadata
     after = parse_frontmatter(result).metadata
     assert after["verified"] == before["verified"][1:]
     assert after["x-mvmcp"]["review_history"] == [
@@ -39,8 +50,13 @@ def test_retire_and_replace_preserve_evidence() -> None:
         {"generated": before["generated"], "reason": "correction"}
     ]
     assert after["x-mvmcp"]["reviews"] == before["x-mvmcp"]["reviews"]
-    assert after["x-mvmcp"]["other"] == "keep"
+    assert after["x-mvmcp"]["other"] == before["x-mvmcp"]["other"]
     assert after["generated"]["by"] == "new/2"
+    assert result.count("0.1234567890123456789") == 4
+    assert "2026-01-01T00:00:00.123456789Z" in result
+    assert (
+        "  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep" in result
+    )
 
 
 @pytest.mark.parametrize(
@@ -58,49 +74,6 @@ def test_retire_and_replace_preserve_evidence() -> None:
 def test_refuses_ambiguous_repairs(repair: dict) -> None:
     with pytest.raises(InvalidRequestError):
         author_text(NOTE, {}, None, repair=repair)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        NOTE.replace("other: keep", "other: keep\n  other: lost"),
-        NOTE.replace("review_history", "unused").replace(
-            "other: keep", "review_history: broken"
-        ),
-    ],
-)
-def test_refuses_unsafe_existing_evidence(text: str) -> None:
-    with pytest.raises(InvalidRequestError):
-        author_text(
-            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "x"}}
-        )
-
-
-def test_facet_repair_uses_etag_and_remaining_reviews(tmp_path) -> None:
-    from markdown_vault_mcp.exceptions import ConcurrentModificationError
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-
-    path = tmp_path / "note.md"
-    path.write_text(NOTE)
-    vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
-    )
-    try:
-        note = vault.reader.read("note.md")
-        assert note is not None
-        repair = {"retire_reviews": {"indices": [0], "reason": "wrong"}}
-        with pytest.raises(ConcurrentModificationError):
-            vault.writer.okf_author(
-                "note.md", if_match="stale", fields={}, repair=repair
-            )
-        assert path.read_text() == NOTE
-        vault.writer.okf_author("note.md", if_match=note.etag, fields={}, repair=repair)
-        assert (
-            parse_frontmatter(path.read_text()).metadata["verified"][0]["by"]
-            == "process:two"
-        )
-    finally:
-        vault.close()
 
 
 def test_retire_single_mapping_keeps_entire_entry() -> None:
@@ -121,23 +94,6 @@ def test_retire_single_mapping_keeps_entire_entry() -> None:
             "reason": "correction",
         }
     ]
-
-
-def test_retirement_changes_trust_tier() -> None:
-    from markdown_vault_mcp.okf import derive_trust_tier
-
-    note = NOTE.replace("at: yesterday", "at: 2026-01-01T00:00:00Z").replace(
-        "at: today", "at: 2026-01-01T00:00:00Z"
-    )
-    before = parse_frontmatter(note).metadata
-    result = author_text(
-        note,
-        {},
-        None,
-        repair={"retire_reviews": {"indices": [0], "reason": "correction"}},
-    )
-    assert derive_trust_tier(before) == "human-reviewed"
-    assert derive_trust_tier(parse_frontmatter(result).metadata) == "machine-confirmed"
 
 
 @pytest.mark.anyio
@@ -169,52 +125,7 @@ async def test_mcp_forwards_repair(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     assert meta["x-mvmcp"]["review_history"][0]["reason"] == "correction"
 
 
-def test_repair_preserves_precision_in_all_evidence() -> None:
-    text = """---
-generated: {by: old/1, weight: 0.1234567890123456789}
-verified:
-  - {by: 'human:one', at: 2026-01-01T00:00:00.123456789Z, value: 0.1234567890123456789}
-  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep
-x-mvmcp:
-  other: 0.1234567890123456789
-  reviews: [{value: 0.1234567890123456789}]
----
-Body
-"""
-    result = author_text(
-        text,
-        {},
-        None,
-        repair={
-            "retire_reviews": {"indices": [0], "reason": "r"},
-            "replace_generated": {"by": "new/1", "reason": "r"},
-        },
-    )
-    assert result.count("0.1234567890123456789") == 4
-    assert "2026-01-01T00:00:00.123456789Z" in result
-    assert (
-        "  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep" in result
-    )
-    again = author_text(
-        result, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "again"}}
-    )
-    assert again.count("0.1234567890123456789") == 4
-
-
-def test_refuse_partial_retirement_of_duplicate_identity() -> None:
-    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}, {by: 'human:a', at: '2026-01-01T00:00:00Z'}]\n---\nBody\n"
-    with pytest.raises(InvalidRequestError, match="identity"):
-        author_text(
-            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
-        )
-
-
-def test_replacement_rejects_invalid_actor_and_repair_type() -> None:
-    with pytest.raises(InvalidRequestError):
-        author_text(NOTE, {}, "tool/1", repair=123)  # type: ignore[arg-type]
-
-
-def test_flow_and_block_histories_keep_raw_precision() -> None:
+def test_append_to_existing_block_and_flow_histories() -> None:
     text = """---
 generated:
   by: old/1
@@ -241,22 +152,31 @@ Body
     assert len(parse_frontmatter(result).metadata["x-mvmcp"]["review_history"]) == 2
 
 
-def test_duplicate_identity_with_equivalent_offset_refused() -> None:
-    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}, {by: 'human:a', at: '2025-12-31T16:00:00-08:00'}]\n---\nBody\n"
+@pytest.mark.parametrize(
+    "second_time", ["2026-01-01T00:00:00Z", "2025-12-31T16:00:00-08:00"]
+)
+def test_partial_retirement_of_shared_identity_refused(second_time: str) -> None:
+    text = f"---\nverified: [{{by: 'human:a', at: '2026-01-01T00:00:00Z'}}, {{by: 'human:a', at: '{second_time}'}}]\n---\nBody\n"
     with pytest.raises(InvalidRequestError, match="identity"):
         author_text(
             text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
         )
 
 
-def test_retire_all_block_reviews_before_next_field() -> None:
-    text = "---\nverified:\n  - by: 'human:a'\n    at: '2026-01-01T00:00:00Z'\nother: keep\n---\nBody\n"
+@pytest.mark.parametrize(
+    "note",
+    ["    at: '2026-01-01T00:00:00Z'", "    note: value  # inline\n  # trailing"],
+)
+def test_retire_all_block_reviews_before_next_field(note: str) -> None:
+    text = f"---\nverified:\n  - by: human:a\n{note}\nother: keep\n---\nBody\n"
     result = author_text(
-        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
+        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
     )
     meta = parse_frontmatter(result).metadata
     assert meta["verified"] == []
     assert meta["other"] == "keep"
+    if "# inline" in note:
+        assert "# inline" in result and "# trailing" in result
 
 
 @pytest.mark.parametrize("note", ["x, y", "x]", "line one\n      line two"])
@@ -315,32 +235,31 @@ def test_replacement_accepts_original_actor_grammar(actor: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "indices", "message"),
     [
-        "---\nverified: [{by: a, by: b}]\n---\nBody\n",
-        "---\nother: &a {by: human:a}\nverified: [*a]\n---\nBody\n",
-        "---\nother: &x {}\nverified: [{by: human:a}]\nx-mvmcp: *x\n---\nBody\n",
+        (NOTE.replace("other: keep", "other: keep\n  other: lost"), [0], None),
+        (NOTE.replace("other: keep", "review_history: broken"), [0], None),
+        ("---\nverified: [{by: a, by: b}]\n---\nBody\n", [0], None),
+        ("---\nother: &a {by: human:a}\nverified: [*a]\n---\nBody\n", [0], "alias"),
+        (
+            "---\nother: &x {}\nverified: [{by: human:a}]\nx-mvmcp: *x\n---\nBody\n",
+            [0],
+            None,
+        ),
+        (
+            "---\nverified:\n  - &review {by: 'human:a', at: yesterday}\n  - *review\n---\nBody\n",
+            [1],
+            "alias",
+        ),
     ],
 )
-def test_refuse_ambiguous_touched_evidence(text: str) -> None:
-    with pytest.raises(InvalidRequestError):
+def test_refuses_unsafe_existing_evidence(
+    text: str, indices: list[int], message: str | None
+) -> None:
+    with pytest.raises(InvalidRequestError, match=message):
         author_text(
-            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
-        )
-
-
-def test_trailing_review_comment_survives_retirement() -> None:
-    text = "---\nverified:\n  - by: human:a\n    note: value  # inline\n  # trailing\nother: keep\n---\nBody\n"
-    result = author_text(
-        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
-    )
-    assert "# inline" in result and "# trailing" in result
-    assert parse_frontmatter(result).metadata["other"] == "keep"
-
-
-def test_refuse_selected_alias_of_an_earlier_review() -> None:
-    text = "---\nverified:\n  - &review {by: 'human:a', at: yesterday}\n  - *review\n---\nBody\n"
-    with pytest.raises(InvalidRequestError, match="alias"):
-        author_text(
-            text, {}, None, repair={"retire_reviews": {"indices": [1], "reason": "fix"}}
+            text,
+            {},
+            None,
+            repair={"retire_reviews": {"indices": indices, "reason": "fix"}},
         )

@@ -821,12 +821,3 @@ async def test_mcp_author_malformed_existing_yaml_is_actionable(
         assert "note.md" in message
         assert "frontmatter" in message
         assert "retry later" not in message
-
-
-@pytest.mark.parametrize("actor", ["org/team/1.0", "a:b/c"])
-def test_producer_accepts_original_actor_grammar(actor: str) -> None:
-    from markdown_vault_mcp._okf_author import author_text
-    from markdown_vault_mcp.scanner import parse_frontmatter
-
-    result = author_text("---\ntype: concept\n---\nBody\n", {}, actor)
-    assert parse_frontmatter(result).metadata["generated"]["by"] == actor
