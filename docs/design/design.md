@@ -331,7 +331,7 @@ are also available through the reader facet. MCP exposes `query_documents`,
 `count_documents` and `aggregate_documents` using the same indexed predicates;
 internal order/pattern-mode switches remain library-only. None changes ranked
 search or its computed OKF behavior. Exact queries reject
-computed `status`, `stale` and `trust_tier` filters and unindexed field names.
+computed `status`, `stale` and `trust_tier` filters and unindexed field names. Indexed `freshness` and `review` filters here match literal frontmatter; the ranked search, list and similarity selectors derive evidence instead.
 
 Scopes are `metadata` (path/title/heading/configured searchable summary), `body`
 (content), and `all`. FTS operators apply within one section row; duplicate
@@ -2112,20 +2112,21 @@ the spec itself says, dated and sourced, in
   `document_tags` (so `filters={"type": ...}` works immediately) and the
   chunking provenance string, so the startup where detection first flips
   cold-rebuilds the tag table once (see Frontmatter Filtering, #927).
-- **Query dimensions (phase 2, #961)**: on an active bundle, three
+- **Query dimensions (phase 2, #961)**: on an active bundle, five
   ``filters`` keys carry OKF semantics in ``search``, ``list_documents``,
   and ``get_similar`` — ``status`` (evaluated against the derived
   lifecycle value, so ``stable`` also matches notes with no ``status``
-  field), ``stale`` (``true``/``false``), and ``trust_tier``; ``type``
-  stays a plain indexed tag lookup. Implementation: the manager splits
+  field), ``stale`` (``true``/``false``), ``trust_tier``, ``freshness`` and
+  ``review``; string ``type`` remains a plain indexed tag lookup, while
+  null ``type`` selects concepts without a usable type. Implementation: the manager splits
   the ``filters`` dict (``SearchManager._split_okf_filters``) and
   evaluates the OKF dimensions as a per-document post-filter over the
   same annotation derivation the read surfaces use — one code path for
   all three search modes (the vector channel must post-filter anyway) —
-  with the candidate pool widened (×4, floor 200; the ``get_similar``
-  precedent) so post-filtering cannot starve the file limit, and
-  verdicts memoized per path so evaluation costs one ``get_note`` per
-  distinct document. This deliberately trades the design sketch's SQL
+  with the candidate pool widened (×4, floor 200). Missing-type and
+  evidence selectors expand the pool until enough distinct matches survive
+  or the source is exhausted. Verdicts are memoized per path within each
+  filtering pass. This deliberately trades the design sketch's SQL
   ``NOT EXISTS`` branch for uniformity; ``document_tags`` still
   accelerates ``type`` (and plain filters) in the FTS channel. With
   detection off, the dimension keys fall back to plain tag semantics

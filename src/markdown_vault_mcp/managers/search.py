@@ -180,6 +180,11 @@ class _RebuildFailedError(Exception):
         self.error = error
 
 
+def _concept_only_filter(filters: Mapping[str, str | None]) -> bool:
+    """Whether selectors exclude reserved files and require pool expansion."""
+    return "type" in filters or bool(filters.keys() & EVIDENCE_FILTER_VALUES.keys())
+
+
 class SearchManager:
     """Manages search, listing, and query operations against the vault.
 
@@ -661,9 +666,7 @@ class SearchManager:
         note_row = self._fts.get_note(path)
         if note_row is None:
             return False
-        if (
-            "type" in okf_filters or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
-        ) and is_okf_reserved_file(path):
+        if _concept_only_filter(okf_filters) and is_okf_reserved_file(path):
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
         return matches_okf_filters(metadata, okf_filters)
@@ -1185,8 +1188,7 @@ class SearchManager:
             lambda rows: self._filter_rows_okf(rows, okf_filters),
             candidate_limit=candidate_limit,
             enough=(lambda rows: len({row.path for row in rows}) >= limit)
-            if "type" in okf_filters
-            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+            if _concept_only_filter(okf_filters)
             else None,
         )
         downweighted = _apply_length_downweight(
@@ -1309,8 +1311,7 @@ class SearchManager:
             ),
             candidate_limit=candidate_limit,
             enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
-            if "type" in okf_filters
-            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+            if _concept_only_filter(okf_filters)
             else None,
         )
         rows = self._adapt_semantic_rows(raw)
@@ -1367,8 +1368,7 @@ class SearchManager:
             lambda rows: self._filter_rows_okf(rows, okf_filters),
             candidate_limit=fts_candidate_limit,
             enough=(lambda rows: len({row.path for row in rows}) >= limit)
-            if "type" in okf_filters
-            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+            if _concept_only_filter(okf_filters)
             else None,
         )
         fts_results: list[FTSResult] = _apply_length_downweight(
@@ -1383,8 +1383,7 @@ class SearchManager:
             ),
             candidate_limit=vec_candidate_limit,
             enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
-            if "type" in okf_filters
-            or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
+            if _concept_only_filter(okf_filters)
             else None,
         )
         vec_rows = _apply_length_downweight(
@@ -1548,11 +1547,7 @@ class SearchManager:
                 n
                 for n in note_infos
                 if not (
-                    (
-                        "type" in okf_filters
-                        or okf_filters.keys() & EVIDENCE_FILTER_VALUES.keys()
-                    )
-                    and is_okf_reserved_file(n.path)
+                    _concept_only_filter(okf_filters) and is_okf_reserved_file(n.path)
                 )
                 and matches_okf_filters(n.frontmatter, okf_filters)
             ]
@@ -1908,17 +1903,21 @@ class SearchManager:
             # yields one result. This widening has always been here; it just
             # answers a different question than the post-filter one above.
             candidate_limit = max(candidate_limit * 4, 200)
-        raw_results = self._vector_rows(
-            lambda store: (
-                store.similar_to_document(path, limit=candidate_limit, folder=folder)
-                if store.count
-                else []
+        raw_results, _ = self._retrieve_candidates(
+            lambda cap: self._vector_rows(
+                lambda store: (
+                    store.similar_to_document(path, limit=cap, folder=folder)
+                    if store.count
+                    else []
+                )
             ),
-        )
-        if not raw_results:
-            return []
-        raw_results = self._post_filter_semantic_rows(
-            raw_results, filters=filters, okf_filters=okf_filters
+            lambda rows: self._post_filter_semantic_rows(
+                rows, filters=filters, okf_filters=okf_filters
+            ),
+            candidate_limit=candidate_limit,
+            enough=(lambda rows: len({row["path"] for row in rows}) >= limit)
+            if _concept_only_filter(okf_filters)
+            else None,
         )
 
         rows = self._adapt_semantic_rows(raw_results)

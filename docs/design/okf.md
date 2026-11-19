@@ -293,16 +293,11 @@ is disk-based rather than index-based, and the tool is hidden under
 
 ### Filters
 
-`search` and `list_documents` accept OKF filter dimensions, implemented on the
-existing `filters` → `document_tags` subquery path (AND semantics unchanged):
+`search`, `list_documents` and `get_similar` accept OKF filter dimensions with AND semantics. Derived dimensions are evaluated as post-filters:
 
 - `type=<value>` — direct tag lookup. `type=null` post-filters admitted notes without a non-empty string type, excluding reserved files. Non-string types match this selector as well as their existing string equality filter.
-- `status=<value>` — tag lookup with the documented caveat that absent
-  `status` means `stable` (the filter for `stable` must match
-  absent-or-stable; this is the one filter that cannot be a pure tag lookup
-  and needs a NOT-EXISTS branch).
-- `stale=true|false` — `stale_after` is indexed as a tag value;
-  staleness is a date comparison against it at query time.
+- `status=<value>` — derived lifecycle status; absent status means `stable`.
+- `stale=true|false` — derived from `stale_after` at query time.
 - `trust_tier=<tier>` — derived from blob fields, so **post-filter** applied
   after candidate retrieval (documented as such; acceptable because trust
   filtering is a triage operation, not a hot search path).
@@ -310,7 +305,7 @@ existing `filters` → `document_tags` subquery path (AND semantics unchanged):
 - `freshness` selects `missing`, `malformed`, `unexpired`, or `expired` evidence.
 - `review` selects `none` (missing or empty), `malformed`, or `recorded`. Recorded describes supplied metadata, not certification or snapshot applicability.
 
-Evidence selectors exclude reserved `index.md` and `log.md` files, compose with other filters using AND, and do not depend on retrieval purpose. In inactive bundles these keys retain ordinary frontmatter equality semantics.
+Evidence selectors exclude reserved `index.md` and `log.md` files, compose with other filters using AND, and do not depend on retrieval purpose. In active bundles these keys are reserved for derived evidence rather than literal frontmatter. In inactive bundles they retain ordinary frontmatter equality semantics. Exact queries match configured literal fields, not derived evidence.
 
 A stale/deprecated listing (filterable `list_documents`) is the data source
 for a future `triage-stale` prompt (docs phase).

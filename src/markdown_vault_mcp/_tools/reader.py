@@ -74,7 +74,8 @@ def register(mcp: FastMCP) -> None:
                 human-reviewed) filter too. `freshness` selects missing, malformed, unexpired or
                 expired; `review` selects none, malformed or recorded. None includes missing
                 and empty reviews; recorded describes supplied metadata only. Evidence filters
-                exclude reserved files. Use `{"type": null}` on an active OKF bundle for searchable notes
+                exclude reserved files. On active bundles those two keys select evidence, not
+                literal frontmatter. Use `{"type": null}` on an active OKF bundle for searchable notes
                 without a non-empty string type, excluding reserved files.
             chunks_per_file: Maximum sections per note, at least 1; omit for the server
                 default.
@@ -356,7 +357,8 @@ def register(mcp: FastMCP) -> None:
                 and trust_tier (unverified, machine-confirmed or human-reviewed) filter
                 too. Evidence filters `freshness` (missing, malformed, unexpired, expired) and
                 `review` (none, malformed, recorded) exclude reserved files. None includes
-                missing and empty reviews; recorded describes supplied metadata only.
+                missing and empty reviews; recorded describes supplied metadata only. On active
+                bundles these keys select evidence, not literal frontmatter.
                 Use `{"type": null}` on an active OKF bundle for searchable notes without
                 a non-empty string type, excluding reserved files.
             wait_for_pending_writes: When True, wait until your recent
@@ -636,7 +638,8 @@ def register(mcp: FastMCP) -> None:
                 (`"true"` or `"false"`) and trust_tier filter too. `freshness` selects missing,
                 malformed, unexpired or expired; `review` selects none, malformed or recorded.
                 None includes missing and empty reviews; recorded describes supplied metadata
-                only. Evidence filters exclude reserved files.
+                only. Evidence filters exclude reserved files. On active bundles these keys select
+                evidence, not literal frontmatter.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

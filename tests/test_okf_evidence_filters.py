@@ -6,6 +6,7 @@ from typing import Literal
 import pytest
 
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.conftest import MockEmbeddingProvider
 
 
 @pytest.fixture
@@ -23,9 +24,7 @@ def evidence_vault(tmp_path: Path):
         (tmp_path / path).write_text(f"---\n{frontmatter}\n---\nzebra\n")
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(
-            indexed_frontmatter_fields=["tags", "freshness", "review"]
-        ),
+        settings=VaultSettings(indexed_frontmatter_fields=["tags"]),
     )
     vault.index.build_index()
     yield vault
@@ -97,5 +96,112 @@ def test_inactive_bundle_uses_plain_frontmatter(tmp_path: Path) -> None:
                 filters={"freshness": "unusual", "review": "custom"},
             )
         ] == ["note.md"]
+    finally:
+        vault.close()
+
+
+class _OrderedProvider(MockEmbeddingProvider):
+    """Synthetic vectors put the selected note behind all other notes."""
+
+    def __init__(self) -> None:
+        super().__init__(dim=2)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [
+            [0.8, 0.6] if "selectedmarker" in text else [1.0, 0.0] for text in texts
+        ]
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        return self.embed(texts)
+
+
+@pytest.fixture
+def crowded_vault(tmp_path: Path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nbundle')
+    (tmp_path / "reference.md").write_text("reference zebra")
+    for i in range(205):
+        (tmp_path / f"near{i:03}.md").write_text(
+            "---\nstale_after: 2000-01-01\nverified: []\n---\nzebra near"
+        )
+    (tmp_path / "selected.md").write_text(
+        "---\nstale_after: 2999-01-01\nverified: [{by: human:alice, at: 2026-01-01T00:00:00Z}]\n---\nzebra selectedmarker"
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(embeddings_path=tmp_path / "vectors"),
+        embedding_provider=_OrderedProvider(),
+    )
+    vault.index.build_index()
+    vault.index.build_embeddings()
+    yield vault
+    vault.close()
+
+
+@pytest.mark.parametrize(
+    "filters", [{"freshness": "unexpired"}, {"review": "recorded"}]
+)
+def test_evidence_reaches_beyond_vector_cap(
+    crowded_vault: Vault, filters: dict[str, str]
+) -> None:
+    for mode in ("semantic", "hybrid"):
+        assert [
+            r.path
+            for r in crowded_vault.reader.search(
+                "zebra", mode=mode, limit=1, filters=filters
+            )
+        ] == ["selected.md"]
+    assert [
+        r.path
+        for r in crowded_vault.reader.get_similar(
+            "reference.md", limit=1, filters=filters
+        )
+    ] == ["selected.md"]
+
+
+@pytest.mark.parametrize(
+    "filters", [{"freshness": "unexpired"}, {"review": "recorded"}]
+)
+async def test_similar_tool_reaches_beyond_vector_cap(
+    crowded_vault: Vault, filters: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp import Client, FastMCP
+
+    from markdown_vault_mcp._tools import reader
+    from tests.conftest import _parse_tool_data
+
+    monkeypatch.setattr(reader, "get_vault", lambda: crowded_vault)
+    server = FastMCP("evidence-test")
+    reader.register(server)
+    async with Client(server) as client:
+        result = _parse_tool_data(
+            await client.call_tool(
+                "get_similar", {"path": "reference.md", "limit": 1, "filters": filters}
+            )
+        )
+        assert [row["path"] for row in result] == ["selected.md"]
+
+
+def test_active_bundle_reserves_evidence_keys_but_exact_queries_use_raw_fields(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.query_types import NoteQuery
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nbundle')
+    (tmp_path / "note.md").write_text(
+        "---\nfreshness: custom\nreview: custom\n---\nzebra"
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(indexed_frontmatter_fields=["freshness", "review"]),
+    )
+    vault.index.build_index()
+    try:
+        for key in ("freshness", "review"):
+            with pytest.raises(ValueError, match=key + " filter"):
+                vault.reader.search("zebra", mode="keyword", filters={key: "custom"})
+            page = vault.reader.query_documents(
+                NoteQuery(query="zebra", filters={key: "custom"})
+            )
+            assert [item["path"] for item in page.items] == ["note.md"]
     finally:
         vault.close()
