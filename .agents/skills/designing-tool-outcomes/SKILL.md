@@ -4,8 +4,6 @@ description: >-
   Use when writing or changing an MCP tool that can fail, refuse, find nothing or hit a conflict: choosing between returning a result and raising ToolError, writing a tool's error text, choosing log levels for tool outcomes, or when a tool call logs ERROR or a traceback for something that is not a server fault.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Designing tool outcomes
 
 A tool call ends in one of four outcomes. Classify each case before you write
