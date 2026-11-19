@@ -11,15 +11,17 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp import Client
+from fastmcp.server.providers.addressing import hash_tool
 
 from markdown_vault_mcp._server_apps import (
+    _APP_NAME,
     _APP_TOOL_NAMES,
     _app_tool_meta,
     _hashed,
     _rewrite_spa_app_tool_calls,
 )
 from markdown_vault_mcp._vault_apps import _compute_claude_app_domain
-from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
+from tests.conftest import wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -581,8 +583,6 @@ class TestAppOnlyTools:
         ai_llm.mkdir(parents=True)
         (ai_llm / "note.md").write_text("# Note\n\nContent.\n")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -658,12 +658,6 @@ class TestAppDomainOverride:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_APP_DOMAIN", "custom.example.com")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example.com")
-        for var in _CLEAR_VARS:
-            if (
-                var != "MARKDOWN_VAULT_MCP_APP_DOMAIN"
-                and var != "MARKDOWN_VAULT_MCP_BASE_URL"
-            ):
-                monkeypatch.delenv(var, raising=False)
         # Server creates successfully — no assertion on domain value since
         # it's internal to the resource config, but the server should not error.
         server = make_server()
@@ -676,7 +670,9 @@ class TestAppDomainOverride:
 
 
 @pytest.fixture
-def _linked_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _linked_env(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Create linked notes in the vault for graph traversal tests."""
     (vault_path / "linked_a.md").write_text(
         "---\ntitle: Linked A\n---\n\n# Linked A\n\n"
@@ -688,8 +684,6 @@ def _linked_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.mark.usefixtures("_mcp_env")
@@ -890,9 +884,6 @@ class TestAppToolLinkedData:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "tags")
-        for var in _CLEAR_VARS:
-            if var != "MARKDOWN_VAULT_MCP_INDEXED_FIELDS":
-                monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -947,5 +938,9 @@ class TestSPARewriteValidation:
         """FastMCP 4 strips the old private ``_tool_hash`` metadata key."""
         name = "vault_list"
         fastmcp_meta = _app_tool_meta(name)["fastmcp"]
-        assert fastmcp_meta["tool_hash"] == _hashed(name).split("_", 1)[0]
+        tool_hash = hash_tool(_APP_NAME, name)
+        assert fastmcp_meta["tool_hash"] == tool_hash
+        # The callable name carries the same hash; fastmcp 4.2 prefixes it
+        # with "__", so match the hash and name rather than the layout.
+        assert _hashed(name).endswith(f"{tool_hash}_{name}")
         assert "_tool_hash" not in fastmcp_meta

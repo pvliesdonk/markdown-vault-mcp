@@ -310,17 +310,9 @@ def mcp_graph_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _mcp_env_graph(mcp_graph_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _CLEAR_VARS = [
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR",
-        "MARKDOWN_VAULT_MCP_DB_PATH",
-        "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-        "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-        "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-        "MARKDOWN_VAULT_MCP_READ_ONLY",
-    ]
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
+def _mcp_env_graph(
+    _clear_env: None, mcp_graph_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(mcp_graph_vault))
 
 
@@ -633,17 +625,9 @@ def mcp_path_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _mcp_env_path(mcp_path_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _CLEAR_VARS = [
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR",
-        "MARKDOWN_VAULT_MCP_DB_PATH",
-        "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-        "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-        "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-        "MARKDOWN_VAULT_MCP_READ_ONLY",
-    ]
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
+def _mcp_env_path(
+    _clear_env: None, mcp_path_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(mcp_path_vault))
 
 

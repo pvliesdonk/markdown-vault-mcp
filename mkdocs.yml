@@ -74,7 +74,8 @@ plugins:
         guides/authentication.md: deploy/authentication.md
         deployment/oidc.md: deploy/oidc.md
         deployment/release-process.md: contribute/release-process.md
-        deployment/template-updates.md: contribute/template-updates.md
+        deployment/template-updates.md: contribute/index.md
+        contribute/template-updates.md: contribute/index.md
         deployment/repository-protection.md: contribute/repository-protection.md
         deployment/integration-branches.md: contribute/integration-branches.md
         # PROJECT-REDIRECTS-START — this project's moved pages; kept across copier update
@@ -232,7 +233,6 @@ nav:
       - Overview: contribute/index.md
       - Documentation structure: contribute/docs-structure.md
       - Release process: contribute/release-process.md
-      - Template updates: contribute/template-updates.md
       - Repository protection: contribute/repository-protection.md
       - Integration branches: contribute/integration-branches.md
       # PROJECT-NAV-CONTRIBUTE-START — kept across copier update
