@@ -424,6 +424,17 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             if snapshot is not None and all(
                 link.link_type != "wikilink"
                 or link.raw_target.startswith(("./", "../"))
+                or (
+                    link.target_path in snapshot.entries
+                    and resolve_wikilink_target(
+                        link.raw_target.split("#", 1)[0],
+                        source,
+                        (),
+                        {link.target_path},
+                        {},
+                    )
+                    == link.target_path
+                )
                 for link in links
             ):
                 targets = {
@@ -445,9 +456,15 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     in {"note_limit", "metadata_complexity", "lfs_unavailable"}
                     if _snapshot_admitted(vault, item, snapshot.read(item.path))
                 }
-                return _snapshot_outlinks(
-                    body, source, _SnapshotLinks(members, {}), extensions
-                )
+                if all(
+                    link.link_type != "wikilink"
+                    or link.raw_target.startswith(("./", "../"))
+                    or link.target_path in members
+                    for link in links
+                ):
+                    return _snapshot_outlinks(
+                        body, source, _SnapshotLinks(members, {}), extensions
+                    )
             if snapshot_index is None:
                 if snapshot is None:
                     raise ValueError("Snapshot links require a Git snapshot")

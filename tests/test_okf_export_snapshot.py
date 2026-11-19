@@ -1359,15 +1359,23 @@ def test_git_included_excluded_complex_note_stays_unadmitted(tmp_path: Path) -> 
         assert archive.read("excluded.md").endswith(b"[[target]]\n")
 
 
+@pytest.mark.parametrize(
+    ("target", "root_target"),
+    [("../target", True), ("target", True), ("target", False)],
+)
 def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
     tmp_path: Path,
+    target: str,
+    root_target: bool,
 ) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "source.md").write_text("[[../target]]\n")
-    (tmp_path / "target.md").write_text("target\n")
+    (tmp_path / "docs" / "source.md").write_text(f"[[{target}]]\n")
+    ((tmp_path if root_target else tmp_path / "docs") / "target.md").write_text(
+        "target\n"
+    )
     other = tmp_path / "unrelated.md"
     other.write_text(
         "version https://git-lfs.github.com/spec/v1\noid sha256:"
@@ -1379,16 +1387,24 @@ def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
     other.unlink()
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
+        if not root_target:
+            with pytest.raises(ValueError, match="LFS"):
+                okf_bundle.build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder="docs"
+                )
+            return
         result = okf_bundle.build_okf_bundle(
             vault,
             ProjectConfig(source_dir=tmp_path),
             folder="docs",
             external_base="https://example.org/vault",
         )
+        with pytest.raises(ValueError, match="LFS"):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
     finally:
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert (
             archive.read("source.md")
-            == b"[../target](https://example.org/vault/target.md)\n"
+            == f"[{target}](https://example.org/vault/target.md)\n".encode()
         )
