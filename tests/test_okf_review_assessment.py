@@ -12,16 +12,15 @@ def test_receipt_backed_claim_is_not_shadowed() -> None:
     orphan = {**entry, "check": "links", "snapshot": concept_snapshot("Old")}
     actual = {**entry, "check": "human-review", "snapshot": current}
     metadata = {"verified": entry, "x-mvmcp": {"reviews": [orphan, actual]}}
-    item = assess_reviews(metadata, current, lambda: [actual])[0]
-    assert (item["snapshot"], item["check"], item["origin"]) == (
-        "matches",
-        "human-review",
-        "local_receipt",
-    )
+    items = assess_reviews(metadata, current, lambda: [actual])
+    assert [(item["snapshot"], item["origin"]) for item in items] == [
+        ("differs", "supplied"),
+        ("matches", "local_receipt"),
+    ]
     metadata = {"verified": [entry, entry], "x-mvmcp": {"reviews": [actual, actual]}}
     items = assess_reviews(metadata, current, lambda: [actual])
     assert [item["snapshot"] for item in items] == ["matches", "matches"]
-    assert [item["origin"] for item in items] == ["local_receipt", "supplied"]
+    assert [item["origin"] for item in items] == ["local_receipt", "local_receipt"]
     metadata["x-mvmcp"]["reviews"].pop()
     assert [
         item["snapshot"] for item in assess_reviews(metadata, current, lambda: [actual])
@@ -32,16 +31,23 @@ def test_receipt_backed_claim_is_not_shadowed() -> None:
         ("differs", "links"),
         ("matches", "human-review"),
     ]
+    assert [item["origin"] for item in items] == ["local_receipt", "local_receipt"]
+    metadata["verified"] = entry
+    assert len(assess_reviews(metadata, current, lambda: [orphan, actual])) == 2
+    metadata["verified"] = [entry, entry]
     metadata["x-mvmcp"]["reviews"] = [None, {**actual, "by": "human:bob"}]
 
     def should_not_load():
         raise AssertionError("unmatched claims must not load receipts")
 
     items = assess_reviews(metadata, current, should_not_load)
-    assert [item["snapshot"] for item in items] == ["unbound", "unbound"]
+    assert [item["snapshot_basis"] for item in items] == [
+        "malformed_binding",
+        "malformed_binding",
+    ]
     assert derive_annotation(metadata, assessments=items)["review_applicability"] == {
-        "snapshot": "unbound",
-        "basis": "no_snapshot_binding",
+        "review": "unknown",
+        "basis": "malformed_binding",
     }
 
 
@@ -158,12 +164,42 @@ def test_real_vault_read_and_rename(tmp_path) -> None:
             read_payload(vault, "note.md")["okf"]["review_assessments"][0]["origin"]
             == "local_receipt"
         )
+        vault.writer.edit("note.md", "Body", "Changed", if_match=read["etag"])
+        assert (
+            read_payload(vault, "note.md")["okf"]["review_assessments"][0]["snapshot"]
+            == "differs"
+        )
         vault.writer.rename("note.md", "renamed.md")
         item = read_payload(vault, "renamed.md")["okf"]["review_assessments"][0]
         assert (item["snapshot"], item["origin"], item["local_evidence"]) == (
-            "matches",
+            "differs",
             "supplied",
             "unavailable",
         )
     finally:
         vault.close()
+
+
+def test_unattributable_rows_are_unknown() -> None:
+    from markdown_vault_mcp._okf_receipts import assess_reviews
+    from markdown_vault_mcp.okf import derive_annotation
+
+    snapshot = concept_snapshot("Body")
+    entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
+    for row in (
+        "broken",
+        {"by": "human:alice"},
+        {"by": "human:alice", "at": "2026-01-01"},
+    ):
+        metadata = {"verified": entry, "x-mvmcp": {"reviews": [row]}}
+        items = assess_reviews(metadata, snapshot, None)
+        assert items[0]["snapshot_basis"] == "malformed_binding"
+    metadata = {
+        "verified": {"by": "bad"},
+        "x-mvmcp": {"reviews": [{**entry, "snapshot": snapshot}]},
+    }
+    items = assess_reviews(metadata, snapshot, None)
+    assert (
+        derive_annotation(metadata, assessments=items)["review_applicability"]
+        == derive_annotation(metadata)["review_applicability"]
+    )

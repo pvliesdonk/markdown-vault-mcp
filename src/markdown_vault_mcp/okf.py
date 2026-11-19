@@ -492,7 +492,7 @@ def derive_annotation(
                 "review": "assessed",
                 "basis": "per_review",
             }
-    elif entries and _review_claims(metadata) != []:
+    elif annotation["review"]["recorded_entries"] and _review_claims(metadata) != []:
         annotation["review_applicability"] = {
             "review": "unknown",
             "basis": "snapshot_not_available",

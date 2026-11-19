@@ -8,6 +8,7 @@ import re
 import tempfile
 import threading
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -25,7 +26,6 @@ from markdown_vault_mcp.okf import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
 
 
 def _snapshot_pair(value: Any) -> tuple[str, str] | None:
@@ -72,12 +72,27 @@ def _assess_claim(
     return item
 
 
+def _review_key(row: Any) -> tuple[str, Any] | None:
+    if not isinstance(row, dict) or not isinstance(row.get("by"), str):
+        return None
+    instant = _parse_stale_after(row.get("at"))
+    return (row["by"], instant) if isinstance(instant, datetime) else None
+
+
+def _receipt_tuple(row: Any) -> tuple[Any, ...] | None:
+    key = _review_key(row)
+    if key is None or not isinstance(row.get("check"), str):
+        return None
+    pair = _snapshot_pair(row.get("snapshot"))
+    return (*key, row["check"], pair) if pair is not None else None
+
+
 def assess_reviews(
     metadata: dict[str, Any],
     snapshot: dict[str, str],
     load: Callable[[], list[dict[str, Any]] | None] | None,
 ) -> list[dict[str, Any]]:
-    """Assess each recorded review against a claim and local receipt.
+    """Assess supplied claims and path receipts for recorded review identities.
 
     Args:
         metadata: Parsed concept frontmatter.
@@ -85,54 +100,30 @@ def assess_reviews(
         load: Deferred path-scoped receipt lookup, if available.
 
     Returns:
-        Separate binding, check and origin facts in recorded order.
+        Separate binding, check and origin facts for each claim or unbound entry.
     """
-    entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
+    groups: dict[tuple[str, Any], list[dict[str, Any]]] = {}
+    for entry in verified_entries(metadata):
+        if _review_recorded(entry):
+            key = _review_key(entry)
+            if key is not None:
+                groups.setdefault(key, []).append(entry)
     raw = _review_claims(metadata)
-    claims = [row for row in raw or [] if isinstance(row, dict)]
-    receipts: list[dict[str, Any]] | None = None
+    malformed = raw is None or any(_review_key(row) is None for row in raw)
+    claims = [row for row in raw or [] if _review_key(row) in groups]
+    rows = (load() if load is not None else None) if claims else None
+    receipts = {_receipt_tuple(row) for row in rows or []}
     result = []
-    for entry in entries:
-
-        def identity(row: dict[str, Any], reference: dict[str, Any] = entry) -> bool:
-            return row.get("by") == reference["by"] and _parse_stale_after(
-                row.get("at")
-            ) == _parse_stale_after(reference["at"])
-
-        candidates = [row for row in claims if identity(row)]
-        if candidates and receipts is None:
-            receipts = (load() if load is not None else None) or []
-
-        def receipt_for(
-            claim: dict[str, Any], rows: list[dict[str, Any]] | None = receipts
-        ) -> dict[str, Any] | None:
-            check, pair = claim.get("check"), _snapshot_pair(claim.get("snapshot"))
-            if rows is None or not isinstance(check, str) or pair is None:
-                return None
-            return next(
-                (
-                    row
-                    for row in rows
-                    if identity(row)
-                    and row.get("check") == check
-                    and _snapshot_pair(row.get("snapshot")) == pair
-                ),
-                None,
-            )
-
-        claim = next(
-            (row for row in candidates if receipt_for(row) is not None),
-            candidates[0] if candidates else None,
-        )
-        item = _assess_claim(entry, claim, snapshot, raw is None)
-        if claim is not None:
-            claims.remove(claim)
-            receipt = receipt_for(claim)
-            if receipt is not None and receipts is not None:
-                receipts.remove(receipt)
+    for key, entries in groups.items():
+        selected = [claim for claim in claims if _review_key(claim) == key]
+        for claim in selected:
+            item = _assess_claim(entries[0], claim, snapshot, malformed)
+            if _receipt_tuple(claim) is not None and _receipt_tuple(claim) in receipts:
                 item["origin"] = "local_receipt"
                 item["local_evidence"] = "available"
-        result.append(item)
+            result.append(item)
+        for entry in entries[len(selected) :]:
+            result.append(_assess_claim(entry, None, snapshot, malformed))
     return result
 
 

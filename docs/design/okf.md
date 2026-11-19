@@ -210,7 +210,10 @@ frontmatter blob; not persisted):
   `check`, `origin`, and `local_evidence` (`available` or `unavailable`).
   Unsupported algorithms use `snapshot_basis: unsupported_algorithm` and make
   the aggregate unknown; malformed bindings or review containers use
-  `malformed_binding`. Freshness and local receipt origin remain separate.
+  `malformed_binding`. Claims join recorded reviewers and instants without
+  consuming receipts; a receipt establishes the tuple at this path, not an
+  event count or file incarnation. Missing, unreadable or newer stores leave
+  local evidence unavailable. Freshness and local receipt origin remain separate.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
