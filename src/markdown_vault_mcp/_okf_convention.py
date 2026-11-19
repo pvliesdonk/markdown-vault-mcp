@@ -264,7 +264,7 @@ class ConventionMaintainer:
             self._refresh_index(anchor)
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
-        """Refresh the written note's folder ``log.md`` and its listing.
+        """Update the selected ancestor ``log.md`` and designated listing.
 
         Index maintenance reaches the designated ancestor, whose listing
         preserves an undesignated existing index as a boundary.
@@ -431,7 +431,7 @@ class ConventionMaintainer:
         return ""
 
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
-        """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
+        """Append a dated ``**Update**`` bullet to the selected ancestor log.
 
         Existing frontmatter is retained byte-for-byte during the body edit.
         """
