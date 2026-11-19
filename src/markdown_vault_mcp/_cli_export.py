@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 
-def export(
+def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     destination: Annotated[Path, typer.Argument(help="Destination ZIP file.")],
     source_dir: str | None = typer.Option(None, help="Vault directory."),
     folder: str = typer.Option("", help="Vault-relative scope root."),
