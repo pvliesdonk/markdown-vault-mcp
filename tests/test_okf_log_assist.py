@@ -409,7 +409,7 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
             with pytest.raises(InvalidRequestError):
                 propose_log_entry(vault, config, paths, None)
         assert len(fake.calls) == 1
-        with pytest.raises(InvalidRequestError, match="No committed content changes"):
+        with pytest.raises(InvalidRequestError, match="No committed text changes"):
             propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
         (tmp_path / "note.md").write_text("# New\n" + "A" * 60000 + "\n")
         git("add", "note.md")
@@ -516,7 +516,7 @@ def test_empty_creation_is_refused_without_mutation(
         summarizer=fake,
     )
     try:
-        with pytest.raises(InvalidRequestError, match="No committed content changes"):
+        with pytest.raises(InvalidRequestError, match="No committed text changes"):
             propose_log_entry(
                 vault, ProjectConfig(source_dir=tmp_path), ["empty.md"], since
             )
@@ -574,9 +574,7 @@ def test_empty_change_is_omitted_from_mixed_selection(
     try:
         config = ProjectConfig(source_dir=tmp_path)
         if rename:
-            with pytest.raises(
-                InvalidRequestError, match="No committed content changes"
-            ):
+            with pytest.raises(InvalidRequestError, match="No committed text changes"):
                 propose_log_entry(vault, config, ["empty.md"], before)
             assert fake.calls == []
         paths = ["empty.md", "edit.md"] if empty_first else ["edit.md", "empty.md"]
@@ -636,6 +634,194 @@ def test_large_multibyte_creation_and_timeout(tmp_path: Path) -> None:
         with pytest.raises(InvalidRequestError, match="diff is too large"):
             propose_log_entry(vault, config, ["large.md"], None)
         assert fake.calls == []
+        assert (tmp_path / "log.md").read_text() == "Existing log\n"
+        assert git("rev-parse", "HEAD") == head
+    finally:
+        vault.close()
+
+
+def test_date_since_uses_a_fixed_utc_instant(tmp_path: Path) -> None:
+    """Dates and equivalent timestamps select the same committed range."""
+    import os
+
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str, date: str = "2026-11-10T10:00:00+00:00") -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            env=dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date),
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "note.md").write_text("Before\n")
+    git("add", "note.md")
+    git("commit", "-m", "before")
+    (tmp_path / "note.md").write_text("After\n")
+    git("add", "note.md")
+    git("commit", "-m", "after", date="2026-11-15T00:00:01+00:00")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        config = ProjectConfig(source_dir=tmp_path)
+        for since in (
+            "2026-11-15",
+            "2026-11-15T00:00:00Z",
+            "2026-11-15T00:00:00+00:00",
+            "2026-11-15T00:00:00",
+        ):
+            propose_log_entry(vault, config, ["note.md"], since)
+            assert "+After" in fake.calls[-1][1]
+        for since in ("2026-11-15T02:00:01+02:00", "2026-11-15T00:00:01"):
+            with pytest.raises(InvalidRequestError, match="No committed text changes"):
+                propose_log_entry(vault, config, ["note.md"], since)
+        assert len(fake.calls) == 4
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("binary_kind", ["nul", "utf16", "attribute"])
+@pytest.mark.parametrize("binary_first", [False, True])
+def test_binary_diff_is_omitted(
+    tmp_path: Path, binary_kind: str, binary_first: bool
+) -> None:
+    """Binary-only changes are refused, and mixed selections send text alone."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    binary = tmp_path / "binary.md"
+    if binary_kind == "attribute":
+        (tmp_path / ".gitattributes").write_text("binary.md binary\n")
+    old = {
+        "nul": b"old\0content\n",
+        "utf16": "old\n".encode("utf-16"),
+        "attribute": b"old\n",
+    }
+    new = {
+        "nul": b"new\0content\n",
+        "utf16": "new\n".encode("utf-16"),
+        "attribute": b"new\n",
+    }
+    binary.write_bytes(old[binary_kind])
+    (tmp_path / "text.md").write_text("Before\n")
+    (tmp_path / "log.md").write_text("Existing log\n")
+    git("add", ".")
+    git("commit", "-m", "before")
+    before = git("rev-parse", "HEAD")
+    binary.write_bytes(new[binary_kind])
+    (tmp_path / "text.md").write_text("After\n")
+    git("add", ".")
+    git("commit", "-m", "after")
+    head = git("rev-parse", "HEAD")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        config = ProjectConfig(source_dir=tmp_path)
+        with pytest.raises(InvalidRequestError, match="No committed text changes"):
+            propose_log_entry(vault, config, ["binary.md"], before)
+        assert fake.calls == []
+        assert (tmp_path / "log.md").read_text() == "Existing log\n"
+        assert git("rev-parse", "HEAD") == head
+        paths = ["binary.md", "text.md"] if binary_first else ["text.md", "binary.md"]
+        propose_log_entry(vault, config, paths, before)
+        assert len(fake.calls) == 1
+        assert "+After" in fake.calls[0][1]
+        assert "Binary files" not in fake.calls[0][1]
+        assert "binary.md" not in fake.calls[0][1]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("kind", ["nul", "utf16", "attribute"])
+@pytest.mark.parametrize("since", [None, "2000-01-01"])
+def test_creation_basis_preserves_readable_content(
+    tmp_path: Path, kind: str, since: str | None
+) -> None:
+    """Readable creation snapshots supply their content; unreadable ones fail."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    if kind == "attribute":
+        (tmp_path / ".gitattributes").write_text("binary.md binary\n")
+    content = {
+        "nul": b"new\0content\n",
+        "utf16": "new\n".encode("utf-16"),
+        "attribute": b"new\n",
+    }
+    (tmp_path / "binary.md").write_bytes(content[kind])
+    (tmp_path / "log.md").write_text("Existing log\n")
+    git("add", ".")
+    git("commit", "-m", "initial")
+    head = git("rev-parse", "HEAD")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        if kind == "utf16":
+            with pytest.raises(DocumentUnreadableError):
+                propose_log_entry(
+                    vault, ProjectConfig(source_dir=tmp_path), ["binary.md"], since
+                )
+            assert fake.calls == []
+        else:
+            propose_log_entry(
+                vault, ProjectConfig(source_dir=tmp_path), ["binary.md"], since
+            )
+            assert len(fake.calls) == 1
+            assert ("+new\0content" if kind == "nul" else "+new") in fake.calls[0][1]
+            assert "Binary files" not in fake.calls[0][1]
         assert (tmp_path / "log.md").read_text() == "Existing log\n"
         assert git("rev-parse", "HEAD") == head
     finally:

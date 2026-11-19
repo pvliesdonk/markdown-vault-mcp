@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime
+from datetime import UTC, datetime
 from difflib import unified_diff
 from typing import TYPE_CHECKING
 
@@ -59,21 +59,19 @@ def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
     return selected
 
 
-def _validate_since(since: str | None) -> None:
-    """Reject dates and revisions that the proposal contract does not support."""
+def _normalize_since(since: str | None) -> str | None:
+    """Resolve ISO dates to an explicit instant or retain a commit SHA."""
     if since is None or re.fullmatch(_SHA_RE, since):
-        return
+        return since
     try:
-        if not re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?",
-            since,
-        ):
-            raise ValueError
-        datetime.fromisoformat(since.replace("z", "Z"))
+        instant = datetime.fromisoformat(since.replace("z", "Z"))
     except ValueError:
         raise InvalidRequestError(
             "Invalid since; pass a commit SHA or an ISO 8601 date or timestamp to okf_propose_log_entry."
         ) from None
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)
+    return instant.isoformat()
 
 
 def _committed_selection(
@@ -133,7 +131,7 @@ def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str
                 diff = vault.reader.get_diff(path, since_sha=start)
             else:
                 diff = vault.reader.get_diff(path, since_timestamp=start)
-        if isinstance(diff, str) and diff.strip():
+        if isinstance(diff, str) and re.search(r"^@@ ", diff, re.MULTILINE):
             if len(diff.encode()) > _DIFF_MAX_BYTES:
                 raise InvalidRequestError(
                     "A selected diff is too large; choose a later since for okf_propose_log_entry."
@@ -141,7 +139,7 @@ def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str
             diffs.append(diff)
     if not diffs:
         raise InvalidRequestError(
-            "No committed content changes were found; choose a different since or paths for okf_propose_log_entry."
+            "No committed text changes were found; choose a different since or paths for okf_propose_log_entry."
         )
     content = "\n\n".join(diffs)
     if len(content) > vault._summarize_max_input_chars:
@@ -166,7 +164,7 @@ def propose_log_entry(
     Returns:
         Suggested text, producer identifier and diff basis.
     """
-    _validate_since(since)
+    since = _normalize_since(since)
     selected = _selected_paths(vault, paths)
     content = _selected_diffs(vault, selected, since)
     if vault._summarizer is None:

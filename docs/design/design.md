@@ -7998,7 +7998,7 @@ Local OKF read observations compare the current concept snapshot with every unam
 
 ### Attributed log proposals
 
-The opt-in log assistance tool sends selected non-empty committed content diffs to the configured summarize backend and returns proposed text, backend/model attribution and a diff basis. A rename without content edits supplies no basis. An optional `since` accepts a commit SHA or an ISO 8601 date or timestamp. It writes nothing and remains available in read-only mode. The explicit setting authorizes external processing. Selection is validated before the backend call, which is bounded by the summarize limits; failures leave the log unchanged. To record reviewed text, pass it to `okf_log_event` with `proposed_by` set to the returned producer.
+The opt-in log assistance tool sends selected committed diffs containing changed text to the configured summarize backend and returns proposed text, backend/model attribution and a diff basis. A rename without content edits supplies no basis. An optional `since` accepts a commit SHA or an ISO 8601 date or timestamp; a date starts at midnight UTC and a timestamp without an offset uses UTC. It writes nothing and remains available in read-only mode. The explicit setting authorizes external processing. Selection is validated before the backend call, which is bounded by the summarize limits; failures leave the log unchanged. To record reviewed text, pass it to `okf_log_event` with `proposed_by` set to the returned producer.
 
 ### Generated navigation divergence (#1394)
 

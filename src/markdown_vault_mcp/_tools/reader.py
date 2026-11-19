@@ -54,11 +54,13 @@ def register(mcp: FastMCP) -> None:
 
         The selected diffs are sent to the operator's configured language model.
         Proposals are available independently of log recording on this server.
+        Notes without changed text are omitted.
 
         Args:
             paths: Vault-relative note paths to include.
-            since: Starting commit SHA or ISO 8601 date or timestamp; omit to explain
-                the latest commit shared by all selected notes.
+            since: Starting commit SHA or ISO 8601 date or timestamp; dates start at
+                midnight UTC, and timestamps without an offset use UTC. Omit to
+                explain the latest commit shared by all selected notes.
 
         Returns:
             Suggested text, producer, and the basis used for the proposal.
