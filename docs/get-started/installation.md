@@ -115,4 +115,35 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin install `[all]`. The `mcp` extra stays for older install commands; the plain package already includes the server. [Embeddings](../use/embeddings.md) explains choosing a provider.
+
+### Goose Desktop: local vault
+
+After [installing the command](#as-a-command-on-your-machine), add this
+entry to `extensions` in `~/.config/goose/config.yaml`, preserving any
+existing entries. Replace both paths with absolute paths on your machine;
+`uv tool dir --bin` locates the installed command.
+
+```yaml
+extensions:
+  markdown-vault-mcp:
+    name: Markdown Vault MCP
+    type: stdio
+    cmd: /Users/me/.local/bin/markdown-vault-mcp
+    args: [serve, --transport, stdio]
+    enabled: true
+    timeout: 300
+    envs:
+      MARKDOWN_VAULT_MCP_SOURCE_DIR: /Users/me/Documents/Notes
+      MARKDOWN_VAULT_MCP_READ_ONLY: "true"
+      MARKDOWN_VAULT_MCP_EXCLUDE: .obsidian/**,.trash/**
+```
+
+This starts a local, read-only vault over stdio, without an HTTP listener.
+The settings folder and trash of an Obsidian vault stay out of searches.
+Ask Goose to find a known note. See
+[Goose's extension setup](https://goose-docs.ai/docs/getting-started/using-extensions/)
+for adding the entry through Desktop instead.
+The [remote client examples](http-client.md#vs-code-connect-to-this-vault)
+cover VS Code and a hosted vault in Goose. This local setup does not need
+HTTP authentication; a public HTTP server does.
 <!-- DOMAIN-INSTALL-EXTRA-END -->

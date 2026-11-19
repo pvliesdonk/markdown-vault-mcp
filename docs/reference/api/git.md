@@ -108,6 +108,20 @@ a regular replacement for a symlink and a new regular file use mode 100644;
 an existing regular file retains its mode. A local `force_push` reports success when
 the tracking ref already equals HEAD; a dry run remains unsupported.
 
+## Settings object
+
+Group configuration in `GitWriteSettings` and pass the repository path separately:
+
+```python { .fragment }
+from pathlib import Path
+from markdown_vault_mcp.git import GitWriteSettings, GitWriteStrategy
+
+settings = GitWriteSettings(token="ghp_your_token", push_delay_s=30)
+strategy = GitWriteStrategy(settings=settings, repo_path=Path("/path/to/vault"))
+```
+
+Legacy flat arguments remain supported. With `settings`, flat arguments must have their default values. The settings object takes precedence over default-valued flat arguments.
+
 ## Migrating from 4.x
 
 `GitWriteStrategy` no longer accepts `commit_name_claim` or `commit_email_claim`. Remove these constructor arguments. The remaining `git_lfs` and `repo_path` options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:
@@ -130,6 +144,8 @@ The older startup warning about missing `git config user.email` is removed. The 
 ## API Reference
 
 <!-- vale off -->
+::: markdown_vault_mcp.git.GitWriteSettings
+
 ::: markdown_vault_mcp.git.GitWriteStrategy
 
 ::: markdown_vault_mcp.git.git_write_strategy

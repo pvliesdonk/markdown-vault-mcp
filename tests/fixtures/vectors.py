@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,6 +14,20 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.interfaces import VectorReader
     from markdown_vault_mcp.providers import EmbeddingProvider
+
+
+def damage_sqlite_page(path: Path, name: str) -> None:
+    """Corrupt a SQLite object's root page after checkpointing its WAL."""
+    with contextlib.closing(sqlite3.connect(path)) as conn:
+        page = conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE name = ?", (name,)
+        ).fetchone()[0]
+        size = conn.execute("PRAGMA page_size").fetchone()[0]
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    data = bytearray(path.read_bytes())
+    data[(page - 1) * size : page * size] = b"\xff" * size
+    data[24:28] = (int.from_bytes(data[24:28], "big") + 1).to_bytes(4, "big")
+    path.write_bytes(data)
 
 
 def metadata_by_path(store: VectorReader) -> dict[str, list[dict[str, Any]]]:
