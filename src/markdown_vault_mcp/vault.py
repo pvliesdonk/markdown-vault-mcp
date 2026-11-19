@@ -892,26 +892,25 @@ class Vault:
             self._git_strategy.set_generated_index_policy(self._is_generated_index)
         from markdown_vault_mcp._okf_log_event import record_group_events
 
-        self._write_callback.hold_group_commit = (
-            type(self._on_write) is GitWriteStrategy
-        )
         self._write_callback.group_write_scope = self._doc_mgr.write_scope
         self._write_callback.group_event_enabled = lambda: bool(
             self.okf_capability_report(active=self._okf.state().active)["log"][
                 "effective"
             ]
         )
-        self._write_callback.group_event = lambda group, day: record_group_events(
-            self._doc_mgr,
-            group.paths,
-            group.description,
-            (
-                capabilities.folders,
-                lambda: self.okf_capability_report(active=self._okf.state().active)[
-                    "log"
-                ],
-            ),
-            day,
+        self._write_callback.group_event = lambda group, paths, day: (
+            record_group_events(
+                self._doc_mgr,
+                paths,
+                group.description,
+                (
+                    capabilities.folders,
+                    lambda: self.okf_capability_report(active=self._okf.state().active)[
+                        "log"
+                    ],
+                ),
+                day,
+            )
         )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

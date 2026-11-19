@@ -137,7 +137,7 @@ def test_owner_settlement_preflights_and_selects_closes(
     from concurrent.futures import Future
     from threading import Condition
 
-    from markdown_vault_mcp._commit_groups import CommitGroup, CommitGroupError
+    from markdown_vault_mcp._commit_groups import CommitGroupError
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
     alice = Principal("alice", None, None, "human")
@@ -146,10 +146,13 @@ def test_owner_settlement_preflights_and_selects_closes(
     completions: dict[str, Future[None]] = {}
     condition = Condition()
 
-    def enqueue(_scope: object, group: CommitGroup) -> Future[None]:
+    def enqueue(_scope: object) -> Future[None]:
         future: Future[None] = Future()
         with condition:
-            completions[group.handle] = future
+            handle = next(
+                g.handle for g in dispatcher._groups.values() if g.scope is _scope
+            )
+            completions[handle] = future
             condition.notify_all()
         return future
 

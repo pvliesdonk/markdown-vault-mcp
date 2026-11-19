@@ -167,19 +167,11 @@ def _insert_preserving(body: str, updated: str, bullet: str, event_date: str) ->
 
 
 def _validate_input(
-    paths: list[str],
-    description: str,
-    proposed_by: str | None,
-    *,
-    grouped: bool = False,
+    paths: list[str], description: str, proposed_by: str | None
 ) -> None:
     if (
         not description.strip()
-        or (
-            len(description.encode("utf-8")) > 4096
-            if grouped
-            else len(description.strip()) > 500
-        )
+        or len(description.strip()) > 500
         or _unsafe(description)
     ):
         raise InvalidRequestError(
@@ -195,7 +187,7 @@ def _validate_input(
         )
     if not paths:
         raise InvalidRequestError("Supply at least one concept path.")
-    if not grouped and any(_unsafe(path) for path in paths):
+    if any(_unsafe(path) for path in paths):
         raise InvalidRequestError("Concept paths must be single-line text.")
 
 
@@ -295,7 +287,8 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     Returns:
         Path of the log receiving the event.
     """
-    _validate_input(paths, description, proposed_by, grouped=grouped)
+    if not grouped:
+        _validate_input(paths, description, proposed_by)
     folders, capability_report = policy
     report = capability_report()
     if not report["effective"]:
@@ -304,16 +297,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         )
     doc_mgr.ensure_writable()
     with doc_mgr.write_scope():
-        canonical = (
-            [
-                doc_mgr._validate_path(p)
-                .relative_to(doc_mgr._source_dir.resolve())
-                .as_posix()
-                for p in paths
-            ]
-            if grouped
-            else _canonical_paths(doc_mgr, paths)
-        )
+        canonical = paths if grouped else _canonical_paths(doc_mgr, paths)
         common = os.path.commonpath([folder_of(p) for p in canonical])
         folder = (
             log_folder
@@ -360,9 +344,7 @@ def record_group_events(
         today: Date captured when the group closed.
 
     """
-    folders, report = policy
-    if not report()["effective"]:
-        return
+    folders, _ = policy
     root = doc_mgr._source_dir.resolve()
     grouped: dict[str, list[str]] = {}
     for path in sorted(paths):
@@ -373,6 +355,7 @@ def record_group_events(
         folder = log_anchor(parent, folders, doc_mgr._source_dir)
         grouped.setdefault(folder, []).append(relative)
     logs: list[Path] = []
+    failures: list[Exception] = []
     for folder, paths_for_log in grouped.items():
         try:
             log = record_event(
@@ -384,7 +367,7 @@ def record_group_events(
                 grouped=True,
                 log_folder=folder,
             )
-        except Exception:
+        except Exception as exc:
             failed = f"{folder}/log.md" if folder else "log.md"
             logger.error(
                 "okf_group_event_failed path=%s completed=%s",
@@ -392,5 +375,8 @@ def record_group_events(
                 [str(p.relative_to(root)) for p in logs],
                 exc_info=True,
             )
-            raise
+            failures.append(exc)
+            continue
         logs.append(root / log)
+    if failures:
+        raise ExceptionGroup("Group history could not be recorded", failures)

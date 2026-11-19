@@ -6994,11 +6994,11 @@ in a Git command argument. An OKF group suppresses per-write bullets and
 records its description once per touched log at close when logging is enabled.
 A finalizer writes the events under the file lock before the scope end marker;
 the opener identity and close date are captured. A failed event sets
-`history_failed` separately from the Git outcome. Absent paths remain plain text in history.
-For the built-in Git strategy, the file lock stays held through the commit for up
-to 30 seconds; a longer commit releases the lock while its result remains pending.
-An ungrouped event already written before its own scope ends can still enter a
-group commit that stages the shared log.
+`history_failed` separately from the Git outcome; every selected log is attempted,
+and the server log names failures. Absent paths remain plain text in history.
+Git stages the whole log file. Concurrent groups sharing a log can place entries
+in another group's commit; an ungrouped event already written before its scope
+ends can also enter a group commit that stages the shared log.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with

@@ -79,7 +79,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-_GROUP_COMMIT_WAIT_TIMEOUT = 30.0
 _deferred_group_write: ContextVar[list[bool] | None] = ContextVar(
     "deferred_group_write", default=None
 )
@@ -151,10 +150,9 @@ class WriteCallbackDispatcher:
             group_max_age_s: Maximum group age in seconds.
         """
         self._on_write = on_write
-        self.group_event: Callable[[CommitGroup, date], None] | None = None
+        self.group_event: Callable[[CommitGroup, set[Path], date], None] | None = None
         self.group_write_scope: Callable[[], AbstractContextManager[None]] = nullcontext
         self.group_event_enabled: Callable[[], bool] = lambda: False
-        self.hold_group_commit = False
         self._groups: dict[str, CommitGroup] = {}
         self._group_lock = threading.RLock()
         self._group_pull_gate = threading.Lock()
@@ -285,6 +283,8 @@ class WriteCallbackDispatcher:
                             group.paths.add(old_path)
                     if group.closed:
                         scope = current_commit_scope() if self._accepts_batch else None
+            if self._on_write is None:
+                return
             with self._worker_lock:
                 if self._closed:
                     logger.warning(
@@ -296,10 +296,6 @@ class WriteCallbackDispatcher:
                 self._ensure_worker_locked()
                 if scope is not None:
                     self._scopes_with_writes.add(scope.token)
-                if bound_group is not None and group is not None and not group.closed:
-                    self._scopes_with_writes.add(bound_group.token)
-                if self._on_write is None:
-                    return
                 self._queue.put(
                     (
                         abs_path,
@@ -445,11 +441,13 @@ class WriteCallbackDispatcher:
     ) -> None:
         """Write group history before its end marker, outside the group lock."""
         record_history = bool(
-            self.group_event is not None and group.paths and self.group_event_enabled()
+            self.group_event is not None and self.group_event_enabled()
         )
         with self.group_write_scope() if record_history else nullcontext():
+            with self._group_lock:
+                paths = group.paths.copy()
             try:
-                if record_history and self.group_event is not None:
+                if record_history and paths and self.group_event is not None:
                     identity = (
                         bound_principal(group.principal)
                         if group.principal
@@ -460,22 +458,15 @@ class WriteCallbackDispatcher:
                         bound_commit_group(group.scope),
                         auxiliary_commit_writes(),
                     ):
-                        self.group_event(group, day)
+                        self.group_event(group, paths, day)
             except Exception:
                 with self._group_lock:
                     group.record(
                         GroupCommitResult(None, 0, "no_changes", history_failed=True)
                     )
             with self._group_lock:
-                done = self._enqueue_scope_end(group.scope, group)
+                done = self._enqueue_scope_end(group.scope)
                 group.closed = True
-            if record_history and self.hold_group_commit and done is not None:
-                try:
-                    done.result(timeout=_GROUP_COMMIT_WAIT_TIMEOUT)
-                except TimeoutError:
-                    logger.warning(
-                        "group_commit_wait_timeout action=release_write_lock"
-                    )
 
         def finish(_done: Future[None] | None = None) -> None:
             with self._group_lock:
@@ -575,9 +566,7 @@ class WriteCallbackDispatcher:
         """
         self._enqueue_scope_end(scope)
 
-    def _enqueue_scope_end(
-        self, scope: CommitScope, group: CommitGroup | None = None
-    ) -> Future[None] | None:
+    def _enqueue_scope_end(self, scope: CommitScope) -> Future[None] | None:
         """Enqueue the scope end and return its completion without blocking.
 
         Args:
@@ -586,7 +575,7 @@ class WriteCallbackDispatcher:
         Returns:
             A future for the callback attempt, or None when no wait is needed.
         """
-        if group is None and (self._on_write is None or not self._accepts_batch):
+        if self._on_write is None or not self._accepts_batch:
             return None
         with self._worker_lock:
             wrote = scope.token in self._scopes_with_writes
@@ -709,7 +698,6 @@ class WriteCallbackDispatcher:
 
     def _run(self) -> None:
         """Worker loop: drain the queue until the sentinel is dequeued."""
-        # Group history can also start the worker without a Git callback.
         try:
             while True:
                 item = self._queue.get()
