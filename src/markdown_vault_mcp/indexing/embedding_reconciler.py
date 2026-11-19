@@ -25,16 +25,31 @@ import math
 import time
 from array import array
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass, field
+from itertools import groupby, islice
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
-from markdown_vault_mcp.exceptions import ReadOnlyError
-from markdown_vault_mcp.interfaces import ReadsMetadataInBatches, ReadsRowsInBatches
+from markdown_vault_mcp.exceptions import ReadOnlyError, StoreCorruptError
+from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage, _misses
+from markdown_vault_mcp.interfaces import (
+    IteratesChunks,
+    ReadsMetadataInBatches,
+    ReadsRowsInBatches,
+)
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+    from collections.abc import (
+        Callable,
+        Collection,
+        Generator,
+        Iterable,
+        Iterator,
+        Sequence,
+    )
+    from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
     from markdown_vault_mcp.indexing.donor import Donor
@@ -187,6 +202,7 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
+    recover_corruption: bool
 
 
 def _stored_metadata(
@@ -236,6 +252,7 @@ class EmbeddingReconciler:
         source_probe: Answers whether a document the keyword index holds no
             rows for is still at its source.
         is_excluded: Whether a path matches the vault's exclusions.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
     """
 
     def __init__(
@@ -247,7 +264,9 @@ class EmbeddingReconciler:
         batch_size: int,
         source_probe: SourceProbe,
         is_excluded: Callable[[str], bool],
+        scratch_dir: Path | None = None,
     ) -> None:
+        self._scratch_dir = scratch_dir
         self._fts = fts
         self._provider = provider
         self._builder = embed_builder
@@ -266,38 +285,77 @@ class EmbeddingReconciler:
             holds rows for but with nothing embeddable (#1087) is present,
             with no texts.
         """
-        texts: dict[str, list[str]] = {}
-        metadata: dict[str, list[dict[str, Any]]] = {}
-        tokens: dict[str, RevisionToken] = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in self._fts.list_chunks(paths=paths):
-            path = row["path"]
-            tokens[path] = row["content_hash"]
-            texts.setdefault(path, [])
-            metadata.setdefault(path, [])
-            preamble = (
-                self._builder.fields_text(row.get("frontmatter_json"))
-                if row.get("is_first_chunk")
-                else ""
-            )
-            text = self._builder.build(
-                title=row["title"],
-                heading=row["heading"],
-                content=row["content"],
-                fields_text=preamble,
-                is_first_chunk=bool(row.get("is_first_chunk")),
-            )
-            if not is_embeddable(text):
-                continue  # #1087: a blank input never enters the signature
-            texts[path].append(text)
-            metadata[path].append(
-                {**{k: row.get(k) for k in _METADATA_KEYS}, "preamble": preamble}
-            )
-        return {
-            path: _Document(
-                path, tokens[path], tuple(texts[path]), tuple(metadata[path])
-            )
-            for path in tokens
-        }
+            grouped.setdefault(row["path"], []).append(row)
+        return {path: self._document(path, rows) for path, rows in grouped.items()}
+
+    def _document(self, path: str, rows: Iterable[dict[str, Any]]) -> _Document:
+        """Project grouped rows to one document's embedding inputs."""
+        texts: list[str] = []
+        metadata: list[dict[str, Any]] = []
+        token = ""
+        for row in rows:
+            token = row["content_hash"]
+            item = self._embedding_input(row)
+            if item is not None:
+                text, meta = item
+                texts.append(text)
+                metadata.append(meta)
+        return _Document(path, token, tuple(texts), tuple(metadata))
+
+    def _embedding_input(
+        self, row: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Build the shared embedding text and metadata for a keyword row."""
+        first = bool(row.get("is_first_chunk"))
+        preamble = (
+            self._builder.fields_text(row.get("frontmatter_json")) if first else ""
+        )
+        text = self._builder.build(
+            title=row["title"],
+            heading=row["heading"],
+            content=row["content"],
+            fields_text=preamble,
+            is_first_chunk=first,
+        )
+        if not is_embeddable(text):
+            return None
+        return text, {**{k: row.get(k) for k in _METADATA_KEYS}, "preamble": preamble}
+
+    def _build_documents(self) -> Generator[_Document]:
+        """Stream grouped built-in rows; retain required-index fallback grouping."""
+        if not isinstance(self._fts, IteratesChunks):
+            yield from self.documents().values()
+            return
+        source = self._fts.iter_chunks()
+        try:
+            for path, rows in groupby(source, key=lambda row: row["path"]):
+                yield self._document(path, rows)
+        finally:
+            close = getattr(source, "close", None)
+            if close is not None:
+                close()
+
+    def _classified(
+        self,
+        store: EmbeddingStore | None,
+        dimension: int,
+        donor: Donor | None,
+        reuse_own: bool,
+    ) -> Generator[tuple[_Document, dict[int, array[float]], int]]:
+        """Classify one bounded document window at a time."""
+        with closing(self._build_documents()) as source:
+            docs = (doc for doc in source if doc.texts)
+            own = store if reuse_own and store is not None and store.count > 0 else None
+            while window := list(islice(docs, _ROWS_BATCH)):
+                paths = [doc.path for doc in window]
+                stored = _float32_rows(own, paths) if own else ((p, []) for p in paths)
+                for doc, (_path, rows) in zip(window, stored, strict=True):
+                    mine = stored_inputs(self._builder, rows)
+                    given = donor.vectors_for(doc.path) if donor is not None else {}
+                    hits, donated = _split_document(doc, mine, given, dimension)
+                    yield doc, hits, donated
 
     def reconcile(
         self,
@@ -305,6 +363,7 @@ class EmbeddingReconciler:
         paths: Collection[str] | None = None,
         *,
         site: str,
+        recover_corruption: bool = False,
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
@@ -322,6 +381,7 @@ class EmbeddingReconciler:
             store: The store to write.
             paths: The documents to reconcile; ``None`` for a whole-store pass.
             site: Which caller, for the log lines.
+            recover_corruption: Propagate typed write corruption for recovery.
 
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
@@ -329,7 +389,7 @@ class EmbeddingReconciler:
         stored = store.tokens()
         docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
-        state = _Pass(store, stored, ReconcileResult(), site)
+        state = _Pass(store, stored, ReconcileResult(), site, recover_corruption)
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []
         ordered = sorted(docs)
@@ -563,6 +623,8 @@ class EmbeddingReconciler:
         except ReadOnlyError:
             raise
         except Exception as exc:
+            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                raise
             # Broad by design: each backend raises its own I/O error. The
             # generation did not publish, so every document keeps its rows.
             state.result.kept += sum(len(doc.texts) for doc in docs)
@@ -612,36 +674,41 @@ class EmbeddingReconciler:
         Raises:
             StoreUnavailableError: If *donor* can no longer be read; nothing
                 is published.
+            OSError: If scratch preparation or writing fails; nothing is published.
         """
-        docs = [d for d in self.documents().values() if d.texts]
         populated = store.count > 0
-        found, misses, donated = self._split(
-            docs, store, identity.dimension, donor, reuse_own
-        )
-        embedded_inputs, failed = self._embed_batches(misses, identity.dimension)
-        rows, embedded = _assemble(docs, found, embedded_inputs)
-        reused = sum(len(v) for v in found.values())
-        published = False
-        if rows and failed and populated:
-            logger.warning(
-                "build_embeddings_not_published reason=batch_failed failed_batches=%d",
-                failed,
-            )
-        elif rows:
-            store.publish_generation(identity, rows)
-            published = True
-        if donor is not None:
-            logger.info(
-                "embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d "
-                "published=%s",
-                donor.source,
-                donated,
-                embedded,
-                donor.refused_rows,
-                published,
-            )
-        attempted = sum(len(d.texts) for d in docs)
-        return RebuildOutcome(embedded, reused, attempted, published, failed)
+        reused = attempted = donated = 0
+        with EmbeddingStage(self._scratch_dir) as stage:
+            with closing(
+                self._classified(store, identity.dimension, donor, reuse_own)
+            ) as classified:
+                for doc, hits, from_donor in classified:
+                    stage.add(doc, hits)
+                    attempted += len(doc.texts)
+                    reused += len(hits)
+                    donated += from_donor
+            stage.finish()
+            embedded, failed = self._embed_stage(stage, identity.dimension)
+            published = False
+            if (reused or embedded) and failed and populated:
+                logger.warning(
+                    "build_embeddings_not_published reason=batch_failed failed_batches=%d",
+                    failed,
+                )
+            elif reused or embedded:
+                store.publish_generation(identity, stage)
+                published = True
+            if donor is not None:
+                logger.info(
+                    "embeddings_donor_used source=%s reused=%d embedded=%d refused_rows=%d "
+                    "published=%s",
+                    donor.source,
+                    donated,
+                    embedded,
+                    donor.refused_rows,
+                    published,
+                )
+            return RebuildOutcome(embedded, reused, attempted, published, failed)
 
     def preview(
         self,
@@ -666,119 +733,71 @@ class EmbeddingReconciler:
         Raises:
             StoreUnavailableError: If *donor* can no longer be read.
         """
-        docs = [d for d in self.documents().values() if d.texts]
-        found, misses, _ = self._split(
-            docs, store, identity.dimension, donor, reuse_own
-        )
-        return RebuildPreview(
-            chunks=sum(len(d.texts) for d in docs),
-            reusable=sum(len(v) for v in found.values()),
-            to_embed=len(misses),
-        )
+        chunks = reusable = to_embed = 0
+        with closing(
+            self._classified(store, identity.dimension, donor, reuse_own)
+        ) as classified:
+            for doc, hits, _ in classified:
+                chunks += len(doc.texts)
+                reusable += len(hits)
+                to_embed += len(_misses(doc.texts, hits))
+        return RebuildPreview(chunks, reusable, to_embed)
 
-    def _split(
-        self,
-        docs: list[_Document],
-        store: EmbeddingStore | None,
-        dimension: int,
-        donor: Donor | None,
-        reuse_own: bool,
-    ) -> tuple[
-        dict[str, dict[int, array[float]]],
-        list[tuple[str, RevisionToken, str, dict[str, Any]]],
-        int,
-    ]:
-        """Sort every chunk into a found vector or a miss to embed.
-
-        With *reuse_own*, the store's own rows are read :data:`_ROWS_BATCH`
-        documents at a time from a store that reads rows in batches (#1970).
-
-        Returns:
-            Per path, chunk index to its found vector; the inputs to embed,
-            each once per document; and how many found vectors came from
-            *donor*.
-        """
-        donated = 0
-        own = store if reuse_own and store is not None and store.count > 0 else None
-        found: dict[str, dict[int, array[float]]] = {}
-        misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
-        paths = [doc.path for doc in docs]
-        stored = _float32_rows(own, paths) if own else ((p, []) for p in paths)
-        for doc, (_path, rows) in zip(docs, stored, strict=True):
-            mine = stored_inputs(self._builder, rows)
-            given = donor.vectors_for(doc.path) if donor is not None else {}
-            hits, wanted, from_donor = _split_document(doc, mine, given, dimension)
-            if hits:
-                found[doc.path] = hits
-            misses.extend(wanted)
-            donated += from_donor
-        return found, misses, donated
-
-    def _embed_batches(
-        self,
-        flat: list[tuple[str, RevisionToken, str, dict[str, Any]]],
-        dimension: int,
-    ) -> tuple[dict[tuple[str, str], array[float]], int]:
-        """Embed *flat* in bounded batches, skipping a batch that fails.
-
-        Per-batch detail logs at DEBUG; INFO carries only a decile heartbeat
-        with an ETA (#311). A batch the provider rejects is logged and
-        skipped rather than aborting the build (#649).
-
-        Returns:
-            Each embedded ``(path, input)`` to its float32 vector, and the
-            number of batches that failed.
-        """
-        total = len(flat)
+    def _embed_stage(self, stage: EmbeddingStage, dimension: int) -> tuple[int, int]:
+        """Embed staged misses in global batches and write their results."""
+        total = stage.miss_count
         started = time.monotonic()
-        last_decile = 0
-        failed = 0
-        kept: dict[tuple[str, str], array[float]] = {}
-        for start in range(0, total, self._batch_size):
-            end = min(start + self._batch_size, total)
-            batch = flat[start:end]
-            try:
-                vectors = _float32_batch(
-                    self._provider.embed([item[2] for item in batch]),
-                    dimension,
-                    end - start,
-                )
-            except Exception as exc:
-                # Broad by design: providers raise heterogeneous types for an
-                # oversized batch (RuntimeError, httpx errors, ...).
-                failed += 1
-                logger.warning(
-                    "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
-                    "chunks_total=%d err=%s",
-                    start + 1,
-                    end,
-                    total,
-                    exc,
-                    exc_info=True,
-                )
-            else:
-                for (path, _token, text, _meta), vector in zip(
-                    batch, vectors, strict=True
-                ):
-                    kept[(path, text)] = vector
-            logger.debug(
-                "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
-                "chunks_total=%d",
-                start + 1,
-                end,
-                total,
-            )
-            last_decile = _log_progress(end, total, started, last_decile)
-        return kept, failed
+        embedded = failed = last_decile = 0
+
+        def results() -> Generator[array[float] | None]:
+            nonlocal embedded, failed, last_decile
+            with closing(stage.misses()) as misses:
+                for start in range(0, total, self._batch_size):
+                    batch = list(islice(misses, self._batch_size))
+                    end = start + len(batch)
+                    try:
+                        vectors = _float32_batch(
+                            self._provider.embed([text for text, _ in batch]),
+                            dimension,
+                            len(batch),
+                        )
+                    except Exception as exc:
+                        failed += 1
+                        logger.warning(
+                            "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
+                            "chunks_total=%d err=%s",
+                            start + 1,
+                            end,
+                            total,
+                            exc,
+                            exc_info=True,
+                        )
+                        yield from (None for _ in batch)
+                    else:
+                        embedded += sum(count for _, count in batch)
+                        yield from vectors
+                    logger.debug(
+                        "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
+                        "chunks_total=%d",
+                        start + 1,
+                        end,
+                        total,
+                    )
+                    last_decile = _log_progress(end, total, started, last_decile)
+
+        stage.write_results(results())
+        return embedded, failed
 
     @staticmethod
     def _write_failed(state: _Pass, path: str, chunks: int, exc: Exception) -> None:
-        """Keep *path*'s rows after a store write failed, for the next flush.
+        """Keep *path*'s rows after a write failure, unless corruption is recoverable.
 
-        A store that writes durably raises its own I/O errors (a full disk,
-        a lock timeout); like a provider failure, it costs this path, not
-        the pass (#1497).
+        Other store write errors, such as a full disk or lock timeout, cost
+        this path rather than the pass (#1497). Recoverable corruption
+        propagates to the owner for rebuilding (#1976).
         """
+        if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+            raise exc
         state.result.kept += chunks
         state.result.retry.add(path)
         logger.warning(
@@ -800,30 +819,18 @@ def _split_document(
     mine: dict[str, Any],
     given: dict[str, Any],
     dimension: int,
-) -> tuple[
-    dict[int, array[float]], list[tuple[str, RevisionToken, str, dict[str, Any]]], int
-]:
-    """Sort one document's chunks: own rows first, then the donor's, else a miss.
-
-    Returns:
-        Chunk index to its found vector; the inputs to embed, each once; and
-        how many found vectors came from the donor.
-    """
+) -> tuple[dict[int, array[float]], int]:
+    """Find own then donor vectors for one document's chunk inputs."""
     found: dict[int, array[float]] = {}
-    misses: list[tuple[str, RevisionToken, str, dict[str, Any]]] = []
-    wanted: set[str] = set()
     donated = 0
-    for index, (text, meta) in enumerate(zip(doc.texts, doc.metadata, strict=True)):
+    for index, text in enumerate(doc.texts):
         vector = _sized(mine.get(text), dimension)
         if vector is None:
             vector = _sized(given.get(text), dimension)
             donated += vector is not None
         if vector is not None:
             found[index] = vector
-        elif text not in wanted:
-            wanted.add(text)
-            misses.append((doc.path, doc.token, text, meta))
-    return found, misses, donated
+    return found, donated
 
 
 def _float32_rows(
@@ -853,34 +860,6 @@ def _float32_rows(
         found = store.rows_by_path(batch)
         for path in batch:
             yield path, found.get(path, [])
-
-
-def _assemble(
-    docs: list[_Document],
-    found: dict[str, dict[int, array[float]]],
-    embedded: dict[tuple[str, str], array[float]],
-) -> tuple[list[DocumentRows], int]:
-    """Lay out each document's rows in chunk order; a chunk with no vector is left out.
-
-    Returns:
-        The documents with at least one row, and how many of their rows were
-        embedded (as opposed to found).
-    """
-    out: list[DocumentRows] = []
-    count = 0
-    for doc in docs:
-        rows: list[VectorRow] = []
-        mine = found.get(doc.path, {})
-        for index, (text, meta) in enumerate(zip(doc.texts, doc.metadata, strict=True)):
-            vector = mine.get(index)
-            if vector is None:
-                vector = embedded.get((doc.path, text))
-                count += vector is not None
-            if vector is not None:
-                rows.append(VectorRow(vector, dict(meta)))
-        if rows:
-            out.append(DocumentRows(doc.path, doc.token, tuple(rows)))
-    return out, count
 
 
 def _sized(vector: Sequence[float] | None, dimension: int) -> array[float] | None:
@@ -926,10 +905,9 @@ def _float32_batch(
 ) -> list[array[float]]:
     """Pack a batch as float32, refusing what the store would refuse.
 
-    A cold build holds every row until it publishes, so rows are kept at the
-    store's precision rather than as Python floats, which cost eight times
-    the memory. The checks run on the packed values: a value too large for
-    float32 becomes infinite there.
+    Rows are kept at the store's precision rather than as Python floats.
+    The checks run on the packed values: a value too large for float32
+    becomes infinite there.
 
     Raises:
         ValueError: If the count, a dimension or a value is wrong.

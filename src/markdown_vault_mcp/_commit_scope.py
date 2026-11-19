@@ -6,19 +6,20 @@ produced **2,595 commits for one logical migration**, and every concurrent MCP
 write queued behind 2,595 sequential ``git commit`` invocations until the call
 timed out.
 
-This module supplies the missing boundary. A :class:`CommitScopeMiddleware`
-binds a scope for the duration of each tool call; the dispatcher snapshots that
+The server middleware supplies the missing boundary. It binds a scope for the
+duration of each tool call; the dispatcher snapshots that
 scope when a write is fired and groups the call's writes into **one** commit.
 A call that touched many files is named after the tool that caused them; a call
-that touched exactly one keeps that file's own path as the subject, so ordinary
-writes read in ``git log`` exactly as they always have.
+that touched exactly one keeps that file's own path as the subject. A folder
+move instead names its source and destination. Secondary
+writes (OKF maintenance, a rename's backlink rewrites) are marked separately so
+they can share that note's commit without replacing its path subject with a
+count.
 
-The scope travels in a :class:`~contextvars.ContextVar` and is read in
-``fire``, never on the dispatcher's worker thread — the same constraint that
-governs :func:`~markdown_vault_mcp._identity.current_principal` (#1218). ``fire``
-runs on the request's ``to_thread`` worker, whose copied context carries the
-variable; the worker thread has no request context at all, so reading there
-would silently fall back to "no scope" and reinstate per-file commits.
+The scope travels in a :class:`~contextvars.ContextVar`. ``fire`` captures it
+on the request's ``to_thread`` worker, whose copied context carries the
+variable. The dispatcher binds only the captured folder roots while invoking
+a batch callback; its worker does not inherit the request context (#1218).
 
 Grouping is keyed by scope token rather than by queue position. The queue is
 FIFO, but a shared server interleaves concurrent tool calls, and position-based
@@ -29,27 +30,19 @@ boundary exists to prevent.
 from __future__ import annotations
 
 import itertools
-import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from fastmcp.server.middleware import Middleware
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    import mcp.types as mt
-    from fastmcp.server.middleware import CallNext, MiddlewareContext
-    from fastmcp.tools.base import ToolResult
-
-logger = logging.getLogger(__name__)
+    from pathlib import Path
 
 _counter = itertools.count()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CommitScope:
     """One tool invocation's commit boundary.
 
@@ -59,11 +52,14 @@ class CommitScope:
             never merged into one commit.
         tool_name: The MCP tool that opened the scope. Becomes the commit
             subject when the call wrote more than one file; a single-file
-            call commits under that file's own path instead.
+            call commits under that file's own path instead. Folder moves
+            name their source and destination.
+        folder_move: Validated absolute roots, set before folder callbacks fire.
     """
 
     token: int
     tool_name: str
+    folder_move: tuple[Path, Path] | None = None
 
 
 _scope_var: ContextVar[CommitScope | None] = ContextVar(
@@ -89,6 +85,33 @@ def bound_commit_scope(tool_name: str) -> Iterator[CommitScope]:
         _scope_var.reset(var_token)
 
 
+_folder_move_var: ContextVar[tuple[Path, Path] | None] = ContextVar(
+    "markdown_vault_mcp_folder_move", default=None
+)
+
+
+@contextmanager
+def bound_folder_move(roots: tuple[Path, Path] | None) -> Iterator[None]:
+    """Bind folder roots for a batch callback and restore the prior context.
+
+    Args:
+        roots: Validated source and destination directories, or ``None``.
+
+    Yields:
+        Control while the roots are bound.
+    """
+    token = _folder_move_var.set(roots)
+    try:
+        yield
+    finally:
+        _folder_move_var.reset(token)
+
+
+def current_folder_move() -> tuple[Path, Path] | None:
+    """Return the folder roots bound for the current batch callback."""
+    return _folder_move_var.get()
+
+
 def current_commit_scope() -> CommitScope | None:
     """Return the scope bound to the current context, or ``None``.
 
@@ -98,69 +121,19 @@ def current_commit_scope() -> CommitScope | None:
     return _scope_var.get()
 
 
-class CommitScopeMiddleware(Middleware):
-    """Bind a commit scope around every tool call, and close it afterward.
+_auxiliary_var: ContextVar[bool] = ContextVar("auxiliary_commit_write", default=False)
 
-    Opening the scope is enough for the dispatcher to group the call's writes;
-    closing it is what makes the group commit. The close is enqueued rather
-    than awaited: the dispatcher runs off the write path, so the tool returns
-    before its writes drain, and the queue's FIFO order already guarantees the
-    end marker lands behind every write this call fired.
 
-    A tool that writes nothing produces an end marker with an empty group,
-    which the dispatcher discards.
-    """
+@contextmanager
+def auxiliary_commit_writes() -> Iterator[None]:
+    """Mark secondary writes for commit subjects, without excluding their files."""
+    token = _auxiliary_var.set(True)
+    try:
+        yield
+    finally:
+        _auxiliary_var.reset(token)
 
-    async def on_call_tool(
-        self,
-        context: MiddlewareContext[mt.CallToolRequestParams],
-        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
-    ) -> ToolResult:
-        """Run *call_next* with a bound scope, then close that scope.
 
-        Args:
-            context: The in-flight tool call.
-            call_next: The rest of the middleware chain.
-
-        Returns:
-            Whatever the tool returned, unchanged.
-        """
-        with bound_commit_scope(context.message.name) as scope:
-            try:
-                return await call_next(context)
-            finally:
-                self._close(context, scope)
-
-    @staticmethod
-    def _close(
-        context: MiddlewareContext[mt.CallToolRequestParams],
-        scope: CommitScope,
-    ) -> None:
-        """Enqueue *scope*'s end marker, tolerating a vault that is not up.
-
-        The scope closes on the failure path too, so a tool that raises after
-        writing still commits what it wrote rather than stranding the group.
-        """
-        fastmcp_context = context.fastmcp_context
-        if fastmcp_context is None:
-            return
-        try:
-            from markdown_vault_mcp.domain import get_vault
-
-            get_vault(fastmcp_context).end_commit_scope(scope)
-        except Exception:
-            # Deliberately broad, and deliberately swallowed. This runs in the
-            # ``finally`` of on_call_tool, so ANY exception escaping here
-            # replaces the tool's return value — or masks the tool's own
-            # exception — with a failure in commit bookkeeping. The known cases
-            # are a missing lifespan (RuntimeError) and a vault without a
-            # dispatcher (AttributeError), but catching only those let a
-            # ValueError from get_vault destroy a successful tool result.
-            # Losing the grouping degrades to per-file commits; losing the
-            # tool's result is a defect.
-            logger.warning(
-                "commit_scope_close_failed tool=%s token=%s",
-                scope.tool_name,
-                scope.token,
-                exc_info=True,
-            )
+def is_auxiliary_commit_write() -> bool:
+    """Return whether this callback is fired by secondary maintenance."""
+    return _auxiliary_var.get()
