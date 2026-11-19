@@ -149,6 +149,13 @@ def test_invalid_history_is_reset_and_future_version_refused(tmp_path: Path) -> 
         assert ledger.navigation_stats()["count"] == 0
         data["navigation"] = {
             "version": 1,
+            "generated": {"index.md": "invalid"},
+            "reported": {},
+        }
+        ledger._path.write_text(json.dumps(data))
+        assert ledger.generated_navigation() == {}
+        data["navigation"] = {
+            "version": 1,
             "generated": {},
             "reported": {"index.md": "not a list"},
         }
