@@ -448,6 +448,7 @@ class ConventionMaintainer:
             folders = [folder for folder in anchors.values() if folder is not None]
             ledger = self._doc_mgr._observations
             if ledger is not None:
+                generated = ledger.generated_navigation()
                 for path, row in rows.items():
                     if row.presence != "present" or Path(path).name != "index.md":
                         continue
@@ -455,10 +456,10 @@ class ConventionMaintainer:
                     if not self._may_index(folder):
                         continue
                     note = self._doc_mgr._read_note(path, capped=False)
-                    if note is not None and ledger.navigation_changed(
-                        path, strip_frontmatter_block(note.content, preserve_body=True)
-                    ):
-                        folders.append(folder)
+                    if note is not None and path in generated:
+                        body = strip_frontmatter_block(note.content, preserve_body=True)
+                        if hashlib.sha256(body.encode()).hexdigest() != generated[path]:
+                            folders.append(folder)
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))

@@ -531,13 +531,12 @@ class ObservationLedger:
             ):
                 raise ValueError("invalid divergence history")
 
-    def navigation_changed(self, path: str, body: str) -> bool:
-        """Return whether a body differs from its locally generated predecessor."""
+    def generated_navigation(self) -> dict[str, str]:
+        """Return the last generated body digests as one local snapshot."""
         with self._lock:
             generated = self._navigation_state()["generated"]
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
-            digest = hashlib.sha256(body.encode()).hexdigest()
-            return path in generated and generated[path] != digest
+            return dict(generated)
 
     def observe_navigation(self, path: str, old: str | None, new: str) -> None:
         """Report an unexpected body before replacing a designated index."""
