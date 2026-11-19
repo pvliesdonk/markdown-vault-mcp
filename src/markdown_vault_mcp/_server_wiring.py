@@ -225,11 +225,11 @@ def _register_jobs(mcp: FastMCP, config: ProjectConfig) -> None:
     # the JOBS_SOFT_DEADLINE_S soft deadline gets a job handle to poll via
     # the generic get_job_result tool.
     from markdown_vault_mcp._job_tools import register_job_tools
-    from markdown_vault_mcp._pvl_core import build_jobs
+    from markdown_vault_mcp._jobs import build_jobs
     from markdown_vault_mcp._tools import index as index_tools
     from markdown_vault_mcp._tools import summarize as summarize_tools
 
-    # With no KV backend configured, core's default (>=4.11.1) is
+    # With no KV backend configured, build_kv_store's default is
     # file:///data/state where that directory is usable (the Docker image)
     # and memory:// everywhere else (bare-metal/uvx installs, CI) — so this
     # needs no domain-side backend selection.

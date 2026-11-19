@@ -136,6 +136,8 @@ src/markdown_vault_mcp/
   _kv_store.py         -- build_kv_store (KV_STORE_URL backend dispatch, /data/state default) and build_event_store over it (#2279)
   _pvl_core.py         -- the only importer of fastmcp_pvl_core: re-exports the names still in use, grouped by the #2241 area that removes them (#2274)
   _tool_boundary.py    -- tool_boundary / is_tool_boundary: every tool's unexpected exception becomes one logged fault ToolError (#2280)
+  _jobs.py             -- Jobs / build_jobs: soft-deadline promotion of long-running calls to pollable jobs, yielding to native tasks (#2307)
+  _job_store.py        -- JobStore and the job records: subject-scoped, TTL-pinned job records over the jobs KV namespace, with the per-subject cap (#2307)
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)
   _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
   _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)

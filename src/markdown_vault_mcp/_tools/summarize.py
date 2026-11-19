@@ -35,7 +35,7 @@ from ..domain import get_vault
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-    from markdown_vault_mcp._pvl_core import Jobs
+    from markdown_vault_mcp._jobs import Jobs
 
 logger = logging.getLogger(__name__)
 

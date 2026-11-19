@@ -19,7 +19,7 @@ from .._server_queryable import needs_queryable
 from ..domain import get_vault
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp._pvl_core import Jobs
+    from markdown_vault_mcp._jobs import Jobs
 
 
 def register(mcp: FastMCP) -> None:
