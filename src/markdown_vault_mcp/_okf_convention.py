@@ -448,7 +448,7 @@ class ConventionMaintainer:
                 log_path = f"{folder}/log.md" if folder else "log.md"
                 if not self._destination_ok(folder, "log.md"):
                     return
-                existing = self._doc_mgr.read(log_path)
+                existing = self._doc_mgr._read_note(log_path, capped=False)
                 body = (
                     strip_frontmatter_block(existing.content)
                     if existing is not None

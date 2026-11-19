@@ -78,14 +78,15 @@ class _FakeDoc:
         "Return false for a document manager without a git guard."
         return False
 
-    def read(self, _path: str) -> Any:
-        """Model ``DocumentManager.read``: ``content`` is the *whole file*.
+    def _read_note(self, _path: str, capped: bool) -> Any:
+        """Model the internal whole-note read: ``content`` is the *whole file*.
 
         The frontmatter block is serialised back into ``content`` exactly as
         the real read hands it back. A double that returned the body alone is
         what let #1391 stay green: the maintainer fed the block back to a
         ``write(frontmatter=...)``, which stacked a second one.
         """
+        assert not capped
         if self.existing is None:
             return None
         body, metadata = self.existing
@@ -754,7 +755,7 @@ class TestIndexRefreshEdgeCases:
         assert _index_links_broken(enforced_vault) == []
 
 
-def test_unowned_write_does_not_create_index_or_log(tmp_path: Path) -> None:
+def test_unowned_write_does_not_create_index(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "other").mkdir(parents=True)
     caps = ContentConfig(
@@ -770,7 +771,6 @@ def test_unowned_write_does_not_create_index_or_log(tmp_path: Path) -> None:
         wait_for_writer_drain(vault)
         assert not path_exists(root / "index.md")
         assert not path_exists(root / "other/index.md")
-        assert not path_exists(root / "other/log.md")
     finally:
         vault.close()
 

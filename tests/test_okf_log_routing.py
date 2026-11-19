@@ -79,3 +79,39 @@ def test_selected_log_alias_is_not_written_through(tmp_path: Path) -> None:
         assert not path_exists(root / "log.md")
     finally:
         vault.close()
+
+
+def test_oversized_ancestor_log_keeps_recording(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import NoteTooLargeError
+
+    root = tmp_path / "vault"
+    (root / "project/deep").mkdir(parents=True)
+    log = root / "project/log.md"
+    header = '---\ntitle: "Curated" # retained\n---\n'
+    old_entry = "- " + "x" * 200
+    log.write_text(f"{header}# Log\n\n## 2020-01-01\n\n{old_entry}\n")
+    caps = ContentConfig(
+        okf_mode="on", okf_log="writes", okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=caps,
+            max_note_read_bytes=128,
+        ),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("project/deep/note.md", "# Note\n")
+        wait_for_writer_drain(vault)
+        text = log.read_text()
+        assert text.startswith(header)
+        assert old_entry in text
+        assert "`project/deep/note.md`" in text
+        assert any(note.path == "project/log.md" for note in vault._search_mgr.list())
+        with pytest.raises(NoteTooLargeError):
+            vault.reader.read("project/log.md")
+    finally:
+        vault.close()

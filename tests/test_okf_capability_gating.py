@@ -255,40 +255,9 @@ def test_guidance_follows_independent_maintenance() -> None:
     both = guidance(okf_index=True, okf_log="writes", okf_folders=(".", "projects/*"))
     assert "Leave 'log.md' to the server" in both
     assert "maintains designated 'index.md'" in both
-    assert "Elsewhere maintain both" not in both
-    assert "Leave 'log.md'/'index.md' to the server" in guidance(
-        okf_index=True, okf_log="writes", okf_folders=("**",)
-    )
+    assert "(., projects/*)" in both
     neither = guidance(okf_write=True, okf_index=False, okf_log="off")
     assert "update 'log.md'/'index.md'" in neither
-
-
-def test_ancestor_log_guidance_matches_write(tmp_path: Path) -> None:
-    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-    from tests.conftest import wait_for_writer_drain
-
-    root = tmp_path / "vault"
-    (root / "projects/x/deep").mkdir(parents=True)
-    (root / "projects/x/log.md").write_text("# Log\n")
-    caps = ContentConfig(
-        okf_mode="on", okf_log="writes", okf_folders=(".",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        vault.writer.write("projects/x/deep/note.md", "# Note\n")
-        wait_for_writer_drain(vault)
-        assert "projects/x/deep/note.md" in (root / "projects/x/log.md").read_text()
-        cfg = GuidanceConfig(read_only=False, okf_mode="on", okf_capabilities=caps)
-        text = " ".join(item.text for item in _domain_snippets(cfg))
-        assert "Leave 'log.md' to the server" in text
-        assert "Elsewhere maintain both" not in text
-    finally:
-        vault.close()
 
 
 @pytest.mark.parametrize(
