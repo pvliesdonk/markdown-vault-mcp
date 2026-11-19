@@ -164,7 +164,7 @@ class IndexFacet:
         matches, ``force=False``) reuses FTS and sweeps observation state. An
         index that cannot be reused (changed provenance, or no completion
         sentinel) gets a full build that drops the rows its walk did not find
-        (#1965). ``force=True`` drops and rebuilds unconditionally.
+        (#1965). ``force=True`` rebuilds and runs configured convergence.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
@@ -209,9 +209,9 @@ class IndexFacet:
         """Submit a full FTS index build and return the Future.
 
         Caller may ``.result()`` to wait or fire-and-forget. A warm build
-        queues an observation sweep without rebuilding FTS. The Future includes
-        the sweep, completion-marker write and readiness publication; failure in any
-        fails the build. Pending work can be cancelled before execution begins.
+        queues an observation sweep without rebuilding FTS. When convergence is
+        configured, a forced build returns a detached Future; cancelling it does not
+        cancel accepted work. Inside a write pause it may finish inline before returning.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
@@ -228,6 +228,7 @@ class IndexFacet:
         Does not require :meth:`IndexFacet.build_index` first — the writer's FIFO queue
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
         failures are surfaced via :meth:`IndexFacet.get_index_status` (#561).
+        Configured convergence finishes inline if submitted inside a write pause.
         """
         return self._converge_after(self._coordinator.reindex_async())
 
