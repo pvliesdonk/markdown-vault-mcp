@@ -9,10 +9,9 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, TypeVar
 
-from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -20,6 +19,10 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
+    from markdown_vault_mcp._okf_log_repair import (
+        LogRepairPreview,
+        LogRepairResult,
+    )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -37,11 +40,6 @@ if TYPE_CHECKING:
     )
 
 _R = TypeVar("_R", "WriteResult", "EditResult")
-
-
-def _is_reserved(path: str) -> bool:
-    """Whether *path* names a reserved OKF file (``index.md`` / ``log.md``)."""
-    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
 
 
 class WriterFacet:
@@ -114,6 +112,31 @@ class WriterFacet:
         if self._okf_migrate is None:
             raise RuntimeError("OKF migration manager is not configured")
         return self._okf_migrate
+
+    def okf_preview_log_repair(self, path: str) -> LogRepairPreview:
+        """Preview exact candidate bytes for an operator to review.
+
+        Args:
+            path: Vault-relative path ending in log.md.
+
+        Returns:
+            The exact candidate removal and the snapshot ``etag`` that applying
+            it requires, or an explanation that there is no candidate.
+        """
+        return self._doc_mgr.okf_preview_log_repair(path)
+
+    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+        """Apply an operator-reviewed legacy repair, retaining the complete original.
+
+        Args:
+            path: Exact log.md path used for the preview.
+            etag: The ``etag`` of the preview the operator reviewed; a log
+                changed since then is refused.
+
+        Returns:
+            The resulting byte etag and adjacent recovery artifact path.
+        """
+        return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
 
     def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
@@ -427,8 +450,8 @@ class WriterFacet:
         if (
             self._convention_maintainer is not None
             and is_note(new_path)
-            and not _is_reserved(old_path)
-            and not _is_reserved(new_path)
+            and not is_okf_reserved_file(old_path)
+            and not is_okf_reserved_file(new_path)
         ):
             # The old folder still lists the note; the new one does not yet
             # (#1609). Regenerating the nearest indexed level at or above the
