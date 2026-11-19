@@ -21,7 +21,7 @@ from markdown_vault_mcp._server_apps import (
     _rewrite_spa_app_tool_calls,
 )
 from markdown_vault_mcp._vault_apps import _compute_claude_app_domain
-from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
+from tests.conftest import wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -583,8 +583,6 @@ class TestAppOnlyTools:
         ai_llm.mkdir(parents=True)
         (ai_llm / "note.md").write_text("# Note\n\nContent.\n")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-        for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -660,12 +658,6 @@ class TestAppDomainOverride:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_APP_DOMAIN", "custom.example.com")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example.com")
-        for var in _CLEAR_VARS:
-            if (
-                var != "MARKDOWN_VAULT_MCP_APP_DOMAIN"
-                and var != "MARKDOWN_VAULT_MCP_BASE_URL"
-            ):
-                monkeypatch.delenv(var, raising=False)
         # Server creates successfully — no assertion on domain value since
         # it's internal to the resource config, but the server should not error.
         server = make_server()
@@ -678,7 +670,9 @@ class TestAppDomainOverride:
 
 
 @pytest.fixture
-def _linked_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _linked_env(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Create linked notes in the vault for graph traversal tests."""
     (vault_path / "linked_a.md").write_text(
         "---\ntitle: Linked A\n---\n\n# Linked A\n\n"
@@ -690,8 +684,6 @@ def _linked_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.mark.usefixtures("_mcp_env")
@@ -859,9 +851,6 @@ class TestAppToolLinkedData:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "tags")
-        for var in _CLEAR_VARS:
-            if var != "MARKDOWN_VAULT_MCP_INDEXED_FIELDS":
-                monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
