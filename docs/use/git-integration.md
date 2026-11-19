@@ -1,4 +1,5 @@
 ---
+last_edited: 2026-11-16
 description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
 kind: how-to
 ---
@@ -40,18 +41,80 @@ Submodule paths become ordinary filesystem paths for writes. Git webhook
 routes are inactive, and the filesystem watcher remains eligible for external
 edits when `FILE_WATCHER=true` and its extra is installed.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the
+output of `git --version`. This identifies the Git executable on the server's
+`PATH`, not Git on your MCP client's computer. Include that value when
+reporting a Git problem. A container uses Git inside the container, so do not
+substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility.
+A failed version probe is logged at DEBUG and does not block startup. A
+plain-directory vault does not emit this diagnostic.
+
+## Filenames from outside the server
+
+Notes created through Git or directly on disk can carry carriage returns
+(`CR`) or carriage-return/newline pairs (`CRLF`) in their filenames.
+History, rename tracking, revision reads and conflict recovery preserve those
+characters, along with newlines, tabs and supported non-ASCII names. Ignored
+filenames retain the same spelling when Git decides which paths to stage.
+
 ## What a commit covers
 
 In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
-did. A call that touched many files, such as `move_folder`, `rename` with
-`update_links=True`, or `okf_convert_links`, produces one commit with the
+did. A call that touched many primary files, such as
+`okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
+With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or
+`delete` keeps that note's path in the subject. Its automatic index and log
+updates remain
+in the same commit; they do not replace the note's subject with a file count.
+Direct writes to `index.md` or `log.md` still name their own path.
+A single-note rename names both paths:
+`rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites
+backlinks or OKF refreshes index listings. Those derived writes stay in the
+same commit. A folder move names its source and destination relative to the
+Git working tree root, or as an absolute path if a root lies outside it:
+`move_folder: drafts -> archive/2026`. Moved files, backlink rewrites, and
+OKF updates share that commit. Folder names with control characters, boundary
+whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
+to keep the subject identifiable on one line.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
+
+## Uncommitted files at startup
+
+Startup inspects the repository's working tree and staging area in both git
+modes, even with periodic pulls disabled. If it finds changes, it logs
+`git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`,
+which also appears in the `remote` diagnostic on write-tool results.
+Ignored files do not trigger this warning; files Git reports as `untracked` do.
+Changes inside submodules and plain repositories nested in the vault do
+not, because the server never writes into them.
+
+The server cannot tell whether a crash or an operator left those changes.
+It does not automatically commit or discard them. Inspect `git status` in
+the repository, preserve the files you need, and commit or resolve the
+changes yourself. If the vault is a subdirectory, the check covers its
+whole repository, since git sync acts on that repository.
+
+The health result caches the startup observation. The server checks
+outstanding startup changes after its commits and during sync, and only a
+clean tree clears the warning. A successful push or pull alone does not.
+An external repair shows at the next such check or at restart, with
+`git_worktree_clean` in the log. After that, ordinary pending writes do not
+open another startup warning.
+
+A failed inspection keeps any existing warning and is retried at the first
+commit or sync a minute later. The server logs `git_worktree_check_failed` for the first
+failure only.
 
 ## Getting an overwritten note back
 
@@ -393,6 +456,55 @@ the [`git_sync` tool reference](../reference/tools/git.md#git_sync).
 `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when
 `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
+## Recurring conflicts on append-heavy notes
+
+If several writers keep appending to the same note, first agree whether its
+entries can appear in any order. Prefer separate notes or coordinate writers
+when order matters. Do the same if existing entries are edited or metadata
+changes alongside the text. Keep the normal conflict handling for those files.
+
+For an append-only note, Git's built-in `union` merge driver is an
+opt-in alternative. It combines lines from both sides instead of leaving
+conflict markers. It does not understand Markdown structure or YAML
+frontmatter, and it can silently retain competing edits. A successful sync
+does not establish that the combined note is correct. Git warns
+that added lines may appear in an arbitrary order; review the result.
+See [Git's merge-driver documentation](https://git-scm.com/docs/gitattributes#_built_in_merge_drivers).
+
+To try this for one agreed note, add a matching entry to the vault repository's
+`.gitattributes`, using the path relative to that file. With
+`.gitattributes` at the repository root:
+
+```text
+journal/append-only.md merge=union
+```
+
+Commit and share that file through your normal Git workflow before concurrent
+edits. Do not apply `merge=union` to all Markdown files: the attribute covers
+the whole file, including frontmatter, not just its appended section. Test it
+on disposable copies with the same clients and Git settings before adopting
+it for a shared vault. The server does not add this attribute for you.
+
+### Where merge drivers apply
+
+In managed mode, a diverged pull first runs native `git rebase`, and Git
+applies the repository's merge attributes during that rebase as it does in
+any other merge. A conflict that Git resolves there never reaches the
+server's sibling resolver.
+
+If Git still reports paths with unresolved conflicts, the server's resolver
+does not call merge drivers again: it preserves the local versions as siblings
+and takes the upstream versions at the original paths, as described under
+[Manual sync](#manual-sync-git_sync-tool). An attribute is not a repair for
+existing siblings or a guarantee that every conflict will disappear.
+
+In commit-only mode the server never pulls; the client that performs the
+merge decides whether the attribute is used. Check every writer: a Git client
+implemented without native Git need not support `.gitattributes`. Custom
+merge drivers also need their command configured on each participating host;
+committing the attribute alone does not install a driver. The built-in
+`union` driver needs no custom command.
+
 ## When the clone stops reaching its remote
 
 A clone can end up unable to send its commits: another writer pushed first
@@ -518,14 +630,18 @@ Behavior:
 - GitLab: `oauth2`
 - Bitbucket: account username
 
-## Submodules in the vault
+## Submodules and nested repositories in the vault
 
-A git submodule inside the vault is read-only. Its notes are indexed and searchable like any folder, but git refuses to commit a change inside a submodule from the vault's own repository, so a change there would be lost. In managed and commit-only mode every write tool refuses a path inside a submodule and names it, and nothing is written. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, the attachment writes and the OKF tools.
+A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to `write`, `append`, `edit`, `delete`, `rename`, `move_folder`, attachment writes and OKF tools at their existing write checks.
 
-- Change those files in the repository the submodule comes from instead.
-- `move_folder` refuses to move a folder that holds a submodule, but you can move a folder next to one.
-- A `rename` or `move_folder` that would rewrite links inside a submodule leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
+- `create_upload_link` refuses a `ref` inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.
+- `fetch` refuses a `path` inside a protected repository before downloading anything. The save still applies the usual overwrite and etag checks.
+- Change those files in their own repository instead.
+- `move_folder` refuses to move a folder that holds a protected repository, but you can move a folder next to one.
+- A `rename` or `move_folder` that would rewrite links inside a protected repository leaves those notes as they are and reports them: in `hint` for a rename, in `failed_links` for a folder move.
 - A submodule whose folder is empty (never initialised) is refused too.
+- Plain repositories need no `gitlink` or `.gitmodules` registration. Both `.git` directories and valid `.git` files are detected, including ones created after startup or with working trees Git cannot open. An unreadable `.git` file up to Git's 1 MiB limit raises an I/O error. Larger markers are inert. The vault's own repository is allowed.
+- Bulk OKF link conversion skips protected notes. Index generation can link to their existing `index.md` but does not write it.
 
 In no-git mode nothing is committed, so nothing is refused.
 
