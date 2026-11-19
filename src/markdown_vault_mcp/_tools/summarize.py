@@ -1,6 +1,6 @@
 """The LLM-backed ``summarize`` tool, registered as a dual-mode job (#1033).
 
-Registration goes through pvl-core's ``register_long_running_tool`` rather
+Registration goes through ``register_long_running_tool`` rather
 than a bare ``@mcp.tool``: a client that speaks MCP tasks (SEP-2663) gets
 native background-task execution, and any other client runs in the
 foreground up to the jobs subsystem's soft deadline, after which the
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.dependencies import Depends
 
-from markdown_vault_mcp._pvl_core import register_long_running_tool
+from markdown_vault_mcp._job_tools import register_long_running_tool
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 

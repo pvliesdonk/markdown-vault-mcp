@@ -34,8 +34,8 @@ _MARKER = "_pvl_tool_boundary"
 """Attribute that marks a wrapper as a boundary.
 
 The same name pvl-core's own ``tool_boundary`` sets, so :func:`is_tool_boundary`
-also recognises the tools pvl-core still wraps (server info, jobs, transfer
-links) until those areas move here (#2278, #2281, #2282).
+also recognises the tools pvl-core still wraps (server info, transfer links)
+until those areas move here (#2278, #2282).
 """
 
 FAULT_MESSAGE = (
