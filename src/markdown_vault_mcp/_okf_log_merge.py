@@ -11,7 +11,11 @@ from markdown_it import MarkdownIt
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
-from markdown_vault_mcp.scanner import _normalise_line_endings, strip_frontmatter_block
+from markdown_vault_mcp.scanner import (
+    _is_external_target,
+    _normalise_line_endings,
+    strip_frontmatter_block,
+)
 
 if TYPE_CHECKING:
     from markdown_it.token import Token
@@ -141,7 +145,7 @@ def _parse(text: str) -> tuple[_Log | None, str]:
 
 
 def _insertions(
-    left: _Log, right: _Log, eol: str
+    left: _Log, right: _Log, eol: str, *, dedupe: bool = True
 ) -> tuple[dict[int, list[str]], set[tuple[str, tuple[str, ...]]], int]:
     known = {(s.date, entry) for s in left.sections for entry in s.entries}
     insertions: dict[int, list[str]] = {}
@@ -150,7 +154,7 @@ def _insertions(
         entries = []
         for entry in section.entries:
             key = (section.date, entry)
-            if key not in known:
+            if not dedupe or key not in known:
                 known.add(key)
                 entries.append(entry)
                 added += 1
@@ -246,7 +250,6 @@ class LogMove:
     source: str
     target: str
     entries: int
-    frontmatter: bool
 
 
 @dataclasses.dataclass(frozen=True)
@@ -271,8 +274,9 @@ def _unsafe_relocation(text: str) -> bool:
                 destination = item.attrGet(
                     "href" if item.type == "link_open" else "src"
                 )
-                if destination is not None and not re.match(
-                    r"(?:[a-zA-Z][\w+.-]*:|/)", str(destination)
+                if destination is not None and not (
+                    _is_external_target(str(destination))
+                    or str(destination).startswith("/")
                 ):
                     return True
     return False
@@ -284,10 +288,7 @@ def _migration_text(target: str | None, source: str) -> tuple[str | None, int, s
     if right is None:
         return None, 0, reason
     # Relative Markdown and wiki links would acquire a different meaning.
-    if _unsafe_relocation(source) or any(
-        not re.match(r"(?:[a-zA-Z][\w+.-]*:|/)", href)
-        for href, _ in right.refs.values()
-    ):
+    if _unsafe_relocation(source):
         return None, 0, "relative or wiki link"
     if target is None:
         return (
@@ -317,27 +318,7 @@ def _combine_migration(
     """Insert every source entry into the target's dated sections."""
     eol_match = re.search(r"\r\n|\r|\n", target)
     eol = eol_match.group() if eol_match else "\n"
-    insertions: dict[int, list[str]] = {}
-    count = 0
-    for section in right.sections:
-        if not section.entries:
-            continue
-        count += len(section.entries)
-        existing = next((s for s in left.sections if s.date == section.date), None)
-        pos = (
-            existing.end
-            if existing
-            else next(
-                (s.start for s in left.sections if s.date < section.date),
-                len(left.lines),
-            )
-        )
-        while existing and pos > existing.start + 1 and not left.lines[pos - 1].strip():
-            pos -= 1
-        body = "".join(eol.join(entry) + eol for entry in section.entries)
-        if not existing:
-            body = f"## {section.date}{eol}{eol}" + body + eol
-        insertions.setdefault(pos, []).append(body)
+    insertions, _, count = _insertions(left, right, eol, dedupe=False)
     output = left.lines[:]
     for pos in sorted(insertions, reverse=True):
         if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
@@ -369,7 +350,6 @@ def migrate_logs(
         Eligible or completed moves and the sources retained with reasons.
     """
     from markdown_vault_mcp._okf_write import okf_write_suppressed
-    from markdown_vault_mcp.exceptions import InvalidRequestError
     from markdown_vault_mcp.utils.fs import walk_files_strict
 
     if designation is None or designation("") is None:
@@ -439,7 +419,6 @@ class _LogMigrationRunner:
 
     def _move(self, source: str, target: str, folder: str, parent: str) -> None:
         from markdown_vault_mcp._okf_convention import destination_home
-        from markdown_vault_mcp.exceptions import InvalidRequestError
 
         doc = self.doc
         if destination_home(folder, "log.md", doc._source_dir) is None or (
@@ -469,9 +448,7 @@ class _LogMigrationRunner:
             self._write(source, target, text, src.etag, dst.etag if dst else None)
         else:
             self.simulated[target] = text
-        self.merged.append(
-            LogMove(source, target, count, source in self.source_headers)
-        )
+        self.merged.append(LogMove(source, target, count))
 
     def _write(
         self,

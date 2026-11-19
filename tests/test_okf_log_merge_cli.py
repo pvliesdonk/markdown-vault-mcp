@@ -69,10 +69,7 @@ def test_routing_headers_and_unsafe_sources(tmp_path: Path) -> None:
             ("other/log.md", "log.md"),
         }
         assert result.target_frontmatter == ("projects/a/log.md",)
-        assert (
-            next(m for m in result.merged if m.frontmatter).source
-            == "projects/a/deep/log.md"
-        )
+        assert result.source_frontmatter == ("projects/a/deep/log.md",)
         target = (root / "projects/a/log.md").read_text()
         assert target.startswith("---\ntitle: existing\n---")
         assert "title: source" not in target
@@ -194,3 +191,16 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     assert "Merged deep/log.md" in applied.output
     assert not path_exists(root / "deep/log.md")
     assert (root / "log.md").read_text().startswith("# Log")
+
+
+def test_migration_keeps_non_ascii_whitespace_inside_entry() -> None:
+    from markdown_vault_mcp._okf_log_merge import _migration_text, _parse
+
+    target = "# Log\n\n## 2025-01-01\n\n- a\n\u00a0\n"
+    source = "# Log\n\n## 2025-01-01\n\n- b\n"
+    merged, count, reason = _migration_text(target, source)
+    assert merged is not None, reason
+    parsed, reason = _parse(merged)
+    assert parsed is not None, reason
+    assert count == 1
+    assert parsed.sections[0].entries == [("- a", "\u00a0"), ("- b",)]

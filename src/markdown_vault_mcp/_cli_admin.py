@@ -310,9 +310,8 @@ def merge_logs(
             built.close()
         for move in result.merged:
             action = "Merged" if apply else "Would merge"
-            header = "; source frontmatter omitted" if move.frontmatter else ""
             typer.echo(
-                f"{action} {terminal_text(move.source)} -> {terminal_text(move.target)}: {move.entries} entries{header}"
+                f"{action} {terminal_text(move.source)} -> {terminal_text(move.target)}: {move.entries} entries"
             )
         for path, reason in result.kept:
             typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
