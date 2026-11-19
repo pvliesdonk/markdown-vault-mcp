@@ -49,21 +49,8 @@ def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
     return selected
 
 
-def propose_log_entry(
-    vault: Vault, config: ProjectConfig, paths: list[str], since: str | None
-) -> dict[str, str]:
-    """Propose text from selected committed note diffs without writing to the vault.
-
-    Args:
-        vault: Vault providing validated note and Git access.
-        config: Summarizer model configuration.
-        paths: Selected note paths.
-        since: Starting commit SHA or timestamp, or None for the latest changes.
-
-    Returns:
-        Suggested text, producer identifier and diff basis.
-    """
-    selected = _selected_paths(vault, paths)
+def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str:
+    """Collect the selected diffs within the configured input budget."""
     diffs: list[str] = []
     for path in selected:
         start = since
@@ -93,6 +80,25 @@ def propose_log_entry(
         raise InvalidRequestError(
             "The selected diffs exceed the input limit; use fewer paths or a later since in okf_propose_log_entry."
         )
+    return content
+
+
+def propose_log_entry(
+    vault: Vault, config: ProjectConfig, paths: list[str], since: str | None
+) -> dict[str, str]:
+    """Propose text from selected committed note diffs without writing to the vault.
+
+    Args:
+        vault: Vault providing validated note and Git access.
+        config: Summarizer model configuration.
+        paths: Selected note paths.
+        since: Starting commit SHA or timestamp, or None for the latest changes.
+
+    Returns:
+        Suggested text, producer identifier and diff basis.
+    """
+    selected = _selected_paths(vault, paths)
+    content = _selected_diffs(vault, selected, since)
     if vault._summarizer is None:
         raise RuntimeError("The summarization backend is unavailable.")
     try:
