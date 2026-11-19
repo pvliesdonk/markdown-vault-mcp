@@ -58,10 +58,6 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
-from markdown_vault_mcp.utils.content_kind import (
-    canonical_attachment_extensions,
-    effective_attachment_extensions,
-)
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -622,24 +618,26 @@ class Vault:
             attachment_extensions=self._attachment_extensions,
             embed_text_builder=self._embed_builder,
             embedding_batch_size=self._embedding_batch_size,
+            scratch_dir=self._state_path.parent
+            if self._state_path is not None
+            else None,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed
         # after IndexManager (it routes jobs to it) and before SearchManager
         # (whose rebuild_embeddings callback targets the coordinator).
+        chunking_meta = self._index_mgr.chunking_meta
         self._coordinator = IndexWriteCoordinator(
             fts=self._fts,
             index_mgr=self._index_mgr,
             index_path=self._index_path,
             file_write_lock=self._file_write_lock,
-            embed_model_name=self._embed_model_name,
-            max_chunk_chars_override=self._max_chunk_chars_override,
-            title_field=self._title_field,
-            searchable_fields=",".join(self._searchable_frontmatter_fields),
-            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
-            attachment_extensions=canonical_attachment_extensions(
-                effective_attachment_extensions(self._attachment_extensions)
-            ),
+            embed_model_name=chunking_meta.model,
+            max_chunk_chars_override=chunking_meta.max_chunk_chars_override,
+            title_field=chunking_meta.title_field,
+            searchable_fields=chunking_meta.searchable_fields,
+            indexed_frontmatter_fields=chunking_meta.indexed_frontmatter_fields,
+            attachment_extensions=chunking_meta.attachment_extensions,
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(
@@ -766,6 +764,7 @@ class Vault:
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
             okf_audit=self._okf_audit,
+            okf_write_state=lambda: self.okf_write_state(active=True),
         )
         # The reserved files the OKF generators write are subject to this
         # vault's own required-frontmatter gate, so the generators need the
@@ -893,6 +892,18 @@ class Vault:
     def okf(self) -> OkfDetector:
         """OKF detection probe (disk-read, index-independent)."""
         return self._okf
+
+    def okf_write_state(self, *, active: bool) -> tuple[bool, bool]:
+        """Return configured and effective OKF write-layer state.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Configured OKF write flag and whether the layer is effective.
+        """
+        configured = self._okf_write_enrich is not None
+        return configured, configured and active and not self._read_only
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
@@ -1092,8 +1103,8 @@ class Vault:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
         Called by
-        :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a
-        tool call returns. Never blocks: the marker is queued behind the writes
+        :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
+        when a tool call returns. Never blocks: the marker is queued behind the writes
         that call fired, and the dispatcher flushes it in order.
 
         Args:
