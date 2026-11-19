@@ -303,9 +303,9 @@ is disk-based rather than index-based, and the tool is hidden under
   filtering is a triage operation, not a hot search path).
 
 - `freshness` selects `missing`, `malformed`, `unexpired`, or `expired` evidence.
-- `review` selects `none` (missing or empty), `malformed`, or `recorded`. Recorded describes supplied metadata, not certification or snapshot applicability.
+- `review` selects `none` (missing or empty), `malformed`, or `recorded`. Malformed means no usable review record; a list with both usable and malformed entries is recorded. Recorded describes supplied metadata, not certification or snapshot applicability.
 
-Evidence selectors exclude reserved `index.md` and `log.md` files, compose with other filters using AND, and do not depend on retrieval purpose. In active bundles these keys are reserved for derived evidence rather than literal frontmatter. In inactive bundles they retain ordinary frontmatter equality semantics. Exact queries match configured literal fields, not derived evidence.
+Evidence selectors exclude reserved `index.md` and `log.md` files, compose with other filters using AND, and do not depend on retrieval purpose. In active bundles these keys are reserved for derived evidence rather than literal frontmatter. With `OKF_MODE=off`, search, list and similarity filters retain ordinary frontmatter equality semantics. Exact queries match configured literal fields, not derived evidence.
 
 A stale/deprecated listing (filterable `list_documents`) is the data source
 for a future `triage-stale` prompt (docs phase).

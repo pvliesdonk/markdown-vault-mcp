@@ -18,6 +18,7 @@ def evidence_vault(tmp_path: Path):
         "empty.md": "verified: []",
         "malformed.md": "stale_after: invalid\nverified: broken",
         "future.md": "stale_after: 2999-01-01\nverified: [{by: human:alice, at: 2026-01-01T00:00:00Z}]\ntags: [keep]",
+        "mixed.md": "stale_after: 2000-01-01\nverified: [{by: human:alice, at: 2026-01-01T00:00:00Z}, {by: bad}]",
         "past.md": "stale_after: 2000-01-01\nverified: [{by: process:bot, at: 2026-01-01T00:00:00Z}]",
     }
     for path, frontmatter in notes.items():
@@ -37,10 +38,10 @@ def evidence_vault(tmp_path: Path):
         ({"freshness": "missing"}, {"missing.md", "empty.md"}),
         ({"freshness": "malformed"}, {"malformed.md"}),
         ({"freshness": "unexpired"}, {"future.md"}),
-        ({"freshness": "expired"}, {"past.md"}),
+        ({"freshness": "expired"}, {"past.md", "mixed.md"}),
         ({"review": "none"}, {"missing.md", "empty.md"}),
         ({"review": "malformed"}, {"malformed.md"}),
-        ({"review": "recorded"}, {"future.md", "past.md"}),
+        ({"review": "recorded"}, {"future.md", "past.md", "mixed.md"}),
     ],
 )
 def test_evidence_states(
@@ -205,3 +206,32 @@ def test_active_bundle_reserves_evidence_keys_but_exact_queries_use_raw_fields(
             assert [item["path"] for item in page.items] == ["note.md"]
     finally:
         vault.close()
+
+
+def test_evidence_composes_with_stale_and_trust(evidence_vault: Vault) -> None:
+    results = evidence_vault.reader.search(
+        "zebra",
+        mode="keyword",
+        filters={"review": "recorded", "stale": "true", "trust_tier": "human-reviewed"},
+    )
+    assert [r.path for r in results] == ["mixed.md"]
+
+
+@pytest.mark.parametrize("tool", ["search", "list_documents"])
+async def test_evidence_filters_forwarded_by_tools(
+    evidence_vault: Vault, tool: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp import Client, FastMCP
+
+    from markdown_vault_mcp._tools import reader
+    from tests.conftest import _parse_tool_data
+
+    monkeypatch.setattr(reader, "get_vault", lambda: evidence_vault)
+    server = FastMCP("evidence-forwarding-test")
+    reader.register(server)
+    args: dict = {"filters": {"freshness": "unexpired", "review": "recorded"}}
+    if tool == "search":
+        args.update(query="zebra", mode="keyword")
+    async with Client(server) as client:
+        result = _parse_tool_data(await client.call_tool(tool, args))
+        assert [row["path"] for row in result] == ["future.md"]

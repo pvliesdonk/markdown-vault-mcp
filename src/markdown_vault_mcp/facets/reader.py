@@ -725,7 +725,9 @@ class ReaderFacet:
                 includes ``kind="attachment"`` and ``mime_type``.
             filters: Optional ``{frontmatter_key: value}`` equality filters
                 (AND semantics). On an active OKF bundle, ``status`` /
-                ``stale`` / ``trust_tier`` carry OKF semantics. Any filter
+                ``stale`` / ``trust_tier`` / ``freshness`` / ``review`` carry OKF
+                semantics. The last two select evidence rather than literal fields;
+                ``review=malformed`` means no usable review was recorded. Any filter
                 excludes attachments (they carry no frontmatter).
 
         Returns:

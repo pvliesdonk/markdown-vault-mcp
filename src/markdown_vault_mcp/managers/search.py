@@ -1516,7 +1516,10 @@ class SearchManager:
                 frontmatter (any key, list membership for list values). On
                 an active OKF bundle the dimensions ``status`` (absent
                 means ``stable``), ``stale`` (``true``/``false``), and
-                ``trust_tier`` carry OKF semantics; ``{"type": None}``
+                ``trust_tier``, ``freshness``, and ``review`` carry OKF semantics.
+                The latter two select evidence rather than literal fields;
+                ``review=malformed`` means no usable review was recorded.
+                ``{"type": None}``
                 selects non-reserved notes without a non-empty string type.
                 Attachments carry no frontmatter, so any filter excludes them.
 
@@ -1527,7 +1530,7 @@ class SearchManager:
 
         Raises:
             InvalidRequestError: If a null filter is unsupported or an active
-                OKF ``stale`` value is not a true/false spelling.
+                OKF filter value is invalid.
         """
         folder = normalize_folder(folder)
         plain_filters, okf_filters = self._split_okf_filters(filters)
