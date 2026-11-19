@@ -75,17 +75,12 @@ def _render_fold(heading: str, sections: dict[str, list[_IndexEntry]]) -> str:
         re.sub(r"([\\`*_{}\[\]<>()#+.!|~&])", r"\\\1", normalize_heading(name))
         for name, _ in groups
     ]
-    reserved = set(labels) | {normalize_heading(heading)}
-    seen: set[str] = set()
+    seen = {normalize_heading(heading)}
     parts = [build_index_markdown(heading, sections.get("", []))]
     for label, (_, entries) in zip(labels, groups, strict=True):
         chosen = label
         number = 1
-        while (
-            chosen in seen
-            or chosen == normalize_heading(heading)
-            or (chosen != label and chosen in reserved)
-        ):
+        while chosen in seen or (chosen != label and chosen in labels):
             number += 1
             chosen = f"{label} \\({number}\\)"
         seen.add(chosen)
@@ -295,12 +290,11 @@ class OkfMigrationManager:
         sections, created = self._fold_index(
             folder, tree, skipped, allow_protected, designated
         )
-        entries = sections.pop("")
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         with self._doc_mgr.write_scope():
             heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
-            body = _render_fold(heading, {"": entries, **sections})
+            body = _render_fold(heading, sections)
             reason = self._doc_mgr.protection_reason(
                 index_path, allow_protected=allow_protected, allow_designated=True
             )
@@ -309,7 +303,7 @@ class OkfMigrationManager:
                 skipped[index_path] = reason
             else:
                 with okf_write_suppressed():
-                    existing = self._doc_mgr._read_note(index_path, 0)
+                    existing = self._doc_mgr._read_note(index_path, capped=False)
                     preserved = self._doc_mgr.replace_body(
                         index_path,
                         existing.content if existing is not None else None,
@@ -319,7 +313,7 @@ class OkfMigrationManager:
                     )
         return OkfIndexResult(
             path=index_path,
-            entries=len(entries) + sum(len(items) for items in sections.values()),
+            entries=sum(len(items) for items in sections.values()),
             frontmatter_preserved=preserved,
             created=tuple(created),
         )

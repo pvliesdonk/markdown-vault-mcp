@@ -252,6 +252,7 @@ class DocumentManager:
         title_field: Frontmatter key consulted first when resolving document
             titles.  Must match the value the index managers use, or
             ``read()`` titles would diverge from search titles.
+        designation: Reports the active folder designation, or None if inactive.
         submodule_guard: Refuses a write into a git submodule or nested
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
         inspection_policy: Configured conventions and state paths for bundle inspection.
@@ -375,7 +376,15 @@ class DocumentManager:
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
 
     def index_designation(self, folder: str) -> bool | None:
-        """Return index designation, or None when no policy is active."""
+        """Return the active designation policy for an index folder.
+
+        Args:
+            folder: Vault-relative folder containing the index.
+
+        Returns:
+            True if designated, False if excluded or aliased, or None when
+            no index designation policy is active.
+        """
         from markdown_vault_mcp._okf_convention import destination_home
 
         if self._designation is None:
@@ -767,10 +776,10 @@ class DocumentManager:
                 raise InvalidRequestError("section must be a non-empty heading or None")
             return self._read_section(path, section.strip())
 
-        return self._read_note(path, self._max_note_read_bytes)
+        return self._read_note(path, capped=True)
 
-    def _read_note(self, path: str, max_bytes: int) -> NoteContent | None:
-        """Read a whole note with the caller's byte limit (zero disables it)."""
+    def _read_note(self, path: str, capped: bool) -> NoteContent | None:
+        """Read a whole note, applying the configured byte limit when capped."""
         reject_nul(path)
         abs_path = (self._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._source_dir.resolve()):
@@ -790,20 +799,20 @@ class DocumentManager:
         # reads short-circuit with an early return above; non-.md paths fall
         # through to parse_note(), so the cap stays scoped to its env-var name).
         is_md = path.lower().endswith(".md")
-        if is_md and max_bytes > 0:
+        if is_md and capped and self._max_note_read_bytes > 0:
             size_bytes = file_stat.st_size
-            if size_bytes > max_bytes:
+            if size_bytes > self._max_note_read_bytes:
                 logger.info(
                     "read_refused_oversized path=%s size_bytes=%d limit_bytes=%d "
                     "setting=%s",
                     path,
                     size_bytes,
-                    max_bytes,
+                    self._max_note_read_bytes,
                     "MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES",
                 )
                 raise NoteTooLargeError(
                     f"Document {path!r} is {size_bytes:,} bytes, over the "
-                    f"{max_bytes:,}-byte limit this server "
+                    f"{self._max_note_read_bytes:,}-byte limit this server "
                     "returns in one read. Read it a section at a time with "
                     f"read({path!r}, section=...); get_toc or a search result's "
                     "heading field names the sections."

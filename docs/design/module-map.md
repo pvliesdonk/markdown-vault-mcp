@@ -116,7 +116,7 @@ src/markdown_vault_mcp/
   _okf_review.py       -- versioned concept snapshot digest and lossless YAML review binding
   _okf_receipts.py     -- versioned local review receipts and current concept comparison
   _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
-  _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
+  _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the designated anchor that owns the affected folder (#1647)
   _okf_write.py        -- review subject resolution and maintenance suppression context
   _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry

@@ -321,16 +321,16 @@ def test_synthesized_walk_reaches_child_folder_and_note(tmp_path):
         vault.close()
 
 
-def test_oversized_designated_index_uses_bounded_navigation_pages(
-    tmp_path, monkeypatch
+def test_oversized_designated_index_refuses_navigation_but_sections_remain_readable(
+    tmp_path,
 ):
     from markdown_vault_mcp.config_sections.content import ContentConfig
     from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
     from tests.conftest import wait_for_writer_drain
 
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    for i in range(12):
-        (tmp_path / f"note-{i:02}.md").write_text(f"# Note {i}\n")
+    (tmp_path / "deep").mkdir()
+    curated = b'---\nokf_version: "0.2"\n---\n# Index\n\n' + b"Curated order\n" * 20
+    (tmp_path / "index.md").write_bytes(curated)
     caps = ContentConfig(
         okf_mode="on", okf_index=True, okf_log="off", okf_folders=(".",)
     ).okf_capabilities
@@ -340,62 +340,32 @@ def test_oversized_designated_index_uses_bounded_navigation_pages(
             read_only=False,
             okf_mode="on",
             okf_capabilities=caps,
-            max_note_read_bytes=128,
+            max_note_read_bytes=100,
         ),
     )
     try:
         vault.index.build_index()
-        vault.writer.write("last.md", "# Last\n")
+        curated_result = vault.reader.okf_navigation("")
+        assert (curated_result.source, curated_result.body, curated_result.reason) == (
+            None,
+            None,
+            "note_limit",
+        )
+        assert (tmp_path / "index.md").read_bytes() == curated
+        for i in range(8):
+            vault.writer.write(f"deep/note-{i}.md", f"# Long title {i}\n")
         wait_for_writer_drain(vault)
         before = (tmp_path / "index.md").read_bytes()
-        from markdown_vault_mcp import okf_capabilities
-
-        def refuse_probe(*_args, **_kwargs):
-            pytest.fail("navigation attempted a filesystem probe")
-
-        monkeypatch.setattr(okf_capabilities, "_probe", refuse_probe)
-        first = vault.reader.okf_navigation("", entry_limit=3)
-        assert first.source == "synthesized" and first.reason == "note_limit"
-        assert first.body and first.next_cursor
-        second = vault.reader.okf_navigation(
-            "", entry_limit=3, cursor=first.next_cursor
-        )
-        assert second.source == "synthesized" and second.reason == "note_limit"
-        assert second.body and second.body != first.body
-        assert (tmp_path / "index.md").read_bytes() == before
-    finally:
-        vault.close()
-
-
-def test_oversized_undesignated_navigation_never_creates_files(tmp_path, monkeypatch):
-    import os
-    import tempfile
-
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-    from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
-
-    (tmp_path / "other").mkdir()
-    (tmp_path / "other/index.md").write_text("# Authored\n" + "body\n" * 50)
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_log="off", okf_folders=(".",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(
-            okf_mode="on", okf_capabilities=caps, max_note_read_bytes=128
-        ),
-    )
-    try:
-
-        def refuse_creation(*_args, **_kwargs):
-            pytest.fail("navigation attempted to create a directory")
-
-        monkeypatch.setattr(os, "mkdir", refuse_creation)
-        monkeypatch.setattr(tempfile, "mkdtemp", refuse_creation)
-        from markdown_vault_mcp import okf_capabilities
-
-        monkeypatch.setattr(okf_capabilities, "_probe", refuse_creation)
-        result = vault.reader.okf_navigation("other")
+        result = vault.reader.okf_navigation("")
         assert (result.source, result.body, result.reason) == (None, None, "note_limit")
+        assert (tmp_path / "index.md").read_bytes() == before
+        heading = next(
+            entry.heading
+            for entry in vault.reader.get_toc("index.md")
+            if entry.level == 2
+        )
+        assert (
+            "/deep/note-7.md" in vault.reader.read("index.md", section=heading).content
+        )
     finally:
         vault.close()

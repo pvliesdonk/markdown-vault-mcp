@@ -108,18 +108,39 @@ def folder_is_designated(
     return False
 
 
+def canonical_path(path: str, source_dir: Path | None) -> str:
+    """Return the canonical vault-relative identity of a path.
+
+    Args:
+        path: Vault-relative path to resolve.
+        source_dir: Vault root, or None to leave the path unresolved.
+
+    Returns:
+        The canonical relative path, or an empty string for the root.
+    """
+    rel = Path(path)
+    if source_dir is not None:
+        rel = resolve_inside(path, source_dir).relative_to(source_dir.resolve())
+    return "" if rel == Path() else rel.as_posix()
+
+
 def destination_home(folder: str, name: str, source_dir: Path | None) -> str | None:
-    """Return the canonical folder when its reserved destination is not an alias."""
+    """Return the canonical folder when its reserved destination is not an alias.
 
-    def canonical(path: str) -> str:
-        rel = Path(path)
-        if source_dir is not None:
-            rel = resolve_inside(path, source_dir).relative_to(source_dir.resolve())
-        return "" if rel == Path() else rel.as_posix()
+    Args:
+        folder: Vault-relative folder holding the reserved file.
+        name: Reserved filename within that folder.
+        source_dir: Vault root, or None to leave paths unresolved.
 
-    home = canonical(folder)
+    Returns:
+        The canonical folder, or None if the destination is an alias or escapes.
+
+    Raises:
+        InvalidRequestError: If the folder itself is outside the vault.
+    """
+    home = canonical_path(folder, source_dir)
     try:
-        target = canonical(f"{folder}/{name}" if folder else name)
+        target = canonical_path(f"{folder}/{name}" if folder else name, source_dir)
         return home if target == (f"{home}/{name}" if home else name) else None
     except InvalidRequestError:
         return None
@@ -186,11 +207,7 @@ class ConventionMaintainer:
         Designation, anchor choice and generated writes decide on this identity,
         never on the caller's spelling. The vault root is ``""``.
         """
-        rel = Path(path)
-        if self._source_dir is not None:
-            rel = resolve_inside(path, self._source_dir)
-            rel = rel.relative_to(self._source_dir.resolve())
-        return "" if rel == Path() else rel.as_posix()
+        return canonical_path(path, self._source_dir)
 
     def _designated(self, folder: str) -> bool:
         return folder_is_designated(self._canonical(folder), self._capabilities.folders)
