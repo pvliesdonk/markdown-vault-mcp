@@ -1,5 +1,7 @@
 """Migration of descendant logs into designated ancestors."""
 
+import errno
+import os
 from pathlib import Path
 
 import pytest
@@ -188,6 +190,34 @@ def test_alias_target_is_kept(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("kind", ["directory", "fifo", "invalid_utf8"])
+def test_unsafe_target_is_kept_without_changing_source(
+    tmp_path: Path, kind: str
+) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    source = root / "deep/log.md"
+    source.write_text("# Log\n\n## 2025-01-01\n\n- source\n")
+    target = root / "log.md"
+    if kind == "directory":
+        target.mkdir()
+    elif kind == "fifo":
+        os.mkfifo(target)
+    else:
+        target.write_bytes(b"\xffinvalid")
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert not result.merged
+        assert "deep/log.md" in dict(result.kept)
+        assert "- source" in source.read_text()
+        if kind == "invalid_utf8":
+            assert target.read_bytes() == b"\xffinvalid"
+    finally:
+        vault.close()
+
+
 def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
@@ -213,15 +243,53 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     assert (root / "log.md").read_text().startswith("# Log")
 
 
-def test_migration_keeps_non_ascii_whitespace_inside_entry() -> None:
-    from markdown_vault_mcp._okf_log_merge import _migration_text
+def test_migration_keeps_non_ascii_whitespace_inside_entry(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "log.md").write_text("# Log\n\n## 2025-01-01\n\n- a\n\u00a0\n")
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- b\n")
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert result.merged[0].entries == 1
+        assert "- a\n\u00a0\n- b" in (root / "log.md").read_text()
+    finally:
+        vault.close()
 
-    target = "# Log\n\n## 2025-01-01\n\n- a\n\u00a0\n"
-    source = "# Log\n\n## 2025-01-01\n\n- b\n"
-    merged, count, reason = _migration_text(target, source)
-    assert merged is not None, reason
-    assert count == 1
-    assert "- a\n\u00a0\n- b" in merged
+
+@pytest.mark.parametrize("error", [errno.EPERM, errno.ENOTSUP])
+def test_hardlink_unavailable_keeps_source(
+    tmp_path: Path, monkeypatch, error: int
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers import _write_kernel
+
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    source = root / "deep/log.md"
+    text = "# Log\n\n## 2025-01-01\n\n- source\n"
+    source.write_text(text)
+    vault = designated_vault(root, (".",))
+    try:
+
+        def fail_link(*_args, **_kwargs):
+            raise OSError(error, "unavailable")
+
+        monkeypatch.setattr(_write_kernel.os, "link", fail_link)
+        with pytest.raises(
+            InvalidRequestError, match="exclusive creation requires hard links"
+        ):
+            vault.writer.okf_merge_logs(apply=True)
+        assert source.read_text() == text
+        assert not path_exists(root / "log.md")
+        assert not list(root.glob("*.tmp"))
+        (root / "log.md").write_text("# Log\n\n## 2024-01-01\n\n- existing\n")
+        assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
+        assert "- source" in (root / "log.md").read_text()
+    finally:
+        vault.close()
 
 
 def test_target_created_at_publication_preserves_both(

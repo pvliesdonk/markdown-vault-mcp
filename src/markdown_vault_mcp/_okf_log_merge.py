@@ -317,18 +317,6 @@ def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
     return parsed, reason
 
 
-def _migration_text(target: str | None, source: str) -> tuple[str | None, int, str]:
-    """Merge entries without deduplication; refuse content that cannot move safely."""
-    right, reason = _parse(source)
-    if right is None:
-        return None, 0, reason
-    left, reason = _parse_migration_target(target) if target is not None else (None, "")
-    if target is not None and left is None:
-        return None, 0, "target: " + reason
-    text, count, reason, _ = _merge_migration(left, right, source, target)
-    return text, count, reason
-
-
 def _merge_migration(
     left: _Log | None, right: _Log, source: str, target: str | None
 ) -> tuple[str | None, int, str, _Log | None]:
@@ -387,14 +375,11 @@ def migrate_logs(
         prune=lambda p: inspector._internal(p.relative_to(doc._source_dir).as_posix()),
     )
     sources = [
-        p.relative_to(doc._source_dir).as_posix()
+        rel
         for p in paths
-        if p.name == "log.md"
-        and not inspector._internal(p.relative_to(doc._source_dir).as_posix())
-        and posixpath.dirname(p.relative_to(doc._source_dir).as_posix())
-        and not designation(
-            posixpath.dirname(p.relative_to(doc._source_dir).as_posix())
-        )
+        if (rel := p.relative_to(doc._source_dir).as_posix()).endswith("/log.md")
+        and not inspector._internal(rel)
+        and not designation(posixpath.dirname(rel))
     ]
     runner = _LogMigrationRunner(doc, designation, apply, allow_protected)
     with okf_write_suppressed(), doc.write_scope():
@@ -453,16 +438,11 @@ class _LogMigrationRunner:
         doc = self.doc
         cached = self.simulated.get(target) if not self.apply else None
         src = doc._read_note(source, capped=False)
-        dst = doc._read_note(target, capped=False) if not cached else None
-        if (
-            src is None
-            or src.path != source
-            or (dst is not None and dst.path != target)
-        ):
+        if src is None or src.path != source:
             raise InvalidRequestError("missing or aliased log")
         if strip_frontmatter_block(src.content) != src.content:
             self.source_headers.add(source)
-        self._merge_source(target, src, dst is not None, cached)
+        self._merge_source(target, src, cached)
 
     def _validate_move(
         self, source: str, target: str, folder: str, parent: str
@@ -482,14 +462,13 @@ class _LogMigrationRunner:
         self,
         target: str,
         src: Any,
-        present: bool,
         cached: tuple[str, _Log] | None,
     ) -> None:
         source = src.path
         self.unrewritten.update(
             (source, note) for note in _relocation_notes(src.content)
         )
-        raw_target, target_etag = self._raw_target(target, present)
+        raw_target, target_etag = (None, None) if cached else self._raw_target(target)
         previous = cached[0] if cached else raw_target
         right, reason = _parse(src.content)
         if right is None:
@@ -520,16 +499,17 @@ class _LogMigrationRunner:
             self.simulated[target] = (text, parsed)
         self.merged.append(LogMove(source, target, count))
 
-    def _raw_target(self, target: str, present: bool) -> tuple[str | None, str | None]:
+    def _raw_target(self, target: str) -> tuple[str | None, str | None]:
         from markdown_vault_mcp.hashing import compute_etag
+        from markdown_vault_mcp.utils.fs import is_regular_file, path_exists
 
-        if not present:
+        path = self.doc._validate_path(target)
+        if not is_regular_file(path):
+            if path_exists(path):
+                raise InvalidRequestError("target is not a regular file")
             return None, None
-        raw = self.doc._validate_path(target).read_bytes()
-        try:
-            return raw.decode("utf-8"), compute_etag(raw)
-        except UnicodeDecodeError as exc:
-            raise InvalidRequestError(f"Cannot read {target}: {exc}") from exc
+        raw = path.read_bytes()
+        return raw.decode("utf-8", "surrogateescape"), compute_etag(raw)
 
     def _note_ref_collisions(
         self, source: str, source_log: _Log, target_log: _Log

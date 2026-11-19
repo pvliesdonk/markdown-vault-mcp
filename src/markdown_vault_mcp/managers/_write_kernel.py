@@ -181,6 +181,19 @@ def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
         raise ConcurrentModificationError(path, expected=if_match, actual=current_hash)
 
 
+def _publish_exclusive(staged: Path, target: Path) -> None:
+    try:
+        os.link(staged, target)
+    except OSError as exc:
+        if exc.errno in {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP}:
+            raise OSError(
+                exc.errno,
+                "exclusive creation requires hard links, which are unsupported or disallowed here",
+                str(target),
+            ) from exc
+        raise
+
+
 def atomic_write(
     abs_path: Path, data: str | bytes, *, create_only: bool = False
 ) -> None:
@@ -217,7 +230,7 @@ def atomic_write(
         else:
             tmp_path.chmod(new_file_mode(abs_path.parent))
         if create_only:
-            os.link(tmp_path, abs_path)
+            _publish_exclusive(tmp_path, abs_path)
             tmp_path.unlink()
         else:
             tmp_path.replace(abs_path)
