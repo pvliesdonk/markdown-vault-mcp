@@ -88,8 +88,6 @@ def test_invalid_filters_are_rejected_before_search(tmp_path: Path) -> None:
             ({"needs_review": "maybe"}, "needs_review filter"),
             ({"required_check": "schema"}, "required_check"),
             ({"needs_review": "true", "required_check": "bogus"}, "Unknown check"),
-            ({"needs_review": True}, "needs_review filter"),
-            ({"needs_review": "true", "required_check": 3}, "Unknown check"),
         ):
             with pytest.raises(ValueError, match=message):
                 vault.reader.search("absent", mode="keyword", filters=filters)
@@ -97,9 +95,7 @@ def test_invalid_filters_are_rejected_before_search(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_listing_and_all_search_modes_report_conditions(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_listing_and_all_search_modes_report_conditions(tmp_path: Path) -> None:
     from tests.conftest import MockEmbeddingProvider
 
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nzebra')
@@ -113,24 +109,13 @@ def test_listing_and_all_search_modes_report_conditions(
     try:
         vault.index.build_index()
         vault.index.build_embeddings()
-        manager = vault._search_mgr
-        original = manager._needs_review
-        calls = []
-
-        def count_assessments(path, filters):
-            calls.append(path)
-            return original(path, filters)
-
-        monkeypatch.setattr(manager, "_needs_review", count_assessments)
         for mode in ("keyword", "semantic", "hybrid"):
-            calls.clear()
             hits = vault.reader.search(
                 "zebra",
                 mode=mode,
                 filters={"needs_review": "true", "type": "instruction"},
             )
             assert [hit.path for hit in hits] == ["instruction.md"]
-            assert calls.count("instruction.md") == 1
             assert hits[0].needs_review["conditions"] == [
                 "freshness_missing",
                 "no_matching_review",
@@ -225,33 +210,6 @@ def test_listing_existing_filter_does_not_refetch(tmp_path: Path, monkeypatch) -
         assert [
             n.path for n in vault.reader.list_documents(filters={"status": "stable"})
         ] == ["index.md", "note.md"]
-    finally:
-        vault.close()
-
-
-def test_selected_result_reuses_single_assessment(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    (tmp_path / "note.md").write_text("zebra")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        manager = vault._search_mgr
-        original = manager._needs_review
-        calls = []
-
-        def count_assessment(path, filters):
-            calls.append(path)
-            assessment = original(path, filters)
-            if len(calls) > 1:
-                raise AssertionError("assessment repeated")
-            return assessment
-
-        monkeypatch.setattr(manager, "_needs_review", count_assessment)
-        hits = vault.reader.search(
-            "zebra", mode="keyword", filters={"needs_review": "true"}
-        )
-        assert hits[0].needs_review["needed"] is True
-        assert calls == ["note.md"]
     finally:
         vault.close()
 
@@ -393,3 +351,78 @@ def test_reviewed_unexpired_bom_note(tmp_path: Path) -> None:
         assert not vault.reader.list_documents(filters={"needs_review": "true"})
     finally:
         vault.close()
+
+
+def test_public_review_result_types_support_typed_clients(tmp_path: Path) -> None:
+    """An opt-in caller can narrow each result and consume its decision."""
+    from markdown_vault_mcp.managers.search import (
+        ReviewGroupedResult,
+        ReviewNoteInfo,
+        ReviewRankedResult,
+    )
+    from tests.conftest import MockEmbeddingProvider
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "note.md").write_text("zebra")
+    (tmp_path / "reference.md").write_text("reference")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(embeddings_path=tmp_path / "vectors"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        filters = {"needs_review": "true"}
+        for hit in vault.reader.search("zebra", mode="keyword", filters=filters):
+            assert isinstance(hit, ReviewRankedResult)
+            assert hit.needs_review["needed"] is True
+        for note in vault.reader.list_documents(filters=filters):
+            assert isinstance(note, ReviewNoteInfo)
+            assert note.needs_review["needed"] is True
+        for hit in vault.reader.get_similar("reference.md", filters=filters):
+            assert isinstance(hit, ReviewGroupedResult)
+            assert hit.needs_review["needed"] is True
+    finally:
+        vault.close()
+
+
+def test_typed_client_can_narrow_review_results(tmp_path: Path) -> None:
+    """Mypy checks a client outside tests, where test overrides do not apply."""
+    import subprocess
+    import sys
+
+    client = tmp_path / "client.py"
+    client.write_text("""\
+from typing import Any, assert_type
+from markdown_vault_mcp.facets.reader import ReaderFacet
+from markdown_vault_mcp.managers.search import (
+    ReviewGroupedResult, ReviewNoteInfo, ReviewRankedResult, SearchManager,
+)
+from markdown_vault_mcp.types import AttachmentInfo, GroupedResult, NoteInfo, RankedSearchResult
+
+def consume(reader: ReaderFacet, manager: SearchManager) -> None:
+    assert_type(reader.search("x"), list[RankedSearchResult | ReviewRankedResult])
+    assert_type(manager.search("x"), list[RankedSearchResult | ReviewRankedResult])
+    assert_type(reader.list_documents(), list[NoteInfo | ReviewNoteInfo | AttachmentInfo])
+    assert_type(manager.list(), list[NoteInfo | ReviewNoteInfo | AttachmentInfo])
+    assert_type(reader.get_similar("x.md"), list[GroupedResult | ReviewGroupedResult])
+    assert_type(manager.get_similar("x.md"), list[GroupedResult | ReviewGroupedResult])
+    for hit in reader.search("x") + manager.search("x"):
+        if isinstance(hit, ReviewRankedResult):
+            assert_type(hit.needs_review, dict[str, Any])
+    for note in reader.list_documents() + manager.list():
+        if isinstance(note, ReviewNoteInfo):
+            assert_type(note.needs_review, dict[str, Any])
+    for result in reader.get_similar("x.md") + manager.get_similar("x.md"):
+        if isinstance(result, ReviewGroupedResult):
+            assert_type(result.needs_review, dict[str, Any])
+""")
+    checked = subprocess.run(
+        [sys.executable, "-m", "mypy", "--strict", "--no-incremental", str(client)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr

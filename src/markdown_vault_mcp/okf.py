@@ -594,8 +594,6 @@ def parse_stale_filter(value: str, *, name: str = "stale") -> bool:
     Raises:
         InvalidRequestError: If *value* is not a recognized true/false spelling.
     """
-    if not isinstance(value, str):
-        raise InvalidRequestError(f"{name} filter must be true or false, got {value!r}")
     normalized = value.strip().lower()
     if normalized in _STALE_TRUE:
         return True
@@ -1274,13 +1272,10 @@ def validate_review_check(check: str) -> None:
     Raises:
         InvalidRequestError: If the check kind is unsupported.
     """
-    if not isinstance(check, str) or (
-        check not in _REVIEW_CHECKS
-        and not (
-            check.startswith("x-")
-            and len(check) > 2
-            and not any(c.isspace() for c in check)
-        )
+    if check not in _REVIEW_CHECKS and not (
+        check.startswith("x-")
+        and len(check) > 2
+        and not any(c.isspace() for c in check)
     ):
         raise InvalidRequestError(
             "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."

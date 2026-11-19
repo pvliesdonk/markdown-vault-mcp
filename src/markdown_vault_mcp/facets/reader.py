@@ -10,6 +10,10 @@ snapshot. OKF stats include the vault's write-state projection. The bucket-3 met
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
 the ``Vault.reader`` accessor.
+
+Opt-in review results can be narrowed with ``isinstance`` against the public
+``ReviewRankedResult``, ``ReviewNoteInfo`` and ``ReviewGroupedResult`` classes
+in :mod:`markdown_vault_mcp.managers.search` to access ``needs_review``.
 """
 
 from __future__ import annotations
@@ -62,7 +66,12 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
-    from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.managers.search import (
+        ReviewGroupedResult,
+        ReviewNoteInfo,
+        ReviewRankedResult,
+        SearchManager,
+    )
     from markdown_vault_mcp.okf import OkfAuditReport
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -512,7 +521,7 @@ class ReaderFacet:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         purpose: Literal["current", "historical", "review"] = "current",
-    ) -> list[RankedSearchResult]:
+    ) -> list[RankedSearchResult | ReviewRankedResult]:
         """Search the vault.
 
         Args:
@@ -712,7 +721,7 @@ class ReaderFacet:
         pattern: str | None = None,
         include_attachments: bool = False,
         filters: Mapping[str, str | None] | None = None,
-    ) -> list[NoteInfo | AttachmentInfo]:
+    ) -> list[NoteInfo | ReviewNoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
         Delegates to :meth:`SearchManager.list`.
@@ -828,7 +837,7 @@ class ReaderFacet:
         chunks_per_file: int | None = None,
         folder: str | None = None,
         filters: dict[str, str] | None = None,
-    ) -> list[GroupedResult]:
+    ) -> list[GroupedResult | ReviewGroupedResult]:
         """Return semantically similar documents grouped by file.
 
         See :meth:`SearchManager.get_similar` for details.  Returns

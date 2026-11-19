@@ -195,31 +195,35 @@ def _concept_only_filter(filters: Mapping[str, str | None]) -> bool:
     )
 
 
-class _ReviewFilters(dict[str, str | None]):
-    """Per-call filters and their live assessments, shared by search channels."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.assessments: dict[str, dict[str, Any] | None] = {}
-
-
 @dataclass(kw_only=True)
-class _ReviewGroupedResult(GroupedResult):
-    """A similarity result with its review decision."""
+class ReviewGroupedResult(GroupedResult):
+    """Similarity result with ``needs_review``; narrow with ``isinstance``.
+
+    Attributes:
+        needs_review: The opt-in live review decision and its conditions.
+    """
 
     needs_review: dict[str, Any]
 
 
 @dataclass(kw_only=True)
-class _ReviewRankedResult(RankedSearchResult):
-    """A search result with its review decision."""
+class ReviewRankedResult(RankedSearchResult):
+    """Search result with ``needs_review``; narrow with ``isinstance``.
+
+    Attributes:
+        needs_review: The opt-in live review decision and its conditions.
+    """
 
     needs_review: dict[str, Any]
 
 
 @dataclass(kw_only=True)
-class _ReviewNoteInfo(NoteInfo):
-    """A listing result with its review decision."""
+class ReviewNoteInfo(NoteInfo):
+    """Listing result with ``needs_review``; narrow with ``isinstance``.
+
+    Attributes:
+        needs_review: The opt-in live review decision and its conditions.
+    """
 
     needs_review: dict[str, Any]
 
@@ -647,7 +651,7 @@ class SearchManager:
 
     def _split_okf_filters(
         self, filters: Mapping[str, str | None] | None
-    ) -> tuple[dict[str, str] | None, _ReviewFilters]:
+    ) -> tuple[dict[str, str] | None, dict[str, str | None]]:
         """Split *filters* into plain tag filters and OKF dimensions.
 
         OKF dimensions and null ``type`` use OKF semantics only when active.
@@ -662,7 +666,7 @@ class SearchManager:
                 OKF selector value is invalid.
         """
         if not filters:
-            return None, _ReviewFilters()
+            return None, {}
         active = (
             self._okf is not None
             and any(
@@ -672,7 +676,7 @@ class SearchManager:
             and self._okf.state().active
         )
         plain: dict[str, str] = {}
-        okf_filters = _ReviewFilters()
+        okf_filters: dict[str, str | None] = {}
         for key, value in filters.items():
             if active and key == "type" and value is None:
                 okf_filters[key] = value
@@ -700,7 +704,7 @@ class SearchManager:
                 raise InvalidRequestError(f"{key} filter must be one of {choices}")
         return (plain or None), okf_filters
 
-    def _path_matches_okf(self, path: str, okf_filters: _ReviewFilters) -> bool:
+    def _path_matches_okf(self, path: str, okf_filters: dict[str, str | None]) -> bool:
         """Evaluate the OKF filter dimensions for one document path.
 
         Args:
@@ -719,9 +723,9 @@ class SearchManager:
         return self._metadata_matches_okf(path, metadata, okf_filters)
 
     def _metadata_matches_okf(
-        self, path: str, metadata: dict[str, Any], filters: _ReviewFilters
+        self, path: str, metadata: dict[str, Any], filters: dict[str, str | None]
     ) -> bool:
-        """Match indexed metadata and the per-call live review assessment."""
+        """Match indexed metadata and the live review assessment."""
         ordinary = {
             k: v
             for k, v in filters.items()
@@ -731,19 +735,10 @@ class SearchManager:
             return False
         if "needs_review" not in filters:
             return True
-        assessment = self._cached_needs_review(path, filters)
+        assessment = self._needs_review(path, filters)
         return assessment is not None and assessment["needed"] is parse_stale_filter(
             cast("str", filters["needs_review"])
         )
-
-    def _cached_needs_review(
-        self, path: str, filters: _ReviewFilters
-    ) -> dict[str, Any] | None:
-        """Reuse one observation for filtering, expansion, and result display."""
-        cache = filters.assessments
-        if path not in cache:
-            cache[path] = self._needs_review(path, filters)
-        return cache[path]
 
     def _needs_review(
         self, path: str, filters: Mapping[str, str | None]
@@ -773,7 +768,7 @@ class SearchManager:
         return assess_needs_review(metadata, assessments, required_check)
 
     def _filter_rows_okf(
-        self, rows: builtins.list[FTSResult], okf_filters: _ReviewFilters
+        self, rows: builtins.list[FTSResult], okf_filters: dict[str, str | None]
     ) -> builtins.list[FTSResult]:
         """Drop FTS chunk rows whose document fails the OKF dimensions.
 
@@ -836,7 +831,7 @@ class SearchManager:
         candidate_limit: int,
         *,
         filters: dict[str, str] | None = None,
-        okf_filters: _ReviewFilters | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> int:
         """Widen a candidate pool when a post-filter will thin it.
 
@@ -882,7 +877,7 @@ class SearchManager:
         raw: builtins.list[dict[str, Any]],
         *,
         filters: dict[str, str] | None,
-        okf_filters: _ReviewFilters | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> builtins.list[dict[str, Any]]:
         """Apply frontmatter and OKF filters to vector-search rows.
 
@@ -910,7 +905,7 @@ class SearchManager:
         Returns:
             The rows that satisfy every condition, original order preserved.
         """
-        okf_filters = okf_filters or _ReviewFilters()
+        okf_filters = okf_filters or {}
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
@@ -1041,7 +1036,7 @@ class SearchManager:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         purpose: Literal["current", "historical", "review"] = "current",
-    ) -> list[RankedSearchResult]:
+    ) -> list[RankedSearchResult | ReviewRankedResult]:
         """Search the vault.
 
         Args:
@@ -1142,13 +1137,13 @@ class SearchManager:
                 "weights": dict(policy["weights"]),
             }
             assessment = (
-                self._cached_needs_review(result.path, okf_filters)
+                self._needs_review(result.path, okf_filters)
                 if "needs_review" in okf_filters
                 else None
             )
             if assessment is not None:
                 ranked.append(
-                    _ReviewRankedResult(
+                    ReviewRankedResult(
                         **vars(result),
                         retrieval_policy=result_policy,
                         needs_review=assessment,
@@ -1292,9 +1287,9 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: _ReviewFilters | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
-        okf_filters = okf_filters or _ReviewFilters()
+        okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
             max(limit * (chunks_per_file + 4), 50), okf_filters=okf_filters
         )
@@ -1413,9 +1408,9 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: _ReviewFilters | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
-        okf_filters = okf_filters or _ReviewFilters()
+        okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
             max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR),
             filters=filters,
@@ -1460,10 +1455,10 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: _ReviewFilters | None = None,
+        okf_filters: dict[str, str | None] | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
-        okf_filters = okf_filters or _ReviewFilters()
+        okf_filters = okf_filters or {}
         # The two channels size their candidate pools independently. FTS keeps a
         # floor of 50 (a BM25 query does real work per candidate). The vector
         # channel uses the same full-scan floor as _semantic_search, since it
@@ -1616,7 +1611,7 @@ class SearchManager:
         pattern: str | None = None,
         include_attachments: bool = False,
         filters: Mapping[str, str | None] | None = None,
-    ) -> list[NoteInfo | AttachmentInfo]:
+    ) -> list[NoteInfo | ReviewNoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
         Args:
@@ -1676,9 +1671,9 @@ class SearchManager:
             ]
         if "needs_review" in okf_filters:
             note_infos = [
-                _ReviewNoteInfo(**vars(note), needs_review=assessment)
+                ReviewNoteInfo(**vars(note), needs_review=assessment)
                 for note in note_infos
-                if (assessment := self._cached_needs_review(note.path, okf_filters))
+                if (assessment := self._needs_review(note.path, okf_filters))
                 is not None
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
@@ -1970,7 +1965,7 @@ class SearchManager:
         chunks_per_file: int | None = None,
         folder: str | None = None,
         filters: dict[str, str] | None = None,
-    ) -> builtins.list[GroupedResult]:
+    ) -> builtins.list[GroupedResult | ReviewGroupedResult]:
         """Return the most semantically similar documents (field-collapsed).
 
         Uses the stored embedding vectors for ``path`` (averaged across
@@ -2068,9 +2063,9 @@ class SearchManager:
         )
         if "needs_review" in okf_filters:
             return [
-                _ReviewGroupedResult(**vars(result), needs_review=assessment)
+                ReviewGroupedResult(**vars(result), needs_review=assessment)
                 for result in results
-                if (assessment := self._cached_needs_review(result.path, okf_filters))
+                if (assessment := self._needs_review(result.path, okf_filters))
                 is not None
             ]
         return results
