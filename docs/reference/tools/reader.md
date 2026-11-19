@@ -15,9 +15,10 @@ kind: reference
 
 **Propose Log Entry.** Read-only. Tags: `okf`, `okf-log-assist`.
 
-Propose an attributed explanation of selected changes without writing a log.
+Propose an attributed explanation of selected committed content changes.
 
 The selected diffs are sent to the operator's configured language model.
+Proposals are available independently of log recording on this server.
 
 **Parameters**
 

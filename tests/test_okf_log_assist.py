@@ -169,6 +169,7 @@ async def test_mcp_proposal_and_backend_failure(
     """The registered tool returns a proposal and translates a backend failure."""
     from fastmcp.exceptions import ToolError
 
+    from markdown_vault_mcp.exceptions import SummarizeTimeoutError
     from tests.test_summarize import FakeSummarizer
 
     def git(*args: str) -> str:
@@ -206,6 +207,16 @@ async def test_mcp_proposal_and_backend_failure(
         assert "+# After" in fake.calls[0][1]
         fake.text = " "
         with pytest.raises(ToolError, match="could not produce"):
+            await client.call_tool(
+                "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
+            )
+
+        def timeout(system: str, user: str) -> str:
+            fake.calls.append((system, user))
+            raise SummarizeTimeoutError("Narrow the request — fewer paths.")
+
+        monkeypatch.setattr(fake, "summarize", timeout)
+        with pytest.raises(ToolError, match="fewer paths"):
             await client.call_tool(
                 "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
             )
@@ -398,7 +409,7 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
             with pytest.raises(InvalidRequestError):
                 propose_log_entry(vault, config, paths, None)
         assert len(fake.calls) == 1
-        with pytest.raises(InvalidRequestError, match="No committed changes"):
+        with pytest.raises(InvalidRequestError, match="No committed content changes"):
             propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
         (tmp_path / "note.md").write_text("# New\n" + "A" * 60000 + "\n")
         git("add", "note.md")
@@ -465,5 +476,167 @@ def test_timestamp_before_history_includes_selected_current_notes(
         assert f"+# {expected} B" in diff
         assert "Private fixture" not in diff
         assert not is_regular_file(tmp_path / "log.md")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("since", [None, "2000-01-01"])
+def test_empty_creation_is_refused_without_mutation(
+    tmp_path: Path, since: str | None
+) -> None:
+    """Empty root creation has no basis, even before the first commit."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "empty.md").write_bytes(b"")
+    (tmp_path / "log.md").write_text("Existing log\n")
+    git("add", "empty.md", "log.md")
+    git("commit", "-m", "initial")
+    head = git("rev-parse", "HEAD")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="No committed content changes"):
+            propose_log_entry(
+                vault, ProjectConfig(source_dir=tmp_path), ["empty.md"], since
+            )
+        assert fake.calls == []
+        assert (tmp_path / "log.md").read_text() == "Existing log\n"
+        assert git("rev-parse", "HEAD") == head
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("empty_first", [False, True])
+@pytest.mark.parametrize("rename", [False, True])
+def test_empty_change_is_omitted_from_mixed_selection(
+    tmp_path: Path, empty_first: bool, rename: bool
+) -> None:
+    """Only the edited note is submitted when a selected note has no content diff."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "edit.md").write_text("Before\n")
+    if rename:
+        (tmp_path / "old.md").write_text("Unchanged content\n")
+    git("add", ".")
+    git("commit", "-m", "before")
+    before = git("rev-parse", "HEAD")
+    (tmp_path / "edit.md").write_text("After\n")
+    if rename:
+        git("mv", "old.md", "empty.md")
+    else:
+        (tmp_path / "empty.md").write_bytes(b"")
+    git("add", ".")
+    git("commit", "-m", "change")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        config = ProjectConfig(source_dir=tmp_path)
+        if rename:
+            with pytest.raises(
+                InvalidRequestError, match="No committed content changes"
+            ):
+                propose_log_entry(vault, config, ["empty.md"], before)
+            assert fake.calls == []
+        paths = ["empty.md", "edit.md"] if empty_first else ["edit.md", "empty.md"]
+        propose_log_entry(vault, config, paths, before if rename else None)
+        content = fake.calls[0][1]
+        assert "+After" in content
+        assert "empty.md" not in content
+        assert not content.startswith("\n\n") and not content.endswith("\n\n\n")
+    finally:
+        vault.close()
+
+
+def test_large_multibyte_creation_and_timeout(tmp_path: Path) -> None:
+    """The byte limit applies to creation diffs and timeout advice survives."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError, SummarizeTimeoutError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    class TimeoutSummarizer(FakeSummarizer):
+        def summarize(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            raise SummarizeTimeoutError("Narrow the request — fewer paths.")
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "large.md").write_text("é" * 26000 + "\n")
+    (tmp_path / "small.md").write_text("Small\n")
+    (tmp_path / "log.md").write_text("Existing log\n")
+    git("add", ".")
+    git("commit", "-m", "initial")
+    head = git("rev-parse", "HEAD")
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True, summarize_max_input_chars=100000),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    config = ProjectConfig(source_dir=tmp_path)
+    try:
+        vault._summarizer = TimeoutSummarizer()
+        with pytest.raises(SummarizeTimeoutError, match="fewer paths"):
+            propose_log_entry(vault, config, ["small.md"], None)
+        vault._summarizer = fake
+        with pytest.raises(InvalidRequestError, match="diff is too large"):
+            propose_log_entry(vault, config, ["large.md"], None)
+        assert fake.calls == []
+        assert (tmp_path / "log.md").read_text() == "Existing log\n"
+        assert git("rev-parse", "HEAD") == head
     finally:
         vault.close()

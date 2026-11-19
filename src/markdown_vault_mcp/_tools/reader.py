@@ -50,9 +50,10 @@ def register(mcp: FastMCP) -> None:
         vault: Vault = Depends(get_vault),
         config: ProjectConfig = Depends(get_config),
     ) -> dict[str, str]:
-        """Propose an attributed explanation of selected changes without writing a log.
+        """Propose an attributed explanation of selected committed content changes.
 
         The selected diffs are sent to the operator's configured language model.
+        Proposals are available independently of log recording on this server.
 
         Args:
             paths: Vault-relative note paths to include.
