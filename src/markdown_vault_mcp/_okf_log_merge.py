@@ -308,12 +308,21 @@ def _relocation_notes(text: str) -> set[str]:
     return notes
 
 
+def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
+    """Parse a BOM-prefixed target while retaining its original leading bytes."""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
+    parsed, reason = _parse(text[len(bom) :])
+    if parsed is not None:
+        parsed.prefix = bom + parsed.prefix
+    return parsed, reason
+
+
 def _migration_text(target: str | None, source: str) -> tuple[str | None, int, str]:
     """Merge entries without deduplication; refuse content that cannot move safely."""
     right, reason = _parse(source)
     if right is None:
         return None, 0, reason
-    left, reason = _parse(target) if target is not None else (None, "")
+    left, reason = _parse_migration_target(target) if target is not None else (None, "")
     if target is not None and left is None:
         return None, 0, "target: " + reason
     text, count, reason, _ = _merge_migration(left, right, source, target)
@@ -339,7 +348,7 @@ def _merge_migration(
     merged = _splice(
         left.prefix, left.lines[:], insertions, eol, separate_headings=True
     )
-    checked, reason = _parse(merged)
+    checked, reason = _parse_migration_target(merged)
     if (
         checked is None
         or sum(len(s.entries) for s in checked.sections)
@@ -488,13 +497,17 @@ class _LogMigrationRunner:
         left, reason = (
             (cached[1], "")
             if cached
-            else (_parse(previous) if previous is not None else (None, ""))
+            else (
+                _parse_migration_target(previous)
+                if previous is not None
+                else (None, "")
+            )
         )
         if previous is not None and left is None:
             raise InvalidRequestError("target: " + reason)
         if left is not None:
             self._note_ref_collisions(source, right, left)
-        if previous is not None and strip_frontmatter_block(previous) != previous:
+        if left is not None and left.prefix.lstrip("\ufeff"):
             self.headers.add(target)
         text, count, reason, parsed = _merge_migration(
             left, right, src.content, previous

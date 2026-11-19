@@ -254,19 +254,26 @@ def test_target_created_at_publication_preserves_both(
         vault.close()
 
 
-def test_target_frontmatter_bytes_survive(tmp_path: Path) -> None:
+@pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"])
+def test_target_frontmatter_bytes_survive(tmp_path: Path, bom: bytes) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    header = b"---\r\ntitle: 'Existing'\r\n# comment\r\n---\r\n"
+    header = (
+        bom
+        + b"---\r\ntitle: 'Existing'\r\n"
+        + (b"" if bom else b"# comment\r\n")
+        + b"---\r\n"
+    )
     (root / "log.md").write_bytes(
         header + b"# Log\r\n\r\n## 2024-01-01\r\n\r\n- target\r\n"
     )
     (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
     vault = designated_vault(root, (".",))
     try:
-        vault.index.build_index()
-        vault.writer.okf_merge_logs(apply=True)
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert len(result.merged) == 1
+        assert result.target_frontmatter == ("log.md",)
         assert (root / "log.md").read_bytes().startswith(header)
     finally:
         vault.close()
