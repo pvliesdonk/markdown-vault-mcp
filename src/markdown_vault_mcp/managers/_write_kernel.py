@@ -181,11 +181,14 @@ def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
         raise ConcurrentModificationError(path, expected=if_match, actual=current_hash)
 
 
-def atomic_write(abs_path: Path, data: str | bytes) -> None:
+def atomic_write(
+    abs_path: Path, data: str | bytes, *, create_only: bool = False
+) -> None:
     """Write *data* to *abs_path* atomically via a sibling tempfile.
 
-    The temp file lands with :meth:`Path.replace` semantics; permission
-    bits are preserved when the target already exists. New files receive
+    By default the temp file lands with :meth:`Path.replace` semantics;
+    create-only publication links it only when the destination is absent.
+    Permission bits are preserved when the target already exists. New files receive
     the mode of a plain create in their directory, honoring the umask or
     inherited default ACL. Content is staged privately; final permissions
     are set before replacement. On failure the temp file is removed and
@@ -194,6 +197,7 @@ def atomic_write(abs_path: Path, data: str | bytes) -> None:
     Args:
         abs_path: Absolute destination path.
         data: Text (written UTF-8) or raw bytes.
+        create_only: Publish only if the destination is absent.
     """
     existed = is_regular_file(abs_path)
     text = isinstance(data, str)
@@ -212,7 +216,11 @@ def atomic_write(abs_path: Path, data: str | bytes) -> None:
             shutil.copymode(abs_path, tmp_path)
         else:
             tmp_path.chmod(new_file_mode(abs_path.parent))
-        tmp_path.replace(abs_path)
+        if create_only:
+            os.link(tmp_path, abs_path)
+            tmp_path.unlink()
+        else:
+            tmp_path.replace(abs_path)
     except Exception:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

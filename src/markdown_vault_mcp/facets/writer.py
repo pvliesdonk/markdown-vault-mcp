@@ -126,6 +126,7 @@ class WriterFacet:
                 :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
                 ``None`` (the default) makes such a call raise
                 :exc:`RuntimeError`.
+            log_designation: Active OKF folder policy used by log migration.
         """
         self._log_designation = log_designation
         self._doc_mgr = doc_mgr

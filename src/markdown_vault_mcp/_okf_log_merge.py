@@ -1,4 +1,4 @@
-"""Conservative, byte-preserving union of date-grouped Markdown logs."""
+"""Union date-grouped Git conflicts and migrate descendant logs."""
 
 from __future__ import annotations
 
@@ -12,9 +12,17 @@ from markdown_it import MarkdownIt
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import (
+    _collect_reference_definitions,
     _is_external_target,
     _normalise_line_endings,
+    _resolve_link_path,
+    extract_links,
     strip_frontmatter_block,
+)
+from markdown_vault_mcp.utils.links import (
+    apply_link_replacement,
+    compute_new_raw_target,
+    decode_markdown_destination,
 )
 
 if TYPE_CHECKING:
@@ -260,36 +268,41 @@ class LogMigration:
     kept: tuple[tuple[str, str], ...]
     target_frontmatter: tuple[str, ...]
     source_frontmatter: tuple[str, ...]
+    unrewritten: tuple[tuple[str, str], ...]
 
 
-def _unsafe_relocation(text: str) -> bool:
-    """Refuse links whose destination changes when the source moves."""
-    if "[[" in text:
-        return True
+def _relocation_notes(text: str) -> set[str]:
+    """Describe URLs the shared rewriter does not change."""
+    notes: set[str] = set()
     for token in MarkdownIt("commonmark").parse(text):
         for item in (token, *(token.children or [])):
-            if item.type in {"html_block", "html_inline"}:
-                return True
-            if item.type in {"link_open", "image"}:
-                destination = item.attrGet(
-                    "href" if item.type == "link_open" else "src"
+            if (
+                item.type in {"html_block", "html_inline"}
+                and not item.content.lstrip().startswith("<!--")
+                and re.search(
+                    r"\b(?:href|src|srcset)\s*=|url\s*\(", item.content, re.IGNORECASE
                 )
+            ):
+                notes.add("HTML URL not rewritten; check after merge")
+            if item.type == "image":
+                destination = item.attrGet("src")
                 if destination is not None and not (
                     _is_external_target(str(destination))
-                    or str(destination).startswith("/")
+                    or str(destination).startswith(("/", "#"))
                 ):
-                    return True
-    return False
+                    notes.add("relative image URL not rewritten; check after merge")
+    return notes
 
 
-def _migration_text(target: str | None, source: str) -> tuple[str | None, int, str]:
+def _migration_text(
+    target: str | None, source: str, source_path: str = "", target_path: str = ""
+) -> tuple[str | None, int, str]:
     """Merge entries without deduplication; refuse content that cannot move safely."""
+    if source_path:
+        source = _relocate_links(source, source_path, target_path)
     right, reason = _parse(source)
     if right is None:
         return None, 0, reason
-    # Relative Markdown and wiki links would acquire a different meaning.
-    if _unsafe_relocation(source):
-        return None, 0, "relative or wiki link"
     if target is None:
         return (
             source[len(right.prefix) :],
@@ -299,17 +312,64 @@ def _migration_text(target: str | None, source: str) -> tuple[str | None, int, s
     left, reason = _parse(target)
     if left is None:
         return None, 0, "target: " + reason
-    reason = (
-        "preamble differs"
-        if _normalise_line_endings(left.preamble)
-        != _normalise_line_endings(right.preamble)
-        else "reference definitions differ"
-        if left.refs != right.refs
-        else ""
-    )
-    if reason:
-        return None, 0, reason
+    if right.preamble and _normalise_line_endings(
+        left.preamble
+    ) != _normalise_line_endings(right.preamble):
+        eol_match = re.search(r"\r\n|\r|\n", target)
+        eol = eol_match.group() if eol_match else "\n"
+        first = left.sections[0].start
+        left.lines[first:first] = [right.preamble + eol + eol]
+        for section in left.sections:
+            section.start += 1
+            section.end += 1
     return _combine_migration(left, right, target)
+
+
+def _relocate_links(source: str, source_path: str, target_path: str) -> str:
+    """Use the shared link scanner and rewriter to retain relative destinations."""
+    from urllib.parse import quote
+
+    for raw in _collect_reference_definitions(_normalise_line_endings(source)).values():
+        decoded = decode_markdown_destination(raw)
+        if _is_external_target(decoded) or decoded.startswith(("/", "#")):
+            continue
+        resolved, fragment = _resolve_link_path(raw, source_path, decode_markdown=True)
+        if resolved == source_path and target_path:
+            resolved = target_path
+        destination = "/" + quote(resolved, safe="/-._~")
+        if fragment:
+            destination += "#" + fragment
+        source = apply_link_replacement(source, "reference", raw, destination)
+    for link in extract_links(source, source_path, attachment_extensions=frozenset()):
+        resolved = (
+            target_path
+            if link.target_path == source_path and target_path
+            else link.target_path
+        )
+        if link.link_type == "wikilink":
+            if (
+                link.raw_target.startswith(("./", "../"))
+                or resolved != link.target_path
+            ):
+                destination = compute_new_raw_target(
+                    "wikilink", link.raw_target, link.fragment, resolved
+                )
+                source = apply_link_replacement(
+                    source, "wikilink", link.raw_target, destination
+                )
+            continue
+        if link.link_type not in {
+            "markdown",
+            "reference",
+        } or (link.raw_target.startswith("/") and resolved == link.target_path):
+            continue
+        destination = "/" + quote(resolved, safe="/-._~")
+        if link.fragment:
+            destination += "#" + link.fragment
+        source = apply_link_replacement(
+            source, link.link_type, link.raw_target, destination
+        )
+    return source
 
 
 def _combine_migration(
@@ -323,6 +383,12 @@ def _combine_migration(
     for pos in sorted(insertions, reverse=True):
         if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
             output[pos - 1] += eol
+        if (
+            pos
+            and output[pos - 1].strip(" \t\r\n")
+            and insertions[pos][0].startswith("## ")
+        ):
+            insertions[pos][0] = eol + insertions[pos][0]
         output[pos:pos] = insertions[pos]
     merged = left.prefix + "".join(output)
     checked, reason = _parse(merged)
@@ -369,15 +435,28 @@ def migrate_logs(
         if p.name == "log.md"
         and not inspector._internal(p.relative_to(doc._source_dir).as_posix())
     ]
+    import posixpath
+
+    sources = [
+        s
+        for s in sources
+        if posixpath.dirname(s) and not designation(posixpath.dirname(s))
+    ]
     runner = _LogMigrationRunner(doc, designation, apply, allow_protected)
     with okf_write_suppressed(), doc.write_scope():
-        for source in sources:
-            runner.process(source)
+        for index, source in enumerate(sources):
+            try:
+                runner.process(source)
+            except _LogMigrationInterrupted as exc:
+                exc.completed = tuple(runner.merged)
+                exc.pending = tuple(sources[index:])
+                raise
     return LogMigration(
         tuple(runner.merged),
         tuple(runner.kept),
         tuple(sorted(runner.headers)),
         tuple(sorted(runner.source_headers)),
+        tuple(sorted(runner.unrewritten)),
     )
 
 
@@ -395,6 +474,7 @@ class _LogMigrationRunner:
         self.kept: list[tuple[str, str]] = []
         self.headers: set[str] = set()
         self.source_headers: set[str] = set()
+        self.unrewritten: set[tuple[str, str]] = set()
         self.simulated: dict[str, str] = {}
 
     def process(self, source: str) -> None:
@@ -438,14 +518,31 @@ class _LogMigrationRunner:
             raise InvalidRequestError("missing or aliased log")
         if strip_frontmatter_block(src.content) != src.content:
             self.source_headers.add(source)
-        previous = self.simulated.get(target, dst.content if dst else None)
+        relocated = _relocate_links(src.content, source, target)
+        self.unrewritten.update((source, note) for note in _relocation_notes(relocated))
+        raw_target = self.doc._okf_author_snapshot(target)[1] if dst else None
+        previous = self.simulated.get(target, raw_target)
+        if previous is not None:
+            source_log, _ = _parse(relocated)
+            target_log, _ = _parse(previous)
+            if source_log is not None and target_log is not None:
+                for label, (href, _) in source_log.refs.items():
+                    if label in target_log.refs and target_log.refs[label][0] != href:
+                        self.unrewritten.add(
+                            (
+                                source,
+                                f"reference {label!r} points to {href!r} but the target defines {target_log.refs[label][0]!r}; source links use the target definition",
+                            )
+                        )
         if previous is not None and strip_frontmatter_block(previous) != previous:
             self.headers.add(target)
-        text, count, reason = _migration_text(previous, src.content)
+        text, count, reason = _migration_text(previous, src.content, source, target)
         if text is None:
             raise InvalidRequestError(reason)
         if self.apply:
-            self._write(source, target, text, src.etag, dst.etag if dst else None)
+            self._write(
+                source, target, text, src.etag, (dst.etag if dst else None, raw_target)
+            )
         else:
             self.simulated[target] = text
         self.merged.append(LogMove(source, target, count))
@@ -456,26 +553,73 @@ class _LogMigrationRunner:
         target: str,
         text: str,
         source_etag: str | None,
-        target_etag: str | None,
+        target_state: tuple[str | None, str | None],
     ) -> None:
         from markdown_vault_mcp.exceptions import MarkdownMCPError
 
+        target_etag, original = target_state
         try:
-            self.doc.write(
-                target,
-                text,
-                if_match=target_etag,
-                allow_overwrite=True,
-                allow_protected=self.allow_protected,
-            )
-            self.doc.delete(
-                source, if_match=source_etag, allow_protected=self.allow_protected
-            )
+            with self.doc.exact_byte_writes():
+                self.doc.write(
+                    target,
+                    text,
+                    if_match=target_etag,
+                    allow_overwrite=True,
+                    create_only=target_etag is None,
+                    allow_protected=self.allow_protected,
+                )
         except (MarkdownMCPError, OSError) as exc:
             raise _LogMigrationInterrupted(
                 f"Merge interrupted: {target} may have changed; {source} may remain: {exc}"
             ) from exc
+        try:
+            self.doc.delete(
+                source, if_match=source_etag, allow_protected=self.allow_protected
+            )
+        except (MarkdownMCPError, OSError) as exc:
+            restored = self._restore(source, target, source_etag, text, original)
+            detail = "target restored" if restored else "target may have changed"
+            raise _LogMigrationInterrupted(
+                f"Merge interrupted: {detail}; {source} may remain: {exc}"
+            ) from exc
+
+    def _restore(
+        self,
+        source: str,
+        target: str,
+        source_etag: str | None,
+        text: str,
+        original: str | None,
+    ) -> bool:
+        """Undo a published target only while both observations still match."""
+        from markdown_vault_mcp.exceptions import MarkdownMCPError
+        from markdown_vault_mcp.hashing import compute_etag
+
+        try:
+            note = self.doc._read_note(source, capped=False)
+            if note is None or note.etag != source_etag:
+                return False
+            written_etag = compute_etag(text.encode("utf-8"))
+            if original is None:
+                self.doc.delete(
+                    target, if_match=written_etag, allow_protected=self.allow_protected
+                )
+            else:
+                with self.doc.exact_byte_writes():
+                    self.doc.write(
+                        target,
+                        original,
+                        if_match=written_etag,
+                        allow_overwrite=True,
+                        allow_protected=self.allow_protected,
+                    )
+            return True
+        except (MarkdownMCPError, OSError):
+            return False
 
 
 class _LogMigrationInterrupted(InvalidRequestError):
     """A target may have changed before source removal failed."""
+
+    completed: tuple[LogMove, ...] = ()
+    pending: tuple[str, ...] = ()
