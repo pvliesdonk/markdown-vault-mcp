@@ -149,6 +149,48 @@ def test_oversized_indexes_refresh_preserving_headers_and_boundaries(
         vault.close()
 
 
+def test_oversized_generated_fold_is_readable_by_section(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    expected = set()
+    for folder in ("alpha", "beta", "gamma", "delta"):
+        (root / folder).mkdir()
+        for name in ("one", "two"):
+            (root / folder / f"{name}.md").write_text(f"# {name}\n")
+            expected.add(f"/{folder}/{name}.md")
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=caps,
+            max_note_read_bytes=128,
+        ),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index()
+        nav = vault.reader.okf_navigation("")
+        assert (nav.source, nav.body, nav.reason) == (None, None, "note_limit")
+        headings = [
+            entry.heading
+            for entry in vault.reader.get_toc("index.md")
+            if entry.level == 2
+        ]
+        assert len(headings) == 4
+        sections = [
+            vault.reader.read("index.md", section=heading).content
+            for heading in headings
+        ]
+        assert all(any(link in section for section in sections) for link in expected)
+    finally:
+        vault.close()
+
+
 def test_ordinary_write_repairs_new_and_removed_boundary(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "projects/p/deep").mkdir(parents=True)
