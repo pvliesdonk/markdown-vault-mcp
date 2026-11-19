@@ -247,4 +247,4 @@ status.
 Snapshot-bound library reviews use `WriterFacet.okf_verify(path, subject, snapshot, check="human-review")`. Pass the snapshot from the whole-note read and the reviewer subject. A `human-review` records `human:<subject>`; a named machine check records `process:<subject>`. The call checks the snapshot, writes the claim with an etag guard and records a local receipt.
 
 
-The writer's `okf_merge_logs` method previews descendant log migration by default; pass `apply=True` to merge eligible logs and delete their sources. Entry text is retained and destination warnings are report-only. See [merging descendant logs](../../use/okf.md#merging-descendant-logs).
+The writer's `okf_merge_logs` method previews descendant log migration by default; pass `apply=True` to merge eligible logs and delete their sources. Entry text is retained and the CLI gives a general warning to inspect links. See [merging descendant logs](../../use/okf.md#merging-descendant-logs).

@@ -13,7 +13,6 @@ from markdown_it import MarkdownIt
 from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import (
-    _is_external_target,
     _normalise_line_endings,
     strip_frontmatter_block,
 )
@@ -280,32 +279,6 @@ class LogMigration:
     kept: tuple[tuple[str, str], ...]
     target_frontmatter: tuple[str, ...]
     source_frontmatter: tuple[str, ...]
-    unrewritten: tuple[tuple[str, str], ...]
-
-
-def _relocation_notes(text: str) -> set[str]:
-    """Describe destinations whose meaning can change after migration."""
-    notes: set[str] = set()
-    for token in MarkdownIt("commonmark").parse(text):
-        for item in (token, *(token.children or [])):
-            if (
-                item.type in {"html_block", "html_inline"}
-                and not item.content.lstrip().startswith("<!--")
-                and re.search(
-                    r"\b(?:href|src|srcset)\s*=|url\s*\(", item.content, re.IGNORECASE
-                )
-            ):
-                notes.add("HTML URL not rewritten; check after merge")
-            if item.type in {"image", "link_open"}:
-                destination = item.attrGet("src" if item.type == "image" else "href")
-                if destination is not None and not (
-                    _is_external_target(str(destination))
-                    or str(destination).startswith(("/", "#"))
-                ):
-                    notes.add("relative destination kept as written; check after merge")
-            if item.type == "text" and re.search(r"\[\[[^\]#][^\]]*\]\]", item.content):
-                notes.add("wiki destination kept as written; check after merge")
-    return notes
 
 
 def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
@@ -407,7 +380,6 @@ class _LogMigrationRunner:
         self.kept: list[tuple[str, str]] = []
         self.headers: set[str] = set()
         self.source_headers: set[str] = set()
-        self.unrewritten: set[tuple[str, str]] = set()
         self.simulated: dict[str, tuple[str, _Log]] = {}
 
     def result(self) -> LogMigration:
@@ -416,7 +388,6 @@ class _LogMigrationRunner:
             tuple(self.kept),
             tuple(sorted(self.headers)),
             tuple(sorted(self.source_headers)),
-            tuple(sorted(self.unrewritten)),
         )
 
     def process(self, source: str) -> None:
@@ -465,9 +436,6 @@ class _LogMigrationRunner:
         cached: tuple[str, _Log] | None,
     ) -> None:
         source = src.path
-        self.unrewritten.update(
-            (source, note) for note in _relocation_notes(src.content)
-        )
         raw_target, target_etag = (None, None) if cached else self._raw_target(target)
         previous = cached[0] if cached else raw_target
         right, reason = _parse(src.content)
@@ -484,8 +452,6 @@ class _LogMigrationRunner:
         )
         if previous is not None and left is None:
             raise InvalidRequestError("target: " + reason)
-        if left is not None:
-            self._note_ref_collisions(source, right, left)
         if left is not None and left.prefix.lstrip("\ufeff"):
             self.headers.add(target)
         text, count, reason, parsed = _merge_migration(
@@ -510,18 +476,6 @@ class _LogMigrationRunner:
             return None, None
         raw = path.read_bytes()
         return raw.decode("utf-8", "surrogateescape"), compute_etag(raw)
-
-    def _note_ref_collisions(
-        self, source: str, source_log: _Log, target_log: _Log
-    ) -> None:
-        for label, (href, _) in source_log.refs.items():
-            if label in target_log.refs and target_log.refs[label][0] != href:
-                self.unrewritten.add(
-                    (
-                        source,
-                        f"reference {label!r} points to {href!r} but the target defines {target_log.refs[label][0]!r}; source links use the target definition",
-                    )
-                )
 
     def _write(
         self,
@@ -594,5 +548,5 @@ class _LogMigrationRunner:
 class _LogMigrationInterrupted(InvalidRequestError):
     """A target may have changed before source removal failed."""
 
-    partial: LogMigration = LogMigration((), (), (), (), ())
+    partial: LogMigration = LogMigration((), (), (), ())
     pending: tuple[str, ...] = ()

@@ -337,8 +337,10 @@ def _print_log_migration(result: Any, source_dir: str | None, apply: bool) -> No
         typer.echo(
             f"Keep {terminal_text(path)}: {terminal_text(reason.replace('_', ' '))}"
         )
-    for path, note in result.unrewritten:
-        typer.echo(f"{terminal_text(path)}: {terminal_text(note)}")
+    if result.merged:
+        typer.echo(
+            "Relative destinations and reference definitions can change meaning; inspect links after merging."
+        )
     for path in result.source_frontmatter:
         typer.echo(f"Source frontmatter encountered: {terminal_text(path)}")
     for path in result.target_frontmatter:

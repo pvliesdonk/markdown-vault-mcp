@@ -53,7 +53,7 @@ previews vault changes by default. Applying it removes matching generated
 indexes and refreshes designated parent indexes under the same vault path and
 write protections as other library writes.
 
-The [`okf merge-logs` command](use/okf.md#merging-descendant-logs) previews changes by default. Applying it writes ancestor logs and deletes successfully merged source files, subject to the vault path and write protections. Relative destinations can change meaning; the report identifies destinations to inspect.
+The [`okf merge-logs` command](use/okf.md#merging-descendant-logs) previews changes by default. Applying it writes ancestor logs and deletes successfully merged source files, subject to the vault path and write protections. Relative destinations can change meaning; the command warns operators to inspect links.
 
 The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->

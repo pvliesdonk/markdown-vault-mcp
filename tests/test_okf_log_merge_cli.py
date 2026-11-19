@@ -21,8 +21,8 @@ def test_entries_keep_literal_links_and_code(tmp_path: Path) -> None:
     vault = designated_vault(root, (".",))
     try:
         result = vault.writer.okf_merge_logs(apply=True)
+        assert len(result.merged) == 1
         assert entry in (root / "log.md").read_text()
-        assert any("relative destination" in note for _, note in result.unrewritten)
     finally:
         vault.close()
 
@@ -42,7 +42,7 @@ def test_existing_target_above_read_limit_is_merged(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_multiple_sources_report_conflicts_and_keep_trailing_definitions(
+def test_multiple_sources_keep_entries_and_trailing_definitions(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "vault"
@@ -62,9 +62,6 @@ def test_multiple_sources_report_conflicts_and_keep_trailing_definitions(
         result = vault.writer.okf_merge_logs(apply=True)
         assert {m.source for m in result.merged} == {"a/log.md", "b/log.md"}
         assert dict(result.kept)["c/log.md"] == "unaccounted_content"
-        assert {
-            path for path, note in result.unrewritten if "target defines" in note
-        } == {"a/log.md", "b/log.md"}
         merged = (root / "log.md").read_text()
         assert "  [r]: a.md" in merged and "  [r]: b.md" in merged
         assert "- [a][r]" in merged and "- [b][r]" in merged
@@ -124,6 +121,7 @@ def test_cli_reports_malformed_source(tmp_path: Path, monkeypatch) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "Keep bad/log.md:" in result.output
+    assert "Relative destinations and reference definitions" not in result.output
     assert path_exists(root / "bad/log.md")
 
 
@@ -231,14 +229,18 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     assert preview.exit_code == 0, preview.output
     assert "deep/log.md -> log.md: 1 entries" in preview.output
     assert "Source frontmatter encountered" in preview.output
-    assert "relative destination kept as written" in preview.output
-    assert "HTML URL not rewritten" in preview.output
+    assert (
+        "Relative destinations and reference definitions can change meaning"
+        in preview.output
+    )
     assert path_exists(root / "deep/log.md")
     applied = CliRunner().invoke(app, [*args, "--apply"])
     assert applied.exit_code == 0, applied.output
     assert "Merged deep/log.md" in applied.output
-    assert "relative destination kept as written" in applied.output
-    assert "HTML URL not rewritten" in applied.output
+    assert (
+        "Relative destinations and reference definitions can change meaning"
+        in applied.output
+    )
     assert not path_exists(root / "deep/log.md")
     assert (root / "log.md").read_text().startswith("# Log")
 
@@ -475,7 +477,7 @@ def test_interruption_reports_completed_and_pending(
         vault.close()
 
 
-def test_relative_wiki_link_is_reported_without_rewriting(tmp_path: Path) -> None:
+def test_relative_wiki_link_is_kept_without_rewriting(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
@@ -485,7 +487,7 @@ def test_relative_wiki_link_is_reported_without_rewriting(tmp_path: Path) -> Non
     try:
         result = vault.writer.okf_merge_logs(apply=True)
         assert entry in (root / "log.md").read_text()
-        assert any("wiki destination" in note for _, note in result.unrewritten)
+        assert len(result.merged) == 1
     finally:
         vault.close()
 
@@ -515,7 +517,7 @@ def test_cli_interruption_prints_progress(tmp_path: Path, monkeypatch) -> None:
     assert "Pending or uncertain: b/log.md" in result.output
 
 
-def test_cli_interruption_reports_kept_and_notes(tmp_path: Path, monkeypatch) -> None:
+def test_cli_interruption_reports_kept_and_warning(tmp_path: Path, monkeypatch) -> None:
     from markdown_vault_mcp.managers.document import DocumentManager
 
     root = tmp_path / "vault"
@@ -540,7 +542,10 @@ def test_cli_interruption_reports_kept_and_notes(tmp_path: Path, monkeypatch) ->
     assert result.exit_code == 1
     assert "Keep a/log.md:" in result.output
     assert "Merged b/log.md" in result.output
-    assert "b/log.md: relative destination kept as written" in result.output
+    assert (
+        "Relative destinations and reference definitions can change meaning"
+        in result.output
+    )
     assert "Pending or uncertain: c/log.md" in result.output
 
 
@@ -581,7 +586,7 @@ def test_self_log_links_point_at_target(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_reference_collision_is_reported_and_entries_are_kept(tmp_path: Path) -> None:
+def test_reference_collision_entries_are_kept(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
@@ -596,23 +601,8 @@ def test_reference_collision_is_reported_and_entries_are_kept(tmp_path: Path) ->
         vault.index.build_index()
         result = vault.writer.okf_merge_logs(apply=True)
         assert len(result.merged) == 1
-        assert any(
-            "source links use the target definition" in note
-            for _, note in result.unrewritten
-        )
         text = (root / "log.md").read_text()
         assert "- [old][r]" in text and "- [new][r]" in text
         assert not path_exists(root / "deep/log.md")
     finally:
         vault.close()
-
-
-def test_relocation_notes_for_images_and_html() -> None:
-    from markdown_vault_mcp._okf_log_merge import _relocation_notes
-
-    notes = _relocation_notes('![inline](a.png) <img src="a.png">')
-    assert "relative destination kept as written; check after merge" in notes
-    assert "HTML URL not rewritten; check after merge" in notes
-    assert not _relocation_notes(
-        "# Log\n\n## 2025-01-01\n\n- <br> <kbd>key</kbd> <!-- src=x -->\n"
-    )
