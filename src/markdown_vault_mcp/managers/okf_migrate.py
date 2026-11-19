@@ -238,7 +238,8 @@ class OkfMigrationManager:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
 
         Raises:
-            InvalidRequestError: If protected paths were skipped; eligible writes remain.
+            InvalidRequestError: If the target is undesignated or protected paths were
+                skipped; eligible writes remain.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
@@ -257,10 +258,9 @@ class OkfMigrationManager:
                 )
             if verdict:
                 designated = self._index_designated
-        existed = self._has_index(folder)
         skipped: dict[str, str] = {}
         result = self._generate_index(folder, skipped, allow_protected, designated)
-        if designated is not None and not existed and result.path not in skipped:
+        if designated is not None and result.path not in skipped:
             self._connect_parent(folder, skipped, allow_protected, designated)
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
@@ -277,7 +277,7 @@ class OkfMigrationManager:
         allow_protected: bool,
         designated: Callable[[str], bool],
     ) -> None:
-        """Link a new boundary from its nearest existing designated ancestor."""
+        """Link a boundary from its nearest existing designated ancestor."""
         while folder:
             folder = posixpath.dirname(folder)
             if self._has_index(folder):

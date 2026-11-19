@@ -180,6 +180,19 @@ Three tools handle the changes you should not make by hand. They are write tools
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of the notes directly in that folder, plus a pointer into each subfolder's own `index.md`. With index maintenance disabled, missing subfolder indexes are generated recursively. With maintenance enabled, designated indexes fold descendants up to existing index boundaries. It draws each description from the note's frontmatter. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
 - **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. The `folder` argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 
+A designated `guides/index.md` can fold a descendant without its own index:
+
+```markdown
+# guides
+
+- [Setup](/guides/setup.md)
+
+## advanced/
+
+- [Tuning](/guides/advanced/tuning.md)
+```
+
+
 ### Reserved files on a vault with required fields
 
 If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. Generators create reserved files without frontmatter and do not add fields during regeneration. Before generating in a vault with required fields, enable OKF scope with `MARKDOWN_VAULT_MCP_OKF_MODE=on`, or use `auto` mode with a root `okf_version` declaration; outside that scope the normal gate applies and `get_index_status` lists such files as skipped. Deliberate removal of old seeded fields is planned separately. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.

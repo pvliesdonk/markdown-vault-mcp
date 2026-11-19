@@ -53,7 +53,7 @@ def test_all_folders_retains_recursive_golden(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("operation", ["rename", "move"])
+@pytest.mark.parametrize("operation", ["rename", "move", "move_designated"])
 def test_structural_arrival_connects_new_project(
     tmp_path: Path, operation: str
 ) -> None:
@@ -67,9 +67,14 @@ def test_structural_arrival_connects_new_project(
         vault.index.build_index()
         if operation == "rename":
             vault.writer.rename("source/note.md", "projects/p/note.md")
-        else:
+        elif operation == "move":
             vault.writer.move_folder("source", "projects/p/child")
+        else:
+            vault.writer.move_folder("source", "projects/q")
         wait_for_writer_drain(vault)
+        if operation == "move_designated":
+            assert "/projects/q/note.md" in (root / "projects/q/index.md").read_text()
+            return
         expected = (
             "/projects/p/note.md"
             if operation == "rename"
@@ -383,9 +388,20 @@ def test_explicit_creation_reports_protected_parent_after_child_write(
         assert (root / "index.md").read_text() == root_body
     finally:
         vault.close()
+    vault = designated_vault(root, (".", "projects/*"))
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="projects/p")
+        assert "/projects/p/index.md" in (root / "index.md").read_text()
+        vault.writer.write("projects/p/later.md", "# Later\n")
+        wait_for_writer_drain(vault)
+        assert "/projects/p/later.md" in (root / "projects/p/index.md").read_text()
+        assert "/projects/p/index.md" in (root / "index.md").read_text()
+    finally:
+        vault.close()
 
 
-def test_explicit_regeneration_of_existing_child_leaves_parent_unchanged(
+def test_explicit_regeneration_of_existing_child_reconnects_parent(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "vault"
@@ -399,6 +415,6 @@ def test_explicit_regeneration_of_existing_child_leaves_parent_unchanged(
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="projects/p")
         assert "/projects/p/note.md" in (root / "projects/p/index.md").read_text()
-        assert (root / "index.md").read_text() == root_body
+        assert "/projects/p/index.md" in (root / "index.md").read_text()
     finally:
         vault.close()

@@ -334,7 +334,8 @@ class WriterFacet:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
 
         Raises:
-            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+            InvalidRequestError: If the target is undesignated or protected paths are
+                skipped; eligible writes remain.
         """
         return self._migrate().generate_index(
             folder=folder, allow_protected=allow_protected
@@ -761,7 +762,7 @@ class WriterFacet:
                     folder_of(old_dir.strip("/")),
                 ],
                 trigger_paths=[old_dir, new_dir],
-                create=[maintainer.indexed_anchor(folder_of(new_root))],
+                create=[maintainer.indexed_anchor(new_root)],
             )
         return result
 

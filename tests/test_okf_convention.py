@@ -505,7 +505,7 @@ class TestIndexRefreshOnStructuralChanges:
         refresh.assert_called_once_with(
             [*folders, "guides"],
             trigger_paths=["guides/sub", "b"],
-            create=[""],
+            create=["b"],
         )
 
     def test_delete_drops_the_note_from_its_folder_index(

@@ -436,7 +436,7 @@ See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
 Generate a folder's Open Knowledge Format index.md, preserving frontmatter.
 
 Designated folders fold descendants up to existing indexes and link a
-new index from its generated parent. Without index maintenance, missing
+index from its designated parent. Without index maintenance, missing
 subfolder indexes are generated recursively.
 
 **Parameters**
@@ -454,8 +454,9 @@ Dict with:
 - `frontmatter_preserved` (bool): true when the file already had
   a frontmatter block, including an empty block, which is kept;
   false when it had none. No fields are added.
-- created (list[str]): index.md files written for subfolders that
-  had none, outermost first.
+- created (list[str]): previously missing descendant index.md files
+  written during this generation, outermost first; excludes the target
+  and any refreshed parent.
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.
@@ -463,9 +464,9 @@ Dict with:
 **Outcomes and errors**
 
 - InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused.
-- TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
-- IndexUnavailableError: If the index build failed; nothing is changed.
-- DocumentUnreadableError: If the folder's index.md exists but cannot be read; it is left untouched.
+- TimeoutError: If queued writes do not reach the index within 60 seconds; earlier index writes may remain.
+- IndexUnavailableError: If the index build failed; earlier writes may remain.
+- DocumentUnreadableError: If an index cannot be read; it is left untouched, though earlier writes may remain.
 
 <!-- DOMAIN-EXAMPLE-okf_generate_index-START -->
 `okf_generate_index(folder="guides")` writes `guides/index.md`:
@@ -475,7 +476,13 @@ Dict with:
 
 - [Setup](/guides/setup.md) - Install and first run
 - [Project Notes/](/guides/Project%20Notes/index.md)
+
+## advanced/
+
+- [Tuning](/guides/advanced/tuning.md)
 ```
+
+Here `advanced/` has no index of its own, so its note is folded into a section.
 <!-- DOMAIN-EXAMPLE-okf_generate_index-END -->
 
 ## `okf_seed_log`
