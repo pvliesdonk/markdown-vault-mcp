@@ -1,10 +1,8 @@
 # Review instructions
 
 <!-- DOMAIN-REVIEW-START -->
-<!-- Add project-specific review rules here. Kept across copier update. -->
+<!-- Add project-specific review rules here. -->
 <!-- DOMAIN-REVIEW-END -->
-
-<!-- ===== TEMPLATE-OWNED BELOW — DO NOT EDIT; OVERWRITTEN ON COPIER UPDATE ===== -->
 
 ## Don't reproduce CI
 
@@ -25,17 +23,6 @@ for re-executing the suite.
 Report correctness bugs, security issues, and regressions introduced by this
 diff. Behavior claims need a `file:line` citation in the source, not an
 inference from naming.
-
-## Template-owned lines
-
-When `.copier-answers.yml` exists, this project tracks a template: in a
-file that carries sentinel blocks (`NAME-START` … `NAME-END` comments), only the
-content inside those blocks is the project's, and every other line is
-re-rendered by the next template update. When a hunk adds or changes such
-a line outside every block, report it: name the file and lines, and point
-at the block in that file where the content belongs. A pull request may
-carry such a line on purpose only with a Decay issue that names it; say so
-when the pull request body cites none.
 
 ## Converge
 

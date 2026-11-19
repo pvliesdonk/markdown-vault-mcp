@@ -62,6 +62,8 @@ Claude Desktop passes every value as written, so paths are absolute (`~` is not 
 ### What this server needs
 
 <!-- DOMAIN-CLAUDE-DESKTOP-START -->
+In the `.mcpb` install screen, leave **Embedding provider**, API keys and Git settings empty when you do not need them. The bundle supplies empty defaults for these optional fields, so skipped fields do not become literal `${user_config.*}` values. Existing model and host defaults remain unchanged.
+
 The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path of the folder that holds your notes. For a first run, also set `MARKDOWN_VAULT_MCP_READ_ONLY` to `true`. Claude then gets the tools that search and read, and none of the tools that change files:
 
 ```json { .config data-expect="read_only=True" }
