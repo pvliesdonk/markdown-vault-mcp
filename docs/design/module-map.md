@@ -134,6 +134,7 @@ src/markdown_vault_mcp/
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
     transfer.py          -- TransferConfig: TRANSFER_* link TTL default/max, grace window, lease and upload cap (#2321)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
+  _auth.py             -- build_auth / build_bearer_auth / OIDC remote and proxy builders / resolve_auth_mode: the six auth modes and their provider dispatch (#2277)
   _connection.py       -- connection_identity: protocol revision and client name/version of the current request (#2333)
   _debug.py            -- maybe_start_debugpy: DEBUG_PORT / DEBUG_WAIT remote-debugger listener (#2335)
   _env.py              -- env/env_int/env_float/parse_bool/parse_list: every {PREFIX}_{NAME} read; imports no server stack (#2275, #2016)

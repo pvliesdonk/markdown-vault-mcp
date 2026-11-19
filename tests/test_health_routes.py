@@ -20,12 +20,13 @@ import pytest
 from fastmcp import FastMCP
 from httpx import ASGITransport, AsyncClient
 
+from markdown_vault_mcp._auth import build_auth
 from markdown_vault_mcp._health import (
     _health_prefix,
     _resolve_detail,
     register_health_routes,
 )
-from markdown_vault_mcp._pvl_core import ServerConfig, build_auth
+from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._url import redact_urls_in_text
 
 if TYPE_CHECKING:

@@ -60,6 +60,21 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_auth_mode() -> Iterator[None]:
+    """Reset the auth-mode context variable between tests (#2277).
+
+    ``build_auth`` records the resolved mode as a startup side effect, and the
+    variable's value crosses test boundaries within one run. Ported from
+    fastmcp-pvl-core's ``tests/conftest.py`` at v10.2.0.
+    """
+    from markdown_vault_mcp._pvl_core import set_current_auth_mode
+
+    set_current_auth_mode(None)
+    yield
+    set_current_auth_mode(None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_identity_registration() -> Iterator[None]:
     """Reset the identity layer's startup registrations after each test.
 

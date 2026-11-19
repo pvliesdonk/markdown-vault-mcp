@@ -16,8 +16,6 @@ from __future__ import annotations
 from fastmcp_pvl_core import (
     ConfigurationError,
     ServerConfig,
-    build_auth,
-    build_bearer_auth,
     domain_env_suffixes,
     domain_env_surface,
     get_claims,
@@ -25,6 +23,7 @@ from fastmcp_pvl_core import (
     get_subject,
 )
 from fastmcp_pvl_core import __version__ as CORE_VERSION
+from fastmcp_pvl_core._subject import set_current_auth_mode
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -32,12 +31,11 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "ServerConfig",
     "domain_env_suffixes",
     "domain_env_surface",
-    # Authentication and the request subject (#2277).
-    "build_auth",
-    "build_bearer_auth",
+    # The request subject and the auth-mode readers (#2350).
     "get_claims",
     "get_current_auth_mode",
     "get_subject",
+    "set_current_auth_mode",
     # The installed pvl-core version get_server_info reports (#2283).
     "CORE_VERSION",
 ]
