@@ -733,7 +733,7 @@ applied to logs.
 
 ### Export
 
-Export ships **not as a bespoke tool but as an overloaded download ref** on
+Export is available as an operator CLI command and as an overloaded download ref on
 pvl-core's `create_download_link` (the transfer subsystem adopted in #979). The
 domain `VaultTransferSink` recognises a bundle ref — `okf-bundle` for the whole
 vault, `okf-bundle:<folder>` for a subtree — validates the scope at link
@@ -741,20 +741,23 @@ creation (gated out when `OKF_MODE=off`), and generates the archive at fetch
 time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
 model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
+The `markdown-vault-mcp export` operator command is also available when
+`OKF_MODE=off`; the download ref remains gated by server mode.
 
 The bundle copies inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected. HTML attribute values are not parsed; link-shaped text inside them may be relocated like body text. Subtree notes with invalid UTF-8 are scanned losslessly; NUL or UTF-16 bodies are copied and reported as uninspected. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. For non-Git exports, resolvable
 wikilinks use the existing graph for searchable notes, which can be stale. Remaining subtree wikilinks are resolved by name independently of search admission. An exact selected filename needs no whole-vault scan; other names use a lazily loaded whole-vault inventory. A name without a filename match remains raw and is reported as a dependency even with `external_base`; remaining subtree resolution does not match aliases or case-insensitive names. A subtree
 becomes the archive root. Body destinations to selected files are relocated
 when root-relative; relative destinations stay as written when they retain their target, and are adjusted when needed.
 Outside destinations are reported as dependencies, and a destination that would
-point to a different exported file refuses the export. Library callers can supply
+point to a different exported file refuses the export. Library, CLI, and download callers can supply
 `external_base` to turn outside destinations into absolute URLs. The report
-lists files whose bytes changed. Path-valued `resource`, `sources[].resource`, `computation`, `executor.resource` and `attester.resource` follow the same relocation rules, retaining query strings and fragments. Non-slash, non-dot paths remain unchanged and appear in the library-only `ambiguous_path` report; download users cannot see it. Fields are URI references: percent escapes are decoded for matching and retained in rewritten paths. Aliases and merges used by changed paths are copied so other values retain their meaning. Directory references relocate as well: the selected root becomes `/`, directory-form paths retain their trailing slash, and `.` and `..` are paths. `uninspected` records inventory observations including aliases and inspection limits, plus `metadata_encoding` when export cannot parse or re-encode a header. Unrecognised grammars such as TOML are copied without an entry. A file can also be `transformed` when its bytes change; neither entry identifies which fields relocated. Only the selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in recognized Markdown link titles and destinations is treated as literal content of the enclosing link. Links with titles spanning multiple lines are not recognized by the shared link grammar. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
+lists files whose bytes changed. Path-valued `resource`, `sources[].resource`, `computation`, `executor.resource` and `attester.resource` follow the same relocation rules, retaining query strings and fragments. Non-slash, non-dot paths remain unchanged and appear in the `ambiguous_path` report. Fields are URI references: percent escapes are decoded for matching and retained in rewritten paths. Aliases and merges used by changed paths are copied so other values retain their meaning. Directory references relocate as well: the selected root becomes `/`, directory-form paths retain their trailing slash, and `.` and `..` are paths. `uninspected` records inventory observations including aliases and inspection limits, plus `metadata_encoding` when export cannot parse or re-encode a header. Unrecognised grammars such as TOML are copied without an entry. A file can also be `transformed` when its bytes change; neither entry identifies which fields relocated. Only the selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in recognized Markdown link titles and destinations is treated as literal content of the enclosing link. Links with titles spanning multiple lines are not recognized by the shared link grammar. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
 paths and index-excluded paths are omitted by default. Reserved `index.md` and
 `log.md` are kept unless an omission policy applies, including a matching
-configured conventions filename. Library callers can opt into hidden and
-index-excluded paths separately (including a hidden scope root) and receive an artifact v0.2 format verdict and observations;
-the download ref exposes neither options nor report. Incomplete inventory
+configured conventions filename. Library, CLI, and download callers can opt into hidden and
+index-excluded paths separately (including a hidden scope root). The library returns
+an artifact v0.2 format verdict and observations; strict refusals return the completed
+report as JSON through the CLI or download. A successful download contains only the ZIP. Incomplete inventory
 enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
 admission of current bytes; `unknown` covers candidates without a decisive index
 state. A candidate absent from both policy lists was last observed searchable.

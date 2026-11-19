@@ -375,12 +375,19 @@ async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
 
 async def test_strict_bundle_download_returns_refusal_report(
     sink: VaultTransferSink,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     import json
 
     ref = "okf-bundle?strict"
     assert await sink.validate(ref, "download") == ref
-    result = await sink.read(ref)
+    with caplog.at_level(logging.INFO):
+        result = await sink.read(ref)
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("(root)", "strict")
+        for r in caplog.records
+    )
     assert result.media_type == "application/json"
     assert result.filename == "okf-export-refusal.json"
     payload = json.loads(result.body)
@@ -389,14 +396,20 @@ async def test_strict_bundle_download_returns_refusal_report(
 
 
 async def test_bundle_collision_returns_actionable_refusal(
-    sink: VaultTransferSink, source_dir: Path
+    sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     import json
 
     (source_dir / "guides").mkdir()
     (source_dir / "guides/a.md").write_text("[outside](/b.md)")
     (source_dir / "guides/b.md").write_text("# B")
-    result = await sink.read("okf-bundle:guides")
+    with caplog.at_level(logging.INFO):
+        result = await sink.read("okf-bundle:guides")
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("guides", "collision")
+        for r in caplog.records
+    )
     payload = json.loads(result.body)
     assert result.media_type == "application/json"
     assert payload["reason"] == "collision"

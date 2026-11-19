@@ -468,6 +468,11 @@ class VaultTransferSink:
                 build_okf_bundle, vault, self._config, folder=scope, **options
             )
         except (PublicationRefused, ExportCollisionError) as exc:
+            logger.info(
+                "transfer_download_bundle_refused scope=%s reason=%s",
+                scope or "(root)",
+                "strict" if isinstance(exc, PublicationRefused) else "collision",
+            )
             return TransferReadResult(
                 refusal_document(exc), "application/json", "okf-export-refusal.json"
             )
