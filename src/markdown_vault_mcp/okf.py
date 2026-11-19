@@ -619,7 +619,7 @@ def assess_needs_review(
     Returns:
         The rule, its decision, and the conditions that held.
     """
-    freshness = derive_annotation(metadata)["freshness"]["state"]
+    freshness = _freshness_evidence(metadata, _dt.datetime.now().astimezone())["state"]
     conditions = []
     if freshness != "unexpired":
         conditions.append("freshness_" + freshness)

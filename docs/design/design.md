@@ -2144,8 +2144,8 @@ the spec itself says, dated and sourced, in
   Expired, missing or malformed freshness and absence of a matching review of
   `required_check` (default `human-review`) are independent conditions; each
   hit reports the conditions from the same per-call assessment used for selection.
-  A present but unreadable snapshot reports `no_matching_review` with
-  `snapshot_unavailable` basis, without inferring freshness; a missing file is omitted.
+  A present but unreadable snapshot reports `snapshot_unavailable` without
+  inferring freshness or review matching; a missing file is omitted.
   Candidate discovery remains index-based. The
   selector does not change trust tiers or ranking. These two names are reserved
   on active bundles; literal field queries remain available through exact

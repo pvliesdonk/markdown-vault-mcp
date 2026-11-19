@@ -646,7 +646,7 @@ class SearchManager:
 
     def _split_okf_filters(
         self, filters: Mapping[str, str | None] | None
-    ) -> tuple[dict[str, str] | None, dict[str, str | None]]:
+    ) -> tuple[dict[str, str] | None, _ReviewFilters]:
         """Split *filters* into plain tag filters and OKF dimensions.
 
         OKF dimensions and null ``type`` use OKF semantics only when active.
@@ -661,7 +661,7 @@ class SearchManager:
                 OKF selector value is invalid.
         """
         if not filters:
-            return None, {}
+            return None, _ReviewFilters()
         active = (
             self._okf is not None
             and any(
@@ -699,7 +699,7 @@ class SearchManager:
                 raise InvalidRequestError(f"{key} filter must be one of {choices}")
         return (plain or None), okf_filters
 
-    def _path_matches_okf(self, path: str, okf_filters: dict[str, str | None]) -> bool:
+    def _path_matches_okf(self, path: str, okf_filters: _ReviewFilters) -> bool:
         """Evaluate the OKF filter dimensions for one document path.
 
         Args:
@@ -718,11 +718,9 @@ class SearchManager:
         return self._metadata_matches_okf(path, metadata, okf_filters)
 
     def _metadata_matches_okf(
-        self, path: str, metadata: dict[str, Any], filters: dict[str, str | None]
+        self, path: str, metadata: dict[str, Any], filters: _ReviewFilters
     ) -> bool:
         """Match indexed metadata and the per-call live review assessment."""
-        if _concept_only_filter(filters) and is_okf_reserved_file(path):
-            return False
         ordinary = {
             k: v
             for k, v in filters.items()
@@ -738,10 +736,10 @@ class SearchManager:
         )
 
     def _cached_needs_review(
-        self, path: str, filters: dict[str, str | None]
+        self, path: str, filters: _ReviewFilters
     ) -> dict[str, Any] | None:
         """Reuse one observation for filtering, expansion, and result display."""
-        cache = cast("_ReviewFilters", filters).assessments
+        cache = filters.assessments
         if path not in cache:
             cache[path] = self._needs_review(path, filters)
         return cache[path]
@@ -769,13 +767,12 @@ class SearchManager:
             return {
                 "needed": True,
                 "required_check": required_check,
-                "conditions": ["no_matching_review"],
-                "basis": "snapshot_unavailable",
+                "conditions": ["snapshot_unavailable"],
             }
         return assess_needs_review(metadata, assessments, required_check)
 
     def _filter_rows_okf(
-        self, rows: builtins.list[FTSResult], okf_filters: dict[str, str | None]
+        self, rows: builtins.list[FTSResult], okf_filters: _ReviewFilters
     ) -> builtins.list[FTSResult]:
         """Drop FTS chunk rows whose document fails the OKF dimensions.
 
@@ -838,7 +835,7 @@ class SearchManager:
         candidate_limit: int,
         *,
         filters: dict[str, str] | None = None,
-        okf_filters: dict[str, str | None] | None = None,
+        okf_filters: _ReviewFilters | None = None,
     ) -> int:
         """Widen a candidate pool when a post-filter will thin it.
 
@@ -884,7 +881,7 @@ class SearchManager:
         raw: builtins.list[dict[str, Any]],
         *,
         filters: dict[str, str] | None,
-        okf_filters: dict[str, str | None] | None = None,
+        okf_filters: _ReviewFilters | None = None,
     ) -> builtins.list[dict[str, Any]]:
         """Apply frontmatter and OKF filters to vector-search rows.
 
@@ -912,7 +909,7 @@ class SearchManager:
         Returns:
             The rows that satisfy every condition, original order preserved.
         """
-        okf_filters = okf_filters or {}
+        okf_filters = okf_filters or _ReviewFilters()
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
@@ -1291,9 +1288,9 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: dict[str, str | None] | None = None,
+        okf_filters: _ReviewFilters | None = None,
     ) -> list[GroupedResult]:
-        okf_filters = okf_filters or {}
+        okf_filters = okf_filters or _ReviewFilters()
         candidate_limit = self._widen_for_post_filter(
             max(limit * (chunks_per_file + 4), 50), okf_filters=okf_filters
         )
@@ -1412,9 +1409,9 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: dict[str, str | None] | None = None,
+        okf_filters: _ReviewFilters | None = None,
     ) -> list[GroupedResult]:
-        okf_filters = okf_filters or {}
+        okf_filters = okf_filters or _ReviewFilters()
         candidate_limit = self._widen_for_post_filter(
             max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR),
             filters=filters,
@@ -1459,10 +1456,10 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         weights: dict[str, float],
-        okf_filters: dict[str, str | None] | None = None,
+        okf_filters: _ReviewFilters | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
-        okf_filters = okf_filters or {}
+        okf_filters = okf_filters or _ReviewFilters()
         # The two channels size their candidate pools independently. FTS keeps a
         # floor of 50 (a BM25 query does real work per candidate). The vector
         # channel uses the same full-scan floor as _semantic_search, since it

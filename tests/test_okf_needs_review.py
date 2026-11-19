@@ -263,8 +263,7 @@ def test_unreadable_snapshot_is_visible_without_claiming_freshness(
             assert hits[0].needs_review == {
                 "needed": True,
                 "required_check": "human-review",
-                "conditions": ["no_matching_review"],
-                "basis": "snapshot_unavailable",
+                "conditions": ["snapshot_unavailable"],
             }
             assert not vault.reader.list_documents(filters={"needs_review": "false"})
         note.unlink()
@@ -311,5 +310,84 @@ def test_python_invalid_selector_types_fail_cleanly(tmp_path: Path) -> None:
         ):
             with pytest.raises(ValueError, match=message):
                 vault.reader.search("absent", mode="keyword", filters=filters)
+    finally:
+        vault.close()
+
+
+def test_custom_check_and_stale_filter_compose(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    text = "---\nstale_after: 2999-01-01\n---\nzebra\n"
+    (tmp_path / "note.md").write_text(text)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.writer.okf_verify(
+            "note.md", "checker", concept_snapshot(text), check="x-custom"
+        )
+        vault.index.build_index()
+        hits = vault.reader.list_documents(
+            filters={
+                "needs_review": "false",
+                "required_check": "x-custom",
+                "stale": "false",
+            }
+        )
+        assert [hit.path for hit in hits] == ["note.md"]
+        assert not vault.reader.list_documents(
+            filters={
+                "needs_review": "false",
+                "required_check": "x-custom",
+                "stale": "true",
+            }
+        )
+        note = tmp_path / "note.md"
+        note.write_text(note.read_text().replace("2999-01-01", "2000-01-01"))
+        hits = vault.reader.list_documents(
+            filters={"freshness": "unexpired", "needs_review": "true"}
+        )
+        assert [hit.path for hit in hits] == ["note.md"]
+        assert "freshness_expired" in hits[0].needs_review["conditions"]
+    finally:
+        vault.close()
+
+
+def test_unavailable_reviewed_and_unreviewed_candidates_across_consumers(
+    tmp_path: Path,
+) -> None:
+    from tests.conftest import MockEmbeddingProvider
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    text = "---\nstale_after: 2999-01-01\n---\nzebra\n"
+    for name in ("reviewed.md", "unreviewed.md", "reference.md"):
+        (tmp_path / name).write_text(text)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, embeddings_path=tmp_path / "vectors"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.writer.okf_verify("reviewed.md", "alice", concept_snapshot(text))
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        for name in ("reviewed.md", "unreviewed.md"):
+            (tmp_path / name).write_bytes(b"\xff")
+        filters = {"needs_review": "true"}
+        for hits in (
+            vault.reader.search("zebra", mode="keyword", filters=filters),
+            vault.reader.list_documents(filters=filters),
+            vault.reader.get_similar("reference.md", filters=filters),
+        ):
+            found = {
+                hit.path: hit.needs_review["conditions"]
+                for hit in hits
+                if hit.path != "reference.md"
+            }
+            assert found == {
+                "reviewed.md": ["snapshot_unavailable"],
+                "unreviewed.md": ["snapshot_unavailable"],
+            }
+        assert {
+            hit.path
+            for hit in vault.reader.list_documents(filters={"needs_review": "false"})
+        } == set()
     finally:
         vault.close()
