@@ -38,18 +38,6 @@ from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
-_CLEAR_VARS = (
-    "MARKDOWN_VAULT_MCP_INDEX_PATH",
-    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-    "MARKDOWN_VAULT_MCP_STATE_PATH",
-    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
-    "MARKDOWN_VAULT_MCP_SERVER_NAME",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-)
-
 
 class FakeSummarizer(Summarizer):
     """Deterministic summarizer that records its prompts."""
@@ -998,8 +986,6 @@ class TestVaultInstancesSummarizer:
 
 def _base_env(monkeypatch: pytest.MonkeyPatch, source_dir: Path) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source_dir))
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 async def test_summarize_hidden_without_key(

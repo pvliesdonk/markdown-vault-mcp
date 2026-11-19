@@ -17,6 +17,18 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the
+output of `git --version`. This identifies the Git executable on the server's
+`PATH`, not Git on your MCP client's computer. Include that value when
+reporting a Git problem. A container uses Git inside the container, so do not
+substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility.
+A failed version probe is logged at DEBUG and does not block startup. A
+plain-directory vault does not emit this diagnostic.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns
@@ -30,7 +42,7 @@ filenames retain the same spelling when Git decides which paths to stage.
 In both git modes, the commit boundary is the MCP tool call, not the file.
 By default, a call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
-did. A call that touched many primary files, such as `move_folder` or
+did. A call that touched many primary files, such as
 `okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
@@ -42,8 +54,12 @@ Direct writes to `index.md` or `log.md` still name their own path.
 A single-note rename names both paths:
 `rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites
 backlinks or OKF refreshes index listings. Those derived writes stay in the
-same commit. A `move_folder` call that moves several files still uses the
-batch summary.
+same commit. A folder move names its source and destination relative to the
+Git working tree root, or as an absolute path if a root lies outside it:
+`move_folder: drafts -> archive/2026`. Moved files, backlink rewrites, and
+OKF updates share that commit. Folder names with control characters, boundary
+whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
+to keep the subject identifiable on one line.
 
 These examples show the default mechanical subjects. The optional
 [model-written subjects](#model-written-auto-commit-subjects) retain them in a

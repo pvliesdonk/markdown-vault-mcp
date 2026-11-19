@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git.interfaces import VersionedStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import WriteCallback
@@ -173,7 +173,7 @@ def _build_git_strategy(
     enable_sync: bool,
     repo_url: str | None = None,
     subject_writer: Callable[[str, str, Sequence[str]], str] | None = None,
-) -> GitWriteStrategy:
+) -> VersionedStore:
     """Build a GitWriteStrategy with the kwargs shared across all three git modes.
 
     ``enable_sync`` toggles both pull and push together — every call site enables
@@ -183,20 +183,22 @@ def _build_git_strategy(
     # reaches `python-frontmatter` transitively, and every module reachable
     # from `ProjectConfig` at import time must resolve under the
     # config-surface generator's dependency floor (see the module docstring).
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git import GitWriteSettings, GitWriteStrategy
 
     git = config.git
     return GitWriteStrategy(
-        token=token,
-        repo_url=repo_url,
-        managed=managed,
-        enable_pull=enable_sync,
-        enable_push=enable_sync,
-        username=git.username,
-        push_delay_s=git.push_delay_s,
-        commit_name=git.commit_name,
-        commit_email=git.commit_email,
-        git_lfs=git.lfs,
+        settings=GitWriteSettings(
+            token=token,
+            repo_url=repo_url,
+            managed=managed,
+            enable_pull=enable_sync,
+            enable_push=enable_sync,
+            username=git.username,
+            push_delay_s=git.push_delay_s,
+            commit_name=git.commit_name,
+            commit_email=git.commit_email,
+            git_lfs=git.lfs,
+        ),
         repo_path=config.source_dir,
         subject_writer=subject_writer,
     )
@@ -228,7 +230,7 @@ class VaultInstances:
 
     embedding_provider: EmbeddingProvider | None
     summarizer: Summarizer | None
-    git_strategy: GitWriteStrategy
+    git_strategy: VersionedStore
     on_write: WriteCallback | None
     git_pull_interval_s: int
 
@@ -397,7 +399,7 @@ def _resolve_subject_writer(
 def _resolve_git(
     config: ProjectConfig,
     subject_writer: Callable[[str, str, Sequence[str]], str] | None = None,
-) -> tuple[GitWriteStrategy, int]:
+) -> tuple[VersionedStore, int]:
     """Build the git strategy for the configured mode, with the pull interval.
 
     Args:
