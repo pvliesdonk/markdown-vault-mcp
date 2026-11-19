@@ -99,9 +99,9 @@ Pseudo-structured: `logger.info("event_name key=%s", value)`. Standard
 library logging keeps the template (`record.msg`) and the values
 (`record.args`) apart on the record, so a consumer that parses the
 *template* recovers typed fields from every call, but only when the
-template follows the grammar below. `fastmcp-pvl-core` owns that grammar
-and ships the check; `tests/test_logging_standard.py` runs it over `src/`
-and fails the build on any call that breaks it.
+template follows the grammar below. `_log_grammar.py` defines that grammar
+and `_log_conformance.py` the check; `tests/test_logging_standard.py` runs it
+over `src/` and fails the build on any call that breaks it.
 
 **Why it is a rule and not a preference.** In JSON mode a conforming record
 renders as `{"ts": …, "level": …, "logger": …, "event": "<name>",
@@ -168,7 +168,7 @@ value; a traceback goes through `exc_info=True`, never into the message.
   `logger.log(level, ...)`, are invisible to it. That is a limit of the
   check, not permission to use those forms to route around it; following
   the mandated receiver is also what keeps your calls checkable.
-- `find_nonconforming_log_calls` is pvl-core's own checker and gates
-  pvl-core's build too (pvliesdonk/fastmcp-pvl-core#328). Run
+- `find_nonconforming_log_calls` (`_log_conformance.py`, ported from
+  pvl-core in #2340) is the checker. Run
   `uv run pytest tests/test_logging_standard.py -q` to list every
   non-conforming call with its file, line and reason.

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from markdown_vault_mcp._pvl_core import find_nonconforming_log_calls
+from markdown_vault_mcp._log_conformance import find_nonconforming_log_calls
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
