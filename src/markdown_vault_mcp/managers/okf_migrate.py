@@ -364,17 +364,15 @@ class OkfMigrationManager:
         paths = self._doc_mgr.index_note_paths(top)
         if folder != top:
             paths.append(f"{folder}/index.md")
-        prefix = f"{top}/" if top else ""
         tree: _IndexTree = {top: ([], {}), folder: ([], {})}
         for path in paths:
-            parts = path[len(prefix) :].split("/")
+            parts = path[len(top) :].lstrip("/").split("/")
             parent = top
             for sub in parts[:-1]:
-                tree.setdefault(parent, ([], {}))[1].setdefault(sub, False)
+                subs = tree.setdefault(parent, ([], {}))[1]
                 parent = posixpath.join(parent, sub)
+                subs[sub] = subs.get(sub, False) or path == f"{parent}/index.md"
                 tree.setdefault(parent, ([], {}))
-            if parts[-1] == "index.md" and parent != top:
-                tree[posixpath.dirname(parent)][1][posixpath.basename(parent)] = True
             if not is_okf_reserved_file(parts[-1]):
                 stem = posixpath.splitext(parts[-1])[0]
                 title, desc = labels.get(path, (stem, None))
@@ -396,12 +394,8 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
-            has_index = self._has_index(child)
-            # An index the listing omits (server state, a link out) is no boundary.
-            visible = self._doc_mgr.index_path_visible(f"{child}/index.md") and (
-                subfolders[sub] or not has_index
-            )
-            has_index = has_index and visible
+            visible = self._may_hold_index(child, subfolders[sub])
+            has_index = visible and self._has_index(child)
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
             if not visible or not (
@@ -424,6 +418,16 @@ class OkfMigrationManager:
             if f"{child}/index.md" not in skipped:
                 entries.append((f"{sub}/", f"/{child}/index.md", None))
         return sections, created
+
+    def _may_hold_index(self, folder: str, listed: bool) -> bool:
+        """Whether *folder*'s ``index.md`` may be linked or generated.
+
+        It must be visible, and an existing one counts only when the listing
+        shows it: a file the server owns or a link out is no boundary.
+        """
+        return self._doc_mgr.index_path_visible(f"{folder}/index.md") and (
+            listed or not self._has_index(folder)
+        )
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* has an ``index.md``; an unreadable one counts.
