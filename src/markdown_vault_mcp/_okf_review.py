@@ -115,21 +115,10 @@ def concept_snapshot(text: str) -> dict[str, str]:
 
 
 def _review_sequence(source: str, node: SequenceNode, value: dict[str, Any]) -> str:
-    from markdown_vault_mcp._okf_author import _flow_insertion, _render
+    from markdown_vault_mcp._okf_author import _append, _render
 
-    if node.flow_style:
-        start, end, insertion = _flow_insertion(source, node, [_render(value)])
-        return source[:start] + insertion + source[end:]
-    pos = node.end_mark.index
     newline = "\r\n" if "\r\n" in source else "\n"
-    return (
-        source[:pos]
-        + " " * node.start_mark.column
-        + "- "
-        + _render(value)
-        + newline
-        + source[pos:]
-    )
+    return _append(source, node, [_render(value)], "- ", newline)
 
 
 def _review_nodes(node: MappingNode) -> dict[str, Any]:

@@ -1189,18 +1189,30 @@ def register(mcp: FastMCP) -> None:
         if_match: str,
         fields: dict[str, Any],
         producer: str | None = None,
+        repair: dict[str, Any] | None = None,
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Set selected editorial fields on an existing OKF concept.
+        """Set editorial fields or repair provenance on an existing OKF concept.
 
         Args:
             path: Concept path in the vault.
             if_match: Etag from a recent read of the concept.
-            fields: Non-empty type, title and description strings; tags as a list
+            fields: Editorial changes; an empty mapping is allowed with repair or
+                producer. Type, title and description are non-empty strings; tags as a list
                 of strings; status as draft, stable or deprecated; stale_after
                 as an ISO date or offset datetime; sources as a list of mappings
                 with a non-empty resource string. Omitted fields are preserved.
+            repair: Optional repair mapping. retire_reviews takes indices (zero-based
+                positions in verified) and a reason; replace_generated takes by
+                (the new actor) and a reason. Replacing generated changes the
+                concept snapshot. Do not combine producer with replace_generated.
+                Matching binding claims move into review_history; receipts stay
+                local. Shared review identities, YAML merge keys, aliased or
+                duplicate-key fields being edited, comments within
+                archived structures, and commented flow review lists are refused.
+                Trailing comments remain as standalone lines. Read the note and
+                use its etag.
             producer: Explicit producer actor: <producer>/<version>, process:<id>
                 or human:<id>, such as codex/6.1 or process:importer; omit to
                 leave generation metadata unchanged.
@@ -1221,6 +1233,7 @@ def register(mcp: FastMCP) -> None:
                 if_match=if_match,
                 fields=fields,
                 producer=producer,
+                repair=repair,
             )
         return attach_remote_health(vault, asdict(result))
 

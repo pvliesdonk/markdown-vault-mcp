@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from datetime import UTC, datetime
 from typing import Any
 
 import frontmatter
 import yaml
-from yaml.nodes import MappingNode, SequenceNode
+from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
+from markdown_vault_mcp._okf_receipts import _review_key
+from markdown_vault_mcp._okf_review import _review_nodes
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
+from markdown_vault_mcp.okf import (
+    OKF_STATUS_VALUES,
+    _parse_stale_after,
+    okf_timestamp,
+    verified_entries,
+)
 from markdown_vault_mcp.scanner import parse_frontmatter
 
 _FIELDS = frozenset(
@@ -43,15 +51,17 @@ def _valid_field(key: str, value: Any) -> bool:
     return False
 
 
-def _validate(fields: dict[str, Any], producer: str | None) -> None:
+def _validate(
+    fields: dict[str, Any], producer: str | None, repair: dict[str, Any] | None
+) -> None:
     if fields.keys() - _FIELDS:
         raise InvalidRequestError("Only OKF editorial fields can be authored")
     if producer is not None and not _ACTOR.fullmatch(producer):
         raise InvalidRequestError(
             "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
         )
-    if not fields and producer is None:
-        raise InvalidRequestError("At least one field or producer is required")
+    if not fields and producer is None and repair is None:
+        raise InvalidRequestError("At least one field, producer, or repair is required")
     for key, value in fields.items():
         if not _valid_field(key, value):
             raise InvalidRequestError(f"Invalid value for {key}")
@@ -131,10 +141,12 @@ def _generated_edits(
     return edits
 
 
-def _comments_in_span(source: str, start: int, end: int) -> str:
+def _comments_in_span(
+    source: str, start: int, end: int, tokens: list[Any] | None = None
+) -> str:
     # Block-scalar header comments precede its data, despite sharing a token.
     scalars = []
-    for token in yaml.scan(source):
+    for token in tokens if tokens is not None else yaml.scan(source):
         if isinstance(token, yaml.ScalarToken):
             start_data = token.start_mark.index
             if token.style in {"|", ">"}:
@@ -227,9 +239,299 @@ def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     return source
 
 
-def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
-    """Apply named fields and optional producer without reserializing the note."""
-    _validate(fields, producer)
+def _retire_entries(
+    previous: Any, request: dict[str, Any], history: list[Any]
+) -> list[Any]:
+    previous = verified_entries({"verified": previous})
+    indices = request["indices"]
+    if (
+        not isinstance(indices, list)
+        or not indices
+        or any(type(i) is not int or i < 0 or i >= len(previous) for i in indices)
+        or len(set(indices)) != len(indices)
+    ):
+        raise InvalidRequestError("Invalid review indices")
+    selected = set(indices)
+    keys = {_review_key(previous[i]) for i in selected} - {None}
+    if {i for i, item in enumerate(previous) if _review_key(item) in keys} - selected:
+        raise InvalidRequestError("Cannot retire a review with a shared identity")
+    history.extend(
+        {"review": previous[i], "reason": request["reason"]} for i in sorted(selected)
+    )
+    return [item for i, item in enumerate(previous) if i not in selected]
+
+
+def _claim_indices(metadata: dict[str, Any], indices: list[int]) -> list[int]:
+    entries = verified_entries(metadata)
+    keys = {_review_key(entries[i]) for i in indices} - {None}
+    claims = metadata.get("x-mvmcp", {}).get("reviews", [])
+    if not isinstance(claims, list):
+        return []
+    return [i for i, claim in enumerate(claims) if _review_key(claim) in keys]
+
+
+def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[str, Any]:
+    if (
+        not isinstance(repair, dict)
+        or not repair
+        or repair.keys() - {"retire_reviews", "replace_generated"}
+    ):
+        raise InvalidRequestError("Invalid repair request")
+    extension = metadata.get("x-mvmcp", {})
+    if not isinstance(extension, dict):
+        raise InvalidRequestError("x-mvmcp must be a mapping")
+    extension = dict(extension)
+    changes: dict[str, Any] = {"x-mvmcp": extension}
+    for action, key, history in (
+        ("retire_reviews", "verified", "review_history"),
+        ("replace_generated", "generated", "generated_history"),
+    ):
+        if action not in repair:
+            continue
+        request = repair[action]
+        required = {"reason", "indices" if action == "retire_reviews" else "by"}
+        if (
+            not isinstance(request, dict)
+            or request.keys() != required
+            or not isinstance(request["reason"], str)
+            or not request["reason"].strip()
+        ):
+            raise InvalidRequestError(f"Invalid {action} request")
+        previous = metadata.get(key)
+        entries = extension.get(history, [])
+        if not isinstance(entries, list):
+            raise InvalidRequestError(f"{history} must be a list")
+        entries = list(entries)
+        if action == "retire_reviews":
+            changes[key] = _retire_entries(previous, request, entries)
+            claims = extension.get("reviews", [])
+            matched = _claim_indices(metadata, request["indices"])
+            if matched:
+                entries.extend(
+                    {"binding": claims[i], "reason": request["reason"]} for i in matched
+                )
+                selected_claims = set(matched)
+                extension["reviews"] = [
+                    claim for i, claim in enumerate(claims) if i not in selected_claims
+                ]
+        else:
+            actor = request["by"]
+            if (
+                previous is None
+                or not isinstance(actor, str)
+                or not _ACTOR.fullmatch(actor)
+            ):
+                raise InvalidRequestError(
+                    "Replacement requires a non-null generated value and valid actor"
+                )
+            entries.append({"generated": previous, "reason": request["reason"]})
+            changes[key] = {"by": actor, "at": okf_timestamp(datetime.now(UTC))}
+        extension[history] = entries
+    return changes
+
+
+def _raw_flow(source: str, node: Any, tokens: list[Any], positions: list[int]) -> str:
+    """Represent a node using its original scalar spellings."""
+    if isinstance(node, ScalarNode):
+        if node.style is None and node.tag != "tag:yaml.org,2002:str":
+            return source[node.start_mark.index : node.end_mark.index]
+        return _render(node.value)
+    start = bisect_left(positions, node.start_mark.index)
+    end = bisect_left(positions, node.end_mark.index)
+    relevant = [
+        token
+        for token in tokens[start:end]
+        if not isinstance(token, (yaml.BlockEndToken, yaml.FlowEntryToken))
+    ]
+    content_end = max(
+        (token.end_mark.index for token in relevant), default=node.start_mark.index
+    )
+    if _comments_in_span(source, node.start_mark.index, content_end, relevant):
+        raise InvalidRequestError("Cannot safely archive evidence containing comments")
+    if any(isinstance(token, yaml.AliasToken) for token in relevant):
+        raise InvalidRequestError("Cannot archive aliased evidence")
+
+    def raw(child: Any) -> str:
+        return _raw_flow(source, child, tokens, positions)
+
+    if isinstance(node, SequenceNode):
+        return "[" + ", ".join(map(raw, node.value)) + "]"
+    _review_nodes(node)
+    return "{" + ", ".join(f"{raw(k)}: {raw(v)}" for k, v in node.value) + "}"
+
+
+def _reject_merge(node: MappingNode) -> None:
+    if any(k.tag == "tag:yaml.org,2002:merge" for k, _ in node.value):
+        raise InvalidRequestError("Cannot repair fields with a YAML merge key")
+
+
+def _touched(node: MappingNode, key: str) -> Any:
+    _reject_merge(node)
+    value = _review_nodes(node).get(key)
+    if value is not None:
+        key_node = next(k for k, _ in node.value if k.value == key)
+        if value.start_mark.index < key_node.end_mark.index:
+            raise InvalidRequestError(
+                f"Cannot repair aliased {key}; remove the alias first"
+            )
+    return value
+
+
+def _line_insertion(source: str, position: int) -> int:
+    start = source.rfind("\n", 0, position) + 1
+    return start if not source[start:position].strip() else position
+
+
+def _append(source: str, node: Any, items: list[str], dash: str, newline: str) -> str:
+    if node.flow_style:
+        start, end, value = _flow_insertion(source, node, items)
+    else:
+        start = end = _line_insertion(source, node.end_mark.index)
+        indent = " " * node.start_mark.column + dash
+        value = "".join(indent + item + newline for item in items)
+    return source[:start] + value + source[end:]
+
+
+def _append_history(source: str, history: str, items: list[str], newline: str) -> str:
+    raw = "[" + ", ".join(items) + "]"
+    root = _parse_root(source)
+    ext = _touched(root, "x-mvmcp")
+    if ext is None:
+        return _append(source, root, [f"x-mvmcp: {{{history}: {raw}}}"], "", newline)
+    existing = _touched(ext, history)
+    if existing is None:
+        return _append(source, ext, [f"{history}: {raw}"], "", newline)
+    return _append(source, existing, items, "- ", newline)
+
+
+def _remove_reviews(
+    source: str, node: Any, selected: set[int], tokens: list[Any], key_column: int
+) -> str:
+    start, end = node.start_mark.index, node.end_mark.index
+    comments = _comments_in_span(source, start, end, tokens)
+    if isinstance(node, MappingNode) or len(selected) == len(node.value):
+        newline = "\r\n" if "\r\n" in source else "\n"
+        tail = end if node.flow_style else _line_insertion(source, end)
+        suffix = newline + comments if comments or not node.flow_style else ""
+        indent = (
+            "  " if not node.flow_style and node.start_mark.column == key_column else ""
+        )
+        return source[:start] + indent + "[]" + suffix + source[tail:]
+    if node.flow_style:
+        if comments:
+            raise InvalidRequestError("Cannot safely edit a commented flow review list")
+        kept = [
+            source[item.start_mark.index : item.end_mark.index]
+            for i, item in enumerate(node.value)
+            if i not in selected
+        ]
+        return source[:start] + "[" + ", ".join(kept) + "]" + source[end:]
+    for i in sorted(selected, reverse=True):
+        item = node.value[i]
+        start = source.rfind("\n", 0, item.start_mark.index) + 1
+        end = (
+            source.rfind("\n", 0, node.value[i + 1].start_mark.index) + 1
+            if i + 1 < len(node.value)
+            else _line_insertion(source, node.end_mark.index)
+        )
+        comments = _comments_in_span(source, start, end, tokens)
+        source = source[:start] + comments + source[end:]
+    return source
+
+
+def _selected_nodes(node: Any, indices: list[int]) -> list[Any]:
+    members = node.value if isinstance(node, SequenceNode) else [node]
+    if any(
+        members[i].start_mark.index < node.start_mark.index
+        or (i > 0 and members[i].start_mark.index < members[i - 1].end_mark.index)
+        for i in indices
+    ):
+        raise InvalidRequestError("Cannot archive aliased evidence")
+    return members
+
+
+def _repair_header(
+    source: str,
+    repair: dict[str, Any],
+    changes: dict[str, Any],
+    newline: str,
+    metadata: dict[str, Any],
+) -> str:
+    root = _parse_root(source)
+    ext = _touched(root, "x-mvmcp")
+    if isinstance(ext, MappingNode):
+        _reject_merge(ext)
+    tokens = list(yaml.scan(source))
+    positions = [token.start_mark.index for token in tokens]
+
+    def archive(label: str, node: Any, reason: str) -> str:
+        raw = _raw_flow(source, node, tokens, positions)
+        return f"{{{label}: {raw}, reason: {_render(reason)}}}"
+
+    retire = repair.get("retire_reviews")
+    replace = repair.get("replace_generated")
+    if retire is not None:
+        node = _touched(root, "verified")
+        members = _selected_nodes(node, retire["indices"])
+        reason = retire["reason"]
+        items = [
+            archive("review", members[i], reason) for i in sorted(retire["indices"])
+        ]
+        matched = _claim_indices(metadata, retire["indices"])
+        if matched:
+            claims_node = _touched(ext, "reviews")
+            claim_members = _selected_nodes(claims_node, matched)
+            items.extend(archive("binding", claim_members[i], reason) for i in matched)
+        key_column = next(
+            k.start_mark.column for k, _ in root.value if k.value == "verified"
+        )
+        source = _remove_reviews(
+            source, node, set(retire["indices"]), tokens, key_column
+        )
+        if matched:
+            root = _parse_root(source)
+            ext = _touched(root, "x-mvmcp")
+            claims_node = _touched(ext, "reviews")
+            key_column = next(
+                k.start_mark.column for k, _ in ext.value if k.value == "reviews"
+            )
+            source = _remove_reviews(
+                source, claims_node, set(matched), list(yaml.scan(source)), key_column
+            )
+        source = _append_history(source, "review_history", items, newline)
+    if replace is not None:
+        root = _parse_root(source)
+        node = _touched(root, "generated")
+        tokens = list(yaml.scan(source))
+        positions = [token.start_mark.index for token in tokens]
+        item = archive("generated", node, replace["reason"])
+        key = next(key for key, _ in root.value if key.value == "generated")
+        start, end = key.start_mark.index, node.end_mark.index
+        replacement = _replacement(source, key, node, changes["generated"])
+        source = source[:start] + replacement + source[end:]
+        source = _append_history(source, "generated_history", [item], newline)
+    return source
+
+
+def author_text(
+    text: str,
+    fields: dict[str, Any],
+    producer: str | None,
+    *,
+    repair: dict[str, Any] | None = None,
+) -> str:
+    """Apply editorial fields and explicit repairs without reserializing the note.
+
+    Args:
+        text: Original note text.
+        fields: Editorial fields to update.
+        producer: Optional producer actor.
+        repair: Explicit provenance repair requests.
+
+    Returns:
+        The edited note text.
+    """
+    _validate(fields, producer, repair)
     changes = dict(fields)
     if producer is not None:
         changes["generated"] = {"by": producer, "at": okf_timestamp(datetime.now(UTC))}
@@ -239,6 +541,11 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
     newline = line_end.group() if line_end else "\n"
     try:
         original = parse_frontmatter(text.removeprefix("\ufeff"))
+        repair_changes = (
+            _repair_changes(original.metadata, repair) if repair is not None else {}
+        )
+        if producer is not None and "generated" in repair_changes:
+            raise InvalidRequestError("Choose producer or replace_generated, not both")
         if span is None:
             prefix = "\ufeff" if text.startswith("\ufeff") else ""
             source = "".join(
@@ -256,6 +563,10 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
         else:
             start, end = span
             source = _edit_header(text[start:end], changes, newline)
+            if repair is not None:
+                source = _repair_header(
+                    source, repair, repair_changes, newline, original.metadata
+                )
             result = text[:start] + source + text[end:]
         parsed = parse_frontmatter(result.removeprefix("\ufeff"))
         expected = dict(original.metadata)
@@ -267,6 +578,7 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
             generated = dict(previous or {})
             generated.update(changes["generated"])
             expected["generated"] = generated
+        expected.update(repair_changes)
         if parsed.metadata != expected or parsed.content != original.content:
             raise InvalidRequestError("Cannot safely apply authoring changes")
         return result
