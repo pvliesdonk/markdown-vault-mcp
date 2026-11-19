@@ -1342,7 +1342,7 @@ class DocumentManager:
 
         return result
 
-    def replace_body(
+    def replace_body(  # noqa: PLR0913, RUF100 - optimistic etag for the generator's snapshot
         self,
         path: str,
         original: str | None,
@@ -1351,7 +1351,7 @@ class DocumentManager:
         allow_protected: bool = False,
         allow_designated: bool = False,
         if_match: str | None = None,
-    ) -> bool:  # noqa: PLR0913, RUF100 - optimistic etag for the generator's snapshot
+    ) -> bool:
         """Replace a note body while preserving an existing header's bytes.
 
         Args:
