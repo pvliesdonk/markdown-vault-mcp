@@ -34,7 +34,7 @@ created as needed.
 | `content` | `string` | `""` | The note's Markdown body, without frontmatter. |
 | `frontmatter` | `object \| null` | `null` | The note's frontmatter, such as `{"title": "My Note", "tags": ["draft"]}`. |
 | `content_base64` | `string` | `""` | An attachment's bytes, base64-encoded; for paths not ending in .md. |
-| `if_match` | `string \| null` | `null` | Etag from read to replace a file; use `(file does not exist)` to require an unoccupied note path, or omit to skip the check. |
+| `if_match` | `string \| null` | `null` | Etag from read, to replace an existing file; omit for a new file. |
 | `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
@@ -70,7 +70,7 @@ does not. To check conventions *before* writing, call
 
 - InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If `content_base64` is missing/invalid for attachments, or the content exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
-- `MCPError`: If the file does not match the supplied `if_match` precondition (ConcurrentModificationError). Also when the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and path already exists while no `if_match` is supplied (DocumentExistsError); use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
+- `MCPError`: If `if_match` is provided and the file has been modified, or `if_match` is supplied for a file that does not yet exist (ConcurrentModificationError). Also when the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and path already exists while no `if_match` is supplied (DocumentExistsError); use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
 
 <!-- DOMAIN-EXAMPLE-write-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import string
 import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -15,15 +14,10 @@ from urllib.parse import quote
 
 from markdown_it import MarkdownIt
 
-from markdown_vault_mcp._okf_convention import (
-    canonical_path,
-    destination_home,
-    log_anchor,
-)
+from markdown_vault_mcp._okf_convention import destination_home, log_anchor
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.managers._write_kernel import MISSING_ETAG
 from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import append_okf_log_entry, is_okf_reserved_file
 from markdown_vault_mcp.scanner import _unfenced_lines
@@ -37,6 +31,8 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.document import DocumentManager
 
 _UNSAFE_LAYOUT = "Log layout cannot take an event safely (check `log.md` for an unclosed code fence or raw HTML block); unchanged."
+
+_INACTIVE = {None: "logging is off", "okf_inactive": "no OKF bundle is active"}
 
 _deferred: ContextVar[bool] = ContextVar("okf_deferred_event", default=False)
 
@@ -57,9 +53,7 @@ def event_deferred() -> bool:
 
 
 def _literal(text: str) -> str:
-    escaped = escape_link_text(text)
-    punctuation = set(string.punctuation) - set("\\[].>")
-    return "".join("\\" + c if c in punctuation else c for c in escaped)
+    return "".join("\\" + c if c in "*_`<&~" else c for c in escape_link_text(text))
 
 
 def _label(path: str) -> str:
@@ -82,18 +76,8 @@ def _label(path: str) -> str:
 def _description(text: str) -> str:
     lead = "**Deprecation**"
     if text.startswith(lead) and (len(text) == len(lead) or text[len(lead)] in " :"):
-        remainder = text[len(lead) :]
-        if remainder.startswith(":"):
-            return lead + ":" + _literal(remainder[1:])
-        return lead + _literal(remainder)
-    literal = _literal(text)
-    return re.sub(
-        r"^(\d+)\.|^>",
-        lambda match: (
-            "\\" + match.group() if match.group() == ">" else match.group(1) + r"\."
-        ),
-        literal,
-    )
+        return lead + _literal(text[len(lead) :])
+    return re.sub(r"^(\d+(?=[.)])|(?=[>#+-]))", r"\1\\", _literal(text))
 
 
 def _unsafe(text: str) -> bool:
@@ -217,9 +201,9 @@ def _require_exact_case(
 def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
     canonical = []
     names: dict[Path, set[str]] = {}
+    root = doc_mgr._source_dir.resolve()
     for path in paths:
-        doc_mgr._validate_path(path)
-        target = canonical_path(path, doc_mgr._source_dir)
+        target = doc_mgr._validate_path(path).relative_to(root).as_posix()
         if _unsafe(target):
             raise InvalidRequestError(
                 "Concept paths must not contain control or line separator characters."
@@ -269,7 +253,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     report = capability_report()
     if not report["effective"]:
         raise InvalidRequestError(
-            f"OKF event logging is not active: {report['reason'] or 'logging is off'}."
+            f"OKF event logging is not active: {_INACTIVE.get(report['reason'], report['reason'])}."
         )
     doc_mgr.ensure_writable()
     with doc_mgr.write_scope():
@@ -290,7 +274,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         if proposed_by is not None:
             summary += f" (proposed by {_literal(proposed_by.strip())})"
         raw = doc_mgr._read_snapshot(log_path)
-        etag = compute_etag(raw.encode("utf-8")) if raw is not None else MISSING_ETAG
+        etag = compute_etag(raw.encode("utf-8")) if raw is not None else None
         body = stored_body(raw).decode("utf-8") if raw is not None else None
         event_date = (today or date.today()).isoformat()
         updated = append_okf_log_entry(body, date=event_date, summary=summary)

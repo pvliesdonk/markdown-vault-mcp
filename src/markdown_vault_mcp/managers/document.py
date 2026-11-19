@@ -66,11 +66,7 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.interfaces import ReportsRowState
 from markdown_vault_mcp.managers._rewrite_ledger import LinkRewriteLedger
-from markdown_vault_mcp.managers._write_kernel import (
-    MISSING_ETAG,
-    atomic_write,
-    check_if_match,
-)
+from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
     OnWriteCallback,
     WriteNotifier,
@@ -1326,8 +1322,6 @@ class DocumentManager:
                 concurrent modifications. Supplying *if_match* for a file
                 that does not yet exist raises
                 :exc:`~markdown_vault_mcp.exceptions.ConcurrentModificationError`.
-                The sentinel ``(file does not exist)`` instead requires an unoccupied
-                path. The check and replacement are separate operations.
                 Pass ``None`` (default) to skip the check.
             allow_overwrite: Exempts this call from ``write_protect_existing``.
                 Reserved for the server's own read-modify-write maintenance of
@@ -1352,8 +1346,6 @@ class DocumentManager:
                 path, allow_protected=allow_protected, allow_designated=allow_designated
             )
             abs_path = self._validate_path(path)
-            if if_match == MISSING_ETAG:
-                check_if_match(self._source_dir / path, path, if_match)
             self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
                 self._check_no_clobber(abs_path, path, if_match)

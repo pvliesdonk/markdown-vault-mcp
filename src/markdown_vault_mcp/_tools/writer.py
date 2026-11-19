@@ -328,8 +328,7 @@ def register(mcp: FastMCP) -> None:
                 `{"title": "My Note", "tags": ["draft"]}`.
             content_base64: An attachment's bytes, base64-encoded; for paths not ending
                 in .md.
-            if_match: Etag from read to replace a file; use `(file does not exist)`
-                to require an unoccupied note path, or omit to skip the check.
+            if_match: Etag from read, to replace an existing file; omit for a new file.
             transaction: Handle from begin_transaction; omit to commit this call alone.
 
         Returns:
@@ -365,8 +364,9 @@ def register(mcp: FastMCP) -> None:
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds
                 `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
-            `MCPError`: If the file does not match the supplied if_match
-                precondition (ConcurrentModificationError). Also when the server
+            `MCPError`: If if_match is provided and the file has been
+                modified, or if_match is supplied for a file that does not
+                yet exist (ConcurrentModificationError). Also when the server
                 runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default)
                 and path already exists while no if_match is supplied
                 (DocumentExistsError); use 'edit' or 'append' instead, or

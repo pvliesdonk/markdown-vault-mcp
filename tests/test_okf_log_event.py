@@ -202,6 +202,12 @@ def test_refuses_missing_reserved_and_aliased_log(tmp_path):
             with pytest.raises(InvalidRequestError):
                 record_event(vault._doc_mgr, paths, "Change", (".",))
         assert (tmp_path / "other.md").read_text() == "# Other\n"
+        (tmp_path / "log.md").unlink()
+        (tmp_path / "log.md").symlink_to("gone.md")
+        with pytest.raises(InvalidRequestError, match="alias"):
+            record_event(vault._doc_mgr, ["note.md"], "Change", (".",))
+        assert (tmp_path / "log.md").is_symlink()
+        assert not is_regular_file(tmp_path / "gone.md")
     finally:
         vault.close()
 
@@ -381,34 +387,6 @@ def test_event_rejects_surrogate_before_io(tmp_path, monkeypatch):
         vault.close()
 
 
-@pytest.mark.parametrize("occupied", ["file", "symlink"])
-def test_event_refuses_occupied_missing_snapshot(tmp_path, monkeypatch, occupied):
-    from markdown_vault_mcp.exceptions import ConcurrentModificationError
-
-    (tmp_path / "a.md").write_text("# A\n")
-    log = tmp_path / "log.md"
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    original = vault._doc_mgr.replace_body
-
-    def concurrent(*args, **kwargs):
-        if occupied == "file":
-            log.write_text("external\n")
-        else:
-            log.symlink_to("missing.md")
-        return original(*args, **kwargs)
-
-    try:
-        monkeypatch.setattr(vault._doc_mgr, "replace_body", concurrent)
-        with pytest.raises(ConcurrentModificationError):
-            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
-        if occupied == "file":
-            assert log.read_text() == "external\n"
-        else:
-            assert log.is_symlink()
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize("proposed_by", ["", " ", "x" * 101, "bad\x00", "bad\ud800"])
 def test_bad_proposer_refused(tmp_path, proposed_by):
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
@@ -511,6 +489,16 @@ def test_off_capability_message_has_reason(tmp_path):
             vault.writer.okf_log_event(["a.md"], "Change")
     finally:
         vault.close()
+    caps = ContentConfig(okf_log="events").okf_capabilities
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_capabilities=caps),
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="no OKF bundle is active"):
+            vault.writer.okf_log_event(["a.md"], "Change")
+    finally:
+        vault.close()
 
 
 def test_case_mismatched_existing_path_never_produces_dead_link(tmp_path):
@@ -529,17 +517,6 @@ def test_case_mismatched_existing_path_never_produces_dead_link(tmp_path):
             assert "/area/a.md" in (tmp_path / result).read_text()
     finally:
         vault.close()
-
-
-def test_missing_etag_occupied_path(tmp_path):
-    from markdown_vault_mcp.exceptions import ConcurrentModificationError
-    from markdown_vault_mcp.managers._write_kernel import MISSING_ETAG, check_if_match
-
-    path = tmp_path / "entry"
-    check_if_match(path, "entry", MISSING_ETAG)
-    path.mkdir()
-    with pytest.raises(ConcurrentModificationError):
-        check_if_match(path, "entry", MISSING_ETAG)
 
 
 def test_changed_history_is_still_refused():
@@ -760,14 +737,18 @@ def test_ordinary_event_label_is_scanner_path(tmp_path):
         vault.close()
 
 
-def test_deprecation_colon_is_conventional_source_text(tmp_path):
+def test_event_prose_is_conventional_source_text(tmp_path):
     (tmp_path / "a.md").write_text("# A\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    prose = "Aligned access, review rules (v2) - don't merge: see #12!"
     try:
         result = record_event(
             vault._doc_mgr, ["a.md"], "**Deprecation**: retired *now*", (".",)
         )
-        assert "- **Deprecation**: retired" in (tmp_path / result).read_text()
+        record_event(vault._doc_mgr, ["a.md"], prose, (".",), "Ann (ops)")
+        text = (tmp_path / result).read_text()
+        assert "- **Deprecation**: retired" in text
+        assert f"- {prose} — " in text and "(proposed by Ann (ops))" in text
     finally:
         vault.close()
 
