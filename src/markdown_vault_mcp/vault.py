@@ -1390,7 +1390,10 @@ class Vault:
             return None
         # The strategy now self-quiesces (pause + drain) around the merge (#571),
         # so the previous outer pause_writes() wrap here is redundant.
-        result = self._git_strategy.force_pull()
+        return self._observe_pull_result(self._git_strategy.force_pull())
+
+    def _observe_pull_result(self, result: PullResult) -> PullResult:
+        """Sweep observations after an applied direct or automatic pull."""
         if result.applied and self._index_mgr.observations is not None:
             try:
                 self._index_mgr.observations.sweep()
@@ -1410,8 +1413,8 @@ class Vault:
         if self._git_strategy is None:
             return None
         if isinstance(self._git_strategy, GitWriteStrategy):
-            return self._git_strategy.automatic_pull()
-        return self._git_strategy.force_pull()
+            return self._observe_pull_result(self._git_strategy.automatic_pull())
+        return self._observe_pull_result(self._git_strategy.force_pull())
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.

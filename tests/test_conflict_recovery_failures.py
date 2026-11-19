@@ -68,7 +68,7 @@ def test_deleted_index_is_not_recreated(git_repo_pair: GitRepoPair) -> None:
     try:
         assert vault._okf_convention is not None
         index.unlink()
-        vault._okf_convention.refresh_generated([index])
+        vault._refresh_recovered_indexes([index])
         assert not index.exists()
     finally:
         vault.close()
@@ -84,7 +84,7 @@ def test_no_longer_designated_index_is_not_refreshed(
     strategy, vault = recovery_vault(root, authority="outside", build=True)
     try:
         assert vault._okf_convention is not None
-        assert vault._okf_convention.refresh_generated([index]) is None
+        assert vault._refresh_recovered_indexes([index]) is None
         assert index.read_text() == "authored\n"
     finally:
         vault.close()
@@ -129,7 +129,7 @@ def test_local_delete_upstream_modify_concept_keeps_failure_outcome(
         strategy.close()
 
 
-def test_unexpected_refresh_failure_is_logged_and_manual_generation_heals(
+def test_unexpected_refresh_failure_is_logged_and_convergence_heals(
     git_repo_pair: GitRepoPair,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -147,16 +147,11 @@ def test_unexpected_refresh_failure_is_logged_and_manual_generation_heals(
     try:
         assert strategy.force_pull().reason == "rebased"
         with monkeypatch.context() as patch:
-            patch.setattr(vault._okf_convention, "refresh_generated", fail)
-            assert vault.reconcile_index_with_head(source="git_sync") in (
-                "current",
-                "reindexed",
-            )
+            patch.setattr(vault, "_refresh_recovered_indexes", fail)
+            vault._regenerate_recovered_indexes(defer_group_recovery=False)
         assert "git_pending_index_regeneration_failed" in caplog.text
         assert "local.md" not in index.read_text()
         vault.reconcile_index_with_head(source="git_sync")
-        assert "local.md" not in index.read_text()
-        vault.writer.okf_generate_index()
         wait_for_writer_drain(vault)
         assert "local.md" in index.read_text()
     finally:
@@ -172,8 +167,8 @@ def test_generated_index_refuses_path_outside_vault(git_repo_pair: GitRepoPair) 
     strategy, vault = recovery_vault(root, build=True)
     try:
         assert vault._okf_convention is not None
-        assert not vault._okf_convention.generated_index(outside)
-        assert vault._okf_convention.refresh_generated([outside]) is None
+        assert not vault._is_generated_index(outside)
+        assert vault._refresh_recovered_indexes([outside]) is None
         assert outside.read_text() == "authored\n"
     finally:
         vault.close()
@@ -359,7 +354,7 @@ def test_saved_sibling_does_not_mask_unsaved_concept_deletion(
         strategy.close()
 
 
-def test_generation_failure_logs_and_manual_generation_heals(
+def test_generation_failure_logs_and_convergence_retries(
     git_repo_pair: GitRepoPair,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -379,9 +374,8 @@ def test_generation_failure_logs_and_manual_generation_heals(
             patch.setattr(vault._okf_migrate, "generate_index", fail)
             vault.reconcile_index_with_head(source="git_sync")
         assert "okf_convention_index_failed" in caplog.text
-        vault.reconcile_index_with_head(source="git_sync")
         assert "local.md" not in index.read_text()
-        vault.writer.okf_generate_index()
+        vault.reconcile_index_with_head(source="git_sync")
         wait_for_writer_drain(vault)
         assert "local.md" in index.read_text()
     finally:
