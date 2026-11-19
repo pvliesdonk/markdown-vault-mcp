@@ -1196,3 +1196,16 @@ class TestAppendOkfLogEntry:
 
         out = append_okf_log_entry("# Log\n", date="2026-08-09", summary="x")
         assert out == "# Log\n\n## 2026-08-09\n\n- x\n"
+
+
+def test_section_headings_are_literal_and_one_line() -> None:
+    from markdown_it import MarkdownIt
+
+    from markdown_vault_mcp.okf import build_index_markdown
+
+    body = build_index_markdown(
+        "Root", [], sections={"report # *bold*\nnext": [("A", "/a.md", None)]}
+    )
+    html = MarkdownIt().render(body)
+    assert "<h2>report # *bold* next</h2>" in html
+    assert body.startswith("# Root\n\n## ")

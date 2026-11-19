@@ -448,8 +448,10 @@ The operator controls explicit authoring, review, index and log maintenance inde
   affected index is selected from the written folder and its ancestors. The
   index refresh drains the single-writer index first. A designated listing
   folds undesignated descendants into folder sections up to the next existing
-  index, which is linked and preserved. Missing indexes are created only in
-  designated folders; with `**`, recursive generation retains the original
+  index, which is linked and preserved. A preserved undesignated index may
+  become stale. Creating a new index also refreshes its nearest existing
+  designated ancestor unless an authored index intervenes. Missing indexes
+  are created only in designated folders; with `**`, recursive generation retains the original
   per-folder output. Root frontmatter, including `okf_version`, is preserved.
   A `delete`,
   `rename` or `move_folder` refreshes the listings it made stale, through

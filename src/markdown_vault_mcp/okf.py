@@ -39,6 +39,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.git.health import one_line
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
@@ -1060,7 +1061,10 @@ def build_index_markdown(
     groups = [("", entries), *(sections or {}).items()]
     for section, group in groups:
         if section and group:
-            lines.extend(["", f"## {section}", ""])
+            if lines[-1]:
+                lines.append("")
+            label = re.sub(r"([\\`*_{}\[\]<>()#+.!|~&])", r"\\\1", one_line(section))
+            lines.extend([f"## {label}", ""])
         for title, path, description in group:
             line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
             if description:

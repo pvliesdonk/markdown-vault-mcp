@@ -294,13 +294,7 @@ class OkfMigrationManager:
         from markdown_vault_mcp.types import NoteInfo
 
         prefix = f"{folder}/" if folder else ""
-        section = (
-            folder[len(state.root) + 1 :]
-            if state.root and folder != state.root
-            else folder
-            if not state.root
-            else ""
-        )
+        section = folder[len(state.root) :].lstrip("/") if state.root else folder
         entries = state.sections.setdefault(section, [])
         subfolders: set[str] = set()
         for note in state.notes:

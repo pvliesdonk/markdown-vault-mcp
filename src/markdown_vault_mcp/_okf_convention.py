@@ -248,8 +248,7 @@ class ConventionMaintainer:
         with okf_write_suppressed(), auxiliary_commit_writes():
             if self._designated(folder) and self._may_log(folder):
                 self._append_log(folder, path, operation)
-            # A note in a folder without an index is listed from the nearest
-            # indexed level, which indexes every missing level below (#1647).
+            # Refresh the listing that owns this note, folding where needed.
             if self._capabilities.index:
                 self._maintain_index(folder)
 
@@ -405,13 +404,25 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
+    def _refresh_index_parent(self, folder: str) -> None:
+        """Connect a new boundary to its nearest existing generated ancestor."""
+        while folder:
+            folder = folder_of(folder)
+            if self._has_index(folder):
+                if self._may_index(folder):
+                    self._refresh_index(folder)
+                return
+
     def _refresh_index(self, folder: str) -> None:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
+            existed = self._has_index(folder)
             if self._sync_index is not None:
                 self._sync_index()
             self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
+            if not existed and self._has_index(folder):
+                self._refresh_index_parent(folder)
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True

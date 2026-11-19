@@ -598,3 +598,26 @@ class TestUnreadableReservedFiles:
         with pytest.raises(DocumentUnreadableError):
             vault.writer.okf_generate_index(folder="guides")
         assert (source_dir / "guides" / "index.md").read_bytes() == _UNREADABLE
+
+
+def test_designated_generator_folds_and_preserves_index_boundary(vault: Vault) -> None:
+    _write(vault, "a/deep/note.md", "# Deep\n")
+    _write(vault, "a/other/index.md", "# Authored\n")
+    _write(vault, "a/other/note.md", "# Hidden\n")
+    vault._okf_migrate.generate_index(folder="a", designated=lambda _folder: False)
+    body = vault.reader.read("a/index.md").content
+    assert "## deep" in body
+    assert "/a/deep/note.md" in body
+    assert "/a/other/index.md" in body
+    assert "/a/other/note.md" not in body
+    assert vault.reader.read("a/other/index.md").content == "# Authored\n"
+
+
+def test_generator_does_not_create_index_in_submodule(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(vault, "external/note.md", "# External\n")
+    monkeypatch.setattr(vault._doc_mgr, "in_submodule", lambda path: path == "external")
+    vault._okf_migrate.generate_index(designated=lambda _folder: True)
+    assert "/external/index.md" not in vault.reader.read("index.md").content
+    assert vault._doc_mgr.read("external/index.md") is None

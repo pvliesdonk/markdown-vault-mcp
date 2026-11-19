@@ -24,7 +24,9 @@ import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
+from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 from tests.fixtures.git import make_superproject
@@ -750,3 +752,24 @@ class TestIndexRefreshEdgeCases:
         top = _content(enforced_vault, "top/index.md") or ""
         assert "(/top/sub/index.md)" in top
         assert _index_links_broken(enforced_vault) == []
+
+
+def test_unowned_write_does_not_create_index_or_log(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "other").mkdir(parents=True)
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("projects/*",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("other/note.md", "# Note\n")
+        wait_for_writer_drain(vault)
+        assert not path_exists(root / "index.md")
+        assert not path_exists(root / "other/index.md")
+        assert not path_exists(root / "other/log.md")
+    finally:
+        vault.close()

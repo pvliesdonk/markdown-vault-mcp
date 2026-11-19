@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -43,11 +45,6 @@ def test_folds_deep_notes_and_preserves_authored_boundary(tmp_path: Path) -> Non
         vault.writer.delete("projects/p/deep/more/note.md")
         wait_for_writer_drain(vault)
         assert "note.md" not in (root / "projects/p/index.md").read_text()
-        vault.writer.write("root.md", "# Root note\n")
-        wait_for_writer_drain(vault)
-        root_index = (root / "index.md").read_text()
-        assert 'okf_version: "0.2"' in root_index
-        assert "/root.md" in root_index
     finally:
         vault.close()
 
@@ -66,5 +63,57 @@ def test_all_folders_retains_recursive_golden(tmp_path: Path) -> None:
         )
         assert (root / "a/index.md").read_text() == "# a\n\n- [b/](/a/b/index.md)\n"
         assert (root / "a/b/index.md").read_text() == "# b\n\n- [Note](/a/b/note.md)\n"
+    finally:
+        vault.close()
+
+
+def test_new_project_index_is_linked_from_existing_root(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p/deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = _vault(root, (".", "projects/*"))
+    try:
+        vault.writer.write("projects/p/deep/note.md", "# Note\n")
+        wait_for_writer_drain(vault)
+        assert "/projects/p/index.md" in (root / "index.md").read_text()
+        assert "/projects/p/deep/note.md" in (root / "projects/p/index.md").read_text()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("operation", ["rename", "move"])
+def test_structural_arrival_connects_new_project(
+    tmp_path: Path, operation: str
+) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p").mkdir(parents=True)
+    (root / "source").mkdir()
+    (root / "source/note.md").write_text("# Note\n")
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = _vault(root, (".", "projects/*"))
+    try:
+        if operation == "rename":
+            vault.writer.rename("source/note.md", "projects/p/note.md")
+        else:
+            vault.writer.move_folder("source", "projects/p/child")
+        wait_for_writer_drain(vault)
+        assert "/projects/p/index.md" in (root / "index.md").read_text()
+        assert "/projects/p/" in (root / "projects/p/index.md").read_text()
+    finally:
+        vault.close()
+
+
+def test_new_boundary_stops_at_authored_parent(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    authored = "# Handwritten\n"
+    (root / "projects/index.md").write_text(authored)
+    vault = _vault(root, (".", "projects/*"))
+    try:
+        vault.writer.write("projects/p/note.md", "# Note\n")
+        wait_for_writer_drain(vault)
+        assert (root / "projects/index.md").read_text() == authored
+        assert (root / "index.md").read_text().endswith("# Root\n")
     finally:
         vault.close()
