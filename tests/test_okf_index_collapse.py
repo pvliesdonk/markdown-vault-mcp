@@ -43,7 +43,8 @@ def test_apply_refreshes_designated_parent(
     folder = "projects/p/deep" if missing_parent else "deep"
     parent = "projects/p" if missing_parent else ""
     (root / folder).mkdir(parents=True)
-    root_text = '---\nokf_version: "0.2"\n---\n# Root\n'
+    header = '---\nokf_version: "0.3"\ntitle: Bundle\ndescription: Test bundle\nlicense: CC-BY-4.0\n---\n'
+    root_text = header + "# Root\n"
     (root / "index.md").write_text(root_text)
     (root / folder / "index.md").write_text(f"# deep\n\n- [Note](/{folder}/note.md)\n")
     (root / folder / "note.md").write_text("# Note\n")
@@ -57,6 +58,8 @@ def test_apply_refreshes_designated_parent(
         assert f"/{folder}/note.md" in (root / parent / "index.md").read_text()
         if missing_parent:
             assert (root / "index.md").read_text() == root_text
+        else:
+            assert (root / "index.md").read_text().startswith(header)
     finally:
         vault.close()
 
@@ -119,6 +122,8 @@ def test_cli_preview_and_apply(
     args = ["okf", "collapse-indexes", "--source-dir", str(root)]
     result = CliRunner().invoke(app, [*args, "--apply"] if apply else args)
     assert result.exit_code == 0, result.output
+    assert "may break links" in result.output
+    assert "markdown-vault-mcp links broken" in result.output
     if apply:
         assert "Removed deep/index.md" in result.output
         assert "Regenerated ." in result.output
@@ -126,6 +131,7 @@ def test_cli_preview_and_apply(
         assert path_exists(root / "index.md")
     else:
         assert "Would remove deep/index.md" in result.output
+        assert "Would regenerate index.md" in result.output
         assert "--apply" in result.output
         assert before == {
             p: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.rglob("*.md")
@@ -193,5 +199,50 @@ def test_cli_apply_respects_preview_protection(
     applied = CliRunner().invoke(app, [*args, "--apply"])
     assert preview.exit_code == applied.exit_code == 0
     assert "Keep deep/index.md:" in preview.output
+    assert "To apply" not in preview.output
+    assert "may break links" not in preview.output
     assert "Keep deep/index.md:" in applied.output
     assert child.read_text().startswith("# deep")
+
+
+def test_protected_missing_designated_descendant_refuses_before_deletions(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    root = tmp_path / "vault"
+    for folder in ("a", "b", "c"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "note.md").write_text("# Note\n")
+    root_text = (
+        '---\nokf_version: "0.3"\ntitle: Bundle\ndescription: Test bundle\nlicense: CC-BY-4.0\n---\n'
+        "# Root\n\n- [Note](/a/note.md)\n- [b/](/b/index.md)\n- [c/](/c/index.md)\n"
+    )
+    (root / "index.md").write_text(root_text)
+    for folder in ("b", "c"):
+        (root / folder / "index.md").write_text(
+            f"# {folder}\n\n- [Note](/{folder}/note.md)\n"
+        )
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".", "a")
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=caps,
+            protected_paths=["a/index.md"],
+        ),
+    )
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match=r"a/index\.md"):
+            vault.writer.okf_collapse_indexes(apply=True)
+        assert (root / "index.md").read_text() == root_text
+        for folder in ("b", "c"):
+            assert path_exists(root / folder / "index.md")
+    finally:
+        vault.close()

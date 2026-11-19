@@ -237,10 +237,18 @@ def collapse_indexes(
             )
         for path, reason in result.kept:
             typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
+        if result.removable:
+            typer.echo(
+                "Removing these indexes may break links to them. "
+                "Use markdown-vault-mcp links broken to find broken links."
+            )
         if apply:
             for parent in result.parents:
                 typer.echo(f"Regenerated {terminal_text(parent or '.')}")
-        else:
+        elif result.removable:
+            for parent in result.parents:
+                path = f"{parent}/index.md" if parent else "index.md"
+                typer.echo(f"Would regenerate {terminal_text(path)}")
             words = ["markdown-vault-mcp", "okf", "collapse-indexes"]
             if source_dir:
                 words += ["--source-dir", source_dir]

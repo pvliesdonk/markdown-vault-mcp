@@ -130,6 +130,11 @@ def apply_collapse(
         if reason:
             raise InvalidRequestError(f"Cannot refresh {path}: {reason}")
         doc.read(path)
+    for folder in {
+        *(posixpath.dirname(path) for path, _ in plan.removable),
+        *plan.parents,
+    }:
+        migrate.preflight_index_descendants(folder, allow_protected=allow_protected)
     removed: list[tuple[str, str]] = []
     kept = list(plan.kept)
     blocked: list[str] = []

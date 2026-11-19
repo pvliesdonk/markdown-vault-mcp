@@ -226,6 +226,35 @@ class OkfMigrationManager:
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         return _render_fold(heading, sections)
 
+    def preflight_index_descendants(
+        self, folder: str, *, allow_protected: bool = False
+    ) -> None:
+        """Check missing designated indexes that generation could create.
+
+        Args:
+            folder: Vault-relative subtree to inspect.
+            allow_protected: Permit changes to protected paths.
+
+        Raises:
+            InvalidRequestError: If an index destination is protected.
+        """
+        tree = self._index_tree(folder, folder)
+        for parent, (_, children) in tree.items():
+            for name, listed in children.items():
+                child = posixpath.join(parent, name)
+                if (
+                    not listed
+                    and self._index_designated(child)
+                    and self._may_hold_index(child, False)
+                    and not self._doc_mgr.in_submodule(child)
+                ):
+                    path = f"{child}/index.md"
+                    reason = self._doc_mgr.protection_reason(
+                        path, allow_protected=allow_protected, allow_designated=True
+                    )
+                    if reason:
+                        raise InvalidRequestError(f"Cannot refresh {path}: {reason}")
+
     def generate_index(
         self,
         *,

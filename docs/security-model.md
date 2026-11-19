@@ -48,6 +48,11 @@ Some tools send data beyond the vault:
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
 The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](reference/cli.md#search-a-hosted-vault).
 
+The [`okf collapse-indexes` command](use/okf.md#collapsing-deep-generated-indexes)
+previews vault changes by default. Applying it removes matching generated
+indexes and refreshes designated parent indexes under the same vault path and
+write protections as other library writes.
+
 The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
@@ -81,9 +86,5 @@ Read this page before reporting. A finding that depends on authentication being 
 One more kind of route answers without an MCP credential, and checks a credential of its own instead.
 
 - **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](use/git-integration.md#push-triggered-pull-webhooks).
-The [`okf collapse-indexes` command](use/okf.md#collapsing-deep-generated-indexes)
-previews vault changes by default. Applying it removes matching generated
-indexes and refreshes designated parent indexes under the same vault path and
-write protections as other library writes.
 
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->
