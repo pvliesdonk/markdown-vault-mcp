@@ -280,6 +280,9 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     include_hidden: bool = False,
     external_base: str | None = None,
     strict: bool = False,
+    require_review: bool = False,
+    require_check: str = "human-review",
+    review_evidence: str = "binding",
 ) -> OkfBundleResult:
     """Export the selected inventory and assess the final OKF v0.2 artifact.
 
@@ -292,6 +295,9 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         external_base: Absolute HTTP(S) URL prefix without a query or fragment
             for body and frontmatter destinations outside the selection.
         strict: Refuse publication unless the completed report meets the contract.
+        require_review: Require a matching review for every exported concept.
+        require_check: Required review check kind.
+        review_evidence: Accept supplied bindings or require a local receipt.
 
     Returns:
         Archive bytes, counts, and an artifact conformance report.
@@ -305,6 +311,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             snapshot cannot be read.
         OSError: If a selected file cannot be read.
     """
+    if not require_check or review_evidence not in {"binding", "local_receipt"}:
+        raise ValueError("Invalid review assurance policy")
     snapshot = git_export_snapshot(vault.source_dir)
     with closing(snapshot) if snapshot is not None else nullcontext():
         result = _build_okf_bundle(
@@ -312,8 +320,11 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             config,
             snapshot,
             (folder, include_index_excluded, include_hidden, external_base),
+            (require_review, require_check, review_evidence),
         )
     report = result.report
+    if report.review_assurance.required and report.review_assurance.failures:
+        raise PublicationRefused(report)
     if strict and (
         report.verdict != "conformant"
         or report.dependencies
@@ -335,6 +346,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     config: ProjectConfig,
     snapshot: GitExportSnapshot | None,
     options: tuple[str, bool, bool, str | None],
+    review_policy: tuple[bool, str, str],
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
@@ -348,6 +360,11 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
                 raise ValueError(_SUBMOD.format(path))
     report = OkfExportReport()
+    (
+        report.review_assurance.required,
+        report.review_assurance.require_check,
+        report.review_assurance.evidence,
+    ) = review_policy
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
     buf = io.BytesIO()
@@ -490,9 +507,10 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     if searchable
                     else None
                 )
-                _write(
-                    zf, name, _note_bytes(raw, (item, name), paths, report, resolver)
-                )
+                final = _note_bytes(raw, (item, name), paths, report, resolver)
+                if item.role == "concept_candidate" and review_policy[0]:
+                    _assess_export_review(vault, item.path, name, final, report)
+                _write(zf, name, final)
                 notes += 1
     if snapshot is not None:
         changed, flagged = git_snapshot_changes(vault.source_dir, snapshot.commit)
@@ -536,6 +554,44 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     data = buf.getvalue()
     audit_export(data, report, extensions)
     return OkfBundleResult(data, notes, attachments, excluded, report)
+
+
+def _assess_export_review(
+    vault: Vault, source: str, name: str, raw: bytes, report: OkfExportReport
+) -> None:
+    """Assess final concept bytes against their own claims and source receipts."""
+    from markdown_vault_mcp._okf_receipts import assess_reviews
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    policy = report.review_assurance
+    assessments = []
+    try:
+        content = decode_utf8(raw)
+        metadata = parse_frontmatter(content.removeprefix("\ufeff")).metadata
+        store = vault.reader._receipt_store
+        assessments = assess_reviews(
+            metadata,
+            concept_snapshot(content),
+            (lambda: store.receipts(source))
+            if store is not None and policy.evidence == "local_receipt"
+            else None,
+        )
+    except (UnicodeError, ValueError, TypeError):
+        pass
+    if any(
+        item["snapshot"] == "matches"
+        and item["check"] == policy.require_check
+        and (policy.evidence == "binding" or item["origin"] == "local_receipt")
+        for item in assessments
+    ):
+        return
+    policy.failures.append(
+        {
+            "path": name,
+            "transformed": name in report.transformed,
+            "assessments": assessments,
+        }
+    )
 
 
 def _write(zf: zipfile.ZipFile, path: str, data: bytes) -> None:

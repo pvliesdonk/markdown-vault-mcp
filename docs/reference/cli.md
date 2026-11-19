@@ -359,6 +359,9 @@ Export an OKF ZIP or print a JSON refusal without writing it.
 | `--source-dir` |  |  | Vault directory. |
 | `--folder` |  |  | Vault-relative scope root. |
 | `--strict` |  | False | Require a self-contained artifact. |
+| `--require-review` |  | False | Require reviews of exported concepts. |
+| `--require-check` |  | human-review | Required review check kind. |
+| `--review-evidence` |  | binding | Evidence: binding or `local_receipt`. |
 | `--include-hidden` |  | False | Include hidden paths. |
 | `--include-index-excluded` |  | False | Include index exclusions. |
 | `--external-base` |  |  | URL for outside references. |

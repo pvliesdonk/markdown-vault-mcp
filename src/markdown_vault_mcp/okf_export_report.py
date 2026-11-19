@@ -52,6 +52,16 @@ class ExportSnapshot:
 
 
 @dataclass
+class ReviewAssurance:
+    """Publication review policy and failures at final archive paths."""
+
+    required: bool = False
+    require_check: str = "human-review"
+    evidence: str = "binding"
+    failures: list[dict[str, object]] = field(default_factory=list)
+
+
+@dataclass
 class OkfExportReport:
     """Artifact format verdict, omissions and separate export observations.
 
@@ -78,6 +88,7 @@ class OkfExportReport:
     optional_metadata: list[str] = field(default_factory=list)
     broken_links: list[Dependency] = field(default_factory=list)
     snapshot: ExportSnapshot = field(default_factory=ExportSnapshot)
+    review_assurance: ReviewAssurance = field(default_factory=ReviewAssurance)
 
 
 class PublicationRefused(ValueError):
@@ -89,7 +100,7 @@ class PublicationRefused(ValueError):
         Args:
             report: Completed observations for the proposed artifact.
         """
-        super().__init__("Strict publication refused; inspect the export report")
+        super().__init__("Publication refused; inspect the export report")
         self.report = report
 
 
@@ -107,10 +118,19 @@ def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
         UTF-8 JSON; collision reports are null because no artifact was audited.
     """
     strict = isinstance(exc, PublicationRefused)
+    reason = (
+        "review"
+        if isinstance(exc, PublicationRefused)
+        and exc.report.review_assurance.required
+        and exc.report.review_assurance.failures
+        else "strict"
+        if strict
+        else "collision"
+    )
     return json.dumps(
         {
             "okf_export": "refused",
-            "reason": "strict" if strict else "collision",
+            "reason": reason,
             "message": str(exc),
             "report": asdict(exc.report)
             if isinstance(exc, PublicationRefused)

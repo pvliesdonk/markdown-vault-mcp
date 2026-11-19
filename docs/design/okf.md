@@ -642,6 +642,8 @@ creation (gated out when `OKF_MODE=off`), and generates the archive at fetch
 time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
 model (a domain use of the primitives) expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
+Optional review assurance assesses each final exported concept against its own binding claims after transformations. The required check defaults to `human-review`; binding evidence accepts supplied claims and local-receipt evidence also requires the source path's instance-local receipt. A mismatch withholds the whole publication independently of freshness and reports the policy, assessments and transformations. Export does not alter reviews or receipts.
+
 The `markdown-vault-mcp export` operator command is also available when
 `OKF_MODE=off`; the download ref remains gated by server mode.
 

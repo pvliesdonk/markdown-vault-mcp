@@ -20,6 +20,15 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     source_dir: str | None = typer.Option(None, help="Vault directory."),
     folder: str = typer.Option("", help="Vault-relative scope root."),
     strict: bool = typer.Option(False, help="Require a self-contained artifact."),
+    require_review: bool = typer.Option(
+        False, help="Require reviews of exported concepts."
+    ),
+    require_check: str = typer.Option(
+        "human-review", help="Required review check kind."
+    ),
+    review_evidence: str = typer.Option(
+        "binding", help="Evidence: binding or local_receipt."
+    ),
     include_hidden: bool = typer.Option(False, help="Include hidden paths."),
     include_index_excluded: bool = typer.Option(
         False, help="Include index exclusions."
@@ -33,6 +42,9 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         source_dir: Optional vault directory override.
         folder: Vault-relative scope, or empty for the whole vault.
         strict: Require a self-contained, consistent, conformant artifact.
+        require_review: Require a matching review for every concept.
+        require_check: Required check kind.
+        review_evidence: Accept bindings or require local receipts.
         include_hidden: Include eligible hidden paths.
         include_index_excluded: Include paths excluded from the search index.
         external_base: HTTP(S) base URL for outside destinations.
@@ -54,6 +66,7 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     try:
         config = ProjectConfig.from_env()
         original_settings = VaultSettings.from_project_config(config)
+        configured_source = config.source_dir.resolve()
         config = replace(
             config,
             embedding_provider=None,
@@ -74,6 +87,13 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
             original_settings.effective_embeddings_path(),
             original_settings.index_path,
         )
+        if state_path is not None and config.source_dir.resolve() == configured_source:
+            from markdown_vault_mcp._okf_receipts import ReceiptStore
+
+            built.vault.reader._receipt_store = ReceiptStore(
+                state_path.with_name(state_path.name + ".receipts.json"),
+                config.source_dir,
+            )
         try:
             _check_destination(destination, config.source_dir)
             built.vault.index.build_index()
@@ -82,6 +102,9 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
                 config,
                 folder=folder,
                 strict=strict,
+                require_review=require_review,
+                require_check=require_check,
+                review_evidence=review_evidence,
                 include_hidden=include_hidden,
                 include_index_excluded=include_index_excluded,
                 external_base=external_base,

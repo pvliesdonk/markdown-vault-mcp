@@ -68,4 +68,5 @@ An upload link names a vault path for a note or an allowed attachment. While `MA
 | `422` | The destination is protected, or the vault refused the uploaded note as invalid; the response names the reason. The link stays usable for a corrected body. |
 | `500` | A folder bundle download fails with a generic server error when a note links an outside root path that matches a different exported file. |
 | `503` | The vault is shutting down. Retry; the link is kept. |
+For review assurance, use `okf-bundle?require_review` and optionally `require_check=<kind>` and `review_evidence=local_receipt`. See [OKF export](../use/okf.md).
 <!-- DOMAIN-TRANSFER-EXTRA-END -->

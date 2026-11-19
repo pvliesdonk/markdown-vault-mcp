@@ -87,7 +87,8 @@ OKF_BUNDLE_DOWNLOAD_NOTE = (
     " Or pass okf-bundle for an Open Knowledge Format ZIP, or "
     "okf-bundle:projects for a folder. Add options before the colon, "
     "as in okf-bundle?strict&include_hidden:projects. Options are strict, "
-    "include_hidden, include_index_excluded and external_base=<percent-encoded URL>. "
+    "include_hidden, include_index_excluded, require_review, require_check=<kind>, "
+    "review_evidence=binding or local_receipt, and external_base=<percent-encoded URL>. "
     "A refused export downloads as application/json named okf-export-refusal.json "
     "with HTTP 200 instead of a ZIP; fix the reported cause and mint a new link."
 )
@@ -166,6 +167,9 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
             "include_hidden",
             "include_index_excluded",
             "external_base",
+            "require_review",
+            "require_check",
+            "review_evidence",
         }:
             raise _reject("Invalid or repeated OKF bundle option.")
         if key == "external_base":
@@ -181,6 +185,18 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
                 ExportPaths("", set(), values[key])
             except ValueError as exc:
                 raise _reject(str(exc)) from None
+        elif key in {"require_check", "review_evidence"}:
+            if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
+                raise _reject("Pass a valid value for the OKF review option.")
+            try:
+                values[key] = unquote(value, errors="strict")
+            except UnicodeDecodeError:
+                raise _reject("Pass a valid value for the OKF review option.") from None
+            if key == "review_evidence" and values[key] not in {
+                "binding",
+                "local_receipt",
+            }:
+                raise _reject("Pass review_evidence=binding or local_receipt.")
         elif equals:
             raise _reject("OKF bundle flags take no value.")
         else:
