@@ -431,7 +431,8 @@ The operator controls explicit authoring, review, index and log maintenance inde
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
   refresh the affected generated `index.md` listing. The log belongs to the
   deeper of the nearest designated folder and the nearest existing ancestor
-  log; the root is always designated. Create a missing chosen log and leave
+  log; for log placement, the root is always designated. Create a missing
+  chosen log and leave
   existing entries in place. The section heading is
   the server's *local* calendar day, as §9 has it and as a reader of the
   log expects, while the same write's `generated.at` is a UTC instant

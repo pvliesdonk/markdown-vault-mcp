@@ -206,8 +206,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                     else "For edits, update 'log.md'."
                 )
                 index_advice = (
-                    f"The server maintains designated 'index.md' files ({', '.join(caps.folders)}); "
-                    "maintain other indexes yourself."
+                    f"Server maintains designated indexes ({', '.join(caps.folders)}); "
+                    "maintain others."
                     if index
                     else "For edits, update 'index.md'."
                 )

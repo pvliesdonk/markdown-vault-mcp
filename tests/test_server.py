@@ -224,13 +224,21 @@ class TestServerIdentity:
         )
 
     @pytest.mark.usefixtures("_mcp_env_maximal")
-    def test_maximal_generated_instructions_fit_target(self) -> None:
+    @pytest.mark.parametrize(
+        "folders", [".", ".,projects/*,archive/*,notes/*/*,work/**"]
+    )
+    def test_maximal_generated_instructions_fit_target(
+        self, monkeypatch: pytest.MonkeyPatch, folders: str
+    ) -> None:
         """The complete generated feature matrix keeps operator headroom."""
         from fastmcp_pvl_core import (
             GENERATED_INSTRUCTIONS_TARGET_UTF16,
             utf16_code_units,
         )
 
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_INDEX", "true")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "writes")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_FOLDERS", folders)
         text = make_server(transport="http").instructions or ""
         for required in (
             "READ-WRITE",
@@ -241,7 +249,8 @@ class TestServerIdentity:
             "stay unindexed",
         ):
             assert required in text
-        assert utf16_code_units(text) <= GENERATED_INSTRUCTIONS_TARGET_UTF16
+        units = utf16_code_units(text)
+        assert units <= GENERATED_INSTRUCTIONS_TARGET_UTF16, f"{units} UTF-16 units"
 
     @pytest.mark.usefixtures("_mcp_env_maximal")
     def test_representative_operator_context_fits_client_limit(
