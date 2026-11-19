@@ -438,16 +438,18 @@ class VaultTransferSink:
     async def _read_bundle(
         self, scope: str, options: dict[str, Any]
     ) -> TransferReadResult:
-        """Generate and serve an OKF bundle zip for a bundle-ref download.
+        """Generate an OKF bundle or refusal for a bundle-ref download.
 
         The bundle is built from a Git commit or the vault (never mutating
         it); a large vault runs off the event loop via :func:`asyncio.to_thread`.
 
         Args:
             scope: ``""`` for the whole vault, else a folder subtree.
+            options: Bundle publication and inventory options.
 
         Returns:
-            A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the zip.
+            A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the ZIP or
+            a JSON refusal document.
 
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).

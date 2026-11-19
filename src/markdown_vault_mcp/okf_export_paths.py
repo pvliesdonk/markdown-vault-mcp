@@ -610,14 +610,21 @@ class ExportPaths:
         except UnicodeDecodeError:
             refused = True
         target, _ = _resolve_link_path(path, source)
-        archive_source = source[len(self.scope) + 1 :]
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
         apparent, _ = _resolve_link_path(path, archive_source)
         directory_form = path.endswith("/") or path.rsplit("/", 1)[-1] in {".", ".."}
-        if refused or (
-            target not in self._directories
-            and (directory_form or target not in self.members)
+        root_path = posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
+        if (
+            refused
+            or (not self.scope and (root_path == ".." or root_path.startswith("../")))
+            or (
+                target not in self._directories
+                and (directory_form or target not in self.members)
+            )
         ):
             dependencies.append(Dependency(archive_source, _safe_text(value)))
+            if not self.scope:
+                return None
             if directory_form:
                 target, apparent = target + "/", apparent + "/"
             if self.external_base and path == written:
@@ -625,6 +632,8 @@ class ExportPaths:
                 return base + "/" + _quote_field_uri(target) + suffix
             url = self._outside_target(target, source, value, apparent, dirs=True)
             return url + suffix if url is not None else None
+        if not self.scope:
+            return None
         bundle_target = target[len(self.scope) + 1 :]
         if not written.startswith("/") and apparent == bundle_target:
             return None
@@ -646,29 +655,6 @@ class ExportPaths:
             )
         return replacement + suffix
 
-    def _root_dependency(self, value: str, source: str) -> bool:
-        """Check a root-export metadata path without rewriting its bytes."""
-        written, _ = _field_parts(value)
-        try:
-            if _RE_REFUSED_ESCAPE.search(written):
-                return True
-            unquote(written, errors="strict")
-        except UnicodeDecodeError:
-            return True
-        path = decode_link_target(written)
-        target = (
-            posixpath.normpath(path).lstrip("/")
-            if path.startswith("/")
-            else posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
-        )
-        if target == ".":
-            target = ""
-        return (
-            target == ".."
-            or target.startswith("../")
-            or (target not in self.members and target not in self._directories)
-        )
-
     def _field_changes(
         self, root: object, source: str
     ) -> tuple[list[tuple[ScalarNode, str]], list[Dependency], list[Dependency]]:
@@ -683,10 +669,6 @@ class ExportPaths:
             if not _FIELD_PATH.match(value):
                 archive_source = source[len(self.scope) + 1 :] if self.scope else source
                 ambiguous.append(Dependency(archive_source, _safe_text(value)))
-                continue
-            if not self.scope:
-                if self._root_dependency(value, source):
-                    dependencies.append(Dependency(source, _safe_text(value)))
                 continue
             replacement = self._field_replacement(value, source, dependencies)
             if replacement is not None and replacement != value:

@@ -482,23 +482,62 @@ def test_cli_input_errors_are_readable(tmp_path: Path, case: str) -> None:
     assert isinstance(result.exception, SystemExit)
 
 
+@pytest.mark.parametrize("scope", ["", "scope"])
 @pytest.mark.parametrize(
-    ("value", "accepted"), [(".", True), ("./%2Fsecret.md", False), ("./%FF.md", False)]
+    ("value", "accepted"),
+    [
+        (".", True),
+        ("./a.md", True),
+        ("/{prefix}a.md", True),
+        ("./dir/", True),
+        ("./a.md/", False),
+        ("/{prefix}a.md/", False),
+        ("../../outside.md", False),
+        ("./%2Fsecret.md", False),
+        ("./%FF.md", False),
+    ],
 )
-def test_root_metadata_path_validation(
-    tmp_path: Path, value: str, accepted: bool
+@pytest.mark.parametrize(
+    "field",
+    [
+        "resource: {v}",
+        "sources:\n  - resource: {v}",
+        "computation: {v}",
+        "executor:\n  resource: {v}",
+        "attester:\n  resource: {v}",
+    ],
+)
+def test_metadata_path_validation(
+    tmp_path: Path, scope: str, value: str, accepted: bool, field: str
 ) -> None:
-    (tmp_path / "note.md").write_text(f"---\ntype: Note\nresource: {value}\n---\n")
+    import io
+    import zipfile
+
+    folder = tmp_path / scope
+    folder.mkdir(exist_ok=True)
+    (folder / "dir").mkdir()
+    (folder / "dir/child.md").write_text("---\ntype: Note\n---\n")
+    (folder / "a.md").write_text("---\ntype: Note\n---\n")
+    value = value.format(prefix=f"{scope}/" if scope else "")
+    original = f"---\ntype: Note\n{field.format(v=value)}\n---\n"
+    (folder / "note.md").write_text(original)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         config = ProjectConfig(source_dir=tmp_path)
+        faithful = build_okf_bundle(vault, config, folder=scope)
+        if not scope:
+            with zipfile.ZipFile(io.BytesIO(faithful.data)) as archive:
+                assert archive.read("note.md").decode() == original
         if accepted:
             assert (
-                build_okf_bundle(vault, config, strict=True).report.dependencies == []
+                build_okf_bundle(
+                    vault, config, folder=scope, strict=True
+                ).report.dependencies
+                == []
             )
         else:
             with pytest.raises(PublicationRefused) as refused:
-                build_okf_bundle(vault, config, strict=True)
+                build_okf_bundle(vault, config, folder=scope, strict=True)
             assert refused.value.report.dependencies[0].path == "note.md"
     finally:
         vault.close()
