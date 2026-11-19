@@ -217,7 +217,6 @@ class GroupedResult:
         score: File-level score = ``max(section.score for section in sections)``.
         search_type: ``"keyword"``, ``"semantic"``, or ``"hybrid"``.
         frontmatter: Parsed YAML frontmatter.
-        needs_review: Review triage decision and conditions when filtered, otherwise None.
         sections: Up to the per-file cap best-matching sections, sorted by
             ``(score DESC, start_line ASC, section_id ASC)`` so ties surface
             in document order — the ``section_id`` key gives a fully
@@ -232,7 +231,6 @@ class GroupedResult:
     search_type: Literal["keyword", "semantic", "hybrid"]
     frontmatter: dict[str, Any]
     sections: list[SectionHit]
-    needs_review: dict[str, Any] | None = field(default=None, kw_only=True)
 
 
 @dataclass
@@ -346,7 +344,6 @@ class NoteInfo:
         folder: Parent folder path.
         frontmatter: Parsed YAML frontmatter.
         modified_at: Last-modified time as a Unix timestamp float.
-        needs_review: Review triage decision and conditions when filtered, otherwise None.
         kind: Always ``"note"`` for markdown documents; distinguishes from :class:`AttachmentInfo`.
         content_chars: Character count of the note body, frontmatter excluded,
             so a caller can budget batches without reading the note (#1039).
@@ -361,7 +358,6 @@ class NoteInfo:
     modified_at: float
     kind: str = "note"
     content_chars: int = 0
-    needs_review: dict[str, Any] | None = field(default=None, kw_only=True)
 
 
 @dataclass

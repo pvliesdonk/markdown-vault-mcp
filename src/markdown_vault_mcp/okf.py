@@ -581,11 +581,12 @@ def okf_downweight_factor(
     return factor
 
 
-def parse_stale_filter(value: str) -> bool:
+def parse_stale_filter(value: str, *, name: str = "stale") -> bool:
     """Parse the ``stale`` filter value into a boolean.
 
     Args:
         value: The raw filter value (``filters`` is ``dict[str, str]``).
+        name: Selector name used in invalid-value diagnostics.
 
     Returns:
         The requested staleness.
@@ -593,12 +594,14 @@ def parse_stale_filter(value: str) -> bool:
     Raises:
         InvalidRequestError: If *value* is not a recognized true/false spelling.
     """
+    if not isinstance(value, str):
+        raise InvalidRequestError(f"{name} filter must be true or false, got {value!r}")
     normalized = value.strip().lower()
     if normalized in _STALE_TRUE:
         return True
     if normalized in _STALE_FALSE:
         return False
-    raise InvalidRequestError(f"stale filter must be true or false, got {value!r}")
+    raise InvalidRequestError(f"{name} filter must be true or false, got {value!r}")
 
 
 def assess_needs_review(
@@ -1262,6 +1265,28 @@ def okf_timestamp(now: _dt.datetime) -> str:
 _REVIEW_CHECKS = frozenset({"human-review", "schema", "links", "source-comparison"})
 
 
+def validate_review_check(check: str) -> None:
+    """Validate a named review check.
+
+    Args:
+        check: Check kind to validate.
+
+    Raises:
+        InvalidRequestError: If the check kind is unsupported.
+    """
+    if not isinstance(check, str) or (
+        check not in _REVIEW_CHECKS
+        and not (
+            check.startswith("x-")
+            and len(check) > 2
+            and not any(c.isspace() for c in check)
+        )
+    ):
+        raise InvalidRequestError(
+            "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."
+        )
+
+
 def review_actor(subject: str, check: str) -> str:
     """Derive the review actor from the check and reviewer subject.
 
@@ -1275,14 +1300,7 @@ def review_actor(subject: str, check: str) -> str:
     Raises:
         InvalidRequestError: If the check or machine identity is invalid.
     """
-    if check not in _REVIEW_CHECKS and not (
-        check.startswith("x-")
-        and len(check) > 2
-        and not any(c.isspace() for c in check)
-    ):
-        raise InvalidRequestError(
-            "Unknown check; use human-review, schema, links, source-comparison, or x- followed by a name."
-        )
+    validate_review_check(check)
     actor = (
         f"{_HUMAN_ACTOR_PREFIX}{subject}"
         if check == "human-review"

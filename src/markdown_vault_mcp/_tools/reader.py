@@ -649,7 +649,10 @@ def register(mcp: FastMCP) -> None:
                 None includes missing and empty reviews; malformed means no usable review record,
                 while a mixed list is recorded. Recorded describes supplied metadata only.
                 Evidence filters exclude reserved files. On active bundles these keys select
-                evidence, not literal frontmatter.
+                evidence, not literal frontmatter. Use `needs_review` as "true" or "false"
+                to select by freshness and a matching review of the current snapshot.
+                `required_check` selects the check kind and defaults to human-review;
+                each selected hit reports the conditions.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

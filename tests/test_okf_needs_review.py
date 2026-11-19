@@ -185,3 +185,131 @@ async def test_mcp_results_include_review_conditions(
                 ]
     finally:
         vault.close()
+
+
+def test_unfiltered_results_preserve_payload_shape(tmp_path: Path) -> None:
+    from dataclasses import asdict
+
+    (tmp_path / "note.md").write_text("zebra")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        assert "needs_review" not in asdict(
+            vault.reader.search("zebra", mode="keyword")[0]
+        )
+        assert "needs_review" not in asdict(vault.reader.list_documents()[0])
+    finally:
+        vault.close()
+
+
+def test_listing_existing_filter_does_not_refetch(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "note.md").write_text("zebra")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+
+        def unexpected(*_args, **_kwargs):
+            raise AssertionError("listing refetched a note")
+
+        monkeypatch.setattr(vault._search_mgr._fts, "get_note", unexpected)
+        assert [
+            n.path for n in vault.reader.list_documents(filters={"status": "stable"})
+        ] == ["index.md", "note.md"]
+    finally:
+        vault.close()
+
+
+def test_selected_result_reuses_single_assessment(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "note.md").write_text("zebra")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        manager = vault._search_mgr
+        original = manager._needs_review
+        calls = []
+
+        def changing(path, filters):
+            calls.append(path)
+            assessment = original(path, filters)
+            if len(calls) > 1:
+                raise AssertionError("assessment repeated")
+            return assessment
+
+        monkeypatch.setattr(manager, "_needs_review", changing)
+        hits = vault.reader.search(
+            "zebra", mode="keyword", filters={"needs_review": "true"}
+        )
+        assert hits[0].needs_review["needed"] is True
+        assert calls == ["note.md"]
+    finally:
+        vault.close()
+
+
+def test_unreadable_snapshot_is_visible_without_claiming_freshness(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    note = tmp_path / "note.md"
+    note.write_text("zebra")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        for content in (b"---\nbroken: [\n---\nzebra", b"\xff"):
+            note.write_bytes(content)
+            hits = vault.reader.list_documents(filters={"needs_review": "true"})
+            assert [hit.path for hit in hits] == ["note.md"]
+            assert hits[0].needs_review == {
+                "needed": True,
+                "required_check": "human-review",
+                "conditions": ["no_matching_review"],
+                "basis": "snapshot_unavailable",
+            }
+            assert not vault.reader.list_documents(filters={"needs_review": "false"})
+        note.unlink()
+        assert not vault.reader.list_documents(filters={"needs_review": "true"})
+    finally:
+        vault.close()
+
+
+def test_inactive_bundle_keeps_literal_selectors(tmp_path: Path) -> None:
+    from dataclasses import asdict
+
+    (tmp_path / "note.md").write_text(
+        "---\nneeds_review: custom\nrequired_check: literal\n---\nzebra"
+    )
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(
+            indexed_frontmatter_fields=["needs_review", "required_check"]
+        ),
+    )
+    try:
+        vault.index.build_index()
+        hits = vault.reader.search(
+            "zebra",
+            mode="keyword",
+            filters={"needs_review": "custom", "required_check": "literal"},
+        )
+        assert [hit.path for hit in hits] == ["note.md"]
+        assert "needs_review" not in asdict(hits[0])
+    finally:
+        vault.close()
+
+
+def test_python_invalid_selector_types_fail_cleanly(tmp_path: Path) -> None:
+    import pytest
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        for filters, message in (
+            ({"needs_review": True}, "needs_review filter"),
+            ({"needs_review": "true", "required_check": 3}, "Unknown check"),
+        ):
+            with pytest.raises(ValueError, match=message):
+                vault.reader.search("absent", mode="keyword", filters=filters)
+    finally:
+        vault.close()
