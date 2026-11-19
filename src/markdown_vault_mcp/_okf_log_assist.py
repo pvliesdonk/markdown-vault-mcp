@@ -17,12 +17,17 @@ from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry
     from markdown_vault_mcp.vault import Vault
 
 
 class ProposalBackendError(Exception):
     """The model could not produce a usable proposal."""
+
+
+# The recording tool's proposed_by limit; attribution beyond it cannot be recorded.
+_MAX_PRODUCER_CHARS = 100
 
 
 def _has_control(text: str) -> bool:
@@ -149,6 +154,21 @@ def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str
     return content
 
 
+def _backend(vault: Vault, config: ProjectConfig) -> tuple[Summarizer, str]:
+    """Return the summarize backend and its attribution, or explain their absence."""
+    backend = vault._summarizer
+    if backend is None:
+        raise ProposalBackendError(
+            "The configured summarization backend is unavailable. Ask the server operator to restore it, then retry or write the explanation yourself."
+        )
+    producer = f"{backend.provider_name}/{config.summarize.openai_model}"
+    if len(producer.strip()) > _MAX_PRODUCER_CHARS:
+        raise ProposalBackendError(
+            f"The configured backend and model name exceed {_MAX_PRODUCER_CHARS} characters, so the proposal could not be attributed. Ask the server operator to use a shorter model name."
+        )
+    return backend, producer
+
+
 def propose_log_entry(
     vault: Vault, config: ProjectConfig, paths: list[str], since: str | None
 ) -> dict[str, str]:
@@ -167,12 +187,9 @@ def propose_log_entry(
     since = _normalize_since(since)
     selected = _selected_paths(vault, paths)
     content = _selected_diffs(vault, selected, since)
-    if vault._summarizer is None:
-        raise ProposalBackendError(
-            "The configured summarization backend is unavailable. Ask the server operator to restore it, then retry or write the explanation yourself."
-        )
+    backend, producer = _backend(vault, config)
     try:
-        text = vault._summarizer.summarize(
+        text = backend.summarize(
             "Write a concise factual explanation of the editorial change shown in these diffs. Output only one line, at most 500 characters.",
             content,
         ).strip()
@@ -188,6 +205,6 @@ def propose_log_entry(
         )
     return {
         "text": text,
-        "producer": f"{vault._summarizer.provider_name}/{config.summarize.openai_model}",
+        "producer": producer,
         "basis": "diff",
     }

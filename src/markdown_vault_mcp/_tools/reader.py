@@ -58,9 +58,9 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             paths: Vault-relative note paths to include.
-            since: Starting commit SHA or ISO 8601 date or timestamp; dates start at
-                midnight UTC, and timestamps without an offset use UTC. Omit to
-                explain the latest commit shared by all selected notes.
+            since: Starting commit SHA, YYYY-MM-DD date or ISO 8601 timestamp; dates
+                start at midnight UTC, and timestamps without an offset use UTC.
+                Omit to explain the latest commit shared by all selected notes.
 
         Returns:
             Suggested text, producer, and the basis used for the proposal.

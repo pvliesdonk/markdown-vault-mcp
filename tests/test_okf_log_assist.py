@@ -826,3 +826,55 @@ def test_creation_basis_preserves_readable_content(
         assert git("rev-parse", "HEAD") == head
     finally:
         vault.close()
+
+
+def test_producer_must_fit_recording_contract(tmp_path: Path) -> None:
+    """Return truthful attribution only when it fits the recording limit."""
+    from markdown_vault_mcp._okf_log_assist import (
+        ProposalBackendError,
+        propose_log_entry,
+    )
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "note.md").write_text("Created content\n")
+    git("add", "note.md")
+    git("commit", "-m", "create")
+    fake = FakeSummarizer("Created note")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        model = "m" * 95
+        result = propose_log_entry(
+            vault,
+            ProjectConfig(source_dir=tmp_path, summarize_openai_model=model),
+            ["note.md"],
+            None,
+        )
+        assert result["producer"] == f"fake/{model}"
+        assert len(result["producer"]) == 100
+        with pytest.raises(ProposalBackendError, match="shorter model name"):
+            propose_log_entry(
+                vault,
+                ProjectConfig(source_dir=tmp_path, summarize_openai_model=model + "m"),
+                ["note.md"],
+                None,
+            )
+        assert len(fake.calls) == 1
+        assert not is_regular_file(tmp_path / "log.md")
+    finally:
+        vault.close()

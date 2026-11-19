@@ -26,7 +26,7 @@ Notes without changed text are omitted.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `paths` | `array of string` | required | Vault-relative note paths to include. |
-| `since` | `string \| null` | `null` | Starting commit SHA or ISO 8601 date or timestamp; dates start at midnight UTC, and timestamps without an offset use UTC. Omit to explain the latest commit shared by all selected notes. |
+| `since` | `string \| null` | `null` | Starting commit SHA, YYYY-MM-DD date or ISO 8601 timestamp; dates start at midnight UTC, and timestamps without an offset use UTC. Omit to explain the latest commit shared by all selected notes. |
 
 **Returns**
 
