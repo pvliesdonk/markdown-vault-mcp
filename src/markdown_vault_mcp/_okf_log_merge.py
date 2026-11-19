@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import itertools
 import posixpath
 import re
 from typing import TYPE_CHECKING, Any
@@ -297,6 +298,29 @@ def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
     return parsed, reason
 
 
+def _new_preamble_blocks(left: _Log, right: _Log) -> str:
+    """Join the source's complete preamble blocks that the target lacks."""
+
+    def blocks(text: str) -> list[str]:
+        lines = _normalise_line_endings(text).split("\n")
+        spans = [
+            (t.map[0], t.map[1])
+            for t in MarkdownIt("commonmark").parse("\n".join(lines))
+            if t.level == 0 and t.map
+        ]
+        covered = {i for a, b in spans for i in range(a, b)}
+        loose = [i for i, line in enumerate(lines) if line.strip() and i not in covered]
+        runs = [
+            (g[0], g[-1] + 1)
+            for _, grp in itertools.groupby(enumerate(loose), lambda p: p[1] - p[0])
+            for g in [[v for _, v in grp]]
+        ]
+        return ["\n".join(lines[a:b]) for a, b in sorted(spans + runs)]
+
+    held = set(blocks(left.preamble))
+    return "\n\n".join(b for b in blocks(right.preamble) if b not in held)
+
+
 def _merge_migration(
     left: _Log | None, right: _Log, source: str, target: str | None
 ) -> tuple[str | None, int, str]:
@@ -311,12 +335,8 @@ def _merge_migration(
     eol_match = re.search(r"\r\n|\r|\n", target or "")
     eol = eol_match.group() if eol_match else "\n"
     insertions, _, count = _insertions(left, right, eol, dedupe=False)
-    if right.preamble and _normalise_line_endings(
-        left.preamble
-    ) != _normalise_line_endings(right.preamble):
-        insertions.setdefault(left.sections[0].start, []).insert(
-            0, right.preamble + eol + eol
-        )
+    if intro := _new_preamble_blocks(left, right):
+        insertions.setdefault(left.sections[0].start, []).insert(0, intro + eol + eol)
     merged = _splice(
         left.prefix, left.lines[:], insertions, eol, separate_headings=True
     )

@@ -371,6 +371,97 @@ def test_failed_delete_reports_uncertain_state(
         vault.close()
 
 
+@pytest.mark.parametrize(
+    ("target_intro", "source_intros", "expected_blocks"),
+    [
+        (
+            "",
+            ("Shared introduction.", "Shared introduction."),
+            ("Shared introduction.",),
+        ),
+        ("", ("Custom introduction.", ""), ("Custom introduction.",)),
+        (
+            "Target introduction.\n\n[root]: /root.md",
+            (
+                "First introduction.\n\n[first]: /first.md",
+                "Second introduction.\n\n[second]: /second.md",
+            ),
+            (
+                "Target introduction.",
+                "First introduction.",
+                "Second introduction.",
+                "[root]: /root.md",
+                "[first]: /first.md",
+                "[second]: /second.md",
+            ),
+        ),
+        (
+            "Longer introduction includes short.",
+            ("short.",),
+            ("Longer introduction includes short.", "short."),
+        ),
+    ],
+    ids=("repeated-intro", "plain-after-custom", "distinct-with-refs", "substring"),
+)
+def test_migration_retains_distinct_preamble_blocks(
+    tmp_path: Path,
+    target_intro: str,
+    source_intros: tuple[str, ...],
+    expected_blocks: tuple[str, ...],
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "log.md").write_text(
+        f"# Log\n\n{target_intro}\n\n## 2024-01-01\n\n- target\n"
+    )
+    for i, intro in enumerate(source_intros):
+        folder = root / f"source-{i}"
+        folder.mkdir()
+        (folder / "log.md").write_text(
+            f"# Log\n\n{intro}\n\n## 2025-01-01\n\n- entry-{i}\n"
+        )
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert len(result.merged) == len(source_intros)
+        merged = (root / "log.md").read_text()
+        assert merged.splitlines().count("# Log") == 1
+        for block in expected_blocks:
+            assert merged.splitlines().count(block) == 1
+        for i in range(len(source_intros)):
+            assert merged.splitlines().count(f"- entry-{i}") == 1
+        assert merged.index("## 2025-01-01") < merged.index("## 2024-01-01")
+    finally:
+        vault.close()
+
+
+def test_distinct_fenced_preambles_remain_complete(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    target_block = "```\nshared\n\nleft\n```"
+    source_block = "```\nshared\n\nright\n```"
+    (root / "log.md").write_text(
+        f"# Log\n\n{target_block}\n\n## 2024-01-01\n\n- target\n"
+    )
+    (root / "deep/log.md").write_text(
+        f"# Log\n\n{source_block}\n\n## 2025-01-01\n\n- source\n"
+    )
+    vault = designated_vault(root, (".",))
+    try:
+        result = vault.writer.okf_merge_logs(apply=True)
+        assert len(result.merged) == 1
+        merged = (root / "log.md").read_text()
+        assert target_block in merged
+        assert source_block in merged
+        assert merged.splitlines().count("# Log") == 1
+        assert merged.splitlines().count("- target") == 1
+        assert merged.splitlines().count("- source") == 1
+    finally:
+        vault.close()
+
+
 def test_merge_keeps_links_and_different_preamble(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)

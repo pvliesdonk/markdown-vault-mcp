@@ -227,7 +227,7 @@ A `verified` entry records the reviewer and time in the portable format. `okf_ve
 
 Run `markdown-vault-mcp okf merge-logs` to preview descendant logs outside designated folders and their nearest designated ancestor targets. The root is always a target. Each row shows the source, target and entry count; add `--apply` to write the result and remove successfully merged sources. Configure the vault with `--source-dir` when needed. The library exposes the same operation as `vault.writer.okf_merge_logs(apply=True)`.
 
-Entries remain under date headings in newest-first order, including repeated entries. Entry text and distinct source introductions are kept as written; line endings may follow the target. The command reports source frontmatter and omits it from the target; it preserves existing target frontmatter bytes.
+Entries remain under date headings in newest-first order, including repeated entries. Entry text and source introduction blocks the target does not already hold are kept as written; line endings may follow the target. The command reports source frontmatter and omits it from the target; it preserves existing target frontmatter bytes.
 
 Relative Markdown links, reference links, wiki links, images and HTML URLs may point somewhere different after the move. The command leaves those links as written and warns that their meaning can change. When reference definitions conflict, the first definition in the merged file wins.
 
