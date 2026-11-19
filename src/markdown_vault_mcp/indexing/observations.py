@@ -500,22 +500,7 @@ class ObservationLedger:
                 or not isinstance(reported, dict)
             ):
                 raise ValueError("invalid navigation history")
-            for path, digest in generated.items():
-                if (
-                    not isinstance(path, str)
-                    or not _components(path)
-                    or not _valid_digest(digest)
-                ):
-                    raise ValueError("invalid generated digest")
-            for path, digests in reported.items():
-                if (
-                    not isinstance(path, str)
-                    or not _components(path)
-                    or not isinstance(digests, list)
-                    or not all(_valid_digest(d) for d in digests)
-                    or len(digests) != len(set(digests))
-                ):
-                    raise ValueError("invalid divergence history")
+            self._validate_navigation(generated, reported)
             return {"version": version, "generated": generated, "reported": reported}
         except FileNotFoundError:
             pass
@@ -523,11 +508,34 @@ class ObservationLedger:
             logger.warning("okf_navigation_history_reset path=%s", self._path)
         return {"version": 1, "generated": {}, "reported": {}}
 
+    @staticmethod
+    def _validate_navigation(
+        generated: dict[str, object], reported: dict[str, object]
+    ) -> None:
+        """Reject malformed local digest and deduplication history."""
+
+        for path, digest in generated.items():
+            if (
+                not isinstance(path, str)
+                or not _components(path)
+                or not _valid_digest(digest)
+            ):
+                raise ValueError("invalid generated digest")
+        for path, digests in reported.items():
+            if (
+                not isinstance(path, str)
+                or not _components(path)
+                or not isinstance(digests, list)
+                or not all(_valid_digest(d) for d in digests)
+                or len(digests) != len(set(digests))
+            ):
+                raise ValueError("invalid divergence history")
+
     def navigation_changed(self, path: str, body: str) -> bool:
         """Return whether a body differs from its locally generated predecessor."""
         with self._lock:
             generated = self._navigation_state()["generated"]
-            assert isinstance(generated, dict)
+            assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             digest = hashlib.sha256(body.encode()).hexdigest()
             return path in generated and generated[path] != digest
 
@@ -536,7 +544,7 @@ class ObservationLedger:
         with self._lock:
             state = self._navigation_state()
             generated, reported = state["generated"], state["reported"]
-            assert isinstance(generated, dict) and isinstance(reported, dict)
+            assert isinstance(generated, dict) and isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             desired = hashlib.sha256(new.encode()).hexdigest()
             observed = (
                 hashlib.sha256(old.encode()).hexdigest() if old is not None else None
@@ -556,7 +564,7 @@ class ObservationLedger:
         with self._lock:
             state = self._navigation_state()
             generated = state["generated"]
-            assert isinstance(generated, dict)
+            assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             generated[path] = hashlib.sha256(body.encode()).hexdigest()
             self._save_navigation(state)
 
@@ -570,7 +578,7 @@ class ObservationLedger:
         """Return the cumulative count and bounded examples of local divergences."""
         with self._lock:
             reported = self._navigation_state()["reported"]
-            assert isinstance(reported, dict)
+            assert isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             count = sum(len(digests) for digests in reported.values())
             examples: list[dict[str, str]] = []
             for path, digests in sorted(reported.items()):

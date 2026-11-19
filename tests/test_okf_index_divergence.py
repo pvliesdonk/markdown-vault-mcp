@@ -141,7 +141,17 @@ def test_invalid_history_is_reset_and_future_version_refused(tmp_path: Path) -> 
         ledger = vault._index_mgr.observations
         assert ledger is not None and ledger._path is not None
         data = json.loads(ledger._path.read_text())
-        data["navigation"]["reported"] = {"index.md": "not a list"}
+        del data["navigation"]
+        ledger._path.write_text(json.dumps(data))
+        assert ledger.navigation_stats()["count"] == 0
+        data["navigation"] = {"version": 1, "generated": [], "reported": {}}
+        ledger._path.write_text(json.dumps(data))
+        assert ledger.navigation_stats()["count"] == 0
+        data["navigation"] = {
+            "version": 1,
+            "generated": {},
+            "reported": {"index.md": "not a list"},
+        }
         ledger._path.write_text(json.dumps(data))
         index.write_text(header + "# Untracked\n")
         vault.writer.okf_generate_index(folder="")
