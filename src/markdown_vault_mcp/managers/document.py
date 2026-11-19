@@ -272,6 +272,7 @@ class DocumentManager:
         exclude_patterns: list[str] | None = None,
         protected_paths: Sequence[str] | None = None,
         designated_index: Callable[[str], bool] | None = None,
+        designation: Callable[[str], bool | None] | None = None,
         attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
@@ -294,6 +295,7 @@ class DocumentManager:
         self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
         self._path_guard = PathGuard(source_dir, protected_paths, designated_index)
+        self._designation = designation
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
         self._artifacts = ArtifactStore(
@@ -371,6 +373,16 @@ class DocumentManager:
                 "Vault is read-only; write operations are not permitted."
             )
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
+
+    def index_designation(self, folder: str) -> bool | None:
+        """Return index designation, or None when no policy is active."""
+        from markdown_vault_mcp._okf_convention import destination_home
+
+        if self._designation is None:
+            return None
+        home = destination_home(folder, "index.md", self._source_dir)
+        verdict = self._designation(folder if home is None else home)
+        return None if verdict is None else verdict and home is not None
 
     def protection_reason(
         self,
@@ -749,8 +761,8 @@ class DocumentManager:
             DocumentNotFoundError: In section mode, when there is no such
                 document ("no document" implies "no section").
         """
-        reject_nul(path)
         if section is not None:
+            reject_nul(path)
             if not section.strip():
                 raise InvalidRequestError("section must be a non-empty heading or None")
             return self._read_section(path, section.strip())
@@ -1144,6 +1156,7 @@ class DocumentManager:
     def replace_body(
         self,
         path: str,
+        original: str | None,
         body: str,
         *,
         allow_protected: bool = False,
@@ -1153,6 +1166,7 @@ class DocumentManager:
 
         Args:
             path: Relative document path.
+            original: Content returned by a preceding read, or None for a new file.
             body: Replacement Markdown body.
             allow_protected: Allow changes to operator-protected paths.
             allow_designated: Permit generated indexes only.
@@ -1160,23 +1174,20 @@ class DocumentManager:
         Returns:
             Whether an existing frontmatter block was preserved.
         """
-        with self.write_scope():
-            existing = self._read_note(path, 0)
-            original = existing.content if existing is not None else ""
-            head = original[: _head_end(original)]
-            separator = "\n" if head and not head.endswith("\n") else ""
-            with self.exact_byte_writes():
-                text = head + separator + body
-                if head:
-                    raw = self._validate_path(path).read_bytes().decode("utf-8")
-                    text = _keep_head(raw, _read_view(raw), text)
-                self.write(
-                    path,
-                    text,
-                    allow_overwrite=True,
-                    allow_protected=allow_protected,
-                    allow_designated=allow_designated,
-                )
+        head = (original or "")[: _head_end(original or "")]
+        separator = "\n" if head and not head.endswith("\n") else ""
+        with self.exact_byte_writes():
+            text = head + separator + body
+            if head:
+                raw = self._validate_path(path).read_bytes().decode("utf-8")
+                text = _keep_head(raw, _read_view(raw), text)
+            self.write(
+                path,
+                text,
+                allow_overwrite=True,
+                allow_protected=allow_protected,
+                allow_designated=allow_designated,
+            )
         return bool(head)
 
     def _finalize_content_write(

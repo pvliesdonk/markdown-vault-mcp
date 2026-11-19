@@ -108,6 +108,23 @@ def folder_is_designated(
     return False
 
 
+def destination_home(folder: str, name: str, source_dir: Path | None) -> str | None:
+    """Return the canonical folder when its reserved destination is not an alias."""
+
+    def canonical(path: str) -> str:
+        rel = Path(path)
+        if source_dir is not None:
+            rel = resolve_inside(path, source_dir).relative_to(source_dir.resolve())
+        return "" if rel == Path() else rel.as_posix()
+
+    home = canonical(folder)
+    try:
+        target = canonical(f"{folder}/{name}" if folder else name)
+        return home if target == (f"{home}/{name}" if home else name) else None
+    except InvalidRequestError:
+        return None
+
+
 class ConventionMaintainer:
     """Keep a written note's folder ``log.md`` / ``index.md`` current (#964)."""
 
@@ -192,13 +209,7 @@ class ConventionMaintainer:
         another folder's file is never written through, existing or not.
         A folder reached through a directory alias still resolves to itself.
         """
-        home = self._canonical(folder)
-        try:
-            return self._canonical(f"{folder}/{name}" if folder else name) == (
-                f"{home}/{name}" if home else name
-            )
-        except InvalidRequestError:
-            return False
+        return destination_home(folder, name, self._source_dir) is not None
 
     def _may_index(self, folder: str) -> bool:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
@@ -211,7 +222,7 @@ class ConventionMaintainer:
         )
 
     def _maintain_index(self, folder: str) -> None:
-        """Refresh the nearest indexed level at or above *folder* if allowed."""
+        """Refresh the designated anchor that owns *folder* if allowed."""
         anchor = self.indexed_anchor(folder)
         if self._may_index(anchor):
             self._refresh_index(anchor)
@@ -336,7 +347,7 @@ class ConventionMaintainer:
         current = self._canonical(folder)
         while current and not self._designated(current):
             current = folder_of(current)
-        while current and self._designated(current) and not self._has_index(current):
+        while current and not self._has_index(current):
             parent = folder_of(current)
             if not self._designated(parent):
                 break
@@ -395,6 +406,7 @@ class ConventionMaintainer:
                 )
                 self._doc_mgr.replace_body(
                     log_path,
+                    existing.content if existing is not None else None,
                     new_text,
                 )
         except Exception:

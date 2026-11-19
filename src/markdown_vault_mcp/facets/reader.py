@@ -295,7 +295,8 @@ class ReaderFacet:
         text, reason = read_authored(
             manager._source_dir, folder, manager._max_note_read_bytes
         )
-        if reason is not None:
+        generated = reason == "note_limit" and manager.index_designation(folder) is True
+        if reason is not None and not generated:
             return replace(result, reason=reason)
         if text is not None:
             return replace(
@@ -308,6 +309,7 @@ class ReaderFacet:
             result,
             source="synthesized",
             body=synthesize(folder, inspection),
+            reason=reason,
             next_cursor=inspection.next_cursor,
         )
 

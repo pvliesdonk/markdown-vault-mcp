@@ -39,7 +39,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.scanner import normalize_heading, parse_frontmatter
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -1033,16 +1033,12 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
 
 
 def build_index_markdown(
-    heading: str,
-    entries: list[tuple[str, str, str | None]],
-    *,
-    sections: dict[str, list[tuple[str, str, str | None]]] | None = None,
+    heading: str, entries: list[tuple[str, str, str | None]]
 ) -> str:
     """Build an OKF ``index.md`` progressive-disclosure listing.
 
     Args:
         heading: The H1 heading (bundle or folder name).
-        sections: Descendant folder names and their entries, in display order.
         entries: ``(title, root_absolute_path, description)`` per note,
             already ordered. Both the title and the path are *names*, not
             markdown: the path becomes a destination through
@@ -1057,20 +1053,11 @@ def build_index_markdown(
         The markdown body (no frontmatter).
     """
     lines = [f"# {heading}", ""]
-    groups = [("", entries), *(sections or {}).items()]
-    for section, group in groups:
-        if section and group:
-            if lines[-1]:
-                lines.append("")
-            label = re.sub(
-                r"([\\`*_{}\[\]<>()#+.!|~&])", r"\\\1", normalize_heading(section)
-            )
-            lines.extend([f"## {label}", ""])
-        for title, path, description in group:
-            line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
-            if description:
-                line += f" - {description}"
-            lines.append(line)
+    for title, path, description in entries:
+        line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
+        if description:
+            line += f" - {description}"
+        lines.append(line)
     return "\n".join(lines) + "\n"
 
 

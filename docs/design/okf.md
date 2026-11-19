@@ -448,8 +448,8 @@ The operator controls explicit authoring, review, index and log maintenance inde
   affected index is selected from the written folder and its ancestors. The
   index refresh drains the single-writer index first. A designated listing
   folds undesignated descendants into folder sections up to the next existing
-  index, which is linked and preserved. A preserved undesignated index may
-  become stale until deliberately migrated. A later ordinary write below a
+  index, which is linked and preserved. A preserved index outside the designated scope may
+  become stale; active index maintenance leaves it untouched. A later ordinary write below a
   newly authored or removed boundary refreshes the designated parent; an
   index edit alone does not trigger it. Creating a new index also refreshes its nearest existing
   designated ancestor unless an authored index intervenes. Missing indexes

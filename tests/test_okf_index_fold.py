@@ -213,3 +213,119 @@ def test_generation_queries_subtree_once(
         assert "/folder-00/nested/index.md" in (root / "folder-00/index.md").read_text()
     finally:
         vault.close()
+
+
+def test_colliding_folder_headings_remain_individually_readable(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import NoteTooLargeError
+
+    root = tmp_path / "vault"
+    names = ("a b", "a  b", "a b (2)")
+    for i, name in enumerate(names):
+        (root / name).mkdir(parents=True)
+        (root / name / f"note-{i}.md").write_text(f"# Note {i}\n")
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="off", okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=caps,
+            max_note_read_bytes=100,
+        ),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("ordinary.md", "# Ordinary\n")
+        wait_for_writer_drain(vault)
+        with pytest.raises(NoteTooLargeError):
+            vault.reader.read("index.md")
+        headings = [
+            entry.heading
+            for entry in vault.reader.get_toc("index.md")
+            if entry.level == 2
+        ]
+        assert len(headings) == len(set(headings)) == 3
+        sections = [
+            vault.reader.read("index.md", section=heading).content
+            for heading in headings
+        ]
+        for i in range(3):
+            assert sum(f"note-{i}.md" in section for section in sections) == 1
+    finally:
+        vault.close()
+
+
+def test_explicit_regeneration_keeps_designated_fold(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p/deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = _vault(root, (".", "projects/*"))
+    try:
+        vault.writer.write("projects/p/deep/first.md", "# First\n")
+        wait_for_writer_drain(vault)
+        vault.writer.okf_generate_index(folder="projects/p")
+        assert not path_exists(root / "projects/p/deep/index.md")
+        vault.writer.write("projects/p/deep/second.md", "# Second\n")
+        wait_for_writer_drain(vault)
+        body = (root / "projects/p/index.md").read_text()
+        assert "/projects/p/deep/first.md" in body
+        assert "/projects/p/deep/second.md" in body
+        assert not path_exists(root / "projects/p/deep/index.md")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("target", ["absent", "authored", "alias"])
+def test_explicit_generation_refuses_undesignated_or_aliased_target(
+    tmp_path: Path, target: str
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    root = tmp_path / "vault"
+    (root / "other").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    index = root / "other/index.md"
+    if target == "authored":
+        index.write_text("# Authored\n")
+    if target == "alias":
+        (root / "real.md").write_text("# Real\n")
+        (root / "index.md").unlink()
+        (root / "index.md").symlink_to(root / "real.md")
+    vault = _vault(root, (".",))
+    try:
+        with pytest.raises(InvalidRequestError, match="OKF_FOLDERS"):
+            vault.writer.okf_generate_index(folder="" if target == "alias" else "other")
+        if target == "absent":
+            assert not path_exists(index)
+        elif target == "authored":
+            assert index.read_text() == "# Authored\n"
+        else:
+            assert (root / "real.md").read_text() == "# Real\n"
+    finally:
+        vault.close()
+
+
+def test_inactive_okf_keeps_recursive_onboarding_with_index_capability(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "vault"
+    (root / "child").mkdir(parents=True)
+    (root / "child/note.md").write_text("# Note\n")
+    caps = ContentConfig(
+        okf_mode="auto", okf_index=True, okf_log="off", okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="auto", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        assert not vault.okf.state().active
+        vault.writer.okf_generate_index()
+        assert "/child/index.md" in (root / "index.md").read_text()
+        assert "/child/note.md" in (root / "child/index.md").read_text()
+    finally:
+        vault.close()

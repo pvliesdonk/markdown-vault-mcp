@@ -433,11 +433,10 @@ See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
 
 **OKF: Generate index.md.** Destructive. Idempotent. Tags: `okf`, `write`.
 
-Write a folder's Open Knowledge Format index.md: a link to each note directly
-in it with its description, and one to each subfolder's index.md, replacing
-the old listing and keeping its frontmatter.
+Generate a folder's Open Knowledge Format index.md, preserving frontmatter.
 
-Subfolders without an index.md get one too.
+Designated folders fold descendants up to existing indexes; without
+index maintenance, missing subfolder indexes are generated recursively.
 
 **Parameters**
 

@@ -1201,10 +1201,10 @@ class TestAppendOkfLogEntry:
 def test_section_headings_are_literal_and_one_line() -> None:
     from markdown_it import MarkdownIt
 
-    from markdown_vault_mcp.okf import build_index_markdown
+    from markdown_vault_mcp.managers.okf_migrate import _render_fold
 
-    body = build_index_markdown(
-        "Root", [], sections={"report # *bold*\nnext": [("A", "/a.md", None)]}
+    body = _render_fold(
+        "Root", {"": [], "report # *bold*\nnext": [("A", "/a.md", None)]}
     )
     html = MarkdownIt().render(body)
     assert "<h2>report # *bold* next</h2>" in html
