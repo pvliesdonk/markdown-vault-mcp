@@ -58,6 +58,13 @@ def assess_reviews(
     entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
     extension = metadata.get("x-mvmcp")
     raw = extension.get("reviews") if isinstance(extension, dict) else None
+    malformed_container = (
+        "x-mvmcp" in metadata and not isinstance(extension, dict)
+    ) or (
+        isinstance(extension, dict)
+        and "reviews" in extension
+        and not isinstance(raw, list)
+    )
     claims = (
         [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
     )
@@ -105,6 +112,8 @@ def assess_reviews(
             "origin": "supplied",
             "local_evidence": "unavailable",
         }
+        if claim is None and malformed_container:
+            item["snapshot_basis"] = "malformed_binding"
         if claim is not None:
             claims.remove(claim)
             check = claim.get("check")
@@ -117,6 +126,8 @@ def assess_reviews(
                 )
             elif pair is not None:
                 item["snapshot_basis"] = "unsupported_algorithm"
+            elif "snapshot" in claim:
+                item["snapshot_basis"] = "malformed_binding"
             receipt = receipt_for(claim)
             if receipt is not None and receipts is not None:
                 receipts.remove(receipt)

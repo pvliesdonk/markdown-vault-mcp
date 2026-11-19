@@ -116,7 +116,8 @@ an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
 list when present). Review assessments report snapshot binding, check and local receipt origin
 independently of freshness. Each assessment carries by, at, snapshot,
 check, origin and `local_evidence` (available or unavailable). An
-unsupported algorithm has `snapshot_basis`=`unsupported_algorithm`.
+unsupported algorithm has `snapshot_basis`=`unsupported_algorithm`;
+malformed binding data has `snapshot_basis`=`malformed_binding`.
 Observation reports
 the local review comparison or unavailable. Section reads omit
 it because they carry no frontmatter to derive it from.

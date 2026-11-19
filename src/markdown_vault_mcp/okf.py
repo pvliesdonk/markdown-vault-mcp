@@ -471,14 +471,16 @@ def derive_annotation(
     extension = metadata.get("x-mvmcp")
     if assessments is not None:
         annotation["review_assessments"] = assessments
-        if any(
-            item.get("snapshot_basis") == "unsupported_algorithm"
-            for item in assessments
-        ):
-            annotation["review_applicability"] = {
-                "review": "unknown",
-                "basis": "unsupported_algorithm",
-            }
+        unknown = next(
+            (
+                item["snapshot_basis"]
+                for item in assessments
+                if item.get("snapshot_basis")
+            ),
+            None,
+        )
+        if unknown:
+            annotation["review_applicability"] = {"review": "unknown", "basis": unknown}
         elif any(item["snapshot"] != "unbound" for item in assessments):
             annotation["review_applicability"] = {
                 "review": "assessed",
@@ -489,7 +491,16 @@ def derive_annotation(
                 "snapshot": "unbound",
                 "basis": "no_snapshot_binding",
             }
-    elif entries and isinstance(extension, dict) and extension.get("reviews"):
+    elif entries and (
+        ("x-mvmcp" in metadata and not isinstance(extension, dict))
+        or (
+            isinstance(extension, dict)
+            and "reviews" in extension
+            and (
+                not isinstance(extension["reviews"], list) or bool(extension["reviews"])
+            )
+        )
+    ):
         annotation["review_applicability"] = {
             "review": "unknown",
             "basis": "snapshot_not_available",

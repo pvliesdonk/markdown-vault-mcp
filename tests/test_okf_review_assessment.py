@@ -223,3 +223,25 @@ def test_unsupported_binding_is_not_absent() -> None:
         "review": "unknown",
         "basis": "unsupported_algorithm",
     }
+
+
+def test_malformed_binding_and_container_are_unknown() -> None:
+    from markdown_vault_mcp._okf_receipts import assess_reviews
+    from markdown_vault_mcp.okf import derive_annotation
+
+    snapshot = concept_snapshot("Body")
+    entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
+    for extension in (
+        {"reviews": [{**entry, "snapshot": {"algo": "x", "digest": "bogus"}}]},
+        {"reviews": "bad"},
+        "bad",
+    ):
+        metadata = {"verified": entry, "x-mvmcp": extension}
+        items = assess_reviews(metadata, snapshot, None)
+        assert items[0]["snapshot_basis"] == "malformed_binding"
+        assert derive_annotation(metadata, assessments=items)[
+            "review_applicability"
+        ] == {"review": "unknown", "basis": "malformed_binding"}
+        assert (
+            derive_annotation(metadata)["review_applicability"]["review"] == "unknown"
+        )
