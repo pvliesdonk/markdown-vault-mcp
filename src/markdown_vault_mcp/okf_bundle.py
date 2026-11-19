@@ -324,8 +324,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         Archive bytes, counts, and an artifact conformance report.
 
     Raises:
-        PublicationRefused: If strict publication fails the completed report.
-        ValueError: If the scope is invalid or inventory cannot enumerate it,
+        PublicationRefused: If strict or review publication fails the report.
+        ValueError: If review options or the scope are invalid, or inventory cannot enumerate it,
             including failures under otherwise omitted hidden paths, or if an
             outside body or frontmatter destination collides with an exported
             file or directory, the external URL prefix is invalid, or the Git

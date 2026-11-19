@@ -177,7 +177,9 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
         if key == "external_base":
             values[key] = _external_base_option(equals, value)
         elif key in {"require_check", "review_evidence"}:
-            values[key] = _review_option(equals, value)
+            values[key] = _decode_bundle_value(
+                equals, value, "Pass a valid value for the OKF review option."
+            )
         elif equals:
             raise _reject("OKF bundle flags take no value.")
         else:
@@ -213,14 +215,6 @@ def _decode_bundle_value(equals: str, value: str, message: str) -> str:
         return unquote(value, errors="strict")
     except UnicodeDecodeError:
         raise _reject(message) from None
-
-
-def _review_option(equals: str, value: str) -> str:
-    """Decode and validate one review policy option."""
-    decoded = _decode_bundle_value(
-        equals, value, "Pass a valid value for the OKF review option."
-    )
-    return decoded
 
 
 def _validate_destination(
