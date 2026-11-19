@@ -29,6 +29,8 @@ Give Claude, or any MCP client, a folder of Markdown notes to search, read and w
 - **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md). The [vault explorer](docs/use/vault-explorer.md) keeps its search field named and its context heading nonempty while loading. With `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`, `write`, `edit` and `append` name each link they added that doesn't resolve.
 - **Open Knowledge Format.** OKF bundles are recognized, whole-note reads expose a concept snapshot digest used to bind reviews of YAML-frontmatter or body-only notes, and whole-note reads assess each review’s snapshot binding, recorded check, and local or supplied origin independently of expiry. `config://vault` reports the configured and effective legacy OKF write flag; active bundles also report both in `stats.okf`. Independent settings control explicit concept authoring, review, index maintenance, and logging; the deprecated `OKF_WRITE` switch enables those capabilities without stamping provenance. See the [migration guide](docs/use/okf-provenance-migration.md). The `okf_inventory` tool and `okf-inventory` CLI command list concept candidates, including untyped and index-excluded notes. `okf_navigation` reads a folder’s authored index or synthesizes a bounded listing. The library can [inspect selected bundle directories and subtrees](docs/reference/api/facets.md#selected-bundle-inspection), including readable index-excluded and hidden paths. Whole-note reads compare current content with locally recorded review receipts, and inventory includes observed removals. Writes, edits, appends, deletes, renames, folder moves, builds and reindexes retain local observation state; see [scope and recovery](docs/use/okf.md#local-observation-state). An operator command, `admin repair-log`, previews and removes legacy `log.md` frontmatter ([legacy log repair](docs/use/okf.md#repairing-legacy-log-frontmatter)). The nearest designated folder or existing ancestor log receives log entries, whichever is deeper. Designated generated indexes fold descendant notes into folder sections up to the next existing index and can be regenerated even when larger than the whole-note read limit. Generation works before the first index build, and notes that local search admission omits appear by filename. See [OKF](docs/use/okf.md).
 
+  Reindexing updates designated indexes after observed external note changes. Identical content is left in place.
+
 The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/reference/api/vault.md).
 <!-- DOMAIN-README-PITCH-END -->
 
@@ -41,8 +43,6 @@ It suits one person or a small team who keep notes as Markdown files and want Cl
 
 What it assumes:
 
-
-  Reindexing updates designated indexes after observed external note changes. Identical content is left in place.
 
 - **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME` and [advertise its note URLs](docs/reference/configuration.md#cross-instance-note-links).
 - **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
