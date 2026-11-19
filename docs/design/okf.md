@@ -442,7 +442,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
   `index.md` membership derives from the folder's live listing, independently of
   search admission; titles and descriptions come from the search index, falling
   back to the filename for a note the index has not admitted.
-  **Status:** shipped in phase 5b (see §9). Maintenance runs only for
+  **Status:** shipped in phase 5b (see §9). Write-triggered maintenance runs for
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
   skipped for suppressed writes (`okf_verify`, the one-shot migrations) so an
@@ -480,6 +480,13 @@ The operator controls explicit authoring, review, index and log maintenance inde
   left to the log design. A rename to or from a reserved name triggers
   nothing, both because a reserved-file change never triggers itself (#1414)
   and because regenerating would overwrite the note just renamed onto it.
+  Reindex also compares the observation ledger with the maintainer’s last applied
+  concept state. The first pass reconciles existing designated indexes; later
+  arrivals may create a missing designated anchor. Edits and removals refresh
+  existing anchors, while reserved-file-only changes do not trigger generation.
+  A failed refresh leaves the applied state unchanged for retry. Identical bytes
+  are not rewritten. This maintenance creates neither provenance nor log entries.
+  Pull sweeps retain observations until reindex updates search labels.
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
   proposed): designed separately with the provenance evidence it depends
   on (#1420); named here so the switch has an owner in this section.
