@@ -191,3 +191,25 @@ def test_force_without_previous_vectors_keeps_the_cold_failure_contract(
         assert vault.reader.search("Apples", mode="semantic") == []
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("case", ["index", "explicit", "none"])
+def test_vault_scratch_directory_follows_state_path(tmp_path, case):
+    source = tmp_path / "vault"
+    source.mkdir()
+    state_path = tmp_path / "state-volume" / "state.json"
+    settings = {
+        "index": VaultSettings(index_path=tmp_path / "index.db"),
+        "explicit": VaultSettings(index_path=None, state_path=state_path),
+        "none": VaultSettings(index_path=None),
+    }[case]
+    vault = Vault(
+        source_dir=source, settings=settings, embedding_provider=MockEmbeddingProvider()
+    )
+    try:
+        expected = {"index": tmp_path, "explicit": state_path.parent, "none": None}[
+            case
+        ]
+        assert vault._index_mgr._embeddings._reconciler._scratch_dir == expected
+    finally:
+        vault.close()

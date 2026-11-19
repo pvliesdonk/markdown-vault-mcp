@@ -14,6 +14,10 @@ sources:
     title: SQLite FTS5 Extension
     resource: https://sqlite.org/fts5.html
     accessed: 2026-09-19
+  - id: fts5-docsize
+    title: SQLite FTS5 Extension, document sizes table
+    resource: https://sqlite.org/fts5.html#document_sizes_table_docsize_table_
+    accessed: 2026-11-16
   - id: vtab-docs
     title: The Virtual Table Mechanism Of SQLite
     resource: https://sqlite.org/vtab.html
@@ -86,6 +90,13 @@ where they bear on delete cost.
   stated by the documentation and was not independently benchmarked here;
   the claim this reference and the fix rely on is only "not a full scan,"
   which the query-plan test pins directly. [unverified]
+
+- With the default `columnsize=1`, FTS5 maintains a `%_docsize` table
+  whose integer primary key is the FTS rowid, with one record per FTS row;
+  `columnsize=0` omits it (§§4.5, 9.3). This index uses the default and
+  reads this inventory but never mutates the shadow table directly.
+  [source: fts5-docsize]
+  [pins: tests/test_fts_index.py::TestFtsRowidMapMigration::test_docsize_tracks_fts_rowids]
 
 ## Scoped exhaustive queries (2026-10-21)
 

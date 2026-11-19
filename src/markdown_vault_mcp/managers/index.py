@@ -21,7 +21,11 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.fts_index import should_optimize
+from markdown_vault_mcp.fts_index import (
+    INDEX_SEMANTICS_VERSION,
+    ChunkingMeta,
+    should_optimize,
+)
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.interfaces import ListsNoteStates
 from markdown_vault_mcp.managers.embeddings import (
@@ -158,6 +162,7 @@ class IndexManager:
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
     """
 
     def __init__(
@@ -179,6 +184,7 @@ class IndexManager:
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
+        scratch_dir: Path | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -212,6 +218,30 @@ class IndexManager:
             embedding_batch_size=embedding_batch_size,
             is_path_excluded=self._is_path_excluded,
             vector_slot=vector_slot,
+            scratch_dir=scratch_dir,
+        )
+
+    @property
+    def chunking_meta(self) -> ChunkingMeta:
+        """Return the canonical provenance of this manager's build inputs.
+
+        The build writer and the vault's warm-start comparison both consume
+        this representation, so field lists and attachment settings are not
+        rendered independently at the two sites.
+
+        Returns:
+            Stable build inputs in the existing stored representation.
+        """
+        return ChunkingMeta(
+            model=self._embed_model_name,
+            max_chunk_chars_override=self._max_chunk_chars_override,
+            title_field=self._title_field,
+            searchable_fields=",".join(self._embed_builder.searchable_fields),
+            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            semantics_version=INDEX_SEMANTICS_VERSION,
+            attachment_extensions=canonical_attachment_extensions(
+                self._attachment_extensions
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -759,16 +789,16 @@ class IndexManager:
         # fields) so a later warm restart can reject the short-circuit on a
         # genuine option change (#649, #927). Paired with the completeness
         # sentinel the coordinator sets after this returns.
+        meta = self.chunking_meta
         self._fts.set_chunking_meta(
-            model=self._embed_model_name,
-            max_chunk_chars_override=self._max_chunk_chars_override,
-            title_field=self._title_field,
-            searchable_fields=",".join(self._embed_builder.searchable_fields),
-            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
-            attachment_extensions=canonical_attachment_extensions(
-                self._attachment_extensions
-            ),
+            model=meta.model,
+            max_chunk_chars_override=meta.max_chunk_chars_override,
+            title_field=meta.title_field,
+            searchable_fields=meta.searchable_fields,
+            indexed_frontmatter_fields=meta.indexed_frontmatter_fields,
+            attachment_extensions=meta.attachment_extensions,
         )
+        self._embeddings.finish_vector_recovery()
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,
@@ -906,6 +936,7 @@ class IndexManager:
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
             vectors.checkpoint()
 
+        self._embeddings.finish_vector_recovery()
         return ReindexResult(
             added=indexed_added,
             modified=indexed_modified,
