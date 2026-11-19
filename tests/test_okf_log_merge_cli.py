@@ -193,6 +193,18 @@ def test_target_frontmatter_bytes_survive(tmp_path: Path) -> None:
         vault.close()
 
 
+def _assert_uncertain_delete(scenario: str, source: Path, target: Path) -> None:
+    if scenario == "source_changed":
+        assert source.read_text() == "changed externally\n"
+        assert "- repeat" in target.read_text()
+    elif scenario == "target_changed":
+        assert target.read_text() == "changed externally\n"
+        assert "- repeat" in source.read_text()
+    else:
+        assert "- repeat" in source.read_text()
+        assert "- repeat" in target.read_text()
+
+
 @pytest.mark.parametrize(
     "scenario", ["new", "existing", "source_changed", "target_changed", "restore_fails"]
 )
@@ -242,15 +254,8 @@ def test_retry_after_delete_failure_preserves_multiplicity(
             monkeypatch.setattr(vault._doc_mgr, "delete", real_delete)
             assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
             assert not path_exists(source)
-        elif scenario == "source_changed":
-            assert source.read_text() == "changed externally\n"
-            assert "- repeat" in target.read_text()
-        elif scenario == "target_changed":
-            assert target.read_text() == "changed externally\n"
-            assert "- repeat" in source.read_text()
         else:
-            assert "- repeat" in source.read_text()
-            assert "- repeat" in target.read_text()
+            _assert_uncertain_delete(scenario, source, target)
     finally:
         vault.close()
 
