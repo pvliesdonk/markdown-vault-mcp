@@ -1,11 +1,11 @@
 """Domain-specific server-instructions contributions.
 
-pvl-core 6 composes server instructions from snippets rather than from one
-templated string: every contributor calls
-:func:`fastmcp_pvl_core.instructions_for` and adds its prose with a semantic
-role and the tool names it depends on, and
-:func:`fastmcp_pvl_core.finalize_instructions` renders the collection once,
-after tool visibility is resolved.
+Server instructions are composed from snippets rather than from one templated
+string: every contributor calls
+:func:`~markdown_vault_mcp._instructions_builder.instructions_for` and adds its
+prose with a semantic role and the tool names it depends on, and
+:func:`~markdown_vault_mcp._instructions_builder.finalize_instructions` renders
+the collection once, after tool visibility is resolved.
 
 This module holds the markdown-vault half of that:
 :func:`_domain_snippets` selects the guidance that applies to a
@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._pvl_core import InstructionRole, instructions_for
+from markdown_vault_mcp._instructions_builder import InstructionRole, instructions_for
 from markdown_vault_mcp._write_tools import gated_tool
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -227,9 +227,11 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
 def contribute_instructions(mcp: FastMCP, config: GuidanceConfig) -> None:
     """Add this server's guidance to *mcp*'s instructions builder.
 
-    Call before :func:`fastmcp_pvl_core.finalize_instructions`, which renders
-    the collection once and freezes the builder. Adds no identity snippet:
-    ``server.py`` contributes the single shaped identity pvl-core requires.
+    Call before
+    :func:`~markdown_vault_mcp._instructions_builder.finalize_instructions`,
+    which renders the collection once and freezes the builder. Adds no identity
+    snippet: ``server.py`` contributes the single shaped identity the finalizer
+    requires.
 
     Args:
         mcp: The server whose builder to contribute to.

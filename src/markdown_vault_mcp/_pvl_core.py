@@ -14,11 +14,8 @@ name up at call time.
 from __future__ import annotations
 
 from fastmcp_pvl_core import (
-    CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
-    GENERATED_INSTRUCTIONS_TARGET_UTF16,
     ConfigurationError,
     HealthCheck,
-    InstructionRole,
     ServerConfig,
     apply_tool_visibility,
     build_auth,
@@ -26,21 +23,19 @@ from fastmcp_pvl_core import (
     configure_logging_from_env,
     domain_env_suffixes,
     domain_env_surface,
-    finalize_instructions,
     find_nonconforming_log_calls,
     get_claims,
     get_current_auth_mode,
     get_subject,
-    instructions_for,
     maybe_start_debugpy,
     normalise_http_path,
     register_health_routes,
     register_server_info_tool,
     run_http,
-    utf16_code_units,
     wire_middleware_stack,
 )
 from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
+from fastmcp_pvl_core._visibility import effective_tool_names, registered_tool_names
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -62,16 +57,11 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # HTTP serving, health routes, server info and tool visibility (#2278).
     "HealthCheck",
     "apply_tool_visibility",
+    "effective_tool_names",
+    "registered_tool_names",
     "maybe_start_debugpy",
     "normalise_http_path",
     "register_health_routes",
     "register_server_info_tool",
     "run_http",
-    # The server-instructions builder (#2305).
-    "CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16",
-    "GENERATED_INSTRUCTIONS_TARGET_UTF16",
-    "InstructionRole",
-    "finalize_instructions",
-    "instructions_for",
-    "utf16_code_units",
 ]

@@ -90,7 +90,7 @@ markdown-vault-mcp (new package)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
 +-- server.py         -- template-owned skeleton; DOMAIN-WIRING calls _server_wiring.wire_domain (#901)
-+-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
++-- _instructions.py  -- contribute_instructions: domain snippets for the instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
 +-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
@@ -5828,13 +5828,14 @@ contain this, both operator-tunable:
   foreground soft-deadline/pollable-job path remains the fallback for clients
   that do not negotiate tasks, including a handshake-era client.
 
-**Composed instructions**: from fastmcp-pvl-core 6 the server's MCP
+**Composed instructions**: since fastmcp-pvl-core 6 the server's MCP
 `instructions` string is not a single templated value but a collection of
 snippets, each added with a semantic role and the tool names it directs calls
-to. The template-owned scaffold contributes a shaped
+to. The builder and finalizer are `_instructions_builder.py`, folded in from
+pvl-core 10.2.0 (#2305). `server.py` contributes a shaped
 `<server name>: <product description>` identity and the documentation pointer;
-`register_job_tools` contributes the job-polling workflow and pvl-core's
-transfer helper the transfer workflow;
+`register_job_tools` contributes the job-polling workflow and
+`register_transfer_routes` the transfer workflow;
 the domain contributes vault capabilities, workflows, and deployment mode.
 All contributors add to one builder obtained via `instructions_for(mcp)`.
 `finalize_instructions(mcp, config.server, env_prefix=...)` renders it once,

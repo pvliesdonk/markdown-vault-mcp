@@ -156,7 +156,7 @@ class TestServerIdentity:
         a domain snippet with the semantic ``INSTANCE`` role.
         """
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
-        from markdown_vault_mcp._pvl_core import InstructionRole
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         for read_only, expected in ((True, "READ-ONLY"), (False, "READ-WRITE")):
             snippets = _domain_snippets(GuidanceConfig(read_only=read_only))
@@ -168,7 +168,7 @@ class TestServerIdentity:
     def test_a_server_without_the_boot_reindex_says_to_reindex(self) -> None:
         """#1542: offline changes stay unindexed, so the model is told."""
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
-        from markdown_vault_mcp._pvl_core import InstructionRole
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         default = _domain_snippets(GuidanceConfig(read_only=False))
         assert not [s for s in default if "reindex" in s.text]
@@ -193,7 +193,7 @@ class TestServerIdentity:
     def test_domain_snippets_use_their_normative_roles(self) -> None:
         """Pin the role ownership required by pvl-core's #299 design."""
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
-        from markdown_vault_mcp._pvl_core import InstructionRole
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         snippets = _domain_snippets(
             GuidanceConfig(
@@ -223,7 +223,7 @@ class TestServerIdentity:
     @pytest.mark.usefixtures("_mcp_env_maximal")
     def test_maximal_generated_instructions_fit_target(self) -> None:
         """The complete generated feature matrix keeps operator headroom."""
-        from markdown_vault_mcp._pvl_core import (
+        from markdown_vault_mcp._instructions_builder import (
             GENERATED_INSTRUCTIONS_TARGET_UTF16,
             utf16_code_units,
         )
@@ -245,7 +245,7 @@ class TestServerIdentity:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Routing and policy retain their positions inside the client budget."""
-        from markdown_vault_mcp._pvl_core import (
+        from markdown_vault_mcp._instructions_builder import (
             CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
             utf16_code_units,
         )
