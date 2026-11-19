@@ -451,9 +451,10 @@ The operator controls explicit authoring, review, index and log maintenance inde
   index, which is linked and preserved. A preserved index outside the designated scope may
   become stale; active index maintenance leaves it untouched. A later ordinary write below a
   newly authored or removed boundary refreshes the designated parent; an
-  index edit alone does not trigger it. Creating a new index also refreshes its nearest existing
+  index edit alone does not trigger it. Generating an index also refreshes its nearest existing
   designated ancestor unless an authored index intervenes, for both automatic
-  and explicit generation. Explicit generation refuses a target outside active
+  and explicit generation; under a `**` designation every folder lists itself,
+  so no ancestor is refreshed. Explicit generation refuses a target outside active
   designation or with an aliased index destination. A protected parent is
   reported after the child write and the child remains; regenerating the parent
   after resolving protection repairs the listing. Missing indexes

@@ -738,12 +738,11 @@ class Vault:
         from markdown_vault_mcp.okf_capabilities import designated_index_path
 
         capabilities = self._okf_capabilities
-        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp._okf_convention import IndexDesignation
 
-        def designation(folder: str) -> bool | None:
-            if not self._okf.state().active:
-                return None
-            return folder_is_designated(folder, capabilities.folders)
+        designation = IndexDesignation(
+            capabilities.folders, lambda: self._okf.state().active
+        )
 
         def designated_index(path: str) -> bool:
             return self._okf.state().active and designated_index_path(

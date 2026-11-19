@@ -505,7 +505,7 @@ class TestIndexRefreshOnStructuralChanges:
         refresh.assert_called_once_with(
             [*folders, "guides"],
             trigger_paths=["guides/sub", "b"],
-            create=["b"],
+            create=["b", ""],
         )
 
     def test_delete_drops_the_note_from_its_folder_index(
@@ -773,3 +773,21 @@ def test_unowned_write_does_not_create_index_or_log(tmp_path: Path) -> None:
         assert not path_exists(root / "other/log.md")
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    ("patterns", "universal"),
+    [
+        (("**",), True),
+        (("./**", "docs"), True),
+        (("/**/",), True),
+        ((".", "projects/*"), False),
+        (("*/**", "**/*"), False),
+    ],
+)
+def test_universal_designation_uses_pattern_normalization(
+    patterns: tuple[str, ...], universal: bool
+) -> None:
+    from markdown_vault_mcp._okf_convention import _designates_every_folder
+
+    assert _designates_every_folder(patterns) is universal

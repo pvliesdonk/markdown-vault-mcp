@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import date
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -55,6 +56,34 @@ logger = logging.getLogger(__name__)
 
 #: Human-readable verb per maintained operation, for the ``log.md`` bullet.
 _OPERATION_VERB: dict[str, str] = {"write": "wrote", "edit": "edited"}
+
+
+def _glob_parts(pattern: str) -> tuple[str, ...]:
+    """Return a designation glob's NFC segments, ignoring leading ``./`` or ``/`` and trailing ``/``."""
+    parts = (normalize_folder(normalize("NFC", pattern)) or "").split("/")
+    return tuple(part for part in parts if part and part != ".")
+
+
+def _designates_every_folder(patterns: tuple[str, ...]) -> bool:
+    """Return whether a normalized ``**`` designates every folder."""
+    return any(_glob_parts(pattern) == ("**",) for pattern in patterns)
+
+
+@dataclass(frozen=True)
+class IndexDesignation:
+    """Active OKF state and folder globs deciding generated-index designation."""
+
+    folders: tuple[str, ...]
+    active: Callable[[], bool]
+
+    def __call__(self, folder: str) -> bool | None:
+        """Return whether *folder* is designated, or None when OKF is inactive."""
+        return folder_is_designated(folder, self.folders) if self.active() else None
+
+    @property
+    def universal(self) -> bool:
+        """Whether every folder is designated, so no listing can fold."""
+        return _designates_every_folder(self.folders)
 
 
 def folder_is_designated(
@@ -95,11 +124,7 @@ def folder_is_designated(
 
     folder = normalize("NFC", folder)
     for pattern in patterns:
-        glob = tuple(
-            part
-            for part in (normalize_folder(normalize("NFC", pattern)) or "").split("/")
-            if part and part != "."
-        )
+        glob = _glob_parts(pattern)
         if not folder:
             if not glob or glob == ("**",):
                 return True
@@ -359,7 +384,7 @@ class ConventionMaintainer:
             folder: Vault-relative folder (``""`` for the vault root).
 
         Returns:
-            The anchor folder, or ``""`` when no level has an index.
+            The anchor folder; ``""`` for the root or when none is designated.
         """
         current = self._canonical(folder)
         while current and not self._designated(current):

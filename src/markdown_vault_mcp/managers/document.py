@@ -124,6 +124,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+    from markdown_vault_mcp._okf_convention import IndexDesignation
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.indexing.observations import ObservationLedger, _Captured
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
@@ -273,7 +274,7 @@ class DocumentManager:
         exclude_patterns: list[str] | None = None,
         protected_paths: Sequence[str] | None = None,
         designated_index: Callable[[str], bool] | None = None,
-        designation: Callable[[str], bool | None] | None = None,
+        designation: IndexDesignation | None = None,
         attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
@@ -392,6 +393,15 @@ class DocumentManager:
         home = destination_home(folder, "index.md", self._source_dir)
         verdict = self._designation(folder if home is None else home)
         return None if verdict is None else verdict and home is not None
+
+    def index_may_fold(self) -> bool:
+        """Return whether an undesignated folder can fold into a parent listing.
+
+        Returns:
+            False when a ``**`` designation makes every folder its own listing,
+            so a child index never changes its parent's; True otherwise.
+        """
+        return self._designation is None or not self._designation.universal
 
     def protection_reason(
         self,

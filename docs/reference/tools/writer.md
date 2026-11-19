@@ -435,9 +435,10 @@ See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
 
 Generate a folder's Open Knowledge Format index.md, preserving frontmatter.
 
-Designated folders fold descendants up to existing indexes and link a
-index from its designated parent. Without index maintenance, missing
-subfolder indexes are generated recursively.
+Designated folders fold descendants up to existing indexes and are linked
+from their nearest existing designated parent index, except under `**`.
+Without index maintenance, missing subfolder indexes are generated
+recursively.
 
 **Parameters**
 

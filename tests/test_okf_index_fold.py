@@ -53,6 +53,37 @@ def test_all_folders_retains_recursive_golden(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("operation", ["write", "generate"])
+def test_all_folders_existing_child_preserves_parent(
+    tmp_path: Path, operation: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    (root / "child").mkdir(parents=True)
+    parent = '---\nokf_version: "0.2"\n---\n# Authored root\n\nKeep this text.\n'
+    (root / "index.md").write_text(parent)
+    (root / "child/index.md").write_text("# Previous child\n")
+    (root / "child/note.md").write_text("# Note\n")
+    vault = designated_vault(root, ("**",))
+    try:
+        vault.index.build_index()
+        from unittest.mock import Mock
+
+        search = Mock(wraps=vault._search_mgr.list)
+        monkeypatch.setattr(vault._search_mgr, "list", search)
+        if operation == "write":
+            vault.writer.write("child/note.md", "# Updated\n")
+            wait_for_writer_drain(vault)
+            assert "[Updated](/child/note.md)" in (root / "child/index.md").read_text()
+        else:
+            vault.writer.okf_generate_index(folder="child")
+            assert "[Note](/child/note.md)" in (root / "child/index.md").read_text()
+        assert (root / "index.md").read_text() == parent
+        assert search.call_count == 1
+        assert search.call_args.kwargs["folder"] == "child"
+    finally:
+        vault.close()
+
+
 @pytest.mark.parametrize("operation", ["rename", "move", "move_designated"])
 def test_structural_arrival_connects_new_project(
     tmp_path: Path, operation: str

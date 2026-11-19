@@ -753,16 +753,16 @@ class WriterFacet:
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609). The
-            # designated anchor above the destination gets it listed.
+            # anchors of the destination and its parent list it.
             maintainer = self._convention_maintainer
-            new_root = new_dir.strip("/")
+            new_root, anchor = new_dir.strip("/"), maintainer.indexed_anchor
             maintainer.refresh_indexes(
                 [
                     *maintainer.subtree_folders(new_root),
                     folder_of(old_dir.strip("/")),
                 ],
                 trigger_paths=[old_dir, new_dir],
-                create=[maintainer.indexed_anchor(new_root)],
+                create=[anchor(new_root), anchor(folder_of(new_root))],
             )
         return result
 

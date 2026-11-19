@@ -278,7 +278,7 @@ class OkfMigrationManager:
         designated: Callable[[str], bool],
     ) -> None:
         """Link a boundary from its nearest existing designated ancestor."""
-        while folder:
+        while folder and self._doc_mgr.index_may_fold():
             folder = posixpath.dirname(folder)
             if self._has_index(folder):
                 if designated(folder):
