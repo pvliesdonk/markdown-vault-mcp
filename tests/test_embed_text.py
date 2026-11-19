@@ -113,6 +113,29 @@ class TestFormatToken:
         builder = EmbedTextBuilder(searchable_fields=("summary", "type"))
         assert builder.format_token() == "v2;fields=summary,type"
 
+    @pytest.mark.parametrize(
+        ("context", "token"), [(False, "v1"), (True, "v2;fields=")]
+    )
+    def test_excluded_fields_do_not_change_format_identity(
+        self, context: bool, token: str
+    ) -> None:
+        builder = EmbedTextBuilder(
+            embed_context=context,
+            searchable_fields=("description",),
+            embed_searchable_fields=False,
+        )
+        assert builder.format_token() == token
+        assert builder.fields_text({"description": "ignored"}) == ""
+        # A caller reconstructing a row can supply a precomputed preamble.
+        # Even there, the flag guards the provider text itself.
+        assert builder.build(
+            title="Note",
+            heading=None,
+            content="body",
+            fields_text="ignored",
+            is_first_chunk=True,
+        ) == ("Note\n\nbody" if context else "body")
+
     def test_field_order_is_canonical_not_sorted(self) -> None:
         a = EmbedTextBuilder(searchable_fields=("b", "a"))
         b = EmbedTextBuilder(searchable_fields=("a", "b"))

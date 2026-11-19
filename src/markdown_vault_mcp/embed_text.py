@@ -13,10 +13,9 @@ The builder has two formats:
   content byte-for-byte unchanged, so default configurations are an exact
   behavioural no-op.
 * **v2** — active when ``embed_context`` is enabled or any
-  ``searchable_fields`` are configured: the chunk content is prefixed with
-  the document title, the chunk heading (when present), and — on the first
-  chunk only — the newline-joined scalar frontmatter values of the
-  configured fields.
+  ``searchable_fields`` are included in embeddings: prefix the chunk with
+  the document title and the chunk heading (when present). On the first
+  chunk only, add the newline-joined scalar values of the included fields.
 
 :meth:`EmbedTextBuilder.format_token` canonicalises the active format into
 a string persisted in the vector sidecar's ``index_metadata`` so a format
@@ -130,20 +129,26 @@ class EmbedTextBuilder:
     Args:
         embed_context: When ``True``, forces format v2 (document title and
             chunk heading enrichment) even when ``searchable_fields`` is
-            empty. Any non-empty ``searchable_fields`` also activates v2, so
-            this flag is only load-bearing on its own.
-        searchable_fields: Frontmatter keys whose scalar values form the
-            first-chunk preamble (also switches to format v2 when
-            non-empty).
+            empty or excluded from embeddings.
+        searchable_fields: Keys indexed for keyword search, kept intact for
+            keyword-index provenance even if not included in embeddings.
+        embed_searchable_fields: Include the configured keys' scalar values in
+            the first-chunk preamble and activate v2 when keys are present.
+            When false, only ``embed_context`` can activate v2.
     """
 
     embed_context: bool = False
     searchable_fields: tuple[str, ...] = field(default=())
+    embed_searchable_fields: bool = True
+
+    @property
+    def _embedded_fields(self) -> tuple[str, ...]:
+        return self.searchable_fields if self.embed_searchable_fields else ()
 
     @property
     def is_v2(self) -> bool:
-        """``True`` when enrichment is active (any knob set)."""
-        return self.embed_context or bool(self.searchable_fields)
+        """Return whether the builder prefixes the chunk with context."""
+        return self.embed_context or bool(self._embedded_fields)
 
     def format_token(self) -> str:
         """Canonical format token persisted in the vector sidecar.
@@ -154,14 +159,14 @@ class EmbedTextBuilder:
         """
         if not self.is_v2:
             return "v1"
-        return "v2;fields=" + ",".join(self.searchable_fields)
+        return "v2;fields=" + ",".join(self._embedded_fields)
 
     def fields_text(self, frontmatter_or_json: Mapping[str, Any] | str | None) -> str:
         """Return the first-chunk preamble for this builder's fields.
 
         See the module-level :func:`fields_text` for the exact contract.
         """
-        return fields_text(frontmatter_or_json, self.searchable_fields)
+        return fields_text(frontmatter_or_json, self._embedded_fields)
 
     def build(
         self,
@@ -179,7 +184,7 @@ class EmbedTextBuilder:
             heading: The chunk's heading, or ``None``/``""`` when absent.
             content: Raw chunk content.
             fields_text: Pre-computed preamble (see :meth:`fields_text`);
-                only used on the first chunk.
+                only used on the first chunk when embedding fields is enabled.
             is_first_chunk: ``True`` for the document's chunk-0 row.
 
         Returns:
@@ -193,6 +198,6 @@ class EmbedTextBuilder:
         lines = [title]
         if heading:
             lines.append(heading)
-        if is_first_chunk and fields_text:
+        if is_first_chunk and self.embed_searchable_fields and fields_text:
             lines.append(fields_text)
         return "\n".join(lines) + "\n\n" + content

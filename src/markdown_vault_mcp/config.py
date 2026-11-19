@@ -372,10 +372,9 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Comma-separated frontmatter fields whose text values become "
-                "keyword-searchable and enrich first-chunk embeddings. "
-                "Inherits INDEXED_FIELDS when unset; the sentinel none means "
-                "filterable but not searchable. Changing it cold-rebuilds the "
-                "index and re-embeds once on next startup."
+                "keyword-searchable. By default these values also enrich the "
+                "first chunk sent to the embedding provider. Inherits "
+                "INDEXED_FIELDS when unset; none means no searchable fields."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -732,9 +731,23 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "Enrich embedding input with the note title, chunk heading, "
-                "and (first chunk) searchable-field values. Flipping it "
-                "re-embeds the whole vault once on next startup."
+                "Prefix each embedding input with the resolved note title and "
+                "chunk heading. Searchable fields also activate this context "
+                "unless EMBED_SEARCHABLE_FIELDS is false."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
+    embed_searchable_fields: bool = field(
+        default=True,
+        kw_only=True,
+        metadata={
+            "help": (
+                "Include searchable frontmatter values on the first chunk sent to "
+                "the embedding provider. Set to false to keep the fields searchable "
+                "without sending their values. EMBED_CONTEXT can still add the "
+                "resolved title and chunk heading."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},
@@ -1159,6 +1172,7 @@ class ProjectConfig:
             fastembed_model=self.fastembed_model,
             fastembed_cache_dir=self.fastembed_cache_dir,
             embed_context=self.embed_context,
+            embed_searchable_fields=self.embed_searchable_fields,
             embed_timeout_s=self.embed_timeout_s,
             embedding_batch_size=self.embedding_batch_size,
         )
@@ -1480,6 +1494,9 @@ class ProjectConfig:
             or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(_ENV_PREFIX, "FASTEMBED_CACHE_DIR") or None,
             embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
+            embed_searchable_fields=to_bool(
+                env(_ENV_PREFIX, "EMBED_SEARCHABLE_FIELDS"), default=True
+            ),
             embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
             embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),

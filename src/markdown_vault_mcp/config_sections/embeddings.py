@@ -25,6 +25,7 @@ class EmbeddingsConfig:
     embed_context: bool = False
     embed_timeout_s: float = 30.0
     embedding_batch_size: int = 4
+    embed_searchable_fields: bool = True
 
     def __post_init__(self) -> None:
         """Normalize hosts/URLs and validate embedding knob bounds."""

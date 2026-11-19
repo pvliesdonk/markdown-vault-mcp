@@ -163,14 +163,14 @@ class VaultSettings:
             titles (default ``"title"``; falls back to ``title`` → first H1
             → filename stem).
         searchable_frontmatter_fields: Frontmatter keys whose scalar values
-            are keyword-searchable via the FTS ``summary`` column and —
-            because configuring this activates format v2 — prefixed to
-            first-chunk embedding text (triggering a one-time re-embed).
-            ``None`` disables both.
-        embed_context: When ``True``, forces format v2 (document title +
-            chunk heading enrichment) even with no
-            ``searchable_frontmatter_fields``; any searchable field also
-            activates v2 (default ``False`` — raw chunk content).
+            are keyword-searchable via the FTS ``summary`` column. By default
+            their values also prefix the first chunk sent to the embedder.
+        embed_context: Add the resolved title and chunk heading to embedding
+            inputs even when no frontmatter values are included.
+        embed_searchable_fields: Include searchable fields in embeddings
+            (the default), implicitly enabling title and heading context
+            when fields are configured. Set to ``False`` to index the fields
+            for keyword search independently of ``embed_context``.
         embedding_batch_size: Maximum number of chunk texts sent to the
             embedding provider per call in the cold-build, convergence, and
             inline-reindex paths (default ``4``).
@@ -235,6 +235,7 @@ class VaultSettings:
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
+    embed_searchable_fields: bool = True
 
     @classmethod
     def from_project_config(
@@ -317,6 +318,7 @@ class VaultSettings:
             title_field=config.indexing.title_field,
             searchable_frontmatter_fields=config.indexing.searchable_frontmatter,
             embed_context=config.embeddings.embed_context,
+            embed_searchable_fields=config.embeddings.embed_searchable_fields,
             embedding_batch_size=config.embeddings.embedding_batch_size,
             # Weight maps are stored as frozen sorted tuples on the config
             # (#639); the Vault API takes plain dicts.
