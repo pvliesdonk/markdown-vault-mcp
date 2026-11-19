@@ -4,8 +4,6 @@ description: >-
   Use when work ships as several dependent pull requests that reach main one by one: when asked to build stacked PRs or a stack, or when sizing a change splits it into more than one PR. Sets the plan's shape, the self-reviewing skill as the gate between PRs, and the restack after a squash merge, with or without the gh-stack extension.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Stacking pull requests
 
 A stack is a chain of dependent pull requests, each based on the branch of the one below it, that reach `main` one by one. When the PRs must reach `main` together, run them on an integration branch instead (`docs/contribute/integration-branches.md`).

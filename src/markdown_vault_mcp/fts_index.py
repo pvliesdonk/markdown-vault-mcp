@@ -23,8 +23,9 @@ problem the tombstone records.
 Delete cost: ``notes_fts`` is content-carrying FTS5, so an ordinary-column
 filter has no index and forces a full scan of its shadow content table.
 ``_delete_document`` avoids this via the ``notes_fts_rowid_map`` bridge
-table instead (#1535). See ``docs/design/reference/sqlite-fts5.md`` before
-changing any ``notes_fts`` INSERT/DELETE statement.
+table instead (#1535); writable opens repair unbridged rows. See
+``docs/design/reference/sqlite-fts5.md`` before changing any ``notes_fts``
+INSERT/DELETE statement.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Collection, Iterable, Iterator
 
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -78,6 +79,18 @@ logger = logging.getLogger(__name__)
 #: Paths bound per ``list_chunks`` statement, well under SQLite's variable
 #: limit (32766 since 3.32; 999 before), so a large dirty set never fails.
 _PATHS_PER_QUERY = 900
+
+_CHUNK_PAGE_DOCS = 256
+
+
+def _mark_chunk_rows(rows: Iterable[sqlite3.Row]) -> Iterator[dict[str, Any]]:
+    """Convert ordered whole-document rows, marking each document's first chunk."""
+    previous: str | None = None
+    for raw in rows:
+        row = dict(raw)
+        row["is_first_chunk"] = row["path"] != previous
+        previous = row["path"]
+        yield row
 
 
 # Thresholds for running FTS5 'optimize' after a bulk purge.  Deleting rows
@@ -301,10 +314,6 @@ _META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 # missing after the link-extraction fixes in #1104 / #1107.
 _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 
-# Sentinel: the ``notes_fts_rowid_map`` bridge table has been backfilled for a
-# pre-#1535 database. Written once by :meth:`_migrate_fts_rowid_map` and read
-# on every boot to short-circuit a redundant backfill pass.
-_META_FTS_ROWID_MAP_BACKFILLED_KEY = "fts_rowid_map_backfilled"
 #: Layout marker of the SQLite index (#1766). A version this code does not
 #: know is refused at open, writable or read-only, before any DDL runs. It
 #: is distinct from ``index_semantics_version``, which records how rows were
@@ -880,7 +889,7 @@ class FTSIndex:
         )
         conn.commit()
         self._migrate_notes_fts_summary(conn)
-        self._migrate_fts_rowid_map(conn)
+        self._repair_fts_rowid_map(conn)
         self._persist_rank_config(conn)
         # WAL is a DB-header pragma — persists across opens. Skip for in-memory
         # databases (SQLite silently falls back to 'memory' journal mode there).
@@ -992,40 +1001,49 @@ class FTSIndex:
             raise
         logger.info("fts_index_migrated_notes_fts_summary source=sections")
 
-    def _migrate_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
-        """Backfill ``notes_fts_rowid_map`` for a pre-#1535 database.
+    def _repair_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
+        """Repair unbridged FTS rows after summary migration on writable open.
 
-        A database created before the rowid-delete fix (#1535) has
-        ``notes_fts`` rows with no corresponding bridge-table entry, so
-        :meth:`_delete_document` would find nothing to delete by rowid.
-        Populate it once, in pure SQL, from the ``notes_fts``/``documents``
-        join on path — the same join every reader already performs, so no
-        filesystem rescan is needed. Idempotent (``INSERT OR IGNORE`` plus
-        a meta sentinel), so a crash between the backfill and the sentinel
-        write just reruns harmlessly on the next open. Must run after
-        :meth:`_migrate_notes_fts_summary`, whose DROP/CREATE assigns fresh
-        rowids this join has to see.
+        Bridge legacy rows for unmapped nonempty notes; purge stale rows.
+        Healthy opens read compact tables. CROSS JOIN keeps the docsize scan
+        outermost so repair fetches FTS content only for unbridged rowids.
 
         Args:
-            conn: The primary connection (inside :meth:`_init_schema`).
+            conn: The primary connection inside schema initialization.
         """
-        if _meta_has(conn, _META_FTS_ROWID_MAP_BACKFILLED_KEY):
+        unbridged = conn.execute(
+            "SELECT COUNT(*) FROM notes_fts_docsize WHERE id NOT IN "
+            "(SELECT fts_rowid FROM notes_fts_rowid_map)"
+        ).fetchone()[0]
+        if not unbridged:
             return
+        with conn:
+            bridged = conn.execute(
+                """
+                INSERT INTO notes_fts_rowid_map (document_id, fts_rowid)
+                SELECT d.id, z.id
+                FROM notes_fts_docsize z
+                CROSS JOIN notes_fts f ON f.rowid = z.id
+                JOIN documents d ON d.path = f.path
+                WHERE z.id NOT IN (SELECT fts_rowid FROM notes_fts_rowid_map)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM notes_fts_rowid_map m WHERE m.document_id = d.id
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM sections s WHERE s.document_id = d.id
+                  )
+                """
+            ).rowcount
+            purged = conn.execute(
+                "DELETE FROM notes_fts WHERE rowid IN ("
+                "SELECT id FROM notes_fts_docsize WHERE id NOT IN "
+                "(SELECT fts_rowid FROM notes_fts_rowid_map))"
+            ).rowcount
         logger.info(
-            "fts_index_rowid_map_backfill_started "
-            "scope=full_notes_fts_scan reason=pre_1535_database"
+            "fts_index_rowid_map_repaired bridged=%d purged=%d",
+            bridged,
+            purged,
         )
-        conn.execute(
-            "INSERT OR IGNORE INTO notes_fts_rowid_map (document_id, fts_rowid) "
-            "SELECT d.id, f.rowid FROM notes_fts f "
-            "JOIN documents d ON d.path = f.path"
-        )
-        conn.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
-            (_META_FTS_ROWID_MAP_BACKFILLED_KEY, "1"),
-        )
-        conn.commit()
-        logger.info("fts_index_rowid_map_backfill_completed reason=pre_1535_database")
 
     def _persist_rank_config(self, conn: sqlite3.Connection) -> None:
         """Persist the BM25 per-column weights into the FTS5 rank config.
@@ -1041,7 +1059,7 @@ class FTSIndex:
             conn: The primary connection (inside :meth:`_init_schema`).
         """
         weights = [self._fts_weights.get(col, 1.0) for col in self._FTS_COLUMNS]
-        if any(w != 1.0 for w in weights):
+        if any(w != 1.0 for w in weights):  # NOSONAR(S1244) exact no-op sentinel
             rank = "bm25({})".format(", ".join(f"{w:g}" for w in weights))
         else:
             rank = "bm25()"
@@ -2252,14 +2270,40 @@ class FTSIndex:
                 for start in range(0, len(ordered), _PATHS_PER_QUERY)
                 for raw in self._chunk_rows(ordered[start : start + _PATHS_PER_QUERY])
             ]
-        rows: list[dict[str, Any]] = []
-        prev_path: str | None = None
-        for raw in fetched:
-            row = dict(raw)
-            row["is_first_chunk"] = row["path"] != prev_path
-            prev_path = row["path"]
-            rows.append(row)
-        return rows
+        return list(_mark_chunk_rows(fetched))
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield path-ordered, atomic whole-document pages.
+
+        Changes between pages may be observed or missed; convergence handles
+        later edits. A document present throughout appears once. Read locks
+        are held only while each page is fetched.
+        """
+        after: str | None = None
+        while rows := self._chunk_page(after):
+            yield from _mark_chunk_rows(rows)
+            after = rows[-1]["path"]
+
+    @_retry_on_locked
+    def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+        """Fetch one page's paths and chunks atomically."""
+        continuation = "d.path > ? AND " if after is not None else ""
+        params = (after, _CHUNK_PAGE_DOCS) if after is not None else (_CHUNK_PAGE_DOCS,)
+        return (
+            self._conn()
+            .execute(
+                "WITH page AS (SELECT d.id, d.path, d.title, d.folder, "
+                "d.frontmatter_json, d.content_hash FROM documents AS d WHERE "
+                f"{continuation}"
+                "EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
+                "ORDER BY d.path LIMIT ?) "
+                "SELECT d.path, d.title, d.folder, s.heading, s.content, s.start_line, "
+                "d.frontmatter_json, d.content_hash FROM page AS d "
+                "JOIN sections AS s ON s.document_id = d.id ORDER BY d.path, s.id",
+                params,
+            )
+            .fetchall()
+        )
 
     def _chunk_rows(self, paths: list[str] | None) -> list[sqlite3.Row]:
         """Fetch the chunk rows of *paths* (or of every document), in path order."""
