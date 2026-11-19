@@ -48,7 +48,10 @@ async def test_proposal_visibility(
 
 def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
     """One backend call sees selected changes and returns its attribution."""
-    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp._okf_log_assist import (
+        ProposalBackendError,
+        propose_log_entry,
+    )
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -95,6 +98,11 @@ def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
         assert "+New" in backend.calls[0][1]
         propose_log_entry(vault, ProjectConfig(source_dir=tmp_path), ["a.md"], None)
         assert "+New" in backend.calls[-1][1]
+        backend.text = "Bad \ud800 proposal"
+        with pytest.raises(ProposalBackendError, match="single-line"):
+            propose_log_entry(
+                vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before
+            )
     finally:
         vault.close()
 
@@ -701,7 +709,10 @@ def test_creation_basis_preserves_readable_content(
         vault.close()
 
 
-def test_producer_must_fit_recording_contract(tmp_path: Path) -> None:
+@pytest.mark.parametrize("unsafe_model", ["bad\nmodel", "bad\ud800model"])
+def test_producer_must_fit_recording_contract(
+    tmp_path: Path, unsafe_model: str
+) -> None:
     """Return truthful attribution only when it fits the recording limit."""
     from markdown_vault_mcp._okf_log_assist import (
         ProposalBackendError,
@@ -740,10 +751,17 @@ def test_producer_must_fit_recording_contract(tmp_path: Path) -> None:
         )
         assert result["producer"] == f"fake/{model}"
         assert len(result["producer"]) == 100
-        with pytest.raises(ProposalBackendError, match="shorter model name"):
+        with pytest.raises(ProposalBackendError):
             propose_log_entry(
                 vault,
                 ProjectConfig(source_dir=tmp_path, summarize_openai_model=model + "m"),
+                ["note.md"],
+                None,
+            )
+        with pytest.raises(ProposalBackendError, match="single-line"):
+            propose_log_entry(
+                vault,
+                ProjectConfig(source_dir=tmp_path, summarize_openai_model=unsafe_model),
                 ["note.md"],
                 None,
             )

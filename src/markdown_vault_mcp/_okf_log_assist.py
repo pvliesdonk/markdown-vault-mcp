@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from datetime import UTC, datetime
 from difflib import unified_diff
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_convention import canonical_path
+from markdown_vault_mcp._okf_log_event import _unsafe
 from markdown_vault_mcp.exceptions import InvalidRequestError, SummarizeTimeoutError
 from markdown_vault_mcp.git.query import _DIFF_MAX_BYTES
 from markdown_vault_mcp.managers.git_query import _SHA_RE
@@ -30,10 +30,6 @@ class ProposalBackendError(Exception):
 _MAX_PRODUCER_CHARS = 100
 
 
-def _has_control(text: str) -> bool:
-    return any(unicodedata.category(c) in {"Cc", "Zl", "Zp"} for c in text)
-
-
 def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
     if not paths:
         raise InvalidRequestError(
@@ -45,7 +41,7 @@ def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
         )
     selected: list[str] = []
     for path in paths:
-        if _has_control(path):
+        if _unsafe(path):
             raise InvalidRequestError(
                 "Pass paths without control or line separator characters to okf_propose_log_entry."
             )
@@ -162,9 +158,9 @@ def _backend(vault: Vault, config: ProjectConfig) -> tuple[Summarizer, str]:
             "The configured summarization backend is unavailable. Ask the server operator to restore it, then retry or write the explanation yourself."
         )
     producer = f"{backend.provider_name}/{config.summarize.openai_model}"
-    if len(producer.strip()) > _MAX_PRODUCER_CHARS:
+    if len(producer.strip()) > _MAX_PRODUCER_CHARS or _unsafe(producer):
         raise ProposalBackendError(
-            f"The configured backend and model name exceed {_MAX_PRODUCER_CHARS} characters, so the proposal could not be attributed. Ask the server operator to use a shorter model name."
+            f"The configured backend and model must form a single-line attribution of at most {_MAX_PRODUCER_CHARS} characters. Ask the server operator to adjust the model name."
         )
     return backend, producer
 
@@ -199,7 +195,7 @@ def propose_log_entry(
         raise ProposalBackendError(
             "The model could not produce a proposal. Retry later or write the explanation yourself."
         ) from exc
-    if not text or len(text) > 500 or _has_control(text):
+    if not text or len(text) > 500 or _unsafe(text):
         raise ProposalBackendError(
             "The model could not produce a usable single-line proposal of at most 500 characters. Write the explanation yourself or retry with a narrower selection."
         )
