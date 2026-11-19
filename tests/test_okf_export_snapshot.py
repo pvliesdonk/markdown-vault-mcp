@@ -308,6 +308,7 @@ def test_git_unborn_repository_refuses_export(tmp_path: Path) -> None:
         git_export_snapshot(tmp_path)
 
 
+@pytest.mark.usefixtures("isolated_git")
 def test_git_dubious_ownership_refuses_with_actionable_reason(
     tmp_path: Path, monkeypatch
 ) -> None:

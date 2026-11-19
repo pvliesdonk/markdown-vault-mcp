@@ -427,7 +427,7 @@ def read_regular_nofollow(parent: int, name: str, limit: int) -> bytes:
         chunks: list[bytes] = []
         remaining = limit
         while remaining:
-            chunk = stream.read(remaining)
+            chunk = stream.read(min(remaining, 1 << 20))
             if not chunk:
                 break
             chunks.append(chunk)
