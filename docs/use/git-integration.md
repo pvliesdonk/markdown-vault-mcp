@@ -17,6 +17,18 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Runtime Git version
+
+For a Git-backed vault, startup logs `git_runtime_version` at INFO with the
+output of `git --version`. This identifies the Git executable on the server's
+`PATH`, not Git on your MCP client's computer. Include that value when
+reporting a Git problem. A container uses Git inside the container, so do not
+substitute the host's version.
+
+The diagnostic does not enforce a minimum version or certify compatibility.
+A failed version probe is logged at DEBUG and does not block startup. A
+plain-directory vault does not emit this diagnostic.
+
 ## Filenames from outside the server
 
 Notes created through Git or directly on disk can carry carriage returns
@@ -30,18 +42,55 @@ filenames retain the same spelling when Git decides which paths to stage.
 In both git modes, the commit boundary is the MCP tool call, not the file.
 A call that wrote one file commits under that file's path
 (`write: notes/one.md`), so an ordinary vault's log reads as it always
-did. A call that touched many files, such as `move_folder`, `rename` with
-`update_links=True`, or `okf_convert_links`, produces one commit with the
+did. A call that touched many primary files, such as
+`okf_convert_links`, produces one commit with the
 subject `<tool>: N files`, where a per-file boundary produced one commit per
 file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
-With `OKF_WRITE` enabled, a single-note `write`, `edit` or `append` keeps
-that note's path in the subject. Its automatic index and log updates remain
+With `OKF_WRITE` enabled, a single-note `write`, `edit`, `append` or
+`delete` keeps that note's path in the subject. Its automatic index and log
+updates remain
 in the same commit; they do not replace the note's subject with a file count.
 Direct writes to `index.md` or `log.md` still name their own path.
+A single-note rename names both paths:
+`rename: notes/old.md -> notes/new.md`, even when `update_links=True` rewrites
+backlinks or OKF refreshes index listings. Those derived writes stay in the
+same commit. A folder move names its source and destination relative to the
+Git working tree root, or as an absolute path if a root lies outside it:
+`move_folder: drafts -> archive/2026`. Moved files, backlink rewrites, and
+OKF updates share that commit. Folder names with control characters, boundary
+whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
+to keep the subject identifiable on one line.
 
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
+
+## Uncommitted files at startup
+
+Startup inspects the repository's working tree and staging area in both git
+modes, even with periodic pulls disabled. If it finds changes, it logs
+`git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`,
+which also appears in the `remote` diagnostic on write-tool results.
+Ignored files do not trigger this warning; files Git reports as `untracked` do.
+Changes inside submodules and plain repositories nested in the vault do
+not, because the server never writes into them.
+
+The server cannot tell whether a crash or an operator left those changes.
+It does not automatically commit or discard them. Inspect `git status` in
+the repository, preserve the files you need, and commit or resolve the
+changes yourself. If the vault is a subdirectory, the check covers its
+whole repository, since git sync acts on that repository.
+
+The health result caches the startup observation. The server checks
+outstanding startup changes after its commits and during sync, and only a
+clean tree clears the warning. A successful push or pull alone does not.
+An external repair shows at the next such check or at restart, with
+`git_worktree_clean` in the log. After that, ordinary pending writes do not
+open another startup warning.
+
+A failed inspection keeps any existing warning and is retried at the first
+commit or sync a minute later. The server logs `git_worktree_check_failed` for the first
+failure only.
 
 ## Getting an overwritten note back
 
@@ -382,6 +431,55 @@ the [`git_sync` tool reference](../reference/tools/git.md#git_sync).
 `git_sync` is hidden when the deployment isn't in managed git mode (no
 `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when
 `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
+
+## Recurring conflicts on append-heavy notes
+
+If several writers keep appending to the same note, first agree whether its
+entries can appear in any order. Prefer separate notes or coordinate writers
+when order matters. Do the same if existing entries are edited or metadata
+changes alongside the text. Keep the normal conflict handling for those files.
+
+For an append-only note, Git's built-in `union` merge driver is an
+opt-in alternative. It combines lines from both sides instead of leaving
+conflict markers. It does not understand Markdown structure or YAML
+frontmatter, and it can silently retain competing edits. A successful sync
+does not establish that the combined note is correct. Git warns
+that added lines may appear in an arbitrary order; review the result.
+See [Git's merge-driver documentation](https://git-scm.com/docs/gitattributes#_built_in_merge_drivers).
+
+To try this for one agreed note, add a matching entry to the vault repository's
+`.gitattributes`, using the path relative to that file. With
+`.gitattributes` at the repository root:
+
+```text
+journal/append-only.md merge=union
+```
+
+Commit and share that file through your normal Git workflow before concurrent
+edits. Do not apply `merge=union` to all Markdown files: the attribute covers
+the whole file, including frontmatter, not just its appended section. Test it
+on disposable copies with the same clients and Git settings before adopting
+it for a shared vault. The server does not add this attribute for you.
+
+### Where merge drivers apply
+
+In managed mode, a diverged pull first runs native `git rebase`, and Git
+applies the repository's merge attributes during that rebase as it does in
+any other merge. A conflict that Git resolves there never reaches the
+server's sibling resolver.
+
+If Git still reports paths with unresolved conflicts, the server's resolver
+does not call merge drivers again: it preserves the local versions as siblings
+and takes the upstream versions at the original paths, as described under
+[Manual sync](#manual-sync-git_sync-tool). An attribute is not a repair for
+existing siblings or a guarantee that every conflict will disappear.
+
+In commit-only mode the server never pulls; the client that performs the
+merge decides whether the attribute is used. Check every writer: a Git client
+implemented without native Git need not support `.gitattributes`. Custom
+merge drivers also need their command configured on each participating host;
+committing the attribute alone does not install a driver. The built-in
+`union` driver needs no custom command.
 
 ## When the clone stops reaching its remote
 

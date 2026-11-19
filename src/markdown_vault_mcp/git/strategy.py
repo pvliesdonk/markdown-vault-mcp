@@ -17,11 +17,14 @@ documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
+import os
 import re
 import subprocess
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,6 +41,7 @@ if TYPE_CHECKING:
         WriteOperation,
     )
 
+from markdown_vault_mcp._commit_scope import current_folder_move
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
@@ -53,7 +57,7 @@ from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import (
     SyncHealth,
     SyncHealthTracker,
-    one_line,
+    log_git_stderr,
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
@@ -98,6 +102,50 @@ _INTERACTIVE_PULL = _PullEntry("Git force_pull")
 _STARTUP_PULL = _PullEntry("Git pull")
 _LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
 
+#: Bound on the working-tree inspection that reports uncommitted work (#1678).
+#: It runs under the strategy lock, so a hung status must not hold writes.
+_WORKTREE_STATUS_TIMEOUT_S = 10
+#: Wait before inspecting again after a failed inspection.
+_WORKTREE_RETRY_S = 60.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class GitWriteSettings:
+    """Grouped configuration for a :class:`GitWriteStrategy`.
+
+    Each field mirrors the :class:`GitWriteStrategy` constructor argument of
+    the same name and has the same default. The instance is frozen and its
+    ``repr`` omits ``token``.
+
+    Attributes:
+        token: PAT for HTTPS push via ``GIT_ASKPASS``.  ``None`` uses SSH or
+            pre-configured credentials.
+        username: Username used with token auth (GitHub-compatible default).
+        repo_url: Remote URL expected in managed mode.
+        managed: When ``True``, the strategy clones into an empty
+            ``repo_path`` or validates ``origin`` on an existing repository.
+        enable_pull: Enable fetch + ff-only sync methods.
+        enable_push: Enable deferred push behavior.
+        push_delay_s: Seconds of idle before pushing.  ``0`` disables the
+            timer (push only on close).
+        commit_name: Git committer name; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_NAME`.
+        commit_email: Git committer email; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_EMAIL`.
+        git_lfs: Run ``git lfs pull`` during lazy initialisation.
+    """
+
+    token: str | None = field(default=None, repr=False)
+    username: str = "x-access-token"
+    repo_url: str | None = None
+    managed: bool = False
+    enable_pull: bool = True
+    enable_push: bool = True
+    push_delay_s: float = 30.0
+    commit_name: str | None = None
+    commit_email: str | None = None
+    git_lfs: bool = True
+
 
 class GitWriteStrategy:
     """Stateful git strategy: commit per tool call, deferred push.
@@ -110,9 +158,9 @@ class GitWriteStrategy:
 
     Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
     and arrive at :meth:`on_write_batch`, which stages every path the same
-    scoped way and commits them once as ``"<tool>: N files"``. A call that
-    touched a single file commits under that file's own path instead, so
-    ordinary writes read in ``git log`` exactly as they always have. A write
+    scoped way and commits them once as ``"<tool>: N files"``. A call
+    touching a single file ordinarily names that file instead; folder moves
+    name their roots even for one file. A write
     with no owning tool call takes the per-write path above.
 
     Push is deferred to a background ``threading.Timer`` that resets on
@@ -142,10 +190,22 @@ class GitWriteStrategy:
             lazy initialisation so LFS pointers are resolved before the
             first write is committed.  Requires ``git-lfs`` to be on
             ``PATH``; failures are logged at ERROR and never propagated.
-        repo_path: Optional repository path used for startup validation.
-            When set together with ``token``, startup raises
+        repo_path: Optional repository path used for startup validation and
+            reporting uncommitted files without modifying them. When set together with ``token``, startup raises
             :class:`~markdown_vault_mcp.exceptions.ConfigurationError`
             if ``origin`` uses SSH transport instead of HTTPS.
+        settings: Preferred grouped configuration.  When given, it replaces
+            every flat configuration argument above except ``repo_path``,
+            and those flat arguments must stay at their defaults.
+
+    Raises:
+        ValueError: ``settings`` is given together with a flat configuration
+            argument that differs from its default; the message names the
+            arguments, not their values.
+
+    Prefer ``settings`` for configuration. Flat parameters remain for compatibility;
+    future settings are added only to :class:`GitWriteSettings`. Non-default flat
+    parameters cannot be combined with ``settings``.
 
     Author identity arrives per write as a resolved ``principal``. OIDC
     claim-key registration belongs to
@@ -180,32 +240,64 @@ class GitWriteStrategy:
         *,
         git_lfs: bool = True,
         repo_path: Path | None = None,
+        settings: GitWriteSettings | None = None,
     ) -> None:
+        legacy = GitWriteSettings(
+            token=token,
+            username=username,
+            repo_url=repo_url,
+            managed=managed,
+            enable_pull=enable_pull,
+            enable_push=enable_push,
+            push_delay_s=push_delay_s,
+            commit_name=commit_name,
+            commit_email=commit_email,
+            git_lfs=git_lfs,
+        )
+        if settings is not None:
+            defaults = GitWriteSettings()
+            conflicts = [
+                f.name
+                for f in fields(legacy)
+                if getattr(legacy, f.name) != getattr(defaults, f.name)
+            ]
+            if conflicts:
+                raise ValueError(
+                    "settings cannot be combined with non-default arguments: "
+                    + ", ".join(conflicts)
+                )
+        resolved = settings if settings is not None else legacy
         # Token is retained for GIT_ASKPASS credential forwarding in subprocesses.
         # This pattern is intentionally accepted and suppressed in CodeQL config.
-        self._token = token
-        self._username = username
-        self._repo_url = repo_url
-        self._managed = managed
-        self._enable_pull = enable_pull
-        self._enable_push = enable_push
-        self._push_delay_s = push_delay_s
-        self._commit_name = commit_name or self.DEFAULT_COMMIT_NAME
-        self._commit_email = commit_email or self.DEFAULT_COMMIT_EMAIL
-        self._git_lfs = git_lfs
+        self._token = resolved.token
+        self._username = resolved.username
+        self._repo_url = resolved.repo_url
+        self._managed = resolved.managed
+        self._enable_pull = resolved.enable_pull
+        self._enable_push = resolved.enable_push
+        self._push_delay_s = resolved.push_delay_s
+        self._commit_name = resolved.commit_name or self.DEFAULT_COMMIT_NAME
+        self._commit_email = resolved.commit_email or self.DEFAULT_COMMIT_EMAIL
+        self._git_lfs = resolved.git_lfs
         # Retain the configured repo_path so methods invoked after construction
         # (e.g. force_pull / force_push) can reach the working tree without
         # the caller re-passing it.  Distinct from ``_pull_repo_path`` which
         # is only set when the periodic pull loop is started via ``start()``.
         self._repo_path: Path | None = repo_path
         self._write_init_done = False
+        # Uncommitted-work reporting (#1678), all guarded by ``_lock``:
+        # wanted once startup asked for it, checked once a status succeeded,
+        # and a monotonic retry time while inspections keep failing.
+        self._worktree_wanted = False
+        self._worktree_checked = False
+        self._worktree_retry_at: float | None = None
         # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
             lock=self._lock,
-            token=token,
-            username=username,
-            repo_url=repo_url,
+            token=resolved.token,
+            username=resolved.username,
+            repo_url=resolved.repo_url,
         )
         # Sync health is tracked outside the strategy-wide lock (#1287): the
         # lock is held across a whole fetch + merge, and the MCP write path
@@ -215,8 +307,8 @@ class GitWriteStrategy:
             lock=self._lock,
             bootstrap=self._bootstrap,
             health=self._health,
-            enable_push=enable_push,
-            push_delay_s=push_delay_s,
+            enable_push=resolved.enable_push,
+            push_delay_s=resolved.push_delay_s,
         )
         self._closed = False
         self._pull_stop = threading.Event()
@@ -233,8 +325,7 @@ class GitWriteStrategy:
         if repo_path is not None:
             if self._managed:
                 self._bootstrap.ensure_managed_repo(repo_path)
-            else:
-                self.validate_startup(repo_path)
+            self.validate_startup(repo_path)
 
     def _git_env(self) -> dict[str, str] | None:
         """Build environment for git subprocess calls.
@@ -299,8 +390,72 @@ class GitWriteStrategy:
         return self._bootstrap.ensure_git_root(repo_path)
 
     def validate_startup(self, repo_path: Path) -> None:
-        """Validate startup git settings for token-authenticated workflows."""
+        """Validate git settings and report uncommitted startup work."""
         self._bootstrap.validate_startup(repo_path)
+        if self._git_root is not None:
+            with self._lock:
+                self._worktree_wanted = True
+                self._observe_worktree(self._git_root)
+
+    def _observe_worktree(self, git_root: Path) -> None:
+        """Inspect startup dirt, then follow it until clean, with the lock held.
+
+        Never infer who owns a change or recover it automatically. Once a
+        clean tree is observed, stop probing: new dirt may be a normal write
+        awaiting its asynchronous callback, not leftover startup work. A
+        failed inspection leaves the condition as it was and is retried at
+        the first commit or sync after a back-off, so a status that always
+        times out stalls the lock once per back-off, not once per commit.
+        """
+        if self._worktree_checked and not self._health.worktree_dirty():
+            return
+        retry_at = self._worktree_retry_at
+        if retry_at is not None and time.monotonic() < retry_at:
+            return
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "--no-optional-locks",
+                    "-C",
+                    str(git_root),
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=normal",
+                    # The server never writes into a submodule, and a pull
+                    # does not update one: a lagging or dirty submodule is
+                    # not leftover work of this server (#1564).
+                    "--ignore-submodules=all",
+                ],
+                capture_output=True,
+                check=True,
+                timeout=_WORKTREE_STATUS_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._record_worktree_check_failure(exc)
+            return
+        self._worktree_retry_at = None
+        self._worktree_checked = True
+        self._health.worktree_observed(
+            dirty=_has_uncommitted_changes(result.stdout, git_root)
+        )
+
+    def _record_worktree_check_failure(self, exc: BaseException) -> None:
+        """Back off after a failed inspection, warning once per failing run.
+
+        Args:
+            exc: The failure; only its type is logged, never git's stderr.
+        """
+        error = type(exc).__name__
+        if self._worktree_retry_at is None:
+            logger.warning(
+                "git_worktree_check_failed action=inspect_git_status error=%s",
+                error,
+            )
+        else:
+            logger.debug("git_worktree_check_still_failing error=%s", error)
+        self._worktree_retry_at = time.monotonic() + _WORKTREE_RETRY_S
 
     def _ensure_write_init(self) -> None:
         """One-time initialisation for the write path (remote/push/LFS)."""
@@ -336,13 +491,12 @@ class GitWriteStrategy:
 
     #: Opt into the dispatcher's batched dispatch (#1264), so every write from
     #: one tool call lands in a single commit instead of one commit per file.
-    #: Always on: with a single-file call still committing under its own path
-    #: (see :func:`_stage_and_commit_batch`), grouping differs from per-write
-    #: commits only where one call touches many files — which is the defect
-    #: #1264 reports, not a preference to configure. See
+    #: Ordinary single-file calls keep their path subject; folder moves name
+    #: their roots (see :func:`_stage_and_commit_batch`). See
     #: :data:`~markdown_vault_mcp.types.ACCEPTS_BATCH_ATTR`.
     accepts_batch: bool = True
-    #: Preserve the note subject when secondary OKF writes share its batch.
+    #: Preserve the note subject when secondary writes (OKF maintenance, a
+    #: rename's backlink rewrites) share its batch.
     accepts_primary_paths: bool = True
 
     def on_write_batch(
@@ -355,10 +509,10 @@ class GitWriteStrategy:
         """Commit every write from one tool call as a single commit.
 
         Mirrors :meth:`__call__`'s guards and push scheduling; only the commit
-        boundary differs, and for a call that wrote a single file not even
-        that — see :func:`_stage_and_commit_batch`. The author identity is
-        taken from the first item's principal: one tool call has one acting
-        principal, so the items cannot legitimately disagree.
+        boundary differs; an ordinary single-file call keeps its file subject,
+        while a folder move names its roots — see :func:`_stage_and_commit_batch`.
+        The author identity is taken from the first item's principal: one tool
+        call has one acting principal, so the items cannot legitimately disagree.
 
         Args:
             items: The tool call's writes, in the order they were fired.
@@ -409,7 +563,7 @@ class GitWriteStrategy:
                 "git_batch_failed tool=%s files=%s error=%s",
                 tool_name,
                 len(items),
-                self._redact(exc.stderr or ""),
+                log_git_stderr(exc.stderr or "", self._token),
             )
 
     def __call__(
@@ -489,7 +643,7 @@ class GitWriteStrategy:
                 operation,
                 exc.cmd,
                 exc.returncode,
-                sanitized_stderr,
+                log_git_stderr(sanitized_stderr),
             )
         except Exception:
             logger.error(
@@ -525,7 +679,7 @@ class GitWriteStrategy:
                 "git_lfs_pull_failed command=%s returncode=%d error=%s",
                 exc.cmd,
                 exc.returncode,
-                exc.stderr or "",
+                log_git_stderr(exc.stderr or "", self._token),
             )
         except FileNotFoundError:
             logger.error("git_lfs_pull_failed reason=git_not_found_on_path")
@@ -718,7 +872,7 @@ class GitWriteStrategy:
                 ancestor,
                 descendant,
                 proc.returncode,
-                self._redact((proc.stderr or "").strip()),
+                log_git_stderr(proc.stderr or "", self._token),
             )
             return False
         return proc.returncode == 0
@@ -901,6 +1055,7 @@ class GitWriteStrategy:
                 result = self._pull_locked(git_root, env, dry_run=dry_run, entry=entry)
                 if not dry_run:
                     self._record_pull(result)
+                    self._observe_worktree(git_root)
                 return result
         finally:
             self._cleanup_git_env(env)
@@ -955,7 +1110,7 @@ class GitWriteStrategy:
             logger.warning(
                 "git_fetch_failed strategy=%s error=%s",
                 log_prefix,
-                stderr,
+                log_git_stderr(stderr),
             )
             return PullResult.head_unchanged_failure(from_sha, PULL_REASON_FETCH_FAILED)
 
@@ -1037,7 +1192,7 @@ class GitWriteStrategy:
             logger.debug(
                 "git_ff_only_failed strategy=%s error=%s",
                 log_prefix,
-                (ff_exc.stderr or "").strip(),
+                log_git_stderr(ff_exc.stderr or "", self._token),
             )
             return self._force_pull_rebase_fallback(
                 git_root=git_root,
@@ -1125,7 +1280,7 @@ class GitWriteStrategy:
                 "git_rebase_stopped strategy=%s target=%s error=%s",
                 log_prefix,
                 ref,
-                one_line(rebase_stderr) or "(no stderr)",
+                log_git_stderr(rebase_stderr) or "(no stderr)",
             )
             detail = rebase_stderr or None
             # Real conflicts during rebase — resolve by accepting upstream
@@ -1260,6 +1415,8 @@ class GitWriteStrategy:
         with self._lock:
             result = self._push_locked(git_root, dry_run=dry_run)
             self._record_push(result)
+            if not dry_run:
+                self._observe_worktree(git_root)
         return result
 
     def _record_push(self, result: PushResult) -> None:
@@ -1293,16 +1450,18 @@ class GitWriteStrategy:
             self._health.pull_failed(result.reason, result.detail)
 
     def sync_health(self) -> SyncHealth | None:
-        """Report whether this clone is known not to be reaching its remote.
+        """Report uncommitted startup work or known replication failure.
 
         Read without taking the strategy-wide lock, so a write response never
         blocks behind an in-flight pull.
 
         Returns:
             A :class:`~markdown_vault_mcp.git.health.SyncHealth` while the
-            clone is unsynced, or ``None`` when it is reaching its remote (or
-            has never tried — a commit-only vault never pushes, so it never
-            reports anything).
+            clone has uncommitted startup work or a remote failure, otherwise
+            ``None``. Startup dirt is rechecked after commits and during
+            sync, not by this lock-free read; external repairs become visible
+            at the next such operation or restart. Commit-only vaults can
+            report startup dirt even though they never try a remote.
         """
         return self._health.snapshot()
 
@@ -1455,7 +1614,7 @@ class GitWriteStrategy:
 
                 logger.error(
                     "git_push_failed strategy=force_push error=%s",
-                    stderr,
+                    log_git_stderr(stderr),
                 )
                 truncated = stderr[:200]
                 return PushResult(
@@ -1510,6 +1669,8 @@ class GitWriteStrategy:
         if git_root is None:
             return False
 
+        with self._lock:
+            self._observe_worktree(git_root)
         try:
             # Pre-check the remote-tracking ref (local ref inspection, no
             # network) so a remoteless checkout skips at INFO level rather
@@ -1531,7 +1692,7 @@ class GitWriteStrategy:
         except subprocess.CalledProcessError as exc:
             logger.warning(
                 "git_command_failed context=sync_once error=%s",
-                (exc.stderr or "").strip(),
+                log_git_stderr(exc.stderr or "", self._token),
             )
             return False
 
@@ -1558,10 +1719,15 @@ class GitWriteStrategy:
         The caller holds :attr:`_lock`.  A HEAD that cannot be read on either
         side skips the report: the observer then treats the new HEAD as
         unexplained, which costs a reindex rather than hiding a change.
+        A completed commit also rechecks outstanding startup dirt.
+        A block that raises is not reported, even if HEAD moved: the move
+        cannot be attributed to it, so the next reconciliation reindexes.
         """
         observer = self._commit_observer
         parent = self._try_head_sha(git_root) if observer is not None else None
-        yield
+        yield  # NOSONAR(S9152) Failed blocks must skip observation.
+        if self._worktree_wanted:
+            self._observe_worktree(git_root)
         if observer is None or parent is None:
             return
         new_head = self._try_head_sha(git_root)
@@ -1635,7 +1801,10 @@ class GitWriteStrategy:
         on_pull: Callable[[], object] | None = None,
         on_tick: Callable[[], object] | None = None,
     ) -> None:
-        """Start a periodic fetch + ff-only update loop in a daemon thread.
+        """Inspect startup changes and start a periodic fetch + ff-only loop.
+
+        Uncommitted startup work is reported even when pulling or the loop
+        is disabled. A closed strategy performs neither operation.
 
         Args:
             repo_path: The vault directory; its git root is resolved once.
@@ -1647,7 +1816,10 @@ class GitWriteStrategy:
                 without pausing writes, so the owner can retry work a failed
                 ``on_pull`` left undone (#1532).
         """
-        if self._closed or not self._enable_pull or pull_interval_s <= 0:
+        if self._closed:
+            return
+        self.validate_startup(repo_path)
+        if not self._enable_pull or pull_interval_s <= 0:
             return
 
         git_root = self._ensure_git_root(repo_path)
@@ -2002,6 +2174,36 @@ def _sanitize_git_identity(value: str) -> str:
     return _GIT_IDENTITY_UNSAFE.sub("", value)
 
 
+def _has_uncommitted_changes(status: bytes, git_root: Path) -> bool:
+    """Answer whether ``git status --porcelain=v1 -z`` output reports work.
+
+    An untracked directory that is itself a plain nested repository is not
+    uncommitted work: the server refuses writes into one (#1949), so the
+    superproject keeps listing it however its owner commits.
+
+    Args:
+        status: The raw NUL-separated status records.
+        git_root: The working-tree root the paths are relative to.
+
+    Returns:
+        ``True`` when any record names a change outside nested repositories.
+    """
+    if not status:
+        return False
+    records = iter(status.split(b"\0"))
+    for record in records:
+        if len(record) < 4:
+            continue
+        code, path = record[:2], os.fsdecode(record[3:])
+        if code[:1] in (b"R", b"C"):
+            # The rename or copy source follows as its own record.
+            next(records, None)
+        untracked_dir = code == b"??" and path.endswith("/")
+        if not (untracked_dir and os.path.lexists(git_root / path / ".git")):
+            return True
+    return False
+
+
 def _is_tracked(root: str, path: Path) -> bool:
     """Return whether git tracks *path* in the repository at *root*.
 
@@ -2080,7 +2282,7 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,
-            (result.stderr or "").strip(),
+            log_git_stderr(result.stderr or ""),
         )
         return set()
     return {entry for entry in result.stdout.split("\0") if entry}
@@ -2304,7 +2506,7 @@ def _stage_and_commit(
 
     _commit_staged(
         root,
-        _write_subject(git_root, path, operation),
+        _write_subject(git_root, path, operation, old_path),
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
         scope,
     )
@@ -2312,11 +2514,30 @@ def _stage_and_commit(
     logger.info("git_committed path=%s operation=%s", rel_path, operation)
 
 
-def _write_subject(git_root: Path, path: Path, operation: WriteOperation) -> str:
-    """Format a note's operation and repository-relative path."""
+def _write_subject(
+    git_root: Path, path: Path, operation: WriteOperation, old_path: Path | None = None
+) -> str:
+    """Format a note's operation and paths, including a known rename source."""
     with contextlib.suppress(ValueError):
         path = path.relative_to(git_root)
+    if operation == "rename" and old_path is not None:
+        with contextlib.suppress(ValueError):
+            old_path = old_path.relative_to(git_root)
+        return f"rename: {old_path} -> {path}"
     return f"{operation}: {path}"
+
+
+def _folder_subject_path(path: Path, root: Path | None = None) -> str:
+    """Render a root repo-relative (absolute outside *root*), one line, quoted if odd."""
+    name = str(path.relative_to(root) if root and path.is_relative_to(root) else path)
+    if (
+        name != name.strip()
+        or " -> " in name
+        or not name.isprintable()
+        or any(c in '\\"' for c in name)
+    ):
+        return json.dumps(name, ensure_ascii=not name.isprintable())
+    return name
 
 
 @dataclass(frozen=True, slots=True)
@@ -2356,9 +2577,10 @@ def _stage_and_commit_batch(
     scoped to, both taken from the union of what the items reported
     (#1249, #1273).
 
-    A one-item batch delegates to :func:`_stage_and_commit` instead, so the
-    commit subject stays that file's own path rather than becoming the
-    pathless ``"write: 1 file"``; *tool_name* is unused on that branch.
+    A one-item batch without folder provenance delegates to
+    :func:`_stage_and_commit`, so the commit subject stays that file's own
+    path rather than becoming the pathless ``"write: 1 file"``; *tool_name*
+    is unused on that branch.
 
     Args:
         git_root: Git repository root.
@@ -2369,7 +2591,8 @@ def _stage_and_commit_batch(
         primary_paths: Optional primary-write provenance. A sole primary path
             with one staged item names the subject; all items enter the commit.
     """
-    if len(items) == 1:
+    folder_move = current_folder_move()
+    if len(items) == 1 and folder_move is None:
         # A single-file call is the overwhelmingly common one, and #1264 is
         # explicit that per-file granularity is right for it. Delegating keeps
         # its commit subject the path ("write: notes/one.md") rather than the
@@ -2389,7 +2612,7 @@ def _stage_and_commit_batch(
 
     root = str(git_root)
     staged = 0
-    primary: list[tuple[Path, WriteOperation]] = []
+    primary: list[tuple[Path, WriteOperation, Path | None]] = []
     scope: list[str] = []
     whole_repo = False
     for path, operation, old_path, _principal in items:
@@ -2405,8 +2628,14 @@ def _stage_and_commit_batch(
         if item_scope is None:
             continue
         staged += 1
-        if primary_paths is not None and path in primary_paths:
-            primary.append((path, operation))
+        # A path fired twice (a renamed note rewriting its own self-link) is
+        # still one primary write; its first item, the rename, names it.
+        if (
+            primary_paths is not None
+            and path in primary_paths
+            and all(seen != path for seen, _op, _old in primary)
+        ):
+            primary.append((path, operation, old_path))
         # An empty item scope is the unscoped legacy rename, which stages
         # repository-wide; the batch's check can be no narrower than that.
         whole_repo = whole_repo or not item_scope
@@ -2423,9 +2652,14 @@ def _stage_and_commit_batch(
 
     noun = "file" if staged == 1 else "files"
     subject = f"{tool_name}: {staged} {noun}"
-    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
-        path, operation = primary[0]
-        subject = _write_subject(git_root, path, operation)
+    if folder_move is not None:
+        old_dir, new_dir = folder_move
+        old_name = _folder_subject_path(old_dir, git_root)
+        new_name = _folder_subject_path(new_dir, git_root)
+        subject = f"{tool_name}: {old_name} -> {new_name}"
+    elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
+        path, operation, old_path = primary[0]
+        subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 
