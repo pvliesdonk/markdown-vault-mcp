@@ -12,7 +12,6 @@ import pytest
 from fastmcp import Client, FastMCP
 from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
 
-from markdown_vault_mcp._pvl_core import CORE_VERSION as core_version
 from markdown_vault_mcp._server_info import register_server_info_tool
 
 
@@ -33,7 +32,6 @@ class TestRegisterServerInfoTool:
         assert payload == {
             "server_name": "my-mcp",
             "server_version": "1.2.3",
-            "core_version": core_version,
             "protocol": {
                 "supported_versions": [
                     *HANDSHAKE_PROTOCOL_VERSIONS,
@@ -70,7 +68,6 @@ class TestRegisterServerInfoTool:
         assert payload["paperless"] == {"version": "v2.20.14"}
         assert payload["server_name"] == "paperless-mcp"
         assert payload["server_version"] == "1.0.0"
-        assert payload["core_version"] == core_version
 
     async def test_upstream_dict_used_as_is(self):
         mcp = FastMCP("t")
@@ -121,7 +118,6 @@ class TestRegisterServerInfoTool:
         # Wrapper info still present.
         assert payload["server_name"] == "my-mcp"
         assert payload["server_version"] == "1.0.0"
-        assert payload["core_version"] == core_version
         # Upstream block carries the error instead of a version.
         assert payload["paperless"] == {"error": "upstream is on fire"}
 
@@ -308,9 +304,7 @@ class TestRegisterServerInfoTool:
         # default-description boilerplate.
         assert not target.description or "Report wrapper" not in target.description
 
-    @pytest.mark.parametrize(
-        "label", ["server_name", "server_version", "core_version", "protocol"]
-    )
+    @pytest.mark.parametrize("label", ["server_name", "server_version", "protocol"])
     def test_upstream_label_collision_with_reserved_key_raises(self, label):
         with pytest.raises(ValueError, match="reserved"):
             register_server_info_tool(

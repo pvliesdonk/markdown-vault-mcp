@@ -58,14 +58,18 @@ def test_index_unavailable_reason_literal_values() -> None:
 
 
 class TestConfigurationErrorCanonical:
-    """ConfigurationError is pvl-core's canonical type, re-exported (#638)."""
+    """ConfigurationError is the project's one config error (#638, #2283)."""
 
-    def test_is_pvl_core_class(self) -> None:
-        """The project's ConfigurationError IS pvl-core's, so env_int's raises are catchable."""
-        from markdown_vault_mcp import _pvl_core
+    def test_env_helpers_raise_this_class(self, monkeypatch) -> None:
+        """env_int's strict raise is the same class callers catch."""
+        import pytest
+
+        from markdown_vault_mcp._env import env_int
         from markdown_vault_mcp.exceptions import ConfigurationError
 
-        assert ConfigurationError is _pvl_core.ConfigurationError
+        monkeypatch.setenv("MVM_EXC_TEST_N", "nope")
+        with pytest.raises(ConfigurationError):
+            env_int("MVM_EXC_TEST", "N", 1, strict=True)
 
     def test_not_a_markdown_mcp_error_subclass(self) -> None:
         """Deliberately outside the MarkdownMCPError tree (env_int raises the bare CE)."""

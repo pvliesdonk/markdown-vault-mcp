@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from markdown_vault_mcp._kv_store import build_event_store
-from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections.server import ServerConfig
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 # NFKC-normalising host, so ``urlparse`` raises with the netloc in its message.
 _LEAKY_URL = "redis://alice:hunter2@h\u2100st"

@@ -1,9 +1,9 @@
-"""Every use of pvl-core goes through ``markdown_vault_mcp._pvl_core`` (#2274).
+"""Nothing in this project uses ``fastmcp_pvl_core`` any more (#2283).
 
-#2241 dissolves pvl-core one area at a time. Routing every import, and every
-``monkeypatch``/``patch`` target, through one module means each area changes
-that module and its own call sites, and a new direct import cannot slip in
-while the dissolution is under way.
+#2241 folded pvl-core in area by area through one import shim (#2274); with the
+last area moved, the shim and the dependency are gone. This guard fails on any
+import of ``fastmcp_pvl_core``, and on a ``monkeypatch``/``patch`` target that
+names it, anywhere in ``src``, ``tests`` or ``scripts``.
 """
 
 from __future__ import annotations
@@ -12,13 +12,7 @@ import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SHIM = REPO_ROOT / "src" / "markdown_vault_mcp" / "_pvl_core.py"
 CORE = "fastmcp_pvl_core"
-
-#: Files allowed to import pvl-core directly, with the reason.
-ALLOWED = {
-    SHIM: "the shim itself",
-}
 
 _PATCHERS = {"setattr", "patch", "delattr", "setitem"}
 
@@ -60,18 +54,21 @@ def _python_files() -> list[Path]:
     return sorted(p for root in roots for p in (REPO_ROOT / root).rglob("*.py"))
 
 
-def test_only_the_shim_uses_pvl_core() -> None:
+def test_nothing_uses_pvl_core() -> None:
     offenders = [
         f"{path.relative_to(REPO_ROOT)}:{line}"
         for path in _python_files()
-        if path not in ALLOWED
+        if path.resolve() != Path(__file__).resolve()
         for line in _direct_uses(ast.parse(path.read_text(encoding="utf-8")))
     ]
     assert not offenders, (
-        "import pvl-core names from markdown_vault_mcp._pvl_core, and patch "
-        "'markdown_vault_mcp._pvl_core.<name>', not fastmcp_pvl_core (#2274): "
-        + ", ".join(offenders)
+        "fastmcp-pvl-core was folded into this project (#2241); import the "
+        "local module instead: " + ", ".join(offenders)
     )
+
+
+def test_the_shim_is_gone() -> None:
+    assert not (REPO_ROOT / "src" / "markdown_vault_mcp" / "_pvl_core.py").exists()
 
 
 def test_the_check_sees_each_form() -> None:
@@ -81,7 +78,5 @@ def test_the_check_sees_each_form() -> None:
         "from fastmcp_pvl_core._middleware import X\n"
         "monkeypatch.setattr('fastmcp_pvl_core.get_subject', f)\n"
         "patch('fastmcp_pvl_core._kv_store.D', 1)\n"
-        "from markdown_vault_mcp._pvl_core import env\n"
-        "monkeypatch.setattr('markdown_vault_mcp._pvl_core.get_subject', f)\n"
     )
     assert _direct_uses(ast.parse(source)) == [1, 2, 3, 4, 5]

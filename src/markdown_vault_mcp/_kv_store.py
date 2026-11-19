@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import ParseResult, parse_qs
 
-from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp._url import UNPARSEABLE, parse_operator_url, try_parse_url
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory
 
 if TYPE_CHECKING:

@@ -20,9 +20,9 @@ from typer.testing import CliRunner
 
 from markdown_vault_mcp import config as config_module
 from markdown_vault_mcp._config_surface import domain_env_surface
-from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp.cli import app
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 
 def _preset_contract_env(
@@ -171,7 +171,7 @@ def test_validate_block_raises_configuration_error_not_value_error() -> None:
     ]
     assert not offenders, (
         "CONFIG-VALIDATE raises ValueError, which `serve` reports as a "
-        "traceback; raise fastmcp_pvl_core.ConfigurationError instead: "
+        "traceback; raise markdown_vault_mcp.exceptions.ConfigurationError instead: "
         f"{offenders}"
     )
 
