@@ -1516,9 +1516,8 @@ class SearchManager:
             objects.
 
         Raises:
-            InvalidRequestError: If the purpose is unknown, a null filter is
-                unsupported, or an active OKF ``stale`` value is not a
-                true/false spelling.
+            InvalidRequestError: If a null filter is unsupported or an active
+                OKF ``stale`` value is not a true/false spelling.
         """
         folder = normalize_folder(folder)
         plain_filters, okf_filters = self._split_okf_filters(filters)
