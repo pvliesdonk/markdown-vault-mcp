@@ -12,9 +12,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from markdown_vault_mcp.exceptions import StoreCorruptError
 from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
-from markdown_vault_mcp.types import DocumentRows, EmbeddingIdentity, VectorRow
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    DocumentRows,
+    EmbeddingIdentity,
+    VectorRow,
+)
 from tests.fixtures.vector_store_contract import IDENT, doc
+from tests.fixtures.vectors import damage_sqlite_page
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -135,7 +142,43 @@ class TestKills:
         store.close()
 
 
+@pytest.mark.parametrize("page_size", [4096, 65536])
+def test_damage_fixture_targets_the_requested_root_page(
+    tmp_path: Path, page_size: int
+) -> None:
+    path = tmp_path / "pages.sqlite3"
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(f"PRAGMA page_size = {page_size}")
+        conn.execute("CREATE TABLE sample (value TEXT)")
+        conn.execute("INSERT INTO sample VALUES ('hello')")
+        conn.commit()
+        assert conn.execute("PRAGMA page_size").fetchone()[0] == page_size
+        page = conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE name = 'sample'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    before = path.read_bytes()
+    damage_sqlite_page(path, "sample")
+    after = path.read_bytes()
+    start = (page - 1) * page_size
+    assert len(after) == len(before)
+    assert after[:24] == before[:24]
+    assert after[start : start + page_size] == b"\xff" * page_size
+
+
 class TestFailedCommits:
+    def test_physical_damage_is_classified_on_write(self, tmp_path: Path) -> None:
+        base = _seeded(tmp_path)
+        store = SqliteVectorBackend().open(base, IDENT)
+        try:
+            damage_sqlite_page(base.with_suffix(".sqlite3"), "documents")
+            with pytest.raises(StoreCorruptError):
+                store.remove_document("old.md", expected_token=ANY_TOKEN)
+        finally:
+            store.close()
+
     def _refusing(self, tmp_path: Path) -> Path:
         base = _seeded(tmp_path)
         conn = sqlite3.connect(base.with_suffix(".sqlite3"))

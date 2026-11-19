@@ -134,9 +134,11 @@ and embedding paths, and [#1564][1564], [#1542][1542], [#1480][1480] and
 (6 October 2026).
 
 `derived` — These bugs do not depend on the storage transition, so they can land
-while its features are still not ready. [#1728][1728] waits on the template's
+while its features are still not ready. [#1728][1728] waited on the template's
 packaged-install seam
-([fastmcp-server-template#781](https://github.com/pvliesdonk/fastmcp-server-template/issues/781)).
+([fastmcp-server-template#781](https://github.com/pvliesdonk/fastmcp-server-template/issues/781));
+since the detach decision it waits on [#2246][2246] instead, which makes those
+manifests this project's own (§ Independence from the template and pvl-core).
 [#1734][1734] ships in the 5.1.0 cut instead, because 5.1.0 widens the exposure
 it describes.
 
@@ -187,8 +189,9 @@ version drops it, leaving shared protocol definitions ([#2015][2015]).
 
 `derived` — So the package splits into separate distributions in one repository:
 a library free of FastMCP and pvl-core, `markdown-vault-mcp` as the server, and a
-remote client, all at one version with exact pins. That needs template support
+remote client, all at one version with exact pins. That needed template support
 ([fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)),
+which this project now builds itself (§ Independence from the template and pvl-core),
 import independence (including [#2016][2016]) and a CLI whose local and remote
 paths are separate. [Refinement #1472][1472] turned that into features under
 [epic #1471][1471]; GitHub holds them and their dependencies.
@@ -196,12 +199,13 @@ paths are separate. [Refinement #1472][1472] turned that into features under
 `derived` — Order: import independence ([#2018][2018]) comes first because it
 is unblocked, and the #1473 experiment showed it is small. It also proves the
 library can stand alone before anything is renamed. The distribution split
-([#2019][2019]) waits on it and on template support. The declared surface
+([#2019][2019]) waits on it and on the support for several distributions this
+project now builds itself (§ Independence from the template and pvl-core). The declared surface
 ([#1436][1436]) and the consumer documentation ([#2021][2021]) follow the split,
 so they describe the library's own import package rather than paths that move.
 The client distribution ([#2000][2000]) stays in `020` because the owner wants
 it thought through together with the library. It ships only if
-[#2016][2016] and template support land in time; the release workflow
+[#2016][2016] and that support land in time; the release workflow
 unassigns it otherwise.
 
 `derived` — The announced library removals in [#1225][1225] and [#1236][1236]
@@ -343,12 +347,12 @@ assessed. This check need not delay vault correctness or bundle foundations.
 `stated` — "i want a new roadmap package 030 that collects all currently open
 issues around the MCP app" (7 October 2026).
 
-`derived` — `030 mcp-app` therefore carries the refinement ([#1469][1469]) and
+`derived` — `033 mcp-app` (then `030`) therefore carries the refinement ([#1469][1469]) and
 every open issue on the app and its tools: the mobile display defect
 ([#859][859]), the runtime font dependency ([#1198][1198]), the app tools'
 error outcomes ([#1640][1640]), and the SonarCloud reliability findings in the
 SPA ([#1750][1750], [#1753][1753], [#1754][1754]). The epic itself carries no
-milestone: only its acceptance check is open, and that check is what `030`
+milestone: only its acceptance check is open, and that check is what `033`
 commits. Doing the refinement in the same cut as the fixes lets it decide
 whether [#859][859] belongs to the epic's outcome with the fix in view, rather
 than before it.
@@ -358,6 +362,10 @@ than before it.
 `stated` — Domain documentation lives only in places the template designates
 for it, and non-domain documentation always belongs to the template, with no
 exceptions (owner's ruling, 28 September 2026, work on [#1272][1272]).
+
+`stated` — Superseded on 18 November 2026: after the detach "*everything* is
+MVM owned", so where the template designates domain pages no longer constrains
+this repository's documentation (§ Independence from the template and pvl-core).
 
 `stated` — The owner chose a structure organised by reader goal, with one
 Diátaxis kind per page, a Contribute section last on the site, a front-door
@@ -410,6 +418,102 @@ with the `011` milestone, with no closing comment. The index does not record
 whether its "Done when" was judged met or the remaining round-2 items were
 dropped; the unknown above stays open until the owner says which.
 
+### Independence from the template and pvl-core
+
+`stated` — The owner decided to detach this repository from
+`fastmcp-server-template` and to fold in `fastmcp-pvl-core`, because with an
+active contributing community the upstream dependencies hold the project back
+(18 November 2026). After the detach, "*everything* is MVM owned".
+
+`stated` — On pvl-core: "We fold it in and eventually get rid of it altogether.
+many things are just wrappers around fastmcp that we can get rid of by doing it
+directly, while others are helper functions that we can just transfer to a
+different package name." (18 November 2026)
+
+`stated` — The repository takes template v11.7.0 as its final sync before
+detaching. On the support this project asked of the template in
+[fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855):
+"we would not be depending on the template for this anymore. sibling project
+might still want that behaviour" (18 November 2026).
+
+`derived` — [Epic #2240][2240] freezes the template outcome: a contributor
+changes any file here and passes every check without a template-conformance
+rule, a `copier update` or an upstream pull request, and the instructions agents
+load name this repository as the only place fixes go. [Epic #2241][2241] freezes
+the core outcome: the server installs and runs without `fastmcp-pvl-core`, every
+setting of the last stable release still works, and no shared-core layer
+remains. Their refinement issues are [#2242][2242] and [#2243][2243].
+
+`evidenced` — `FORKING.md`'s detach is kept current and smoke-tested upstream,
+but only on a fresh render that never runs `pytest`. A trial detach of
+`eb374b2` broke 10 tests here and the Lint job's config-surface check, which
+reads `.copier-answers.yml`, and left the upstream routing in `CONTRIBUTING.md`
+and the `TEMPLATE-OWNED` banners on the skills in place. The release-flow tests
+that failed in the same trial fail identically without the detach in that
+environment, so the detach does not touch them.
+pvl-core 10.2.0 is about 11,700 lines with about 15,800 lines of tests.
+Figures and method are in the epic bodies of [#2240][2240] and [#2241][2241],
+and in [#2246][2246] for the config-surface check. The refinement's import scan
+([#2274][2274]) corrects the epic's file counts: this project uses 53 of the 96
+public names, from 21 source files, 23 test files and one script.
+
+`evidenced` — Order: the template first. pvl-core is imported outside sentinel
+blocks in `server.py`, `cli.py`, `config.py` and `_server_apps.py`, and the
+`fastmcp-pvl-core` requirement in `pyproject.toml` sits outside its
+`PROJECT-DEPS` block. Every core child therefore edits template-owned lines,
+which the conformance push hook rejects until the detach lands.
+
+`stated` — At refinement the owner chose, from the options proposed, to dissolve
+pvl-core area by area directly instead of vendoring a copy first, and ruled that
+`ConfigurationError` becoming this project's own class is not breaking
+(18 November 2026).
+
+`derived` — Within the core epic: the import shim ([#2274][2274]) first, because
+it is the only change that touches many files, and afterwards each area changes
+only the shim and its own call sites. Then the eight areas, in any order:
+configuration and environment ([#2275][2275]), logging ([#2276][2276]), auth
+([#2277][2277]), serving ([#2278][2278]), state stores ([#2279][2279]), the tool
+boundary and instructions ([#2280][2280]), jobs ([#2281][2281]) and transfer
+([#2282][2282]). Dropping the dependency ([#2283][2283]) comes last, and it
+meets the epic's "Done when". Copying core in only to delete it again was the
+cost the owner declined. The price is that core stays a dependency until the
+last area lands. Folding pvl-core into the server side also serves
+[#1471][1471]'s library free of pvl-core. [#2275][2275] resolves the coupling
+left in [#2016][2016] (pvl-core's errors and environment helpers,
+fastmcp-pvl-core#543).
+
+`derived` — Known unknown: which names in each area are thin FastMCP wrappers
+and which are helpers with their own logic, and so whether an area fits one pull
+request. Each area feature answers this before coding and splits if needed.
+[#2273][2273] may shrink what the configuration area has to keep, for example
+the config-surface generator's provenance layers.
+
+`stated` — This work goes first: the template part as package `010`, the
+pvl-core part as `015`, ahead of every other open package (18 November 2026).
+§ Packages has both. Bug [#2235][2235] keeps its lock-only override as the
+near-term fix, in `010`; its CI-side option becomes a local edit once
+[#2240][2240]'s detach lands.
+
+`derived` — Refinement turned [#2240][2240] into features. The final sync
+([#2245][2245]) comes first, because whatever it does not bring in has to be
+ported by hand afterwards. Stopping the tracking ([#2246][2246]) comes next,
+because its conformance gate is what blocks every other child: the project
+settings file ([#2247][2247]), the fix routing ([#2248][2248]), the
+single-owner skills and docs ([#2249][2249]) and the experimental Python leg
+([#2250][2250]) all edit template-owned lines, and they can then land in any
+order. The same gate blocks [#1728][1728], [refinement #2251][2251] and every
+child of [#2241][2241].
+
+`derived` — Coverage falls short in one place, and the criterion stays as
+frozen: while pvl-core is a dependency, fixes to its behaviour still go
+upstream, so "the only place fixes go" holds only once [#2283][2283] drops the
+dependency. [#2240][2240] stays open until then.
+
+`derived` — The sentinel blocks stay. Five generators and the config-contract
+test parse them; only the ownership wording around them goes. The detach keeps
+`claude.yml`, the `@claude` responder this repository advertises, unless the
+owner decides otherwise on [#2246][2246].
+
 ### Other ambitions remain available
 
 `derived` — Vault creation ([#1245][1245]) deserves a mechanism decision before
@@ -428,6 +532,35 @@ maintenance and infrastructure issues likewise remain actionable wishes without
 a mandatory parent or a release promise.
 
 ## Packages
+
+`stated` — **[010 template-detach](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/35)** and
+**[015 pvl-core-fold](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/36)** come before every other open package
+(18 November 2026).
+
+`evidenced` — A closed package's title gives up its ordinal for the release
+version at the cut (`v6.0.0 incremental-embeddings`), so the shipped
+`010 reliable-vault` and `015 incremental-embeddings` below no longer hold those
+numbers; the lowest ordinal on an open item was `024` (issue search by milestone
+title, 18 November 2026).
+
+`derived` — **010 template-detach** carries the children of [#2240][2240] and
+[#2235][2235]. Most of it is `chore`, `ci` and `docs`, which cut no release on
+their own; its kind follows whatever user-facing commit the final sync
+([#2245][2245]) brings, and the template's v11.7.0 changes are features. The
+epic itself carries no package: it stays open until `015` drops the pvl-core
+dependency ([#2283][2283]; § Independence from the template and pvl-core).
+
+`derived` — **015 pvl-core-fold** carries the whole fold: the import shim, the
+eight area features and the dependency drop ([#2274][2274] to [#2283][2283]).
+Its kind is not major: the owner ruled that the one candidate break,
+`ConfigurationError` becoming this project's own class, is not breaking.
+
+`derived` — Because the release workflow closes the lowest open package at a
+stable cut, `010` and then `015` are what the next stable cuts consume. A
+stable release cut before either is complete unassigns its open members.
+
+`stated` — Stable releases pause until these packages ship: "This is the plan"
+(18 November 2026).
 
 `derived` — **[010 reliable-vault](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/12)
 (major)** is the first cut: carry the adopted
@@ -484,9 +617,10 @@ package; implementation membership is completed from their findings.
 
 `derived` — **Major intent.** The split chosen in [research #1473][1473] moves the
 library to a new import package, and majors are acceptable to the owner, so plan
-`020` as a major. Its timing depends on template support for several
-distributions
-([fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)).
+`020` as a major. Its timing depends on this project's own support for several
+distributions, which replaces the template support once asked for in
+[fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855)
+(§ Independence from the template and pvl-core).
 
 `derived` — `020` follows `015` (§ Constraints and direction). The embedding
 research informs its storage, lifecycle and installation expectations without
@@ -506,6 +640,10 @@ it also takes the small owner-filed fixes that need none. `023` holds bugs the
 contributors reported, which join after their issues are accepted. The order
 follows from that: the least open decision ships first.
 
+`stated` — Since `022` shipped, `023` also takes the small owner-filed fixes,
+decay, tests and docs contributed after packaging, as `022` did (17 November
+2026).
+
 `stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
 follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 [#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
@@ -514,25 +652,79 @@ follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
 the [#1444][1444] fix: malformed review records no longer promote
 `derive_trust_tier`.
 
+`stated` — `024` also takes two breaking fixes outside OKF, because it is
+already a major (17 November 2026). [#1631][1631] accepts only a closed set of
+history date forms, and [#2205][2205] refuses degenerate or colliding search
+weight maps.
+
+`derived` — The content name `okf-evidence` no longer covers everything in the
+package. It is a label, not a scope.
+
+`stated` — **[025 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**
+follows `024` with eight owner-filed features that have contributed PRs:
+[#1293][1293], [#1241][1241], [#1923][1923], [#875][875], [#1605][1605],
+[#1496][1496], [#2031][2031] and [#1405][1405] (17 November 2026).
+
+`derived` — **Minor intent.** Each feature still has an open design question
+for the owner, recorded in the package description. A feature's PR merges only
+after that ruling, and one left unsettled at the cut moves out rather than
+holding the release.
+
 `stated` — `020 first-class-library` is renumbered `027` and `025
 submodules-read` is renumbered `028`, so that `024` fits after `023` and the
 order is otherwise unchanged (16 November 2026). Each milestone keeps its
 identity and membership.
 
-`derived` — **[028 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
-(minor)** follows `027` (the `020` of the sections above) with the read-only submodule epic [#1561][1561], less the
+`stated` — The candidate cuts of [epic #1425][1425] and [epic #1313][1313]
+(§ Follow-up slices) are packages, OKF inventory first (18 November 2026). To
+put both tracks' first cuts directly after `025`, `027 first-class-library`
+became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
+`033`. Each milestone keeps its identity and membership:
+
+- **[026 okf-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
+  (minor): [#1610][1610], [#1442][1442], [#1606][1606], [#1438][1438],
+  [#1421][1421].
+- **[027 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
+  (patch; refactor and tests may need `override_version`): [#1308][1308],
+  [#1310][1310], [#1569][1569], [#2224][2224].
+- **[028 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**:
+  the `027` of the sections above.
+- **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
+  the `028` of the sections above.
+- **[031 okf-storage-policy](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
+  (kind open until [#1412][1412] classifies its transition): [#1412][1412],
+  [#1432][1432], [#1411][1411].
+- **[032 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
+  (minor): [#1309][1309].
+- **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
+  the `030` of the sections above.
+- **[034 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**,
+  **[035 okf-authoring](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)** and
+  **[036 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
+  (minor, provisional): [#1419][1419] and [#1395][1395]; [#1422][1422];
+  [#1677][1677].
+- **[037 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
+  (major, provisional): [#1448][1448].
+
+`derived` — Each package follows the candidate cut of the same name in
+§ Follow-up slices, which carries its ordering argument. An open decision
+inside a package is work for that cut, not a reason to keep its issue out.
+
+`derived` — **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
+(minor)** follows `028` with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
 
-`stated` — **[030 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
+`stated` — **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
 collects the open MCP app issues as one cut (7 October 2026).
 
 `derived` — **Minor intent**, because [#1198][1198] is a feature; the rest are
-defects and decay. The owner set the ordinal, which places it after `028` and
-before `060`. § Usable vault views has the argument.
+defects and decay. The owner set the ordinal, which places it after `029` and
+before `060` (renumbered from `030` on 18 November 2026). § Usable vault views
+has the argument.
 
 `derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
 (minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
-refined after `028` lands. § Vaults with git submodules has the argument.
+refined after `029` lands. § Vaults with git submodules has the argument.
 
 ### Follow-up slices after `020`
 
@@ -587,7 +779,8 @@ verified implementation findings.
 
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
-| Can the template release several lockstep distributions from one repository, and does pvl-core provide a client, authentication and non-MCP API? | [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
+| Which support for several lockstep distributions must this project build itself, and which parts of the folded-in pvl-core (client, authentication, non-MCP API) does the split reuse? | [Refinement #2251][2251] of [#1471][1471]; [fastmcp-server-template#855](https://github.com/pvliesdonk/fastmcp-server-template/issues/855) no longer gates it | Decides when the split can ship; the import-independence work in `020` does not wait for it. |
+| Which names in each pvl-core area are thin wrappers around FastMCP, and which are helpers to keep under this project's names, and does each area fit one pull request? | Each area feature, [#2275][2275] to [#2282][2282], before it codes | Effort and splitting only; the areas run in any order. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
@@ -595,7 +788,7 @@ verified implementation findings.
 | Which backend compatibility cases remain unpinned? | [#1307][1307] and [refinement #1468][1468] | Learn from the shared scenarios before delivering the optional backend. |
 | What makes both file-authoritative/database-history and database-authoritative vault modes viable, and which database fits each? | [Research #1476][1476], then [refinement #1475][1475] | Resolve scope before committing database delivery; feed relevant consequences into the library and shared-interface work without an automatic blocker on `020` or libgit2. |
 | Which replication failures justify refusing writes? | [#1293][1293], then the decision in [#1299][1299] | Observe before committing refusal semantics. |
-| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `030`, before closing the epic. |
+| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `033`, before closing the epic. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | Answered by [#1899][1899]'s measurements ([operating-envelope.md](operating-envelope.md)) and the runtime policy in [#1896][1896]; no number proposed on [#1506][1506] is adopted as a budget | The owner chose streamed SQLite as the default ([#1900][1900]). The release kind of `015` follows from its commits. |
@@ -891,6 +1084,119 @@ slices can land. With those moves `022` holds only closed issues and is ready
 to cut. [#2139][2139] and the flaky-test report [#2138][2138] have no package
 yet.
 
+### 17 November 2026 — package the pull requests contributed after `022`
+
+`stated` — The owner asked for packages from the triage of about fifty pull
+requests contributed on 16 and 17 November. The owner committed the small
+owner-filed work to `023`, the two breaking fixes to `024`, and the
+owner-filed features to a new minor `025`. The owner parked the epic-scale
+work.
+
+`derived` — `023` received the issues whose PR resolves them in full, is
+patch-safe and needs no other PR first: [#1729][1729], [#1955][1955],
+[#1538][1538], [#1349][1349], [#1976][1976], [#1434][1434], [#2138][2138],
+[#778][778], [#1853][1853], [#1751][1751], [#650][650], [#2139][2139],
+[#2054][2054], [#1268][1268], [#1752][1752] and [#1131][1131]. Three stayed
+out:
+
+- [#1383][1383]: its PR rebuilds every index and leaves a link-precedence
+  question open.
+- [#2128][2128]: its PR is stacked on the `027` refactor for [#2018][2018].
+- [#1310][1310]: it needs a third PR that links no issue.
+
+Six issues whose PRs resolve only part of them stay unpackaged while those
+PRs merge: [#1432][1432], [#1361][1361], [#1312][1312], [#1296][1296],
+[#871][871] and [#752][752].
+
+`stated` — For [#1631][1631] the owner chose the closed set of date forms, with
+the breaking marker. For [#871][871] the owner chose to split the weight-map
+items into [#2205][2205], which refuses rather than warns. [#871][871] stays
+open for its remaining items.
+
+`stated` — Under [epic #1313][1313], the foundation PRs for [#1307][1307] and
+[#1308][1308] merge now. Neither issue closes, because each PR covers part of
+it. The two libgit2 PRs for [#1309][1309] are parked until refinement
+[#1468][1468] and a ruling on the backend's refusal set. Under [epic
+#1425][1425], the new PRs are parked until the decisions they depend on:
+[#1610][1610], [#1438][1438], [#1412][1412], [#1421][1421]'s prerequisite and
+[#1677][1677]'s keying.
+
+`evidenced` — The parked PR bodies cite slice plans and approvals that this
+repository does not record (comments on [#1313][1313] and [#1425][1425], 17
+November 2026). The roadmap treats those plans as input to refinements
+[#1467][1467] and [#1468][1468], not as accepted designs.
+
+`derived` — The second and third slices of [#1938][1938] arrived as PRs and
+stay with [#1938][1938] in `023`. [#2124][2124] is a contributor-proposed
+feature, so it has no package until it is accepted.
+
+### 18 November 2026 — package the epic cuts by issue intent
+
+`stated` — The owner corrected the 17 November packaging. A package holds the
+issues a cut is meant to ship, solved together. An issue whose PR still waits
+on a decision, is stacked or is oversized belongs in the package it is meant for:
+the decision is work inside that package. This supersedes the 17 November
+statement that the epic work was parked with no package.
+
+`stated` — Every candidate cut of [#1425][1425] and [#1313][1313] became a
+package, with OKF inventory first and both tracks' first cuts directly after
+`025`. The existing `027`, `028` and `030` moved up to make room (§ Packages).
+[#2128][2128] joins `023`.
+
+`derived` — [#2018][2018] moves with it from `028` to `023`, because #2128's PR
+is stacked on the #2018 refactor, which therefore ships in the same cut.
+
+`stated` — The owner then held #2128's fix out of the patch, because it makes
+every writing tool call wait up to 30 s for its own local commit. #2128 moves to
+`027 git-contracts`. [#2018][2018] stays in `023`, where its PR already merged.
+
+`stated` — The owner then reopened [#2018][2018] and returned it to `028`: its
+PR delivered only the commit-scope part of the outcome. The remaining coupling,
+through pvl-core's errors and environment helpers, is [#2016][2016] and
+fastmcp-pvl-core#543.
+
+`derived` — [#2224][2224], the subdirectory `force_pull` bug from #2211, is split
+out of [#1395][1395] into `027 git-contracts`. [#1498][1498] stays under
+[#1499][1499] with no package, as § Sustainable embedding storage and search
+already argues, until its decision on reserved files and semantic search.
+
+### 18 November 2026 — detach from the template and fold in pvl-core
+
+`stated` — The owner decided to detach from the template, and to fold pvl-core in
+and then dissolve it (§ Independence from the template and pvl-core). This supersedes the 28 September
+ruling that domain documentation lives only where the template designates
+(§ Reader-shaped documentation), and the 3 November statement that the template
+is changed to support the distribution split (§ First-class library): "we would
+not be depending on the template for this anymore".
+
+`derived` — The template dependencies of [#1728][1728], of the distribution
+split and of `020` are revised in place to point at the new section, and the
+known-unknowns row on fastmcp-server-template#855 now resolves through the
+re-refinement of [#1471][1471]. Epics [#2240][2240] and [#2241][2241] are filed
+with their refinement issues only.
+
+### 18 November 2026 — refine [#2240][2240]
+
+`derived` — Six features cover the template epic, with one recorded shortfall
+on pvl-core routing (§ Independence from the template and pvl-core). The epic body's planned
+re-refinements moved to their own epics: [refinement #2251][2251] under
+[#1471][1471], and [#1728][1728] now waits on [#2246][2246]. The trial detach
+answered the known unknown on template-coupled tests, so its row is removed.
+
+### 18 November 2026 — refine [#2241][2241]
+
+`stated` — The owner chose direct dissolution over a vendored copy, and ruled that the `ConfigurationError` change is not breaking (§ Independence from the template and pvl-core).
+
+`derived` — Ten features cover the core epic: the shim, eight areas and the dependency drop. The vendor-then-dissolve order in the epic body is superseded, and the epic's file counts are corrected. [#2016][2016] is resolved by [#2275][2275]. The known-unknowns rows on pvl-core types in the public interface and on vendored tests are removed: the owner's ruling settles the first, and the second no longer applies.
+
+### 18 November 2026 — put the independence work first
+
+`stated` — The owner placed the template part as package `010` and the pvl-core
+part as `015`, ahead of every other open package, and paused stable releases
+until they ship (§ Packages).
+
+`derived` — `024` and later keep their relative order behind them.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1001,3 +1307,65 @@ yet.
 [2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
+[650]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/650
+[752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/752
+[778]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/778
+[871]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/871
+[875]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/875
+[1131]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131
+[1241]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1241
+[1268]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1268
+[1296]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1296
+[1312]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1312
+[1349]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349
+[1361]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1361
+[1405]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1405
+[1421]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1421
+[1432]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432
+[1434]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434
+[1438]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1438
+[1538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538
+[1605]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1605
+[1631]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1631
+[1677]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1677
+[1729]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729
+[1751]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1751
+[1752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1752
+[1853]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1853
+[1923]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1923
+[1955]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955
+[1976]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976
+[2031]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031
+[2054]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054
+[2124]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2124
+[2205]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2205
+[1395]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1395
+[1411]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1411
+[1419]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1419
+[1422]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1422
+[1448]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1448
+[1569]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1569
+[2224]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2224
+[2235]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2235
+[2240]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2240
+[2241]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2241
+[2242]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2242
+[2243]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2243
+[2245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2245
+[2246]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2246
+[2247]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2247
+[2248]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2248
+[2249]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2249
+[2250]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2250
+[2251]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2251
+[2273]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2273
+[2274]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2274
+[2275]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2275
+[2276]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2276
+[2277]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2277
+[2278]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2278
+[2279]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2279
+[2280]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2280
+[2281]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2281
+[2282]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2282
+[2283]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2283

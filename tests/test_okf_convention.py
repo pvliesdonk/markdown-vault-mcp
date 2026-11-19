@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -151,6 +152,41 @@ class TestMaintainerGuards:
         with okf_write_suppressed():
             m.maintain("note.md", "write")
         assert doc.writes == [] and migrate.index_calls == []
+
+
+def _maintain(m: ConventionMaintainer, path: str) -> None:
+    m.maintain(path, "write")
+
+
+def _refresh(m: ConventionMaintainer, path: str) -> None:
+    m.refresh_indexes(["guides"], trigger_paths=[path])
+
+
+class TestMaintainerNativePathGuard:
+    """The reserved-file guard keeps the caller's native ``Path`` parsing (#1268).
+
+    No Windows host runs this suite, so ``PureWindowsPath`` stands in for the
+    module's ``Path`` to model a native backslash path a Windows caller accepts.
+    """
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    @pytest.mark.parametrize("path", [r"guides\index.md", r"guides\log.md"])
+    def test_windows_reserved_path_triggers_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any, path: str
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, path)
+        assert doc.writes == [] and migrate.index_calls == []
+
+    @pytest.mark.parametrize("entry", [_maintain, _refresh])
+    def test_windows_note_path_still_triggers(
+        self, monkeypatch: pytest.MonkeyPatch, entry: Any
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._okf_convention.Path", PureWindowsPath)
+        m, doc, migrate = _maintainer()
+        entry(m, r"guides\note.md")
+        assert doc.writes or migrate.index_calls
 
 
 class TestMaintainerFailureIsolation:
@@ -700,6 +736,30 @@ class TestMaintainerFolderWalks:
 
 
 class TestIndexRefreshEdgeCases:
+    def test_move_reserved_named_folders_preserves_handwritten_index(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "vault"
+        (root / "index.md").mkdir(parents=True)
+        (root / "index.md/note.md").write_text("# Note\n", encoding="utf-8")
+        (root / "index.md/index.md").write_text(
+            "# Precious index\n\nUnique hand-written content.\n", encoding="utf-8"
+        )
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+        )
+        vault.index.build_index()
+        try:
+            vault.writer.move_folder("index.md/", "log.md/")
+            wait_for_writer_drain(vault)
+            assert (root / "log.md/note.md").is_file()
+            assert "Unique hand-written content." in (
+                root / "log.md/index.md"
+            ).read_text(encoding="utf-8")
+        finally:
+            vault.close()
+
     def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
         self, enforced_vault: Vault
     ) -> None:
