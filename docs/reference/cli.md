@@ -360,8 +360,8 @@ Export an OKF ZIP or print a JSON refusal without writing it.
 | `--folder` |  |  | Vault-relative scope root. |
 | `--strict` |  | False | Require a self-contained artifact. |
 | `--require-review` |  | False | Require reviews of exported concepts. |
-| `--require-check` |  | human-review | Required review check kind. |
-| `--review-evidence` |  | binding | Evidence: binding or `local_receipt`. |
+| `--require-check` |  |  | Check kind; requires `--require-review` (default: human-review). |
+| `--review-evidence` |  |  | Evidence: binding (default) or `local_receipt`; requires `--require-review`. |
 | `--include-hidden` |  | False | Include hidden paths. |
 | `--include-index-excluded` |  | False | Include index exclusions. |
 | `--external-base` |  |  | URL for outside references. |

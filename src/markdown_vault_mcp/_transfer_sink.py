@@ -46,7 +46,7 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
     SubmodulePathError,
 )
-from markdown_vault_mcp.okf_bundle import build_okf_bundle
+from markdown_vault_mcp.okf_bundle import _review_policy, build_okf_bundle
 from markdown_vault_mcp.okf_export_paths import ExportPaths
 from markdown_vault_mcp.okf_export_report import (
     ExportCollisionError,
@@ -90,6 +90,7 @@ OKF_BUNDLE_DOWNLOAD_NOTE = (
     "as in okf-bundle?strict&include_hidden:projects. Options are strict, "
     "include_hidden, include_index_excluded, require_review, require_check=<kind>, "
     "review_evidence=binding or local_receipt, and external_base=<percent-encoded URL>. "
+    "Review selectors require require_review. "
     "A refused export downloads as application/json named okf-export-refusal.json "
     "with HTTP 200 instead of a ZIP; fix the reported cause and mint a new link."
 )
@@ -176,11 +177,19 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
         if key == "external_base":
             values[key] = _external_base_option(equals, value)
         elif key in {"require_check", "review_evidence"}:
-            values[key] = _review_option(key, equals, value)
+            values[key] = _review_option(equals, value)
         elif equals:
             raise _reject("OKF bundle flags take no value.")
         else:
             values[key] = True
+    try:
+        _review_policy(
+            values.get("require_review", False),
+            values.get("require_check"),
+            values.get("review_evidence"),
+        )
+    except ValueError as exc:
+        raise _reject(str(exc)) from None
     return scope.strip("/") if separator else "", values
 
 
@@ -206,13 +215,11 @@ def _decode_bundle_value(equals: str, value: str, message: str) -> str:
         raise _reject(message) from None
 
 
-def _review_option(key: str, equals: str, value: str) -> str:
+def _review_option(equals: str, value: str) -> str:
     """Decode and validate one review policy option."""
     decoded = _decode_bundle_value(
         equals, value, "Pass a valid value for the OKF review option."
     )
-    if key == "review_evidence" and decoded not in {"binding", "local_receipt"}:
-        raise _reject("Pass review_evidence=binding or local_receipt.")
     return decoded
 
 

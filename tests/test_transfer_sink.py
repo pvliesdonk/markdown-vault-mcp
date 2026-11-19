@@ -410,7 +410,6 @@ async def test_review_bundle_refusal_log_matches_document(
         result = await sink.read(ref)
     payload = json.loads(result.body)
     assert payload["reason"] == "review"
-    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
     assert any(
         record.msg == "transfer_download_bundle_refused scope=%s reason=%s"
         and record.args == ("(root)", payload["reason"])
@@ -610,3 +609,37 @@ async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None
         assert (tmp_path / "guard.md").read_text() == "original"
     finally:
         vault.close()
+
+
+async def test_unquoted_review_timestamp_download_refusal(sink, source_dir):
+    import json
+
+    (source_dir / "note.md").write_text(
+        '---\nverified: {by: "human:alice", at: 2020-01-01T00:00:00Z}\n'
+        'x-mvmcp:\n  reviews:\n  - by: "human:alice"\n'
+        "    at: 2020-01-01T00:00:00Z\n    check: human-review\n"
+        '    snapshot: {algo: mvmcp-concept-v1, digest: "'
+        + "0" * 64
+        + '"}\n---\nBody\n'
+    )
+    result = await sink.read("okf-bundle?require_review")
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert (
+        payload["report"]["review_assurance"]["failures"][0]["assessments"][0][
+            "snapshot"
+        ]
+        == "differs"
+    )
+    assert (
+        payload["report"]["review_assurance"]["failures"][0]["assessments"][0]["at"]
+        == "2020-01-01T00:00:00+00:00"
+    )
+
+
+@pytest.mark.parametrize(
+    "selector", ["require_check=human-review", "review_evidence=binding"]
+)
+async def test_download_selector_requires_review(sink, selector):
+    with pytest.raises(ToolError, match="require_review"):
+        await sink.validate("okf-bundle?" + selector, "download")

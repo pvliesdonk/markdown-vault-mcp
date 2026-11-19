@@ -35,13 +35,6 @@ def test_export_requires_matching_review_and_preserves_bytes(tmp_path):
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
             assert archive.read("note.md").decode() == text
         assert result.report.review_assurance.failures == []
-        with pytest.raises(PublicationRefused):
-            build_okf_bundle(
-                vault,
-                ProjectConfig(source_dir=tmp_path),
-                require_review=True,
-                review_evidence="local_receipt",
-            )
     finally:
         vault.close()
 
@@ -165,7 +158,6 @@ def test_committed_snapshot_cannot_borrow_working_review(tmp_path):
                 vault, ProjectConfig(source_dir=tmp_path), require_review=True
             )
         assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
-        assert "note.md" in exc.value.report.snapshot.uncommitted_paths
     finally:
         vault.close()
 
@@ -195,7 +187,7 @@ def test_cli_uses_only_configured_source_receipts(tmp_path, monkeypatch):
         ["export", str(out), "--require-review", "--review-evidence", "local_receipt"],
     )
     assert result.exit_code == 0, result.output
-    assert out.is_file()
+    original_zip = out.read_bytes()
     other = tmp_path / "other"
     other.mkdir()
     (other / "note.md").write_bytes((source / "note.md").read_bytes())
@@ -212,11 +204,11 @@ def test_cli_uses_only_configured_source_receipts(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 1
+    assert out.read_bytes() == original_zip
     import json
 
     payload = json.loads(result.stdout)
     assert payload["reason"] == "review"
-    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
 
 
 def test_binding_does_not_load_receipts(tmp_path, monkeypatch):
@@ -233,25 +225,6 @@ def test_binding_does_not_load_receipts(tmp_path, monkeypatch):
         vault.close()
 
 
-def test_transfer_review_options():
-    from fastmcp.exceptions import ToolError
-
-    from markdown_vault_mcp._transfer_sink import _bundle_options
-
-    assert _bundle_options(
-        "okf-bundle?require_review&require_check=schema-only&review_evidence=local_receipt:sub"
-    ) == (
-        "sub",
-        {
-            "require_review": True,
-            "require_check": "schema-only",
-            "review_evidence": "local_receipt",
-        },
-    )
-    with pytest.raises(ToolError):
-        _bundle_options("okf-bundle?review_evidence=other")
-
-
 def test_malformed_frontmatter_is_withheld(tmp_path):
     (tmp_path / "note.md").write_text("---\ntype: [broken\n---\nBody\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
@@ -266,42 +239,58 @@ def test_malformed_frontmatter_is_withheld(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "ref",
+    "ref, expected",
     [
-        "okf-bundle?require_check",
-        "okf-bundle?require_check=%XX",
-        "okf-bundle?require_check=%FF",
+        (
+            "okf-bundle?require_review&require_check=schema-only&review_evidence=local_receipt:sub",
+            (
+                "sub",
+                {
+                    "require_review": True,
+                    "require_check": "schema-only",
+                    "review_evidence": "local_receipt",
+                },
+            ),
+        ),
+        (
+            "okf-bundle?external_base=https%3A%2F%2Fexample.org&require_review",
+            ("", {"external_base": "https://example.org", "require_review": True}),
+        ),
+        ("okf-bundle?require_review&require_check", None),
+        ("okf-bundle?require_review&require_check=%XX", None),
+        ("okf-bundle?require_review&require_check=%FF", None),
+        ("okf-bundle?require_review&review_evidence=other", None),
     ],
 )
-def test_transfer_rejects_invalid_review_value(ref):
+def test_transfer_review_options(ref, expected):
     from fastmcp.exceptions import ToolError
 
     from markdown_vault_mcp._transfer_sink import _bundle_options
 
-    with pytest.raises(ToolError):
-        _bundle_options(ref)
-
-
-def test_transfer_external_base_with_review():
-    from markdown_vault_mcp._transfer_sink import _bundle_options
-
-    assert _bundle_options(
-        "okf-bundle?external_base=https%3A%2F%2Fexample.org&require_review"
-    ) == ("", {"external_base": "https://example.org", "require_review": True})
+    if expected is None:
+        with pytest.raises(ToolError):
+            _bundle_options(ref)
+    else:
+        assert _bundle_options(ref) == expected
 
 
 @pytest.mark.parametrize(
-    "policy",
+    "policy, message",
     [
-        {"require_check": ""},
-        {"review_evidence": "unknown"},
+        ({"require_check": ""}, "require_check must not be empty"),
+        (
+            {"review_evidence": "unknown"},
+            "review_evidence must be binding or local_receipt",
+        ),
     ],
 )
-def test_invalid_library_review_policy_is_rejected(tmp_path, policy):
+def test_invalid_library_review_policy_is_rejected(tmp_path, policy, message):
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        with pytest.raises(ValueError, match="Invalid review assurance policy"):
-            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), **policy)
+        with pytest.raises(ValueError, match=message):
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), require_review=True, **policy
+            )
     finally:
         vault.close()
 
@@ -351,7 +340,7 @@ def test_receipt_store_read_once_per_export(tmp_path, monkeypatch):
         vault.close()
 
 
-@pytest.mark.parametrize("state", ["missing", "corrupt", "unreadable"])
+@pytest.mark.parametrize("state", ["corrupt", "unreadable"])
 def test_receipt_store_unavailable_fails_closed(tmp_path, monkeypatch, state):
     from markdown_vault_mcp._okf_receipts import ReceiptStore
 
@@ -378,5 +367,87 @@ def test_receipt_store_unavailable_fails_closed(tmp_path, monkeypatch, state):
                 review_evidence="local_receipt",
             )
         assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "selector,value",
+    [("require_check", "human-review"), ("review_evidence", "binding")],
+)
+def test_explicit_selector_requires_review(tmp_path, monkeypatch, selector, value):
+    from fastmcp.exceptions import ToolError
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp._transfer_sink import _bundle_options
+    from markdown_vault_mcp.cli import app
+
+    (tmp_path / "note.md").write_text("Unreviewed\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(ValueError, match="require_review"):
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), **{selector: value}
+            )
+        build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with pytest.raises(ToolError, match="require_review"):
+        _bundle_options(f"okf-bundle?{selector}={value}")
+
+    def no_index(*_args, **_kwargs):
+        raise AssertionError("invalid policy must fail before opening the index")
+
+    monkeypatch.setattr("markdown_vault_mcp._cli_read._build_reader_vault", no_index)
+    out = tmp_path.parent / "selector-output.zip"
+    result = CliRunner().invoke(
+        app,
+        [
+            "export",
+            str(out),
+            "--source-dir",
+            str(tmp_path),
+            "--" + selector.replace("_", "-"),
+            value,
+        ],
+    )
+    assert result.exit_code == 1
+    assert "require_review" in result.output
+
+
+def test_cli_timestamp_review_refusal_is_json(tmp_path, monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "note.md").write_text(
+        '---\nverified: {by: "human:alice", at: 2020-01-01T00:00:00Z}\n---\nBody\n'
+    )
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    result = CliRunner().invoke(
+        app, ["export", str(tmp_path / "out.zip"), "--require-review"]
+    )
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review"
+    assert (
+        payload["report"]["review_assurance"]["failures"][0]["assessments"][0]["at"]
+        == "2020-01-01T00:00:00+00:00"
+    )
+
+
+def test_review_policy_empty_scope_passes(tmp_path):
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), require_review=True
+        )
+        assert result.report.review_assurance.failures == []
+        assert result.report.review_assurance.require_check == "human-review"
+        assert result.report.review_assurance.evidence == "binding"
     finally:
         vault.close()

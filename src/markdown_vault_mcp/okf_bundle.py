@@ -273,6 +273,24 @@ def _root_declaration(vault: Vault, snapshot: GitExportSnapshot) -> str:
     return ""
 
 
+def _review_policy(
+    require_review: bool, require_check: str | None, review_evidence: str | None
+) -> tuple[bool, str, str]:
+    """Validate review options and return effective publication policy."""
+    if not require_review and (
+        require_check is not None or review_evidence is not None
+    ):
+        raise ValueError("Pass require_review or remove review selectors")
+    if require_check is not None and not require_check:
+        raise ValueError("require_check must not be empty")
+    if review_evidence is not None and review_evidence not in {
+        "binding",
+        "local_receipt",
+    }:
+        raise ValueError("review_evidence must be binding or local_receipt")
+    return require_review, require_check or "human-review", review_evidence or "binding"
+
+
 # The public API keeps its established explicit options.
 def build_okf_bundle(  # noqa: PLR0913, RUF100
     vault: Vault,
@@ -284,8 +302,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     external_base: str | None = None,
     strict: bool = False,
     require_review: bool = False,
-    require_check: str = "human-review",
-    review_evidence: str = "binding",
+    require_check: str | None = None,
+    review_evidence: str | None = None,
 ) -> OkfBundleResult:
     """Export the selected inventory and assess the final OKF v0.2 artifact.
 
@@ -299,8 +317,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             for body and frontmatter destinations outside the selection.
         strict: Refuse publication unless the completed report meets the contract.
         require_review: Require a matching review for every exported concept.
-        require_check: Required review check kind.
-        review_evidence: Accept supplied bindings or require a local receipt.
+        require_check: Check kind; requires review, defaults to human-review.
+        review_evidence: Requires review; binding by default or local_receipt.
 
     Returns:
         Archive bytes, counts, and an artifact conformance report.
@@ -314,8 +332,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             snapshot cannot be read.
         OSError: If a selected file cannot be read.
     """
-    if not require_check or review_evidence not in {"binding", "local_receipt"}:
-        raise ValueError("Invalid review assurance policy")
+    policy = _review_policy(require_review, require_check, review_evidence)
     snapshot = git_export_snapshot(vault.source_dir)
     with closing(snapshot) if snapshot is not None else nullcontext():
         result = _build_okf_bundle(
@@ -323,10 +340,10 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             config,
             snapshot,
             (folder, include_index_excluded, include_hidden, external_base),
-            (require_review, require_check, review_evidence),
+            policy,
         )
     report = result.report
-    if report.review_assurance.required and report.review_assurance.failures:
+    if report.review_assurance.failures:
         raise PublicationRefused(report)
     if strict and (
         report.verdict != "conformant"
@@ -584,7 +601,7 @@ def _assess_export_review(
     assessments = []
     try:
         content = decode_utf8(raw)
-        metadata = parse_frontmatter(content.removeprefix("\ufeff")).metadata
+        metadata = parse_frontmatter(content).metadata
         assessments = assess_reviews(
             metadata,
             concept_snapshot(content),

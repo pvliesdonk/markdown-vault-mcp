@@ -4,6 +4,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from markdown_vault_mcp.fts_index import _json_default
+
 Verdict = Literal["conformant", "nonconformant", "incomplete"]
 
 
@@ -92,7 +94,7 @@ class OkfExportReport:
 
 
 class PublicationRefused(ValueError):
-    """Strict publication failed, with the completed artifact report."""
+    """Strict or review publication failed, with the completed artifact report."""
 
     def __init__(self, report: OkfExportReport) -> None:
         """Retain the report explaining why publication was refused.
@@ -117,23 +119,16 @@ def refusal_reason(exc: PublicationRefused | ExportCollisionError) -> str:
     Returns:
         The reason used in both logs and refusal documents.
     """
-    strict = isinstance(exc, PublicationRefused)
-    return (
-        "review"
-        if isinstance(exc, PublicationRefused)
-        and exc.report.review_assurance.required
-        and exc.report.review_assurance.failures
-        else "strict"
-        if strict
-        else "collision"
-    )
+    if isinstance(exc, PublicationRefused):
+        return "review" if exc.report.review_assurance.failures else "strict"
+    return "collision"
 
 
 def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
     """Serialize a publication refusal for a downloader or CLI caller.
 
     Args:
-        exc: The strict or collision refusal.
+        exc: A strict, review or collision refusal.
 
     Returns:
         UTF-8 JSON; collision reports are null because no artifact was audited.
@@ -148,4 +143,5 @@ def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
             else None,
         },
         sort_keys=True,
+        default=_json_default,
     ).encode("utf-8")
