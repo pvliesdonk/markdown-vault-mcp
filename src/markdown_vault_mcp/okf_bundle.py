@@ -14,10 +14,9 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _parsed
-from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
-from markdown_vault_mcp.git.query import _LFS_POINTER_PREFIX
-from markdown_vault_mcp.managers.git_query import (
-    GitSnapshotUnavailableError,
+from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
+from markdown_vault_mcp.git.query import (
+    _LFS_POINTER_PREFIX,
     git_export_snapshot,
     git_snapshot_changes,
 )
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
     from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.managers.git_query import GitExportSnapshot
+    from markdown_vault_mcp.git.query import GitExportSnapshot
     from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -184,33 +183,21 @@ def _note_bytes(
 @dataclass
 class _SnapshotLinks:
     members: set[str]
-    names: dict[str, list[str]]
     aliases: dict[str, list[str]]
 
 
 def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _SnapshotLinks:
     aliases: dict[str, list[str]] = {}
-    names: dict[str, list[str]] = {}
     members: set[str] = set()
     for path, raw in notes:
         members.add(path)
-        names.setdefault(path.rpartition("/")[2], []).append(path)
         try:
             metadata = parse_frontmatter(decode_utf8(raw)).metadata
         except (UnicodeError, ValueError):
             continue
-        value = metadata.get("aliases") or metadata.get("alias")
-        values = (
-            [value]
-            if isinstance(value, str)
-            else value
-            if isinstance(value, list)
-            else []
-        )
-        for alias in values:
-            if isinstance(alias, (str, int, float)) and str(alias).strip():
-                aliases.setdefault(str(alias).strip().lower(), []).append(path)
-    return _SnapshotLinks(members, names, aliases)
+        for alias in normalized_aliases(metadata):
+            aliases.setdefault(alias.lower(), []).append(path)
+    return _SnapshotLinks(members, aliases)
 
 
 def _snapshot_outlinks(
@@ -228,17 +215,16 @@ def _snapshot_outlinks(
             not link.raw_target.startswith(("./", "../"))
             and target not in index.members
         ):
-            choices = [
-                path
-                for path in index.names.get(target.rpartition("/")[2], [])
-                if path.endswith("/" + target)
-            ]
-            if not choices:
-                choices = index.aliases.get(
-                    link.raw_target.split("#", 1)[0].lower(), []
+            target = (
+                resolve_wikilink_target(
+                    link.raw_target.split("#", 1)[0],
+                    source,
+                    index.members,
+                    index.members,
+                    index.aliases,
                 )
-            if choices:
-                target = _pick_wikilink_candidate(choices, source)
+                or target
+            )
         result.append(
             OutlinkInfo(
                 target,
@@ -314,7 +300,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
-                raise GitSnapshotUnavailableError(
+                raise ValueError(
                     f"Git submodule {path} is unavailable; run git submodule update --init and retry."
                 )
     report = OkfExportReport()
@@ -351,7 +337,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     continue
                 if item.state in {"unavailable", "missing"}:
                     if item.reason == "submodule":
-                        raise GitSnapshotUnavailableError(
+                        raise ValueError(
                             f"Git submodule {item.path} is unavailable; run git submodule update --init and retry."
                         )
                     raise OSError(
@@ -434,7 +420,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             if snapshot is None:
                 digests[item.path] = hashlib.sha256(raw).digest()
             elif raw.startswith(_LFS_POINTER_PREFIX.encode()):
-                raise GitSnapshotUnavailableError(
+                raise ValueError(
                     "Git LFS pointer cannot be exported; use a commit containing the file bytes."
                 )
             name = item.path[len(folder) + 1 :] if folder else item.path
@@ -472,7 +458,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 ):
                     child_changed, child_flagged = git_snapshot_changes(child, commit)
             except (OSError, ValueError) as exc:
-                raise GitSnapshotUnavailableError(
+                raise ValueError(
                     f"Git submodule {prefix} is unavailable; run git submodule update --init and retry."
                 ) from exc
             changed.update(prefix + "/" + path for path in child_changed)

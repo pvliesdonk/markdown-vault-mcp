@@ -214,7 +214,7 @@ def test_git_and_live_export_resolve_links_equally(tmp_path: Path, monkeypatch) 
 
 
 def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) -> None:
-    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -236,7 +236,7 @@ def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) 
     snapshot = git_export_snapshot(vault_root)
     assert snapshot is not None
     assert snapshot.read(name) == b"committed\x00bytes"
-    from markdown_vault_mcp.managers.git_query import git_snapshot_changes
+    from markdown_vault_mcp.git.query import git_snapshot_changes
 
     assert git_snapshot_changes(vault_root, snapshot.commit)[0] == {
         name,
@@ -250,7 +250,7 @@ def test_git_query_keeps_literal_names_and_subdirectory_changes(tmp_path: Path) 
 def test_missing_git_executable_keeps_plain_vault_usable(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from markdown_vault_mcp.managers import git_query
+    from markdown_vault_mcp.git import query as git_query
 
     def no_git(*_args, **_kwargs):
         raise FileNotFoundError("git")
@@ -300,23 +300,17 @@ def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
 
 
 def test_git_unborn_repository_refuses_export(tmp_path: Path) -> None:
-    from markdown_vault_mcp.managers.git_query import (
-        GitSnapshotUnavailableError,
-        git_export_snapshot,
-    )
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     _git(tmp_path, "init", "-q")
-    with pytest.raises(GitSnapshotUnavailableError, match="git commit"):
+    with pytest.raises(ValueError, match="git commit"):
         git_export_snapshot(tmp_path)
 
 
 def test_git_dubious_ownership_refuses_with_actionable_reason(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from markdown_vault_mcp.managers.git_query import (
-        GitSnapshotUnavailableError,
-        git_export_snapshot,
-    )
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -325,11 +319,9 @@ def test_git_dubious_ownership_refuses_with_actionable_reason(
     _git(tmp_path, "add", "note.md")
     _git(tmp_path, "commit", "-qm", "initial")
     monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
-    with pytest.raises(
-        GitSnapshotUnavailableError, match=r"(?s)dubious ownership.*safe\.directory"
-    ):
+    with pytest.raises(ValueError, match=r"(?s)dubious ownership.*safe\.directory"):
         git_export_snapshot(tmp_path)
-    from markdown_vault_mcp.managers import git_query
+    from markdown_vault_mcp.git import query as git_query
 
     monkeypatch.setattr(
         git_query,
@@ -340,12 +332,12 @@ def test_git_dubious_ownership_refuses_with_actionable_reason(
     )
     with pytest.raises(ValueError, match="unexpected discovery failure") as error:
         git_export_snapshot(tmp_path)
-    assert not isinstance(error.value, GitSnapshotUnavailableError)
+    assert type(error.value) is ValueError
 
 
 def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> None:
     from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
-    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -362,7 +354,7 @@ def test_git_snapshot_inventory_paginates_and_reports_scope(tmp_path: Path) -> N
     assert snapshot is not None
     from dataclasses import replace
 
-    from markdown_vault_mcp.managers.git_query import git_snapshot_changes
+    from markdown_vault_mcp.git.query import git_snapshot_changes
 
     changed, flagged = git_snapshot_changes(tmp_path, snapshot.commit)
     snapshot = replace(snapshot, changed=changed, flagged=flagged)
@@ -412,7 +404,7 @@ def test_git_snapshot_parses_aliases_once(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_git_snapshot_reuses_and_closes_batch_reader(tmp_path: Path) -> None:
-    from markdown_vault_mcp.managers import git_query
+    from markdown_vault_mcp.git import query as git_query
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -437,47 +429,11 @@ def test_git_snapshot_reuses_and_closes_batch_reader(tmp_path: Path) -> None:
     assert process.poll() is not None
 
 
-def test_git_postpack_flag_comparison_closes_reader(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from markdown_vault_mcp.managers import git_query
-
-    original = git_query.GitExportSnapshot._read_blob
-    readers = []
-
-    def collect(self, oid, root):
-        result = original(self, oid, root)
-        readers.append(self._process[root])
-        return result
-
-    monkeypatch.setattr(git_query.GitExportSnapshot, "_read_blob", collect)
-    # Only the post-pack flag comparison reads this omitted oversized note.
-    root = tmp_path / "only"
-    root.mkdir()
-    _git(root, "init", "-q")
-    _git(root, "config", "user.name", "Fixture")
-    _git(root, "config", "user.email", "fixture@example.invalid")
-    hidden = root / ".hidden.md"
-    hidden.write_bytes(b"a" * 70000)
-    _git(root, "add", ".hidden.md")
-    _git(root, "commit", "-qm", "initial")
-    _git(root, "update-index", "--assume-unchanged", ".hidden.md")
-    hidden.write_bytes(b"b" * 70000)
-    vault = Vault(source_dir=root, settings=VaultSettings())
-    try:
-        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=root))
-    finally:
-        vault.close()
-    assert result.report.snapshot.uncommitted_paths == [".hidden.md"]
-    assert len(readers) >= 1
-    assert readers[0].poll() is not None
-
-
 def test_git_inventory_rejects_large_note_without_reading_blob(
     tmp_path: Path, monkeypatch
 ) -> None:
     from markdown_vault_mcp.bundle_inventory import BundleInspector, BundleTreeRequest
-    from markdown_vault_mcp.managers import git_query
+    from markdown_vault_mcp.git import query as git_query
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -515,9 +471,11 @@ def test_git_large_source_and_target_resolve_links(tmp_path: Path, case: str) ->
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
     bad = b"\xff\n" if "utf8" in case else b"---\na: [unterminated\n---\n"
     source = (bad if case.endswith("source") else b"") + b"[[target]]\n" + b"x" * 70000
-    target = (bad if case.endswith("target") else b"") + b"y" * 70000
+    target = (
+        bad if case.endswith("target") else b"---\naliases: [BigAlias]\n---\n"
+    ) + b"y" * 70000
     (tmp_path / "source.md").write_bytes(source)
-    (tmp_path / "small.md").write_text("[[target]]\n")
+    (tmp_path / "small.md").write_text("[[target]]\n[[BigAlias]]\n")
     (tmp_path / "target.md").write_bytes(target)
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "initial")
@@ -532,7 +490,9 @@ def test_git_large_source_and_target_resolve_links(tmp_path: Path, case: str) ->
         else:
             assert archive.read("source.md") == source
         assert archive.read("small.md") == (
-            b"[[target]]\n" if case.endswith("target") else b"[target](/target.md)\n"
+            b"[[target]]\n[[BigAlias]]\n"
+            if case.endswith("target")
+            else b"[target](/target.md)\n[BigAlias](/target.md)\n"
         )
 
     if case != "valid":
@@ -596,6 +556,68 @@ def test_git_flagged_files_are_checked_safely(
     finally:
         vault.close()
     assert ("note.md" in result.report.snapshot.uncommitted_paths) is expected
+
+
+@pytest.mark.parametrize("flag", ["h", "S", "s"])
+@pytest.mark.parametrize("edited", [False, True])
+@pytest.mark.parametrize("root_kind", ["root", "nested", "child"])
+def test_git_flagged_crlf_uses_git_normalization(
+    tmp_path: Path, flag: str, edited: bool, root_kind: str
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "Fixture")
+    _git(repo, "config", "user.email", "fixture@example.invalid")
+    (repo / ".gitattributes").write_text("*.md text eol=crlf\n")
+    folder = repo / "vault" if root_kind == "nested" else repo
+    folder.mkdir(exist_ok=True)
+    (folder / "note.md").write_bytes(b"original\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "initial")
+    if root_kind == "child":
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        _git(parent, "init", "-q")
+        _git(parent, "config", "user.name", "Fixture")
+        _git(parent, "config", "user.email", "fixture@example.invalid")
+        _git(
+            parent,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            str(repo),
+            "vendor",
+        )
+        _git(parent, "commit", "-qm", "parent")
+        folder = parent / "vendor"
+        vault_root = parent
+        repo = folder
+    else:
+        vault_root = folder
+    note = folder / "note.md"
+    note.write_bytes(b"changed\r\n" if edited else b"original\r\n")
+    note_path = "vault/note.md" if root_kind == "nested" else "note.md"
+    _git(
+        repo,
+        "update-index",
+        "--assume-unchanged" if flag == "h" else "--skip-worktree",
+        note_path,
+    )
+    if flag == "s":
+        _git(repo, "update-index", "--assume-unchanged", note_path)
+    assert _git(repo, "ls-files", "-v", "--", note_path).startswith(flag + " ")
+    vault = Vault(source_dir=vault_root, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=vault_root)
+        )
+    finally:
+        vault.close()
+    path = "vendor/note.md" if root_kind == "child" else "note.md"
+    assert result.report.snapshot.uncommitted_paths == ([path] if edited else [])
 
 
 @pytest.mark.parametrize("name", ["note.md", "image.png"])
@@ -663,7 +685,7 @@ def test_git_query_child_readers_close_and_refuse_missing_blob(tmp_path: Path) -
     )
     _git(parent, "commit", "-qm", "parent")
     populated = parent / "vendor/sub"
-    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     snapshot = git_export_snapshot(parent)
     assert snapshot is not None
@@ -672,11 +694,10 @@ def test_git_query_child_readers_close_and_refuse_missing_blob(tmp_path: Path) -
         assert snapshot.read("vendor/sub/note.md") == b"recorded"
         processes = list(snapshot._process.values())
         assert len(processes) == 2
-        from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
 
         snapshot.entries["vendor/sub/missing.md"] = ("100644", "f" * 40)
         snapshot.repos["vendor/sub/missing.md"] = populated
-        with pytest.raises(GitSnapshotUnavailableError, match="submodule"):
+        with pytest.raises(ValueError, match="submodule"):
             snapshot.read("vendor/sub/missing.md")
     finally:
         snapshot.close()
@@ -721,6 +742,7 @@ def test_git_nested_submodules_use_recorded_child_commits(
         _git(repo, "config", "user.name", "Fixture")
         _git(repo, "config", "user.email", "fixture@example.invalid")
     (child / "note.md").write_text("child commit")
+    (child / ".gitignore").write_text("ignored.md\n")
     (leaf / "note.md").write_text("leaf commit")
     _git(leaf, "add", ".")
     _git(leaf, "commit", "-qm", "leaf")
@@ -734,7 +756,7 @@ def test_git_nested_submodules_use_recorded_child_commits(
         str(leaf),
         "nested",
     )
-    _git(child, "add", "note.md")
+    _git(child, "add", "note.md", ".gitignore")
     _git(child, "commit", "-qm", "child")
     _git(
         parent,
@@ -764,6 +786,7 @@ def test_git_nested_submodules_use_recorded_child_commits(
     _git(populated, "add", "note.md")
     _git(populated, "commit", "-qm", "later child")
     (populated / "new.md").write_text("untracked")
+    (populated / "ignored.md").write_text("ignored")
     (parent / "vendor/nested/note.md").write_text("uncommitted")
     if root_kind == "relative":
         monkeypatch.chdir(tmp_path)
@@ -787,6 +810,7 @@ def test_git_nested_submodules_use_recorded_child_commits(
         "vendor/nested/note.md",
         "vendor/note.md",
         "vendor/new.md",
+        "vendor/ignored.md",
     }
 
 
@@ -795,7 +819,6 @@ def test_git_nested_submodules_use_recorded_child_commits(
 def test_git_unavailable_submodule_refuses_with_guidance(
     tmp_path: Path, scope: str, symlink: bool, monkeypatch
 ) -> None:
-    from markdown_vault_mcp.managers.git_query import GitSnapshotUnavailableError
 
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
@@ -809,7 +832,7 @@ def test_git_unavailable_submodule_refuses_with_guidance(
     )
     _git(tmp_path, "commit", "-qm", "gitlink")
     if symlink:
-        from markdown_vault_mcp.managers import git_query
+        from markdown_vault_mcp.git import query as git_query
 
         (tmp_path / "vendor").mkdir()
         (tmp_path / "vendor/sub").symlink_to(tmp_path, target_is_directory=True)
@@ -824,9 +847,7 @@ def test_git_unavailable_submodule_refuses_with_guidance(
         (tmp_path / "vendor/sub").mkdir(parents=True)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        with pytest.raises(
-            GitSnapshotUnavailableError, match="git submodule update --init"
-        ):
+        with pytest.raises(ValueError, match="git submodule update --init"):
             okf_bundle.build_okf_bundle(
                 vault, ProjectConfig(source_dir=tmp_path), folder=scope
             )
@@ -873,13 +894,7 @@ def test_submodule_disappearing_respects_scope(
     vault = Vault(source_dir=parent, settings=VaultSettings())
     try:
         if scope == "vendor":
-            from markdown_vault_mcp.managers.git_query import (
-                GitSnapshotUnavailableError,
-            )
-
-            with pytest.raises(
-                GitSnapshotUnavailableError, match="git submodule update --init"
-            ):
+            with pytest.raises(ValueError, match="git submodule update --init"):
                 okf_bundle.build_okf_bundle(
                     vault, ProjectConfig(source_dir=parent), folder=scope
                 )
@@ -925,6 +940,7 @@ def test_git_gitlink_change_is_reported(
     _git(worktree, "config", "user.name", "Fixture")
     _git(worktree, "config", "user.email", "fixture@example.invalid")
     original = _git(worktree, "rev-parse", "HEAD")
+    _git(parent, "config", "submodule.vendor/sub.ignore", "all")
     if change == "staged":
         (worktree / "note.md").write_text("new")
         _git(worktree, "add", "note.md")
@@ -949,7 +965,7 @@ def test_git_gitlink_change_is_reported(
 
 
 def test_gitlink_depth_is_bounded_before_discovery(tmp_path: Path, monkeypatch) -> None:
-    from markdown_vault_mcp.managers import git_query
+    from markdown_vault_mcp.git import query as git_query
 
     path = "/".join(["nested"] * 33)
     child = tmp_path / path

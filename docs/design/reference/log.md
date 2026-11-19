@@ -1,5 +1,15 @@
 # Reference research log
 
+## 2026-11-18
+
+- Extended [Git history and revision queries](git-history-queries.md) for the
+  OKF export snapshot (H5, #1448): read the git 2.56.1 documentation for
+  `hash-object --path`, gitattributes, `update-index` flags, `ls-files -v`,
+  `diff --ignore-submodules` and gitmodules. Observed `hash-object --path
+  --stdin` normalization, flagged files hidden from `diff`, and a staged
+  gitlink hidden under `ignore=all`. Other claims, `generated` and the
+  refute review dates unchanged.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the

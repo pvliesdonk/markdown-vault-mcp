@@ -62,7 +62,7 @@ class OkfExportReport:
     Transformed paths, dependency sources, optional metadata, broken links,
     format findings and unchecked checks use final archive paths. Inventory
     observations retain vault-relative paths. Findings and unchecked checks
-    determine the format verdict.
+    determine the format verdict. Snapshot records the export consistency basis.
     """
 
     transformed: list[str] = field(default_factory=list)

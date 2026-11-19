@@ -2,7 +2,7 @@
 type: Reference
 title: Git history and revision queries
 description: "git command-line behaviour that the history and revision-read code in src/markdown_vault_mcp/git/ depends on: log -z and --name-status framing, quotePath, pretty-format placeholders, --follow and rename detection, --since/--until date semantics, ls-tree -l, symlink blobs and LFS pointers"
-subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; git 2.56.0 release notes; CPython 3.14 subprocess docs/source; newline capture observed on Python 3.12; observed on git 2.43.0, for the ref-verification and error-exit claims 2.55.0, and for the merge-time-rename `--follow` claim 2.55.0 against 2.56.0"
+subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; push/commit/log/diff/config say 2.55.0); git source at master and v2.43.0; git 2.56.0 release notes; CPython 3.14 subprocess docs/source; newline capture observed on Python 3.12; observed on git 2.43.0, for the ref-verification and error-exit claims 2.55.0, and for the merge-time-rename `--follow` claim 2.55.0 against 2.56.0; the export-snapshot working-tree comparison claims read in the git 2.56.1 documentation as installed and observed on git 2.56.1"
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
@@ -63,6 +63,30 @@ sources:
     title: Git 2.56.0 release notes (Documentation/RelNotes/2.56.0.adoc)
     resource: https://raw.githubusercontent.com/git/git/master/Documentation/RelNotes/2.56.0.adoc
     accessed: 2026-10-28
+  - id: git-hash-object
+    title: git-hash-object(1) (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/git-hash-object
+    accessed: 2026-11-18
+  - id: gitattributes
+    title: gitattributes(5) (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/gitattributes
+    accessed: 2026-11-18
+  - id: git-update-index
+    title: git-update-index(1) (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/git-update-index
+    accessed: 2026-11-18
+  - id: git-ls-files
+    title: git-ls-files(1) (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/git-ls-files
+    accessed: 2026-11-18
+  - id: gitmodules
+    title: gitmodules(5) (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/gitmodules
+    accessed: 2026-11-18
+  - id: git-diff-submodules
+    title: git-diff(1), --ignore-submodules (git 2.56.1 documentation as installed)
+    resource: https://git-scm.com/docs/git-diff
+    accessed: 2026-11-18
 ---
 
 # Git history and revision queries
@@ -78,13 +102,18 @@ repositories under `/tmp/gitref/`.
 
 - Covers: `log -z`, `--name-status`, `--follow`, `--find-renames`, `--since`;
   `ls-tree -l`, LFS pointers, symlink blobs.
-- Does not cover: LFS beyond the pointer, submodules. Push outcomes,
+- Also covers, for the OKF export snapshot comparison against a pinned commit
+  (`git_snapshot_changes`, `_git_snapshot_hash` in `query.py`): how
+  `hash-object --path --stdin` normalizes working bytes, what index flags hide
+  from `diff`, and what `diff --ignore-submodules=none` overrides.
+- Does not cover: LFS beyond the pointer, other submodule behaviour. Push outcomes,
   credentials, URL forms and repository discovery are on [Git push,
   credentials and remotes](/git-push-and-remotes.md); pathspecs, staging,
   committing, identity and rebase state are on [Git staging, commits and
   rebase state](/git-staging-and-commits.md).
 - Depended on by: `query.py`; `docs/design/design.md` § "Write + Git
-  Integration", the "Git history queries" paragraph.
+  Integration", the "Git history queries" paragraph; the OKF export snapshot
+  in `src/markdown_vault_mcp/okf_bundle.py`.
 
 ## Claims
 
@@ -113,6 +142,13 @@ repositories under `/tmp/gitref/`.
 - `ls-tree -l -z <rev> -- <pathspec>` prints `<mode> SP <type> SP <object> SP+ <size> TAB <path>` NUL-terminated (`-` size for a tree); a symlink is mode `120000`, type `blob`, its blob holding the link target; an absent path prints nothing, exit 0; a submodule entry is mode `160000`, type `commit`, size `-`, and a gitlink later replaced by a file reads as a `T` record in `log --name-status`; `cat-file blob <sha>` streams raw bytes. [source: git-ls-tree] (`-l`, default format) [observed: git 2.43.0; the gitlink on 2.55.0] [pins: tests/test_git_revision.py::TestRefusesRatherThanGuess::test_note_that_was_a_symlink_at_that_revision, tests/test_git_revision_faults.py::test_note_never_at_that_revision_is_a_refusal, tests/test_git_revision_faults.py::test_submodule_at_that_revision_is_a_refusal]
 - An LFS pointer is UTF-8 text starting exactly `version https://git-lfs.github.com/spec/v1` (pre-release: `https://hawser.github.com/spec/v1`), then `oid sha256:<hex>`, `size <bytes>`, under 1024 bytes; the version is compared as a plain string. [source: lfs-spec] [pins: tests/test_git_revision.py::TestReviewFindings::test_git_lfs_pointer_is_refused]
 
+### Export snapshot comparison (`query.py`: `git_snapshot_changes`, `_git_snapshot_hash`)
+
+- `hash-object --path=<file> --stdin` hashes standard input "as if it were located at the given path": the path decides which Git filters apply before hashing, so the id can differ from the id of the raw bytes. Those filters are the attributes mechanism's, including end-of-line conversion (`text`, `eol`) and a `filter` driver's `clean` command. Without `--path`, input read from standard input is hashed as is ("always implied"); without `-w` nothing is written to the object database. Comparing the printed id with a committed blob id therefore compares working bytes with what `git add` would store, so a clean file with `*.md text eol=crlf` and CRLF working bytes matches its LF blob, which a byte comparison would call modified. [source: git-hash-object] (`--path`, `--no-filters`, `-w`) [source: gitattributes] (`text`, End-of-line conversion, `filter`) [observed: git 2.56.1, `.gitattributes` `*.md text eol=crlf`, LF blob committed, CRLF bytes on stdin: `--path=n.md` printed the blob id, plain `--stdin` a different one, and a changed body under `--path` a different one, 2026-11-18] [pins: tests/test_okf_export_snapshot.py::test_git_flagged_crlf_uses_git_normalization]
+- The `--path` argument is the file's name as the repository sees it, run with the repository root as the working directory of the command (`git -C <root>`): the pin covers a vault at the repository root, a vault in a subdirectory and a submodule child, each passing the name relative to its own repository. The documentation says only "the given path" without naming what it is relative to. [source: git-hash-object] (`--path`) [observed: the tests' three layouts on git 2.56.1] [pins: tests/test_okf_export_snapshot.py::test_git_flagged_crlf_uses_git_normalization]
+- A path marked `--assume-unchanged` lets Git "assume that the working tree file matches what is recorded in the index"; a `--skip-worktree` path is treated "as unchanged when it is not present in the working directory". `git diff HEAD` therefore lists neither an edit to a flagged file nor the deletion of a skip-worktree file; `ls-files -v` marks `assume-unchanged` files with a lowercase tag and skip-worktree with `S`, and a path carrying both bits prints `s`. [source: git-update-index] (`--assume-unchanged`, Skip-worktree bit) [source: git-ls-files] (`-t`, `-v`) [observed: git 2.56.1, committed notes flagged `--assume-unchanged`, `--skip-worktree` and both bits (set by separate `update-index` calls, in either order), each appended to; `diff --name-only HEAD` printed nothing, also after deleting the skip-worktree one; `ls-files -v` printed `h`, `S`, `s` and `-t` `H`, `S`, `S`; one call given both `--skip-worktree --assume-unchanged` set only the assume-unchanged bit (`h`, flags `8000` in `ls-files --debug`), 2026-11-18] [pins: tests/test_okf_export_snapshot.py::test_git_flagged_files_are_checked_safely]
+- `diff --ignore-submodules=none` "will consider the submodule modified when it either contains untracked or modified files or its `HEAD` differs from the commit recorded in the superproject and can be used to override any settings of the `ignore` option in git-config or gitmodules"; `submodule.<name>.ignore=all` otherwise means the submodule "will never be considered modified" by `status`, `update-index`, `diff` and `log`, while `status` and `commit` still show it once staged. A staged gitlink (a new child commit added to the index) whose child checkout has been moved back to the recorded commit is therefore absent from `diff --cached --name-only <commit>` under `ignore=all` and listed (as the submodule path) when `--ignore-submodules=none` is given. [source: git-diff-submodules] (`--ignore-submodules`) [source: gitmodules] (`submodule.<name>.ignore`) [observed: git 2.56.1, `.gitmodules` `submodule.vendor.ignore=all`, empty child commit staged, child reset to the recorded commit: `diff --cached --name-only` printed nothing, with `--ignore-submodules=none` printed `vendor`, 2026-11-18] [pins: tests/test_okf_export_snapshot.py::test_git_gitlink_change_is_reported]
+
 ## Where this project departs from the subject
 
 By function; the design anchor is `docs/design/design.md` § "Write + Git Integration" unless stated.
@@ -123,4 +159,5 @@ By function; the design anchor is `docs/design/design.md` § "Write + Git Integr
 
 ## Not covered
 
+- The export snapshot claims were observed on git 2.56.1 only. The effect of a `clean` filter driver (as opposed to `eol`) on `hash-object --path` was not checked, nor was any claim on another version.
 - No test covers a diff over `diff.renameLimit`, `--follow` on a directory, or the author-vs-committer date boundary.

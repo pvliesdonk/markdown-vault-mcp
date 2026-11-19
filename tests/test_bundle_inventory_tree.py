@@ -259,7 +259,7 @@ def test_reader_tree_before_index(tmp_path):
 def test_unavailable_policy_marks_enumeration(tmp_path, monkeypatch, use_snapshot):
     import subprocess
 
-    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     bundle = tmp_path / "bundle"
     bundle.mkdir()
@@ -429,7 +429,7 @@ def test_cursor_stat_race(tmp_path, monkeypatch):
 def test_git_snapshot_nonregular_modes_are_unavailable(tmp_path, kind):
     import subprocess
 
-    from markdown_vault_mcp.managers.git_query import git_export_snapshot
+    from markdown_vault_mcp.git.query import git_export_snapshot
 
     def git(*args):
         return subprocess.run(

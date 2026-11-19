@@ -12,11 +12,8 @@ with no back-reference to :class:`Vault`. Sibling to
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -31,15 +28,11 @@ from markdown_vault_mcp.utils import (
     validate_history_dir,
     validate_history_path,
 )
-from markdown_vault_mcp.utils.fs import (
-    is_directory,
-    is_regular_file,
-    open_directory_nofollow,
-    path_exists,
-)
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
+    from pathlib import Path
 
     from markdown_vault_mcp.git import HistorySource
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
@@ -54,221 +47,6 @@ logger = logging.getLogger(__name__)
 #: there (#1284).  The check exists to keep caller input out of the git argv,
 #: not to prove the object exists — git reports an unknown ref itself.
 _SHA_RE = r"[0-9a-f]{4,64}"
-
-
-class GitSnapshotUnavailableError(ValueError):
-    """The selected Git snapshot cannot be exported as vault content."""
-
-
-@dataclass(frozen=True)
-class GitExportSnapshot:
-    """Immutable Git tree selected for a vault export."""
-
-    commit: str
-    entries: dict[str, tuple[str, str]]
-    changed: set[str]
-    root: Path
-    sizes: dict[str, int]
-    flagged: dict[str, bool] = field(default_factory=dict)
-    children: dict[str, tuple[Path, str]] = field(default_factory=dict)
-    repos: dict[str, Path] = field(default_factory=dict)
-    _process: dict[Path, subprocess.Popen[bytes]] = field(
-        default_factory=dict, repr=False, compare=False
-    )
-
-    def read(self, path: str) -> bytes:
-        """Read a selected tree blob without interpreting its path as a revision."""
-        oid = self.entries[path][1]
-        root = self.repos.get(path, self.root)
-        try:
-            return self._read_blob(oid, root)
-        except (OSError, ValueError) as exc:
-            if root != self.root:
-                raise GitSnapshotUnavailableError(
-                    "Git submodule object is unavailable; run git submodule update --init and retry."
-                ) from exc
-            raise
-
-    def _read_blob(self, oid: str, root: Path) -> bytes:
-        if root not in self._process:
-            # Only Git-generated object IDs are sent over the batch protocol.
-            self._process[root] = subprocess.Popen(  # noqa: S603, RUF100
-                ["git", "-C", str(root), "cat-file", "--batch"],  # noqa: S607, RUF100
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
-            )
-        process = self._process[root]
-        if process.stdin is None or process.stdout is None:
-            raise OSError("Git batch stream unavailable")
-        process.stdin.write(oid.encode("ascii") + b"\n")
-        process.stdin.flush()
-        header = process.stdout.readline().split()
-        if len(header) != 3 or header[1] != b"blob":
-            raise ValueError("Git snapshot blob unavailable")
-        size = int(header[2])
-        raw = process.stdout.read(size)
-        if len(raw) != size or process.stdout.read(1) != b"\n":
-            raise OSError("Git snapshot blob stream ended early")
-        return raw
-
-    def close(self) -> None:
-        """Close the batch reader, if started."""
-        while self._process:
-            _, process = self._process.popitem()
-            if process.stdin is not None:
-                process.stdin.close()
-            if process.stdout is not None:
-                process.stdout.close()
-            process.wait()
-
-
-def _export_git(
-    root: Path, *args: str, check: bool = True
-) -> subprocess.CompletedProcess[bytes]:
-    # The executable is the configured Git CLI and arguments are never interpreted by a shell.
-    return subprocess.run(  # noqa: S603, RUF100
-        ["git", "-C", str(root), *args],  # noqa: S607, RUF100
-        capture_output=True,
-        check=check,
-        env={
-            **os.environ,
-            "GIT_OPTIONAL_LOCKS": "0",
-            "GIT_NO_LAZY_FETCH": "1",
-            "LC_ALL": "C",
-        },
-    )
-
-
-def _tree_entries(root: Path, commit: str) -> Iterator[tuple[str, str, str, int]]:
-    tree = _export_git(root, "ls-tree", "--full-tree", "-r", "-l", "-z", commit).stdout
-    for record in tree.split(b"\0"):
-        if record:
-            info, name = record.split(b"\t", 1)
-            mode, _kind, oid, size = info.split()
-            yield (
-                os.fsdecode(name),
-                mode.decode("ascii"),
-                oid.decode("ascii"),
-                (int(size) if size != b"-" else 0),
-            )
-
-
-# Discovery distinguishes absent Git, unsafe worktrees, and unavailable commits.
-def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901, RUF100
-    """Pin a vault's Git commit and enumerate its blobs.
-
-    Args:
-        source: Vault root, which may be nested within a repository.
-
-    Returns:
-        Commit and vault-relative tree entries, or None outside a Git worktree.
-
-    Raises:
-        ValueError: If a repository exists but its snapshot cannot be read.
-    """
-    try:
-        probe = _export_git(source, "rev-parse", "--show-toplevel", check=False)
-    except FileNotFoundError as exc:
-        if any(path_exists(parent / ".git") for parent in (source, *source.parents)):
-            raise ValueError("Git is required to export a Git snapshot") from exc
-        return None
-    if probe.returncode:
-        if b"not a git repository" in probe.stderr:
-            return None
-        reason = probe.stderr.decode("utf-8", errors="replace").strip()
-        if "detected dubious ownership in repository" in reason:
-            raise GitSnapshotUnavailableError(
-                f"Cannot locate Git worktree for export: {reason}"
-            )
-        raise ValueError(f"Cannot locate Git worktree for export: {reason}")
-    root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
-    prefix = source.resolve().relative_to(root.resolve()).as_posix()
-    prefix = "" if prefix == "." else prefix + "/"
-    head = _export_git(
-        root, "rev-parse", "--verify", "-q", "HEAD^{commit}", check=False
-    )
-    if head.returncode == 1:
-        raise GitSnapshotUnavailableError(
-            "Git snapshot has no readable commit; if the repository has no commits, create one with git commit."
-        )
-    if head.returncode:
-        reason = head.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(f"Cannot resolve Git snapshot HEAD for export: {reason}")
-    try:
-        commit = head.stdout.decode("ascii").strip()
-        entries: dict[str, tuple[str, str]] = {}
-        sizes: dict[str, int] = {}
-        for path, mode, oid, size in _tree_entries(root, commit):
-            if path.startswith(prefix):
-                entries[path[len(prefix) :]] = (mode, oid)
-                sizes[path[len(prefix) :]] = size
-        snapshot = GitExportSnapshot(commit, entries, set(), root, sizes)
-        _expand_gitlinks(source, snapshot)
-        return snapshot
-    except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
-        raise ValueError("Cannot read Git snapshot for export") from exc
-
-
-def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
-    pending = [path for path, (mode, _) in snapshot.entries.items() if mode == "160000"]
-    while pending:
-        path = pending.pop()
-        oid = snapshot.entries[path][1]
-        parts = tuple(path.split("/"))
-        if len(parts) > 32:
-            continue
-        child = source.joinpath(*parts)
-        try:
-            with open_directory_nofollow(source, parts):
-                pass
-            root = _export_git(child, "rev-parse", "--show-toplevel").stdout.rstrip(
-                b"\n"
-            )
-            if Path(os.fsdecode(root)).resolve() != child.resolve():
-                continue
-            _export_git(child, "cat-file", "-e", f"{oid}^{{commit}}")
-            tree = list(_tree_entries(child, oid))
-        except (OSError, subprocess.SubprocessError):
-            continue
-        del snapshot.entries[path]
-        snapshot.sizes.pop(path)
-        snapshot.children[path] = (child, oid)
-        for name, mode, blob, size in tree:
-            entry_path = path + "/" + name
-            snapshot.entries[entry_path] = (mode, blob)
-            snapshot.sizes[entry_path] = size
-            snapshot.repos[entry_path] = child
-            if mode == "160000":
-                pending.append(entry_path)
-
-
-def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
-    """Observe changed and index-flagged names against a pinned commit."""
-    try:
-        options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
-        diff = _export_git(
-            source, "diff", "--ignore-submodules=dirty", *options, commit, "--", "."
-        ).stdout
-        staged = _export_git(
-            source, "diff", "--cached", *options, commit, "--", "."
-        ).stdout
-        untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
-        flagged_raw = _export_git(source, "ls-files", "-v", "-z", "--", ".").stdout
-        changed = {
-            os.fsdecode(name)
-            for name in (diff + staged + untracked).split(b"\0")
-            if name
-        }
-        flagged = {
-            os.fsdecode(row[2:]): row[:1] in {b"S", b"s"}
-            for row in flagged_raw.split(b"\0")
-            if row[:1] in {b"h", b"S", b"s"}
-        }
-        return changed, flagged
-    except subprocess.SubprocessError as exc:
-        raise ValueError("Cannot read Git snapshot for export") from exc
 
 
 def _reject_nul_date(name: str, value: str | None) -> None:

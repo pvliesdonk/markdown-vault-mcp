@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 import stat
+import sys
 import unicodedata
 from bisect import bisect_left
 from dataclasses import dataclass, replace
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.managers.git_query import GitExportSnapshot
+    from markdown_vault_mcp.git.query import GitExportSnapshot
 
 ScopeState = Literal["inspected", "missing", "unavailable"]
 EntryState = Literal["inspected", "missing", "not_inspected", "unavailable"]
@@ -595,16 +596,19 @@ class BundleInspector:
                 elif path in snapshot.changed:
                     self._check_snapshot_access(self._absolute_source, parts)
                 elif path in snapshot.entries:
-                    size = snapshot.sizes[path]
+                    from markdown_vault_mcp.git.query import _git_snapshot_hash
+
                     raw = self._check_snapshot_access(
-                        self._absolute_source, parts, size + 1
+                        self._absolute_source, parts, sys.maxsize
                     )
                     if raw is None and snapshot.flagged[path]:
                         continue
                     if (
                         raw is not None
-                        and len(raw) == size
-                        and raw == snapshot.read(path)
+                        and _git_snapshot_hash(
+                            snapshot, self._absolute_source, path, raw
+                        )
+                        == snapshot.entries[path][1]
                     ):
                         continue
                 else:

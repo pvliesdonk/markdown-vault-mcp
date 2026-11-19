@@ -39,7 +39,7 @@ src/markdown_vault_mcp/
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
-    git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137); commit-pinned tree and blob reads for OKF export
+    git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
@@ -89,11 +89,11 @@ src/markdown_vault_mcp/
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
-    query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
+    query.py           -- read-only git history/diff/revision and OKF snapshot queries; lock-free functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
-  fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
+  fts_index.py         -- SQLite FTS5 schema, BM25 search, shared wikilink resolution; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
   _path_search.py      -- exact/prefix/substring path tiers and bounded ASCII edit matching over indexed metadata

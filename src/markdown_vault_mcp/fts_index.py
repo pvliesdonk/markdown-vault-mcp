@@ -663,6 +663,56 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
+def normalized_aliases(frontmatter: dict[str, Any]) -> list[str]:
+    """Return unique, trimmed scalar aliases from frontmatter.
+
+    Args:
+        frontmatter: Parsed note metadata.
+
+    Returns:
+        Nonempty aliases in their original order and case.
+    """
+    raw = frontmatter.get("aliases") or frontmatter.get("alias")
+    values = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return list(
+        dict.fromkeys(
+            str(item).strip()
+            for item in values
+            if isinstance(item, (str, int, float)) and str(item).strip()
+        )
+    )
+
+
+def resolve_wikilink_target(
+    stem: str,
+    source: str,
+    doc_paths: Iterable[str],
+    doc_set: set[str],
+    alias_map: dict[str, list[str]],
+) -> str | None:
+    """Resolve a wikilink against candidate document paths and aliases.
+
+    Args:
+        stem: Link target without its fragment.
+        source: Vault-relative path of the source note.
+        doc_paths: Candidate vault-relative document paths.
+        doc_set: The same paths as a set for exact lookup.
+        alias_map: Lowercase aliases mapped to candidate paths.
+
+    Returns:
+        The selected path, or None if no document matches.
+    """
+    if not stem:
+        return None
+    target = stem if stem.lower().endswith(".md") else stem + ".md"
+    if target in doc_set:
+        return target
+    candidates = [path for path in doc_paths if path.endswith("/" + target)]
+    if not candidates:
+        candidates = alias_map.get(stem.lower(), [])
+    return _pick_wikilink_candidate(candidates, source) if candidates else None
+
+
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
@@ -1382,31 +1432,15 @@ class FTSIndex:
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose aliases are to be indexed.
         """
-        raw = note.frontmatter.get("aliases") or note.frontmatter.get("alias")
-        if raw is None:
-            return
-
-        values: list[str] = []
-        if isinstance(raw, str):
-            values = [raw]
-        elif isinstance(raw, list):
-            values = [str(item) for item in raw if isinstance(item, (str, int, float))]
-        else:
-            return
-
-        seen: set[str] = set()
-        for alias in values:
-            alias = alias.strip()
-            if alias and alias not in seen:
-                seen.add(alias)
-                cur.execute(
-                    """
+        for alias in normalized_aliases(note.frontmatter):
+            cur.execute(
+                """
                     INSERT OR IGNORE INTO document_aliases
                         (document_id, alias)
                     VALUES (?, ?)
                     """,
-                    (document_id, alias),
-                )
+                (document_id, alias),
+            )
 
     def _insert_links(
         self,
@@ -2706,22 +2740,11 @@ class FTSIndex:
                 stem = stem[: stem.index("#")]
             if not stem:
                 continue
-            # 2. Append .md if not already present.
-            search_target = stem if stem.lower().endswith(".md") else stem + ".md"
-
-            # An exact vault path wins outright (rule 1); the suffix matches
-            # and the alias fallback go through the tie-break (rules 2, 3).
-            if search_target in doc_paths_set:
-                new_path = search_target
-            else:
-                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
-                if not candidates:
-                    # Fallback: check if the stem matches a document alias.
-                    # Use the raw stem (without .md) for alias matching.
-                    candidates = alias_map.get(stem.lower(), [])
-                if not candidates:
-                    continue  # Genuinely broken — no document matches.
-                new_path = _pick_wikilink_candidate(candidates, row["source_path"])
+            new_path = resolve_wikilink_target(
+                stem, row["source_path"], doc_paths, doc_paths_set, alias_map
+            )
+            if new_path is None:
+                continue
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
