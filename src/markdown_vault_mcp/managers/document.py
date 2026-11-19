@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import itertools
+import json
 import logging
 import os
 import posixpath
@@ -130,7 +131,11 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._okf_convention import IndexDesignation
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
-    from markdown_vault_mcp.indexing.observations import ObservationLedger, _Captured
+    from markdown_vault_mcp.indexing.observations import (
+        Observation,
+        ObservationLedger,
+        _Captured,
+    )
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -323,6 +328,21 @@ class DocumentManager:
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
+
+    def observed_inputs(self) -> tuple[dict[str, Observation], dict[str, str]] | None:
+        """Snapshot observed notes with the search labels generated listings render.
+
+        Returns:
+            Observation rows and serialized search hash and title by path, or
+            None when no observation ledger is configured.
+        """
+        if self._observations is None:
+            return None
+        live = {
+            row["path"]: json.dumps([row["content_hash"], row["title"]])
+            for row in self._fts.list_notes()
+        }
+        return self._observations.rows(), live
 
     def _inspector(self) -> BundleInspector:
         """Build the inspection policy owner from this manager's settings."""

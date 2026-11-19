@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git import PullResult, VersionedStore
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.indexing.head_reconciler import ReconcileOutcome
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.interfaces import EmbeddingStore, VectorBackend
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
@@ -1181,8 +1182,8 @@ class Vault:
         HEAD advanced) is retried by the next call instead of waiting for the
         next pull that moves HEAD.  Called by the pull loop on every tick, by
         webhook deliveries and by the ``git_sync`` tool. Unless the reindex ran
-        (and swept), the observation ledger is swept too, even after a failed
-        search reconcile. A failed sweep is logged and reported as ``"failed"``.
+        (and swept), the ledger is swept too, even after a failed search reconcile;
+        at an unchanged HEAD, configured navigation reindexes. A failed sweep is ``"failed"``.
 
         Args:
             source: Which caller asked, for the log line.
@@ -1193,32 +1194,42 @@ class Vault:
         if self._head_reconciler is None:
             return "current"
         outcome = self._head_reconciler.reconcile(source=source)
-        if outcome != "reindexed" and not self._sweep_observations(source):
+        if outcome != "reindexed" and not self._sweep_observations(source, outcome):
             return "failed"
         return outcome
 
     def _converge_okf_indexes(self) -> None:
         """Apply observed changes to generated navigation on the caller's thread."""
         maintainer = self._okf_convention
-        ledger = self._index_mgr.observations
-        if maintainer is None or ledger is None or not self._okf.state().active:
+        if maintainer is None or not self._okf.state().active:
             return
         try:
             with self._file_write_lock:
-                live = {
-                    row["path"]: json.dumps([row["content_hash"], row["title"]])
-                    for row in self._fts.list_notes()
-                }
-                maintainer.converge_indexes(ledger.rows(), live)
+                if (observed := self._doc_mgr.observed_inputs()) is not None:
+                    maintainer.converge_indexes(*observed)
         except Exception:
             logger.warning("okf_index_convergence_failed", exc_info=True)
 
-    def _sweep_observations(self, source: str) -> bool:
+    def _observe_unchanged_head(self, ledger: ObservationLedger, outcome: str) -> None:
+        """Observe the tree at an unchanged HEAD, reindexing when listings converge.
+
+        Convergence reads current search inputs, so an unchanged HEAD with
+        configured navigation takes a reindex (which also sweeps); otherwise
+        only the ledger is swept.
+        """
+        converging = self._okf_convention is not None and self._okf_capabilities.index
+        if outcome == "current" and converging:
+            with self.pause_writes():
+                self._index_facet.reindex()
+        else:
+            ledger.sweep()
+
+    def _sweep_observations(self, source: str, outcome: str = "") -> bool:
         """Sweep the ledger outside a reindex; report failure without raising."""
         if self._index_mgr.observations is None:
             return True
         try:
-            self._index_mgr.observations.sweep()
+            self._observe_unchanged_head(self._index_mgr.observations, outcome)
         except Exception:
             logger.error("observation_sweep_failed source=%s", source, exc_info=True)
             return False

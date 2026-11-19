@@ -263,11 +263,11 @@ class ConventionMaintainer:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
         return self._designated(folder) and self._destination_ok(folder, "index.md")
 
-    def _maintain_index(self, folder: str) -> None:
+    def _maintain_index(self, folder: str, path: str) -> None:
         """Refresh the designated anchor that owns *folder* if allowed."""
         anchor = self.indexed_anchor(folder)
         if self._may_index(anchor):
-            self._refresh_index(anchor)
+            self._refresh_all([anchor], [path])
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Update the selected ancestor ``log.md`` and designated listing.
@@ -303,7 +303,7 @@ class ConventionMaintainer:
                 self._append_log(folder, path, operation)
             # Refresh the listing that owns this note, folding where needed.
             if self._capabilities.index:
-                self._maintain_index(folder)
+                self._maintain_index(folder, path)
 
     def refresh_indexes(
         self,
@@ -311,6 +311,7 @@ class ConventionMaintainer:
         *,
         trigger_paths: Iterable[str],
         create: Iterable[str] = (),
+        designated: Callable[[str], bool] | None = None,
     ) -> bool:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
@@ -328,6 +329,8 @@ class ConventionMaintainer:
             trigger_paths: The vault-relative paths the change touched.
             create: Folders a note arrived in, refreshed even without an
                 ``index.md`` yet.
+            designated: Predicate for descendant indexes the listing may
+                create; defaults to the maintainer's designation.
 
         Returns:
             Whether every attempted refresh succeeded.
@@ -336,13 +339,74 @@ class ConventionMaintainer:
             return False
         anchors = (self.indexed_anchor(f) for f in folders)
         wanted = [f for f in anchors if self._may_index(f) and self._has_index(f)]
-        with okf_write_suppressed(), auxiliary_commit_writes():
-            success = True
-            for folder in dict.fromkeys(
-                [*wanted, *(f for f in create if self._may_index(f))]
-            ):
-                success = self._refresh_index(self._canonical(folder)) and success
-            return success
+        targets = [*wanted, *(f for f in create if self._may_index(f))]
+        return self._refresh_all(targets, trigger_paths, designated)
+
+    def _refresh_all(
+        self,
+        folders: Iterable[str],
+        scopes: Iterable[str],
+        designated: Callable[[str], bool] | None = None,
+    ) -> bool:
+        """Refresh each distinct folder's index, then acknowledge what it rendered.
+
+        Returns:
+            Whether every attempted refresh succeeded.
+        """
+        # One lock scope: the snapshot acknowledged is the state just rendered.
+        with self._write_lock, okf_write_suppressed(), auxiliary_commit_writes():
+            outcomes = [
+                (folder, self._refresh_index(folder, designated or self._may_index))
+                for folder in map(self._canonical, dict.fromkeys(folders))
+            ]
+            self._acknowledge(scopes, {folder for folder, ok in outcomes if ok})
+        return all(ok for _, ok in outcomes)
+
+    def _acknowledge(self, scopes: Iterable[str], anchors: set[str]) -> None:
+        """Mark changes under *scopes* rendered by refreshed *anchors* as applied.
+
+        Unknown history, paths outside *scopes* and anchors that failed stay
+        pending for the next convergence. Call with the write lock held so no
+        write lands between the render and the snapshot. Never raises.
+        """
+        try:
+            old = self._checkpoint.load()
+            snapshot = self._doc_mgr.observed_inputs() if anchors else None
+            if old is None or snapshot is None:
+                return
+            current = self._fingerprints(*snapshot)
+            roots = tuple(scopes)
+            moved = {
+                p
+                for p in current.keys() | old.keys()
+                if current.get(p) != old.get(p)
+                and any(p == r or p.startswith(f"{r}/") for r in roots)
+                and self._anchor_of(p) in anchors
+            }
+            applied = {p: d for p, d in old.items() if p not in moved}
+            applied.update((p, current[p]) for p in moved if p in current)
+            if applied != old:
+                self._checkpoint.save(applied)
+        except Exception:
+            logger.warning("okf_index_acknowledge_failed", exc_info=True)
+
+    def _anchor_of(self, path: str) -> str | None:
+        """Return the listing that renders a concept, or None when none owns it."""
+        owner = self._owner(folder_of(path))
+        return None if owner is None else self.indexed_anchor(owner)
+
+    @staticmethod
+    def _fingerprints(
+        rows: Mapping[str, Observation], live: Mapping[str, str]
+    ) -> dict[str, str]:
+        """Fingerprint the generation inputs of each present concept note."""
+        return {
+            p: hashlib.sha256(
+                f"{row.content_digest}:{live.get(p, '')}".encode()
+            ).hexdigest()
+            for p, row in rows.items()
+            if row.role == "concept_candidate" and row.presence == "present"
+        }
 
     def converge_indexes(
         self, rows: Mapping[str, Observation], live: Mapping[str, str]
@@ -360,13 +424,7 @@ class ConventionMaintainer:
             intent = current_okf_intent()
             if intent is not None and intent.suppress:
                 return False
-            current = {
-                p: hashlib.sha256(
-                    f"{row.content_digest}:{live.get(p, '')}".encode()
-                ).hexdigest()
-                for p, row in rows.items()
-                if row.role == "concept_candidate" and row.presence == "present"
-            }
+            current = self._fingerprints(rows, live)
             previous = self._checkpoint.load()
             old = previous or {}
             changed = {
@@ -381,28 +439,33 @@ class ConventionMaintainer:
                 except InvalidRequestError:
                     vanished.add(path)
             vanished = {p for p in vanished if not is_okf_reserved_file(p)}
-            arrivals = safe - old.keys()
+            arrivals = set() if previous is None else safe - old.keys()
             boundaries = (
                 self._removed_index_boundary(self._live_folder(folder_of(p)))
-                for p in vanished
+                for p in vanished | safe
             )
-            owners = {p: self._owner(folder_of(p)) for p in safe}
-            folders = [folder for folder in owners.values() if folder is not None]
+            anchors = {p: self._anchor_of(p) for p in safe}
+            folders = [folder for folder in anchors.values() if folder is not None]
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
             success = self.refresh_indexes(
                 folders,
                 trigger_paths=safe,
-                create={
-                    self.indexed_anchor(owner)
-                    for p in arrivals
-                    if (owner := owners[p]) is not None
-                },
+                create={a for p in arrivals if (a := anchors[p]) is not None},
+                designated=None if arrivals else self._has_designated_index,
             )
             if success and previous != current:
                 self._checkpoint.save(current)
             return success
+
+    def _has_designated_index(self, folder: str) -> bool:
+        """Whether *folder* already has a designated index, so a listing may keep it.
+
+        Folders without one fold into their ancestor instead of being created,
+        which keeps refresh-only passes from manufacturing indexes.
+        """
+        return self._may_index(folder) and self._has_index(folder)
 
     def _live_folder(self, folder: str) -> str:
         """Find the nearest folder whose current target stays inside the vault."""
@@ -560,13 +623,13 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
-    def _refresh_index(self, folder: str) -> bool:
+    def _refresh_index(self, folder: str, designated: Callable[[str], bool]) -> bool:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
             if self._sync_index is not None:
                 self._sync_index()
-            self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
+            self._okf_migrate.generate_index(folder=folder, designated=designated)
             return True
         except Exception:
             logger.warning(
