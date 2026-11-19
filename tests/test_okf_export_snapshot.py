@@ -1197,3 +1197,198 @@ def test_git_lfs_alias_outside_selected_folder_uses_verified_note(
         assert archive.read("source.md") == (
             b"---\ntitle: Source\n---\n[Alias](https://example.org/vault/target.md)\n"
         )
+
+
+@pytest.mark.parametrize("folder", ["", "docs"])
+def test_git_snapshot_yaml_aliases_match_index_admission(
+    tmp_path: Path, folder: str
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    directory = tmp_path / folder
+    directory.mkdir(exist_ok=True)
+    (directory / "source.md").write_text(
+        "---\ntitle: Source\nx: &anchor value\ny: *anchor\n---\n[[Alias]]\n"
+    )
+    (directory / "target.md").write_text(
+        "---\ntitle: Target\nx: &anchor value\ny: *anchor\naliases: [Alias]\n---\nTarget\n"
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        vault.index.build_index()
+        assert vault.graph.get_outlinks(f"{folder}/source.md".lstrip("/"))[
+            0
+        ].target_path == f"{folder}/target.md".lstrip("/")
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder=folder
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("source.md").endswith(b"[Alias](/target.md)\n")
+
+
+@pytest.mark.parametrize("name", [".hidden.md", "excluded.md"])
+@pytest.mark.parametrize("folder", ["", "docs"])
+def test_git_omitted_missing_lfs_note_does_not_block_export(
+    tmp_path: Path, name: str, folder: str
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    directory = tmp_path / folder
+    directory.mkdir(exist_ok=True)
+    (directory / "good.md").write_text("ordinary\n")
+    pointer = directory / name
+    pointer.write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 10\n"
+    )
+    _git(tmp_path, "add", "-f", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(exclude_patterns=[f"{folder}/{name}".lstrip("/")]),
+    )
+    try:
+        vault.index.build_index()
+        pointer.unlink()
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder=folder
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert "good.md" in archive.namelist()
+        assert name not in archive.namelist()
+
+
+def test_git_relative_link_does_not_require_unrelated_missing_lfs(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "source.md").write_text("[[./target]]\n")
+    (tmp_path / "docs" / "target.md").write_text("target\n")
+    other = tmp_path / "unrelated.md"
+    other.write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 10\n"
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    other.unlink()
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="docs"
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("source.md") == b"[./target](/target.md)\n"
+
+
+@pytest.mark.parametrize("state", ["missing", "unreadable", "present"])
+def test_git_empty_lfs_object_requires_successful_read(
+    tmp_path: Path, monkeypatch, state: str
+) -> None:
+    from markdown_vault_mcp.git import query as git_query
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    path = tmp_path / "empty.md"
+    path.write_text(
+        f"version https://git-lfs.github.com/spec/v1\noid sha256:{hashlib.sha256(b'').hexdigest()}\nsize 0\n"
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    if state == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"")
+    if state == "unreadable":
+
+        def denied(*_args, **_kwargs):
+            raise PermissionError("fixture refusal")
+
+        monkeypatch.setattr(git_query, "read_regular_nofollow", denied)
+    snapshot = git_query.git_export_snapshot(tmp_path)
+    assert snapshot is not None
+    try:
+        if state == "present":
+            assert snapshot.read("empty.md") == b""
+        else:
+            with pytest.raises(ValueError, match="LFS"):
+                snapshot.read("empty.md")
+    finally:
+        snapshot.close()
+
+
+def test_git_included_excluded_complex_note_stays_unadmitted(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "excluded.md").write_text(
+        "---\nx: &anchor value\ny: *anchor\n---\n[[target]]\n"
+    )
+    (tmp_path / "target.md").write_text("target\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(exclude_patterns=["excluded.md"])
+    )
+    try:
+        vault.index.build_index()
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), include_index_excluded=True
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("excluded.md").endswith(b"[[target]]\n")
+
+
+def test_git_relative_outside_target_ignores_unrelated_missing_lfs(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "source.md").write_text("[[../target]]\n")
+    (tmp_path / "target.md").write_text("target\n")
+    other = tmp_path / "unrelated.md"
+    other.write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "a" * 64
+        + "\nsize 10\n"
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    other.unlink()
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="docs",
+            external_base="https://example.org/vault",
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert (
+            archive.read("source.md")
+            == b"[../target](https://example.org/vault/target.md)\n"
+        )

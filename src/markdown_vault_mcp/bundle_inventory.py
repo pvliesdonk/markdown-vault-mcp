@@ -568,8 +568,17 @@ class BundleInspector:
         size = snapshot.size(path)
         if size > self._note_limit:
             return BundleEntry(path, role, reason="note_limit"), min(size, limit)
-        raw = snapshot.read(path)
-        return _parsed(path, role, raw), len(raw)
+        try:
+            raw = snapshot.read(path)
+            entry = _parsed(path, role, raw)
+        except ValueError:
+            from markdown_vault_mcp.git.query import is_lfs_pointer
+
+            if not is_lfs_pointer(snapshot._read_object(path)):
+                raise
+            raw = b""
+            entry = BundleEntry(path, role, reason="lfs_unavailable")
+        return entry, len(raw)
 
     def _flagged_clean(
         self, snapshot: GitExportSnapshot, path: str, raw: bytes | None

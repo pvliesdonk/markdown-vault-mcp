@@ -134,16 +134,17 @@ class GitExportSnapshot:
     def _lfs_content(self, path: str, pointer: bytes) -> bytes:
         """Return the live file only if it is the object the pointer names."""
         pinned = _lfs_object(pointer)
-        live = b""
+        live = None
         if pinned and self.source is not None:
             parts = path.split("/")
             try:
                 with open_directory_nofollow(self.source, parts[:-1]) as parent:
                     live = read_regular_nofollow(parent, parts[-1], pinned[1] + 1)
             except OSError:
-                live = b""
+                pass
         if (
             pinned
+            and live is not None
             and len(live) == pinned[1]
             and hashlib.sha256(live).hexdigest() == pinned[0]
         ):

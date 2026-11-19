@@ -252,12 +252,23 @@ def _snapshot_admitted(vault: Vault, entry: BundleEntry, raw: bytes) -> bool:
     setting the index is built from, and its OKF reserved-file exception to
     the visibility and parse eligibility of :func:`_snapshot_searchable`.
     """
-    if not _snapshot_searchable(entry, raw):
+    if entry.visibility != "visible":
         return False
     required = vault._required_frontmatter
+    if entry.reason in {"metadata_complexity", "note_limit"}:
+        try:
+            metadata = parse_frontmatter(decode_utf8(raw)).metadata
+        except Exception:
+            return False
+    elif not _snapshot_searchable(entry, raw):
+        return False
+    elif not required:
+        return True
+    else:
+        metadata = parse_frontmatter(decode_utf8(raw)).metadata
     if not required or (is_okf_reserved_file(entry.path) and vault.okf.state().active):
         return True
-    return all(key in parse_frontmatter(decode_utf8(raw)).metadata for key in required)
+    return all(key in metadata for key in required)
 
 
 # The public API keeps its established explicit options.
@@ -402,11 +413,41 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             extensions,
         )
         snapshot_index: _SnapshotLinks | None = None
+        selected_entries = {item.path: item for item in selected}
+        root_entries_by_path: dict[str, BundleEntry] | None = None
 
         def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
-            nonlocal snapshot_index
+            nonlocal snapshot_index, root_entries_by_path
             if "[[" not in body:
                 return []
+            links = extract_links(body, source, attachment_extensions=extensions)
+            if snapshot is not None and all(
+                link.link_type != "wikilink"
+                or link.raw_target.startswith(("./", "../"))
+                for link in links
+            ):
+                targets = {
+                    link.target_path for link in links if link.link_type == "wikilink"
+                }
+                if not targets <= paths.members and root_entries_by_path is None:
+                    root_entries_by_path = {
+                        item.path: item for item in root_inventory()
+                    }
+                candidates = root_entries_by_path or selected_entries
+                members = {
+                    item.path
+                    for path in targets
+                    if (item := candidates.get(path)) is not None
+                    if item.path.endswith(".md")
+                    if item.visibility == "visible"
+                    if item.parse_state == "valid"
+                    or item.reason
+                    in {"note_limit", "metadata_complexity", "lfs_unavailable"}
+                    if _snapshot_admitted(vault, item, snapshot.read(item.path))
+                }
+                return _snapshot_outlinks(
+                    body, source, _SnapshotLinks(members, {}), extensions
+                )
             if snapshot_index is None:
                 if snapshot is None:
                     raise ValueError("Snapshot links require a Git snapshot")
@@ -414,7 +455,9 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     (entry.path, raw)
                     for entry in root_inventory()
                     if entry.path.endswith(".md") and entry.visibility == "visible"
-                    if entry.parse_state == "valid" or entry.reason == "note_limit"
+                    if entry.parse_state == "valid"
+                    or entry.reason
+                    in {"note_limit", "metadata_complexity", "lfs_unavailable"}
                     for raw in (snapshot.read(entry.path),)
                     if _snapshot_admitted(vault, entry, raw)
                 )
