@@ -410,16 +410,98 @@ def test_proposer_escaped_and_root_scope_effective(tmp_path):
         vault.close()
 
 
-def test_non_insertion_layout_is_refused_unchanged(tmp_path):
+@pytest.mark.parametrize("old", [b"# Log\n\n\n", b"  \n\n", b"# Log\r\n\r\n\r\n"])
+def test_seeded_whitespace_preserved_and_event_visible(tmp_path, old):
+    from markdown_it import MarkdownIt
+
     (tmp_path / "a.md").write_text("# A\n")
     log = tmp_path / "log.md"
-    old = b"# Log\n\n\n"
     log.write_bytes(old)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        with pytest.raises(InvalidRequestError, match="unchanged"):
-            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
-        assert log.read_bytes() == old
+        record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        result = log.read_bytes()
+        assert result.startswith(old)
+        assert '<a href="/a.md">' in MarkdownIt("commonmark").render(result.decode())
+    finally:
+        vault.close()
+
+
+def test_html_comment_cannot_hide_event(tmp_path):
+    from markdown_it import MarkdownIt
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = b"# Log\n\n<!--\n## 2026-03-03\n- hidden\n-->\n"
+    log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        try:
+            record_event(
+                vault._doc_mgr, ["a.md"], "Visible", (".",), today=date(2026, 3, 4)
+            )
+        except InvalidRequestError:
+            assert log.read_bytes() == old
+        else:
+            tokens = MarkdownIt("commonmark").parse(log.read_text())
+            assert any(
+                t.type == "inline"
+                and "Visible" in t.content
+                and t.children
+                and any(c.type == "link_open" for c in t.children)
+                for t in tokens
+            )
+    finally:
+        vault.close()
+
+
+def test_event_text_and_labels_render_literally(tmp_path):
+    from markdown_it import MarkdownIt
+
+    name = "*odd*_&amp;.md"
+    (tmp_path / name).write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(
+            vault._doc_mgr,
+            [name],
+            "**Deprecation** *urgent* &amp; _policy_",
+            (".",),
+            "*Alice* &amp;",
+        )
+        rendered = MarkdownIt("commonmark").render((tmp_path / "log.md").read_text())
+        assert "<strong>Deprecation</strong> *urgent* &amp;amp; _policy_" in rendered
+        assert ">*odd*_&amp;amp;.md</a>" in rendered
+        assert "(proposed by *Alice* &amp;amp;)" in rendered
+    finally:
+        vault.close()
+
+
+def test_off_capability_message_has_reason(tmp_path):
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="logging is off"):
+            vault.writer.okf_log_event(["a.md"], "Change")
+    finally:
+        vault.close()
+
+
+def test_case_mismatched_existing_path_never_produces_dead_link(tmp_path):
+    (tmp_path / "area").mkdir()
+    (tmp_path / "area" / "a.md").write_text("# A\n")
+    alternate = tmp_path / "AREA" / "A.md"
+    if not alternate.is_file():
+        pytest.skip("requires a case-insensitive filesystem")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        try:
+            result = record_event(vault._doc_mgr, ["AREA/A.md"], "Change", (".",))
+        except InvalidRequestError:
+            assert not is_regular_file(tmp_path / "log.md")
+        else:
+            assert "/area/a.md" in (tmp_path / result).read_text()
     finally:
         vault.close()
 
@@ -433,3 +515,60 @@ def test_missing_etag_occupied_path(tmp_path):
     path.mkdir()
     with pytest.raises(ConcurrentModificationError):
         check_if_match(path, "entry", MISSING_ETAG)
+
+
+def test_changed_history_is_still_refused():
+    from markdown_vault_mcp._okf_log_event import _insert_preserving
+
+    with pytest.raises(InvalidRequestError, match="unchanged"):
+        _insert_preserving("# Log\n- Old\n", "# Log\n- Changed\n- New\n", "- New")
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "<!--\n## 2026-03-03\n- hidden\n-->\n",
+        "<script>\n## 2026-03-03\n- hidden\n</script>\n",
+    ],
+)
+def test_raw_html_cannot_consume_inserted_bullet(tmp_path, block):
+    from markdown_it import MarkdownIt
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = "# Log\n\n" + block
+    log.write_text(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        try:
+            record_event(
+                vault._doc_mgr, ["a.md"], "Visible", (".",), today=date(2026, 3, 4)
+            )
+        except InvalidRequestError:
+            assert log.read_text() == old
+        else:
+            tokens = MarkdownIt("commonmark").parse(log.read_text())
+            assert any(t.type == "inline" and "Visible" in t.content for t in tokens)
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("name", ["a&amp;.md", "a%20b.md", "a&b.md"])
+def test_event_destination_resolves_literal_filename(tmp_path, name):
+    from markdown_it import MarkdownIt
+
+    from markdown_vault_mcp.utils.links import decode_link_target
+
+    (tmp_path / name).write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(vault._doc_mgr, [name], "Change", (".",))
+        tokens = MarkdownIt("commonmark").parse((tmp_path / "log.md").read_text())
+        link = next(
+            c for t in tokens if t.children for c in t.children if c.type == "link_open"
+        )
+        target = decode_link_target(link.attrGet("href"))
+        assert target == "/" + name
+        assert is_regular_file(tmp_path / target.lstrip("/"))
+    finally:
+        vault.close()

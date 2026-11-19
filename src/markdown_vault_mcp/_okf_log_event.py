@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import os
+import string
 import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from markdown_it import MarkdownIt
 
 from markdown_vault_mcp._okf_convention import (
     canonical_path,
@@ -22,7 +26,7 @@ from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import append_okf_log_entry, is_okf_reserved_file
 from markdown_vault_mcp.scanner import _unfenced_lines
 from markdown_vault_mcp.utils import folder_of
-from markdown_vault_mcp.utils.links import build_plain_destination
+from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -49,7 +53,16 @@ def event_deferred() -> bool:
 
 
 def _literal(text: str) -> str:
-    return "".join("\\" + c if c in "\\[]<~`" else c for c in text)
+    escaped = escape_link_text(text)
+    punctuation = set(string.punctuation) - set("\\[].>")
+    return "".join("\\" + c if c in punctuation else c for c in escaped)
+
+
+def _description(text: str) -> str:
+    lead = "**Deprecation**"
+    if text.startswith(lead) and (len(text) == len(lead) or text[len(lead)] in " :"):
+        return lead + _literal(text[len(lead) :])
+    return _literal(text)
 
 
 def _unsafe(text: str) -> bool:
@@ -72,15 +85,12 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
         and old[-1 - suffix] == new[-1 - suffix]
     ):
         suffix += 1
-    if prefix + suffix != len(old):
+    unmatched = old[prefix : len(old) - suffix if suffix else len(old)]
+    if any(line.strip() for line in unmatched):
         raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
-    inserted = new[prefix : len(new) - suffix if suffix else len(new)]
-    visible_new = dict(_unfenced_lines([*new, ""]))
-    if not any(
-        new[i] == bullet and i in visible_new
-        for i in range(prefix, prefix + len(inserted))
-    ):
-        raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
+    prefix += len(unmatched)
+    new_prefix = prefix - len(unmatched)
+    inserted = new[new_prefix : len(new) - suffix if suffix else len(new)]
     eol = "\r\n" if "\r\n" in body else "\n"
     if (
         prefix
@@ -88,11 +98,29 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
         and not old_lines[prefix - 1].endswith(("\n", "\r"))
     ):
         old_lines[prefix - 1] += eol
-    return (
+    result = (
         "".join(old_lines[:prefix])
         + "".join(line + eol for line in inserted)
         + "".join(old_lines[prefix:])
     )
+    bullet_index = prefix + inserted.index(bullet)
+    tokens = MarkdownIt("commonmark").parse(result)
+    has_item = any(
+        t.type == "list_item_open" and t.map and t.map[0] == bullet_index
+        for t in tokens
+    )
+    has_text = any(
+        t.type == "inline"
+        and t.map
+        and t.map[0] == bullet_index
+        and t.content == bullet[2:]
+        and t.children
+        and any(c.type == "link_open" for c in t.children)
+        for t in tokens
+    )
+    if not has_item or not has_text:
+        raise InvalidRequestError("Log layout cannot take an event safely; unchanged.")
+    return result
 
 
 def _validate_input(
@@ -120,6 +148,25 @@ def _validate_input(
         raise InvalidRequestError("Concept paths must be single-line text.")
 
 
+def _require_exact_case(source_dir: Path, path: str) -> None:
+    parent = source_dir
+    for part in Path(path).parts:
+        try:
+            with os.scandir(parent) as entries:
+                found = any(
+                    unicodedata.normalize("NFC", entry.name)
+                    == unicodedata.normalize("NFC", part)
+                    for entry in entries
+                )
+        except OSError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+        if not found:
+            raise InvalidRequestError(
+                f"Concept path {path!r} must use its exact on-disk case; read it first."
+            )
+        parent = parent / part
+
+
 def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
     canonical = []
     for path in paths:
@@ -141,12 +188,13 @@ def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
                 pass
         except OSError as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
+        _require_exact_case(doc_mgr._source_dir, target)
         if target not in canonical:
             canonical.append(target)
     return canonical
 
 
-def record_event(
+def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for events
     doc_mgr: DocumentManager,
     paths: list[str],
     description: str,
@@ -173,7 +221,7 @@ def record_event(
     report = capability_report()
     if not report["effective"]:
         raise InvalidRequestError(
-            f"OKF event logging is not active: {report['reason']}."
+            f"OKF event logging is not active: {report['reason'] or 'logging is off'}."
         )
     doc_mgr.ensure_writable()
     with doc_mgr.write_scope():
@@ -185,10 +233,12 @@ def record_event(
                 "The selected log is an alias; choose a safe log destination."
             )
         log_path = f"{folder}/log.md" if folder else "log.md"
+        # The shared builder preserves escapes; encode literal % and entities first.
         links = ", ".join(
-            f"[{_literal(p)}](/{build_plain_destination(p)})" for p in canonical
+            f"[{_literal(p)}](/{build_plain_destination(p.replace('%', '%25').replace('&', '%26'))})"
+            for p in canonical
         )
-        summary = f"{_literal(description.strip())} — {links}"
+        summary = f"{_description(description.strip())} — {links}"
         if proposed_by is not None:
             summary += f" (proposed by {_literal(proposed_by.strip())})"
         raw = doc_mgr._read_snapshot(log_path)
