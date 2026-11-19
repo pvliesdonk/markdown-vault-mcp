@@ -1,6 +1,7 @@
 """OKF v0.2 artifact conformance and export observations."""
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 Verdict = Literal["conformant", "nonconformant", "incomplete"]
@@ -77,3 +78,43 @@ class OkfExportReport:
     optional_metadata: list[str] = field(default_factory=list)
     broken_links: list[Dependency] = field(default_factory=list)
     snapshot: ExportSnapshot = field(default_factory=ExportSnapshot)
+
+
+class PublicationRefused(ValueError):
+    """Strict publication failed, with the completed artifact report."""
+
+    def __init__(self, report: OkfExportReport) -> None:
+        """Retain the report explaining why publication was refused.
+
+        Args:
+            report: Completed observations for the proposed artifact.
+        """
+        super().__init__("Strict publication refused; inspect the export report")
+        self.report = report
+
+
+class ExportCollisionError(ValueError):
+    """An outside reference would address a different archive member."""
+
+
+def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
+    """Serialize a publication refusal for a downloader or CLI caller.
+
+    Args:
+        exc: The strict or collision refusal.
+
+    Returns:
+        UTF-8 JSON; collision reports are null because no artifact was audited.
+    """
+    strict = isinstance(exc, PublicationRefused)
+    return json.dumps(
+        {
+            "okf_export": "refused",
+            "reason": "strict" if strict else "collision",
+            "message": str(exc),
+            "report": asdict(exc.report)
+            if isinstance(exc, PublicationRefused)
+            else None,
+        },
+        sort_keys=True,
+    ).encode("utf-8")

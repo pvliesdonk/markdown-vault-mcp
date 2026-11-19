@@ -16,7 +16,11 @@ from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
-from markdown_vault_mcp.okf_export_report import Dependency, OkfExportReport
+from markdown_vault_mcp.okf_export_report import (
+    Dependency,
+    ExportCollisionError,
+    OkfExportReport,
+)
 from markdown_vault_mcp.scanner import (
     _RE_LINE_QUOTE_PREFIX,
     _RE_TITLE_ONLY,
@@ -505,7 +509,7 @@ class ExportPaths:
         if apparent in self._archive_members or (
             dirs and f"{self.scope}/{apparent}".rstrip("/") in self._directories
         ):
-            raise _ExportCollision(
+            raise ExportCollisionError(
                 f"Export collision in {_safe_text(source)}: {_safe_text(raw)}; supply external_base to resolve outside destinations"
             )
         return None
@@ -561,7 +565,7 @@ class ExportPaths:
         if self.external_base and target:
             return self._external_url(target)
         if collision:
-            raise ValueError(
+            raise ExportCollisionError(
                 f"Export collision in {_safe_text(source)}: {_safe_text(name)}; "
                 "supply external_base to resolve outside destinations"
             )
@@ -705,7 +709,7 @@ class ExportPaths:
                 loader.dispose()
         except (_MetadataComplexity, RecursionError):
             report.uninspected.setdefault(source, "metadata_complexity")
-        except _ExportCollision:
+        except ExportCollisionError:
             raise
         except (ValueError, yaml.YAMLError):
             report.uninspected.setdefault(source, "metadata_encoding")
@@ -808,10 +812,6 @@ class ArtifactLinks:
             return self._resolve(name, source)
         candidates = self._candidates.get(name.rpartition("/")[2], set())
         return ExportPaths._wiki_match(name, source, candidates) or name
-
-
-class _ExportCollision(ValueError):
-    """An outside path would address a different archive member."""
 
 
 def _quote_field_uri(path: str) -> str:

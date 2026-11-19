@@ -23,7 +23,7 @@ from markdown_vault_mcp.git.query import (
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown, is_okf_reserved_file
 from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
-from markdown_vault_mcp.okf_export_report import OkfExportReport
+from markdown_vault_mcp.okf_export_report import OkfExportReport, PublicationRefused
 from markdown_vault_mcp.scanner import (
     extract_links,
     missing_required,
@@ -279,6 +279,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     include_index_excluded: bool = False,
     include_hidden: bool = False,
     external_base: str | None = None,
+    strict: bool = False,
 ) -> OkfBundleResult:
     """Export the selected inventory and assess the final OKF v0.2 artifact.
 
@@ -290,6 +291,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         include_hidden: Include dot-paths other than internal state.
         external_base: Absolute HTTP(S) URL prefix without a query or fragment
             for body and frontmatter destinations outside the selection.
+        strict: Refuse publication unless the completed report meets the contract.
 
     Returns:
         Archive bytes, counts, and an artifact conformance report.
@@ -304,12 +306,22 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     """
     snapshot = git_export_snapshot(vault.source_dir)
     with closing(snapshot) if snapshot is not None else nullcontext():
-        return _build_okf_bundle(
+        result = _build_okf_bundle(
             vault,
             config,
             snapshot,
             (folder, include_index_excluded, include_hidden, external_base),
         )
+    report = result.report
+    if strict and (
+        report.verdict != "conformant"
+        or report.dependencies
+        or report.ambiguous_path
+        or report.broken_links
+        or report.snapshot.inconsistent_paths
+    ):
+        raise PublicationRefused(report)
+    return result
 
 
 # The established export workflow shares one pinned snapshot and policy.

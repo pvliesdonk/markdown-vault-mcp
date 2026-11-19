@@ -373,6 +373,64 @@ async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
     assert "note.md" in names
 
 
+async def test_strict_bundle_download_returns_refusal_report(
+    sink: VaultTransferSink,
+) -> None:
+    import json
+
+    ref = "okf-bundle?strict"
+    assert await sink.validate(ref, "download") == ref
+    result = await sink.read(ref)
+    assert result.media_type == "application/json"
+    assert result.filename == "okf-export-refusal.json"
+    payload = json.loads(result.body)
+    assert payload["okf_export"] == "refused"
+    assert payload["report"]["verdict"] == "nonconformant"
+
+
+async def test_bundle_collision_returns_actionable_refusal(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    import json
+
+    (source_dir / "guides").mkdir()
+    (source_dir / "guides/a.md").write_text("[outside](/b.md)")
+    (source_dir / "guides/b.md").write_text("# B")
+    result = await sink.read("okf-bundle:guides")
+    payload = json.loads(result.body)
+    assert result.media_type == "application/json"
+    assert payload["reason"] == "collision"
+    assert "external_base" in payload["message"]
+    assert payload["report"] is None
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "okf-bundle?unknown",
+        "okf-bundle?strict&strict",
+        "okf-bundle?strict=1",
+        "okf-bundle?external_base=broken",
+        "okf-bundle?external_base=https%ZZ",
+    ],
+)
+async def test_invalid_bundle_options_refused(
+    sink: VaultTransferSink, ref: str
+) -> None:
+    with _rejected("."):
+        await sink.validate(ref, "download")
+
+
+async def test_bundle_options_keep_folder_spelling(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    (source_dir / "guides?strict").mkdir()
+    ref = "okf-bundle:guides?strict"
+    assert await sink.validate(ref, "download") == ref
+    result = await sink.read(ref)
+    assert result.media_type == "application/zip"
+
+
 async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:
     # A folder scope valid at mint time but deleted before the one-time download
     # yields 410 (matching the single-file path), not an empty zip.

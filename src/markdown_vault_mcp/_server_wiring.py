@@ -153,7 +153,10 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
         return
     from fastmcp_pvl_core import register_transfer_routes
 
-    from markdown_vault_mcp._transfer_sink import VaultTransferSink
+    from markdown_vault_mcp._transfer_sink import (
+        OKF_BUNDLE_DOWNLOAD_NOTE,
+        VaultTransferSink,
+    )
 
     transfer_sink = VaultTransferSink(config)
     register_transfer_routes(
@@ -166,13 +169,7 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
             "For this server, ref is a vault-relative path to an existing "
             "note (a .md file) or attachment."
             # The bundle refs work only where the sink accepts them (#1695).
-            + (
-                ""
-                if config.content.okf_mode == "off"
-                else " Or pass okf-bundle for the whole vault as an Open "
-                "Knowledge Format bundle (a zip); prefix a folder path with "
-                "okf-bundle: (okf-bundle:projects) for one folder."
-            )
+            + ("" if config.content.okf_mode == "off" else OKF_BUNDLE_DOWNLOAD_NOTE)
         ),
         upload_note=(
             "ref is a vault-relative path for a note (.md) or an allowed "

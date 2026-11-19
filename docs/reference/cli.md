@@ -323,6 +323,23 @@ Collect note links, neighbors, folder peers and conventions.
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
 
+## `markdown-vault-mcp export`
+
+Export an OKF ZIP or print a JSON refusal without writing the destination.
+
+| Argument | Description |
+|---|---|
+| `DESTINATION` | Destination ZIP file. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Vault directory. |
+| `--folder` |  |  | Vault-relative scope root. |
+| `--strict` |  | False | Require a self-contained artifact. |
+| `--include-hidden` |  | False | Include hidden paths. |
+| `--include-index-excluded` |  | False | Include index exclusions. |
+| `--external-base` |  |  | URL for outside references. |
+
 ## `markdown-vault-mcp links`
 
 Follow and audit the links between notes.

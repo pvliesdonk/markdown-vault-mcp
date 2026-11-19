@@ -732,6 +732,9 @@ from markdown_vault_mcp._cli_reader import register_read_commands  # noqa: E402
 # Read commands first, so the help lists them before the admin group (#2005).
 register_read_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
+from markdown_vault_mcp._cli_export import export as _export  # noqa: E402
+
+app.command("export")(_export)
 
 # DOMAIN-COMMANDS-END
 
