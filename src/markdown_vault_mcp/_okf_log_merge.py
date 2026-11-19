@@ -522,18 +522,7 @@ class _LogMigrationRunner:
         self.unrewritten.update((source, note) for note in _relocation_notes(relocated))
         raw_target = self.doc._okf_author_snapshot(target)[1] if dst else None
         previous = self.simulated.get(target, raw_target)
-        if previous is not None:
-            source_log, _ = _parse(relocated)
-            target_log, _ = _parse(previous)
-            if source_log is not None and target_log is not None:
-                for label, (href, _) in source_log.refs.items():
-                    if label in target_log.refs and target_log.refs[label][0] != href:
-                        self.unrewritten.add(
-                            (
-                                source,
-                                f"reference {label!r} points to {href!r} but the target defines {target_log.refs[label][0]!r}; source links use the target definition",
-                            )
-                        )
+        self._note_ref_collisions(source, relocated, previous)
         if previous is not None and strip_frontmatter_block(previous) != previous:
             self.headers.add(target)
         text, count, reason = _migration_text(previous, src.content, source, target)
@@ -546,6 +535,24 @@ class _LogMigrationRunner:
         else:
             self.simulated[target] = text
         self.merged.append(LogMove(source, target, count))
+
+    def _note_ref_collisions(
+        self, source: str, relocated: str, previous: str | None
+    ) -> None:
+        if previous is None:
+            return
+        source_log, _ = _parse(relocated)
+        target_log, _ = _parse(previous)
+        if source_log is None or target_log is None:
+            return
+        for label, (href, _) in source_log.refs.items():
+            if label in target_log.refs and target_log.refs[label][0] != href:
+                self.unrewritten.add(
+                    (
+                        source,
+                        f"reference {label!r} points to {href!r} but the target defines {target_log.refs[label][0]!r}; source links use the target definition",
+                    )
+                )
 
     def _write(
         self,
