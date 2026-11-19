@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import tempfile
 import threading
 from contextlib import suppress
@@ -16,7 +15,7 @@ from markdown_vault_mcp.exceptions import (
     InvalidRequestError,
     StoreUnsupportedSchemaError,
 )
-from markdown_vault_mcp.indexing.observations import _LEDGER_LOCKS
+from markdown_vault_mcp.indexing.observations import _LEDGER_LOCKS, _valid_digest
 from markdown_vault_mcp.okf import (
     _parse_stale_after,
     _review_claims,
@@ -35,7 +34,7 @@ def _snapshot_pair(value: Any) -> tuple[str, str] | None:
     if (
         not isinstance(algo, str)
         or not isinstance(digest, str)
-        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        or not _valid_digest(digest)
     ):
         return None
     return algo, digest
