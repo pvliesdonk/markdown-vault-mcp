@@ -18,6 +18,8 @@ and reflects a mid-session declaration on the next call.
 The OKF field vocabulary is deliberately kept as *data* (module constants)
 rather than spread through code: the spec is pre-1.0 with one breaking
 rename already behind it, so a future revision should be a table edit.
+
+Write serialization: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 # Both halves of the library are used here, deliberately: `fm` serialises the
@@ -75,6 +78,23 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: phase 1 — staged for the conformance audit (#962: reserved files are
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
+
+
+def is_okf_reserved_file(path: str) -> bool:
+    """Classify an already scoped vault-relative POSIX path by its basename.
+
+    POSIX basename rules ignore trailing separators and dot components;
+    backslashes remain literal. This lexical check grants no detection,
+    admission, authorship, or maintenance authority.
+
+    Args:
+        path: A vault-relative POSIX path.
+
+    Returns:
+        Whether its basename is an exact-case reserved OKF filename.
+    """
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
+
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
 #: builders and the reserved-frontmatter policy so the heading a reader sees
@@ -381,7 +401,7 @@ def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
         factor *= OKF_DEPRECATED_WEIGHT
     if annotation.get("stale"):
         factor *= OKF_STALE_WEIGHT
-    if path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(path):
         factor *= OKF_RESERVED_WEIGHT
     return factor
 
@@ -620,7 +640,7 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
         acc.root_index_seen = True
     elif "okf_version" in metadata:
         acc.misplaced.add(rel)
-    if name in OKF_RESERVED_FILENAMES:
+    if is_okf_reserved_file(rel):
         if name == "log.md" and not _log_headings_conform(body):
             acc.log_shape.add(rel)
         elif name == "index.md" and not _index_frontmatter_conforms(rel, raw, metadata):
@@ -1047,6 +1067,9 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     prior attestation. An existing ``generated.by`` is preserved by key
     presence, including an empty or null value; other provenance keys,
     ``sources`` and every other field are untouched.
+    Surviving fields retain their mapping order, including nested mappings;
+    a new ``generated`` field appends, while replacing it retains its slot.
+    YAML comments and formatting are not retained on serialization.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1072,7 +1095,7 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     new_meta.pop("verified", None)
     if new_meta == meta:
         return text
-    return fm.dumps(fm.Post(post.content, **new_meta))
+    return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)
 
 
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
@@ -1080,8 +1103,10 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
     human attestation, promoting the note's trust tier to ``human-reviewed``.
-    Preserves all other frontmatter and the body verbatim; the entry keeps the
-    ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    Preserves other frontmatter values and mapping order, including nested
+    mappings. A new ``verified`` field appends; an existing field retains its
+    slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
+    YAML comments, quoting and surrounding whitespace may be normalized.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1098,4 +1123,4 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
     meta["verified"] = verified
-    return fm.dumps(fm.Post(post.content, **meta))
+    return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)

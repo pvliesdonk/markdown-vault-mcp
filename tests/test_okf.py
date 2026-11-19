@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp import okf
 from markdown_vault_mcp.vault import VaultSettings
 
 if TYPE_CHECKING:
@@ -31,6 +32,29 @@ from markdown_vault_mcp.okf import (
 TODAY = dt.date(2026, 8, 7)
 #: The instant the staleness tests run at: 10:00 in a +02:00 zone on TODAY.
 NOW = dt.datetime(2026, 8, 7, 10, 0, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("index.md", True),
+        ("log.md", True),
+        ("folder/index.md", True),
+        ("folder/deep/log.md", True),
+        ("index.md/", True),
+        ("folder/log.md/", True),
+        ("folder/index.md/.", True),
+        ("index.md/note.md", False),
+        ("index.md.bak", False),
+        ("Index.md", False),
+        ("LOG.md", False),
+        (r"folder\index.md", False),
+    ],
+)
+def test_reserved_file_classification_uses_exact_posix_basename(
+    path: str, expected: bool
+) -> None:
+    assert okf.is_okf_reserved_file(path) is expected
 
 
 def _write_root_index(vault: Path, text: str) -> None:

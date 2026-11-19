@@ -1288,3 +1288,76 @@ def test_on_build_embeddings_done_leaves_an_unavailable_store_to_the_writer_log(
         for r in caplog.records
         if r.msg.startswith("async_build_embeddings")
     ] == ["DEBUG"]
+
+
+def test_vault_uses_build_side_provenance_renderer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rendering change at the build owner also reaches warm-start checks."""
+    from markdown_vault_mcp.vault import Vault
+
+    # Simulate a future rendering change at the writer without updating a
+    # second renderer in Vault: both consumers must use the owner's result.
+    monkeypatch.setattr(
+        "markdown_vault_mcp.managers.index.canonical_attachment_extensions",
+        lambda _extensions: '["pdf","png"]',
+    )
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    settings = VaultSettings(
+        index_path=tmp_path / "fts.db",
+        attachment_extensions=["pdf", "png"],
+    )
+    pre = Vault(source_dir=source, settings=settings)
+    try:
+        assert pre.index.build_index().chunks_indexed > 0
+        assert pre._fts.get_chunking_meta().attachment_extensions == '["pdf","png"]'
+    finally:
+        pre.close()
+    post = Vault(source_dir=source, settings=settings)
+    try:
+        assert post.index.build_index().chunks_indexed == 0
+    finally:
+        post.close()
+
+
+@pytest.mark.parametrize(
+    ("extensions", "expected_extensions"),
+    [(None, ""), ([], "[]"), ([" PNG ", ".PDF", "png"], '["pdf", "png"]')],
+)
+def test_manager_provenance_preserves_stored_representation(
+    tmp_path: Path, extensions: list[str] | None, expected_extensions: str
+) -> None:
+    """The shared record preserves default, empty and normalized settings."""
+    from markdown_vault_mcp.embed_text import EmbedTextBuilder
+    from markdown_vault_mcp.fts_index import ChunkingMeta
+
+    fts = FTSIndex()
+    try:
+        manager = IndexManager(
+            fts=fts,
+            tracker=ChangeTracker(None),
+            source_dir=tmp_path,
+            chunk_strategy=HeadingChunker(),
+            embed_model_name="example-model",
+            max_chunk_chars_override=-1,
+            title_field="name",
+            embed_text_builder=EmbedTextBuilder(searchable_fields=("summary", "type")),
+            indexed_frontmatter_fields=["type", "status"],
+            attachment_extensions=extensions,
+        )
+        expected = ChunkingMeta(
+            model="example-model",
+            max_chunk_chars_override=-1,
+            title_field="name",
+            searchable_fields="summary,type",
+            indexed_frontmatter_fields="type,status",
+            attachment_extensions=expected_extensions,
+            semantics_version=INDEX_SEMANTICS_VERSION,
+        )
+        assert manager.chunking_meta == expected
+        manager.build_index()
+        assert fts.get_chunking_meta() == expected
+    finally:
+        fts.close()
