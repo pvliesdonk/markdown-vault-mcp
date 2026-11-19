@@ -31,6 +31,7 @@ Use `list_documents` for a complete listing and read for a path you already know
 | `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "pacing"}`; keys come from `indexed_frontmatter_fields` in stats, and a list field matches when it holds the value. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes without a non-empty string type, excluding reserved files. |
 | `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note, at least 1; omit for the server default. |
 | `snippet_words` | `integer \| null` | `null` | Snippet width in words; omit for the server default, 0 for whole sections. read with section set to a result's heading returns that whole section. |
+| `purpose` | `current \| historical \| review` | `"current"` | Use current ranking, historical to retain deprecated and stale notes, or review to remove OKF penalties. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
@@ -51,6 +52,7 @@ List of result dicts ranked by file relevance. Each contains:
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
   `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
   `review_applicability`, and `sources_count` (when the note cites sources).
+- `retrieval_policy` (dict): Purpose and effective OKF score multipliers.
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
 
@@ -60,8 +62,9 @@ List of result dicts ranked by file relevance. Each contains:
     the full section text.
   - score (float): Chunk-level score for this section.
 
-On an active OKF bundle, ranking demotes deprecated notes, stale notes
-less, and the reserved index.md and log.md below real notes.
+Current ranking on an active OKF bundle demotes deprecated, stale and
+reserved notes. Historical keeps the reserved penalty; review removes all
+OKF penalties.
 
 An empty query returns an empty list in semantic and hybrid mode.
 

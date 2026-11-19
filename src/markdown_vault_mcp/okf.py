@@ -510,7 +510,35 @@ def derive_annotation(
     return annotation
 
 
-def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
+def retrieval_policy(purpose: str, *, active: bool) -> dict[str, Any]:
+    """Return the OKF score multipliers applied for a search purpose.
+
+    Args:
+        purpose: Current, historical, or review retrieval.
+        active: Whether the vault is an active OKF bundle.
+
+    Returns:
+        The purpose and effective OKF multipliers.
+    """
+    if purpose not in {"current", "historical", "review"}:
+        raise InvalidRequestError(
+            f"Unknown search purpose {purpose!r}; use current, historical, or review."
+        )
+    return {
+        "purpose": purpose,
+        "weights": {
+            "deprecated": OKF_DEPRECATED_WEIGHT
+            if active and purpose == "current"
+            else 1.0,
+            "stale": OKF_STALE_WEIGHT if active and purpose == "current" else 1.0,
+            "reserved": OKF_RESERVED_WEIGHT if active and purpose != "review" else 1.0,
+        },
+    }
+
+
+def okf_downweight_factor(
+    annotation: dict[str, Any], path: str, *, purpose: str = "current"
+) -> float:
     """Return the multiplicative ranking factor for one OKF hit (design §5).
 
     The curated-pipeline downweight for phase 6 (#965). Composes the
@@ -522,17 +550,19 @@ def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
         annotation: The note's :func:`derive_annotation` result (reads
             ``status`` and ``stale``).
         path: The note's vault-relative path (reserved-file check, no I/O).
+        purpose: Retrieval purpose selecting the applied weights.
 
     Returns:
         A factor in ``(0, 1]``.
     """
+    weights = retrieval_policy(purpose, active=True)["weights"]
     factor = 1.0
     if annotation.get("status") == "deprecated":
-        factor *= OKF_DEPRECATED_WEIGHT
+        factor *= weights["deprecated"]
     if annotation.get("stale"):
-        factor *= OKF_STALE_WEIGHT
+        factor *= weights["stale"]
     if is_okf_reserved_file(path):
-        factor *= OKF_RESERVED_WEIGHT
+        factor *= weights["reserved"]
     return factor
 
 

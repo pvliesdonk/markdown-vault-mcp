@@ -48,6 +48,7 @@ def register(mcp: FastMCP) -> None:
         filters: dict[str, str | None] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
+        purpose: Literal["current", "historical", "review"] = "current",
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
@@ -58,6 +59,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             query: Words to match or a natural-language question.
+            purpose: Use current ranking, historical to retain deprecated and stale notes,
+                or review to remove OKF penalties.
             limit: Maximum notes to return (default 10).
             mode: Omit for the best mode this vault serves. `"keyword"` suits exact terms,
                 operators and filenames; `"semantic"` matches meaning only; `"hybrid"`
@@ -107,6 +110,7 @@ def register(mcp: FastMCP) -> None:
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
               `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
               `review_applicability`, and `sources_count` (when the note cites sources).
+            - retrieval_policy (dict): Purpose and effective OKF score multipliers.
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
@@ -116,8 +120,9 @@ def register(mcp: FastMCP) -> None:
                 the full section text.
               - score (float): Chunk-level score for this section.
 
-            On an active OKF bundle, ranking demotes deprecated notes, stale notes
-            less, and the reserved index.md and log.md below real notes.
+            Current ranking on an active OKF bundle demotes deprecated, stale and
+            reserved notes. Historical keeps the reserved penalty; review removes all
+            OKF penalties.
 
             An empty query returns an empty list in semantic and hybrid mode.
 
@@ -142,6 +147,7 @@ def register(mcp: FastMCP) -> None:
             filters=filters,
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
+            purpose=purpose,
         )
         hits = await attach_okf_to_results(vault, [asdict(r) for r in results])
         return _staleness_result(

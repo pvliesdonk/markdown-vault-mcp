@@ -417,3 +417,12 @@ An unavailable directory boundary with reason `depth_limit` remains in filtered 
 A whole-note read reports `okf.observation` separately from supplied review claims and trust tier. When the latest recorded reviews match local receipts unambiguously one-to-one, the server compares the current concept snapshot with each matched snapshot. `later_change_observed: true` means the current concept differs from every one of those snapshots. It does not say when the change happened or who made it. A matching snapshot reports `unavailable`, because an intervening edit and revert cannot be excluded. It does not judge a review invalid. Observation matches the path, reviewer and instant of the latest recorded reviews; an assessment also needs a claim with a matching check and snapshot for local origin. Observation may be available when an unbound assessment has no local evidence. Ambiguous, missing, malformed or unsupported matching receipts report `unavailable`, as does a missing or unreadable receipt store. A fresh instance needs no Git history, but starts without local receipts.
 
 Inventory includes locally observed removed concept paths as `presence: removed` within the selected scope and current access policy. Live observations and removal probes share a 1,000-observation page budget; follow `next_cursor` even when a page is empty. The ledger is instance-local and does not travel with the bundle. `removal_history` is `available` when the local ledger is usable, and `unavailable` when it is missing, corrupt, unreadable, newer or detached. This status does not establish complete history. Ledger availability does not overwrite `enumeration`. A removal probe checks presence only and reads no file content.
+
+## Search purpose
+
+MCP `search` and the Python reader's `search` accept `purpose`: `current`
+(default) demotes deprecated, stale and reserved notes; `historical` retains
+the reserved note penalty only; `review` removes these OKF penalties. Each
+result reports the effective multipliers in `retrieval_policy`. Other ranking
+controls, including length and folder weights, still apply. Terminal search
+uses the default purpose.

@@ -784,3 +784,14 @@ async def test_review_rejects_split_read_aba_during_confirmation(
                 "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
             )
     assert path.read_text(encoding="utf-8") == newer
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_search_reports_retrieval_policy() -> None:
+    async with Client(make_server()) as client:
+        hits = await _search(client, purpose="review")
+        assert hits
+        assert hits[0]["retrieval_policy"] == {
+            "purpose": "review",
+            "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 1.0},
+        }

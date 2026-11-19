@@ -435,6 +435,14 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
 
 **Pipeline order:** Per-channel length downweight → fuse (RRF for hybrid) → folder boost → cap per path → snippet projection → return `limit` results. In keyword/semantic modes there is no fuse step, so the folder boost applies directly to the per-channel scores; in hybrid it applies to the fused scores, immediately before per-file grouping. See **Field collapsing** below for the post-433 grouping step.
 
+Search accepts a retrieval purpose. `current` preserves the existing OKF
+ranking: deprecated, stale and reserved notes receive multipliers of 0.5,
+0.75 and 0.5 respectively. `historical` keeps only the reserved multiplier;
+`review` removes all three. Each result reports the effective multipliers in
+`retrieval_policy`, including unity weights when OKF is inactive. These are
+OKF-specific multipliers; length and folder ranking remain in effect. The
+terminal search uses the default current purpose.
+
 ### Curated Ranking
 
 Five opt-in knobs let an operator tune retrieval for curated vaults. With

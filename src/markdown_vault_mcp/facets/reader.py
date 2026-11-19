@@ -510,11 +510,13 @@ class ReaderFacet:
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
+        purpose: Literal["current", "historical", "review"] = "current",
     ) -> list[GroupedResult]:
         """Search the vault.
 
         Args:
             query: Search string.
+            purpose: Select OKF ranking weights for current, historical or review retrieval.
             limit: Maximum number of files (not chunks) to return.
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of both.
@@ -544,6 +546,7 @@ class ReaderFacet:
             folder=folder,
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
+            purpose=purpose,
         )
 
     def read(self, path: str, *, section: str | None = None) -> NoteContent | None:

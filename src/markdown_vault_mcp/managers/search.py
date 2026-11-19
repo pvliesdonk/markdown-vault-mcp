@@ -62,6 +62,7 @@ from markdown_vault_mcp.okf import (
     matches_okf_filters,
     okf_downweight_factor,
     parse_stale_filter,
+    retrieval_policy,
 )
 from markdown_vault_mcp.types import (
     DEFAULT_SEARCH_MODES,
@@ -687,7 +688,9 @@ class SearchManager:
                 kept.append(row)
         return kept
 
-    def _rank_okf(self, rows: builtins.list[_RankT]) -> builtins.list[_RankT]:
+    def _rank_okf(
+        self, rows: builtins.list[_RankT], *, purpose: str = "current"
+    ) -> builtins.list[_RankT]:
         """Apply the OKF ranking downweight (design §5, #965) on active bundles.
 
         A no-op — the rows are returned unchanged, so ranking stays
@@ -711,7 +714,7 @@ class SearchManager:
             cached = factors.get(path)
             if cached is None:
                 annotation = derive_annotation(self._get_frontmatter(path))
-                cached = okf_downweight_factor(annotation, path)
+                cached = okf_downweight_factor(annotation, path, purpose=purpose)
                 factors[path] = cached
             return cached
 
@@ -926,11 +929,13 @@ class SearchManager:
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
+        purpose: Literal["current", "historical", "review"] = "current",
     ) -> list[GroupedResult]:
         """Search the vault.
 
         Args:
             query: Search string.
+            purpose: Select OKF ranking weights for current, historical or review retrieval.
             limit: Maximum number of files (not chunks) to return.
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of
@@ -962,6 +967,9 @@ class SearchManager:
                 ``"hybrid"`` but no embedding provider is configured (a
                 ``ValueError`` subclass).
         """
+        policy = retrieval_policy(
+            purpose, active=self._okf is not None and self._okf.state().active
+        )
         eff_cap = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
@@ -972,7 +980,7 @@ class SearchManager:
         mode = self._resolve_mode(mode)
 
         if mode == "keyword":
-            return self._keyword_search(
+            results = self._keyword_search(
                 query,
                 limit=limit,
                 filters=plain_filters,
@@ -980,13 +988,17 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
+                purpose=purpose,
             )
+            for result in results:
+                result.retrieval_policy = policy
+            return results
 
         if mode == "semantic":
             self._require_vectors()
             if not is_embeddable(query):
                 return self._no_embeddable_query(mode)
-            return self._semantic_search(
+            results = self._semantic_search(
                 query,
                 limit=limit,
                 filters=plain_filters,
@@ -994,13 +1006,17 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
+                purpose=purpose,
             )
+            for result in results:
+                result.retrieval_policy = policy
+            return results
 
         # hybrid
         self._require_vectors()
         if not is_embeddable(query):
             return self._no_embeddable_query(mode)
-        return self._hybrid_search(
+        results = self._hybrid_search(
             query,
             limit=limit,
             filters=plain_filters,
@@ -1008,7 +1024,11 @@ class SearchManager:
             chunks_per_file=eff_cap,
             snippet_words=eff_snip,
             okf_filters=okf_filters,
+            purpose=purpose,
         )
+        for result in results:
+            result.retrieval_policy = policy
+        return results
 
     @staticmethod
     def _no_embeddable_query(mode: str) -> builtins.list[GroupedResult]:
@@ -1142,6 +1162,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
+        purpose: str = "current",
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1162,7 +1183,7 @@ class SearchManager:
             raw, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted)
+        downweighted = self._rank_okf(downweighted, purpose=purpose)
         groupable: list[_GroupableFTS] = [
             _GroupableFTS(
                 path=r.path,
@@ -1262,6 +1283,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
+        purpose: str = "current",
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1286,7 +1308,7 @@ class SearchManager:
             rows, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted)
+        downweighted = self._rank_okf(downweighted, purpose=purpose)
         groups = _group_by_path(
             downweighted, chunks_per_file=chunks_per_file, file_limit=limit
         )
@@ -1308,6 +1330,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
+        purpose: str = "current",
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
         okf_filters = okf_filters or {}
@@ -1400,7 +1423,7 @@ class SearchManager:
         groupable_rows = _apply_folder_boost(
             groupable_rows, weights=self._folder_weights
         )
-        groupable_rows = self._rank_okf(groupable_rows)
+        groupable_rows = self._rank_okf(groupable_rows, purpose=purpose)
         groups = _group_by_path(
             groupable_rows, chunks_per_file=chunks_per_file, file_limit=limit
         )

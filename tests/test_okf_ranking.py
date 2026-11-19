@@ -295,3 +295,62 @@ class TestByteIdenticalWhenNotDetected:
             assert s["normal.md"] == pytest.approx(s["deprecated.md"])
         finally:
             vault.close()
+
+
+@pytest.mark.parametrize("purpose", ["historical", "review"])
+def test_purpose_removes_lifecycle_penalties(
+    declared_vault: Vault, purpose: str
+) -> None:
+    results = declared_vault.reader.search(
+        "zebra", mode="keyword", limit=10, purpose=purpose
+    )
+    scores = {result.path: result.score for result in results}
+    assert scores["deprecated.md"] == pytest.approx(scores["normal.md"])
+    assert scores["stale.md"] == pytest.approx(scores["normal.md"])
+
+
+def test_purpose_reserved_weight(tmp_path: Path) -> None:
+    mgr = _search_manager(tmp_path, mode="on")
+    rows = [_Row("index.md", 1.0)]
+    assert mgr._rank_okf(rows, purpose="historical")[0].score == OKF_RESERVED_WEIGHT
+    assert mgr._rank_okf(rows, purpose="review")[0].score == 1.0
+
+
+@pytest.mark.parametrize("mode", _LIVE_MODES)
+def test_current_default_and_policy(declared_vault: Vault, mode: str) -> None:
+    default = declared_vault.reader.search("zebra", mode=mode, limit=10)
+    explicit = declared_vault.reader.search(
+        "zebra", mode=mode, limit=10, purpose="current"
+    )
+    assert default == explicit
+    assert default[0].retrieval_policy == {
+        "purpose": "current",
+        "weights": {"deprecated": 0.5, "stale": 0.75, "reserved": 0.5},
+    }
+    historical = declared_vault.reader.search(
+        "zebra", mode=mode, limit=10, purpose="historical"
+    )
+    assert historical[0].retrieval_policy == {
+        "purpose": "historical",
+        "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 0.5},
+    }
+    review = declared_vault.reader.search(
+        "zebra", mode=mode, limit=10, purpose="review"
+    )
+    assert review[0].retrieval_policy == {
+        "purpose": "review",
+        "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 1.0},
+    }
+
+
+def test_inactive_policy_and_invalid_purpose(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.okf import retrieval_policy
+
+    assert retrieval_policy("current", active=False)["weights"] == {
+        "deprecated": 1.0,
+        "stale": 1.0,
+        "reserved": 1.0,
+    }
+    with pytest.raises(InvalidRequestError, match="purpose"):
+        _search_manager(tmp_path, mode=None).search("zebra", purpose="invalid")  # type: ignore[arg-type]
