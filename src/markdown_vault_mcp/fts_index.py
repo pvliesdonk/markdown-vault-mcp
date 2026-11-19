@@ -63,7 +63,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Collection, Iterable, Iterator
 
     from markdown_vault_mcp.query_types import (
         NoteAggregate,
@@ -79,6 +79,18 @@ logger = logging.getLogger(__name__)
 #: Paths bound per ``list_chunks`` statement, well under SQLite's variable
 #: limit (32766 since 3.32; 999 before), so a large dirty set never fails.
 _PATHS_PER_QUERY = 900
+
+_CHUNK_PAGE_DOCS = 256
+
+
+def _mark_chunk_rows(rows: Iterable[sqlite3.Row]) -> Iterator[dict[str, Any]]:
+    """Convert ordered whole-document rows, marking each document's first chunk."""
+    previous: str | None = None
+    for raw in rows:
+        row = dict(raw)
+        row["is_first_chunk"] = row["path"] != previous
+        previous = row["path"]
+        yield row
 
 
 # Thresholds for running FTS5 'optimize' after a bulk purge.  Deleting rows
@@ -2258,14 +2270,40 @@ class FTSIndex:
                 for start in range(0, len(ordered), _PATHS_PER_QUERY)
                 for raw in self._chunk_rows(ordered[start : start + _PATHS_PER_QUERY])
             ]
-        rows: list[dict[str, Any]] = []
-        prev_path: str | None = None
-        for raw in fetched:
-            row = dict(raw)
-            row["is_first_chunk"] = row["path"] != prev_path
-            prev_path = row["path"]
-            rows.append(row)
-        return rows
+        return list(_mark_chunk_rows(fetched))
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield path-ordered, atomic whole-document pages.
+
+        Changes between pages may be observed or missed; convergence handles
+        later edits. A document present throughout appears once. Read locks
+        are held only while each page is fetched.
+        """
+        after: str | None = None
+        while rows := self._chunk_page(after):
+            yield from _mark_chunk_rows(rows)
+            after = rows[-1]["path"]
+
+    @_retry_on_locked
+    def _chunk_page(self, after: str | None) -> list[sqlite3.Row]:
+        """Fetch one page's paths and chunks atomically."""
+        continuation = "d.path > ? AND " if after is not None else ""
+        params = (after, _CHUNK_PAGE_DOCS) if after is not None else (_CHUNK_PAGE_DOCS,)
+        return (
+            self._conn()
+            .execute(
+                "WITH page AS (SELECT d.id, d.path, d.title, d.folder, "
+                "d.frontmatter_json, d.content_hash FROM documents AS d WHERE "
+                f"{continuation}"
+                "EXISTS (SELECT 1 FROM sections AS s WHERE s.document_id = d.id) "
+                "ORDER BY d.path LIMIT ?) "
+                "SELECT d.path, d.title, d.folder, s.heading, s.content, s.start_line, "
+                "d.frontmatter_json, d.content_hash FROM page AS d "
+                "JOIN sections AS s ON s.document_id = d.id ORDER BY d.path, s.id",
+                params,
+            )
+            .fetchall()
+        )
 
     def _chunk_rows(self, paths: list[str] | None) -> list[sqlite3.Row]:
         """Fetch the chunk rows of *paths* (or of every document), in path order."""
