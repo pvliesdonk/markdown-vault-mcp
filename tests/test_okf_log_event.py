@@ -4,11 +4,29 @@ from datetime import date
 
 import pytest
 
-from markdown_vault_mcp._okf_log_event import deferred_event, record_event
+from markdown_vault_mcp._okf_log_event import (
+    deferred_event,
+)
+from markdown_vault_mcp._okf_log_event import (
+    record_event as _record_event,
+)
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.fs import is_regular_file
 from markdown_vault_mcp.vault import Vault, VaultSettings
+
+
+def record_event(  # noqa: PLR0913, RUF100 - mirrors the event owner and test date
+    doc_mgr, paths, description, folders, proposed_by=None, *, today=None
+):
+    return _record_event(
+        doc_mgr,
+        paths,
+        description,
+        (folders, lambda: {"effective": True}),
+        proposed_by,
+        today=today,
+    )
 
 
 def test_event_groups_paths_and_keeps_same_day_entries(tmp_path):
@@ -48,6 +66,7 @@ def test_event_groups_paths_and_keeps_same_day_entries(tmp_path):
             "/area/a%20one.md" in log and r"/area/b\#.md" in log and "/area/c.md" in log
         )
         assert "Changed policy" in log and "Second event" in log
+        assert vault._write_callback.drain()
         assert calls.count("log.md") == 2
     finally:
         vault.close()
@@ -268,3 +287,149 @@ def test_unreadable_concept_refuses_event_without_writing(tmp_path, monkeypatch)
         assert not is_regular_file(tmp_path / "log.md")
     finally:
         vault.close()
+
+
+def test_event_preserves_existing_crlf_bytes(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = b"\xef\xbb\xbf---\r\ntitle: History\r\n---\r\n# Log\r\n\r\n## 2020-01-01\r\n\r\n- Old\r\n"
+    log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(vault._doc_mgr, ["a.md"], "Change", (".",), today=date(2026, 1, 2))
+        result = log.read_bytes()
+        inserted = b"## 2026-01-02\r\n\r\n- Change \xe2\x80\x94 [a.md](/a.md)\r\n\r\n"
+        assert result.replace(inserted, b"") == old
+        assert b"Change" in result
+        assert b"\n" not in result.replace(b"\r\n", b"")
+    finally:
+        vault.close()
+
+
+def test_event_refuses_unclosed_fence(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = b"# Log\n\n```\nunfinished\n"
+    log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(InvalidRequestError):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        assert log.read_bytes() == old
+    finally:
+        vault.close()
+
+
+def test_event_refuses_external_append(tmp_path, monkeypatch):
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    log.write_text("# Log\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    original = vault._doc_mgr.replace_body
+
+    def concurrent(*args, **kwargs):
+        log.write_text("# Log\nExternal\n")
+        return original(*args, **kwargs)
+
+    try:
+        monkeypatch.setattr(vault._doc_mgr, "replace_body", concurrent)
+        with pytest.raises(ConcurrentModificationError):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        assert log.read_text() == "# Log\nExternal\n"
+    finally:
+        vault.close()
+
+
+def test_event_rejects_surrogate_before_io(tmp_path, monkeypatch):
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+
+        def unexpected():
+            pytest.fail("filesystem accessed before validation")
+
+        monkeypatch.setattr(vault._doc_mgr, "ensure_writable", unexpected)
+        with pytest.raises(InvalidRequestError):
+            record_event(vault._doc_mgr, ["a.md"], "bad\ud800", (".",))
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("occupied", ["file", "symlink"])
+def test_event_refuses_occupied_missing_snapshot(tmp_path, monkeypatch, occupied):
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    original = vault._doc_mgr.replace_body
+
+    def concurrent(*args, **kwargs):
+        if occupied == "file":
+            log.write_text("external\n")
+        else:
+            log.symlink_to("missing.md")
+        return original(*args, **kwargs)
+
+    try:
+        monkeypatch.setattr(vault._doc_mgr, "replace_body", concurrent)
+        with pytest.raises(ConcurrentModificationError):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        if occupied == "file":
+            assert log.read_text() == "external\n"
+        else:
+            assert log.is_symlink()
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("proposed_by", ["", " ", "x" * 101, "bad\x00", "bad\ud800"])
+def test_bad_proposer_refused(tmp_path, proposed_by):
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(InvalidRequestError):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",), proposed_by)
+    finally:
+        vault.close()
+
+
+def test_proposer_escaped_and_root_scope_effective(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (tmp_path / "a.md").write_text("# A\n")
+    caps = ContentConfig(okf_log="events", okf_folders=()).okf_capabilities
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        assert vault.okf_capability_report(active=True)["log"]["effective"]
+        assert vault.writer.okf_log_event(["a.md"], "Change", " <A> ") == "log.md"
+        assert r"(proposed by \<A>)" in (tmp_path / "log.md").read_text()
+    finally:
+        vault.close()
+
+
+def test_non_insertion_layout_is_refused_unchanged(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = b"# Log\n\n\n"
+    log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(InvalidRequestError, match="unchanged"):
+            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
+        assert log.read_bytes() == old
+    finally:
+        vault.close()
+
+
+def test_missing_etag_occupied_path(tmp_path):
+    from markdown_vault_mcp.exceptions import ConcurrentModificationError
+    from markdown_vault_mcp.managers._write_kernel import MISSING_ETAG, check_if_match
+
+    path = tmp_path / "entry"
+    check_if_match(path, "entry", MISSING_ETAG)
+    path.mkdir()
+    with pytest.raises(ConcurrentModificationError):
+        check_if_match(path, "entry", MISSING_ETAG)

@@ -1196,3 +1196,12 @@ class TestAppendOkfLogEntry:
 
         out = append_okf_log_entry("# Log\n", date="2026-08-09", summary="x")
         assert out == "# Log\n\n## 2026-08-09\n\n- x\n"
+
+
+def test_event_logging_guidance():
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    caps = ContentConfig(okf_log="events").okf_capabilities
+    text = _guidance(read_only=False, okf_mode="on", okf_capabilities=caps)
+    assert "Record related edits with 'okf_log_event'" in text
+    assert "do not hand-edit 'log.md'" in text

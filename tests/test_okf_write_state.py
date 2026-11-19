@@ -109,7 +109,7 @@ async def test_mcp_reports_write_state(
                 (False, None),
                 (True, None),
                 (False, "not_designated"),
-                (False, "not_designated"),
+                (True, None),
             ],
         ),
         (

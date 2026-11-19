@@ -1364,7 +1364,7 @@ class ProjectConfig:
     okf_log: str | None = field(
         default=None,
         metadata={
-            "help": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write.",
+            "help": "OKF log authority defaults to off. Events records explicit editorial entries; writes also records server writes automatically.",
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },

@@ -50,11 +50,9 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
     from markdown_vault_mcp.okf import (
         OkfConvertResult,
-        OkfDetector,
         OkfIndexResult,
         OkfLogResult,
     )
-    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
     from markdown_vault_mcp.types import (
         DeleteResult,
         EditResult,
@@ -100,7 +98,8 @@ class WriterFacet:
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
         receipt_store: ReceiptStore | None = None,
-        event_policy: tuple[OkfCapabilities, OkfDetector] | None = None,
+        event_policy: tuple[tuple[str, ...], Callable[[], dict[str, Any]]]
+        | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -363,12 +362,15 @@ class WriterFacet:
         """
         return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
 
-    def okf_log_event(self, paths: list[str], description: str) -> str:
+    def okf_log_event(
+        self, paths: list[str], description: str, proposed_by: str | None = None
+    ) -> str:
         """Record one editorial event across existing concepts.
 
         Args:
             paths: Vault-relative paths to the concepts.
             description: One-line explanation of the change.
+            proposed_by: Optional attribution for the proposal.
 
         Returns:
             Vault-relative path of the updated log.
@@ -380,12 +382,10 @@ class WriterFacet:
             raise InvalidRequestError(
                 "OKF event logging is not configured; ask the operator to enable it."
             )
-        capabilities, detector = self._event_policy
-        if capabilities.log == "off" or not detector.state().active:
-            raise InvalidRequestError(
-                "OKF event logging is not active. Ask the operator to enable logging on an active bundle."
-            )
-        return record_event(self._doc_mgr, paths, description, capabilities.folders)
+        folders, report = self._event_policy
+        return record_event(
+            self._doc_mgr, paths, description, (folders, report), proposed_by
+        )
 
     def okf_author(
         self,

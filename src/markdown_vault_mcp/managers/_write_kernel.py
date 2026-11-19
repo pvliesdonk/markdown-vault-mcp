@@ -155,6 +155,9 @@ def new_file_mode(parent: Path | None = None) -> int:
     return requested & (owner << 6 | group << 3 | other)
 
 
+MISSING_ETAG = "(file does not exist)"
+
+
 def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
     """Enforce an optional etag precondition on *abs_path*.
 
@@ -162,7 +165,8 @@ def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
         abs_path: Absolute path of the file the etag refers to.
         path: Vault-relative path, used in the error.
         if_match: Etag from a previous read, or ``None`` to skip the
-            check. A file that does not exist counts as a mismatch.
+            check. ``MISSING_ETAG`` requires an unoccupied path; other etags
+            require an existing file. The check and replacement are separate.
 
     Raises:
         ConcurrentModificationError: If *if_match* is provided and does
@@ -170,6 +174,12 @@ def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
     """
     if if_match is None:
         return
+    if if_match == MISSING_ETAG:
+        if not os.path.lexists(abs_path):
+            return
+        raise ConcurrentModificationError(
+            path, expected=if_match, actual="(path occupied)"
+        )
     if not is_regular_file(abs_path):
         raise ConcurrentModificationError(
             path,

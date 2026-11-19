@@ -195,7 +195,17 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             )
             index = caps.index
             log = caps.log == "writes"
-            if index and log and caps.folders == ("**",):
+            if caps.log == "events":
+                index_advice = (
+                    "Server maintains designated indexes; maintain others."
+                    if index
+                    else "For edits, update 'index.md'."
+                )
+                upkeep = (
+                    "Record related edits with 'okf_log_event'; do not hand-edit 'log.md'. "
+                    + index_advice
+                )
+            elif index and log and caps.folders == ("**",):
                 upkeep = "Leave 'log.md'/'index.md' to the server."
             elif not index and not log:
                 upkeep = "For edits, update 'log.md'/'index.md'."
