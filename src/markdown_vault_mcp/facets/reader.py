@@ -570,16 +570,13 @@ class ReaderFacet:
         """
         return self._doc_mgr.read(path, section=section)
 
-    def review_assessments(
+    def review_evidence(
         self, path: str, metadata: dict[str, Any], snapshot: dict[str, str]
-    ) -> list[dict[str, Any]]:
-        """Assess reviews using this instance's receipts, when available."""
-        from markdown_vault_mcp._okf_receipts import assess_reviews
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Assess reviews and observe changes, reading receipts at most once."""
+        from markdown_vault_mcp._okf_receipts import review_evidence
 
-        store = self._receipt_store
-        return assess_reviews(
-            metadata, snapshot, None if store is None else lambda: store.receipts(path)
-        )
+        return review_evidence(self._receipt_store, path, metadata, snapshot)
 
     def review_observation(
         self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None

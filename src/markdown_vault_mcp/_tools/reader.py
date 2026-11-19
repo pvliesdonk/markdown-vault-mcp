@@ -197,7 +197,9 @@ def register(mcp: FastMCP) -> None:
             independently of freshness. Each assessment carries by, at, snapshot,
             check, origin and local_evidence (available or unavailable). An
             unsupported algorithm has snapshot_basis=unsupported_algorithm;
-            malformed binding data has snapshot_basis=malformed_binding. A
+            malformed bindings or unreadable sibling reviews have
+            snapshot_basis=malformed_binding, even with a matching snapshot.
+            A non-string check has check_basis=malformed_binding. A
             local receipt establishes the tuple at this path, not an event count.
             Observation reports
             the local review comparison or unavailable. Section reads omit

@@ -8,6 +8,7 @@ import re
 import tempfile
 import threading
 from contextlib import suppress
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -25,7 +26,6 @@ from markdown_vault_mcp.okf import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
 
 
 def _snapshot_pair(value: Any) -> tuple[str, str] | None:
@@ -55,14 +55,14 @@ def _assess_claim(
         "origin": "supplied",
         "local_evidence": "unavailable",
     }
-    if claim is None:
-        if malformed_container:
-            item["snapshot_basis"] = "malformed_binding"
-        return item
-    check = claim.get("check")
+    claim = claim or {}
+    if malformed_container:
+        item["snapshot_basis"] = "malformed_binding"
     pair = _snapshot_pair(claim.get("snapshot"))
-    if isinstance(check, str):
-        item["check"] = check
+    if isinstance(claim.get("check"), str):
+        item["check"] = claim["check"]
+    elif "check" in claim:
+        item["check_basis"] = "malformed_binding"
     if pair is not None and pair[0] == snapshot["algo"]:
         item["snapshot"] = "matches" if pair[1] == snapshot["digest"] else "differs"
     elif pair is not None:
@@ -128,6 +128,30 @@ def assess_reviews(
         for entry in entries[len(selected) :]:
             result.append(_assess_claim(entry, None, snapshot, malformed))
     return result
+
+
+def review_evidence(
+    store: ReceiptStore | None,
+    path: str,
+    metadata: dict[str, Any],
+    snapshot: dict[str, str],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Assess reviews and observe changes with one lazy receipt lookup.
+
+    Args:
+        store: This instance's receipts, or None when unavailable.
+        path: Vault-relative note path.
+        metadata: Parsed concept frontmatter.
+        snapshot: Current concept digest.
+
+    Returns:
+        The per-review assessments and the local observation.
+    """
+    if store is None:
+        return assess_reviews(metadata, snapshot, None), {"state": "unavailable"}
+    load = cache(lambda: store.receipts(path))
+    observed = store.review_observation(path, metadata, snapshot, load)
+    return assess_reviews(metadata, snapshot, load), observed
 
 
 class ReceiptNotRecordedError(Exception):
@@ -207,7 +231,11 @@ class ReceiptStore:
             self._load()
 
     def review_observation(
-        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None
+        self,
+        path: str,
+        metadata: dict[str, Any],
+        snapshot: dict[str, str] | None,
+        load: Callable[[], list[dict[str, Any]] | None] | None = None,
     ) -> dict[str, Any]:
         """Compare the current concept with the latest locally recorded review.
 
@@ -215,25 +243,20 @@ class ReceiptStore:
             path: Vault-relative note path.
             metadata: Supplied note metadata.
             snapshot: Current concept digest, if available.
+            load: Shared path receipt lookup; defaults to this store's.
 
         Returns:
             An available comparison, or unavailable when local evidence is missing.
         """
-        entries = [
-            entry for entry in verified_entries(metadata) if _review_recorded(entry)
-        ]
-        if not entries or snapshot is None:
+        keys = [k for e in verified_entries(metadata) if (k := _review_key(e))]
+        if not keys or snapshot is None:
             return {"state": "unavailable"}
-        latest = max(
-            cast("datetime", _parse_stale_after(entry["at"])) for entry in entries
-        )
-        latest_entries = [
-            entry for entry in entries if _parse_stale_after(entry["at"]) == latest
-        ]
-        actors = {entry["by"] for entry in latest_entries}
-        if len(actors) != len(latest_entries):
+        latest = max(at for _, at in keys)
+        names = [by for by, at in keys if at == latest]
+        actors = set(names)
+        if len(actors) != len(names):
             return {"state": "unavailable"}
-        rows = self.receipts(path)
+        rows = load() if load else self.receipts(path)
         if rows is None:
             return {"state": "unavailable"}
         matching = [

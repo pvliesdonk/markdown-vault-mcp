@@ -211,7 +211,10 @@ frontmatter blob; not persisted):
   `check`, `origin`, and `local_evidence` (`available` or `unavailable`).
   Unsupported algorithms use `snapshot_basis: unsupported_algorithm` and make
   the aggregate unknown; malformed bindings or review containers use
-  `malformed_binding`. Claims join recorded reviewers and instants without
+  `malformed_binding`, including unreadable siblings of valid claims. Such an
+  assessment can still report a matching or differing snapshot. A non-string
+  check has `check_basis: malformed_binding` independently of snapshot status.
+  Claims join recorded reviewers and instants without
   consuming receipts; a receipt establishes the tuple at this path, not an
   event count or file incarnation. `recorded_entries` counts portable entries;
   assessments count matching claims plus unbound entries, so their lengths can differ.

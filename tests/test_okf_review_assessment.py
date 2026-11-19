@@ -35,7 +35,6 @@ def test_receipt_backed_claim_is_not_shadowed() -> None:
     metadata["verified"] = entry
     assert len(assess_reviews(metadata, current, lambda: [orphan, actual])) == 2
     metadata["verified"] = [entry, entry]
-    metadata["x-mvmcp"]["reviews"] = [None, {**actual, "by": "human:bob"}]
 
     def should_not_load():
         raise AssertionError("unmatched claims must not load receipts")
@@ -45,7 +44,14 @@ def test_receipt_backed_claim_is_not_shadowed() -> None:
         "snapshot_basis" not in item
         for item in assess_reviews(metadata, current, should_not_load)
     )
-    metadata["x-mvmcp"]["reviews"].insert(0, None)
+    metadata["x-mvmcp"]["reviews"] = [actual, "broken"]
+    items = assess_reviews(metadata, current, lambda: [actual])
+    assert (items[0]["snapshot"], items[0]["origin"]) == ("matches", "local_receipt")
+    assert derive_annotation(metadata, assessments=items)["review_applicability"] == {
+        "review": "unknown",
+        "basis": "malformed_binding",
+    }
+    metadata["x-mvmcp"]["reviews"] = [None, {**actual, "by": "human:bob"}]
     items = assess_reviews(metadata, current, should_not_load)
     assert [item["snapshot_basis"] for item in items] == [
         "malformed_binding",
@@ -117,10 +123,20 @@ def test_malformed_binding_and_container_are_unknown() -> None:
         assert (
             derive_annotation(metadata)["review_applicability"]["review"] == "unknown"
         )
+    claim = {**entry, "snapshot": snapshot, "check": 123}
+    item = assess_reviews(
+        {"verified": entry, "x-mvmcp": {"reviews": [claim]}}, snapshot, None
+    )[0]
+    assert (item["snapshot"], item["check"], item["check_basis"]) == (
+        "matches",
+        None,
+        "malformed_binding",
+    )
     metadata = {
         "verified": entry,
         "x-mvmcp": {"reviews": [{**entry, "snapshot": snapshot}]},
     }
+    assert "check_basis" not in assess_reviews(metadata, snapshot, None)[0]
     assert derive_annotation(metadata)["review_applicability"] == {
         "review": "unknown",
         "basis": "snapshot_not_available",
@@ -261,5 +277,57 @@ def test_whole_read_scales_with_review_count(tmp_path, monkeypatch):
         result = read_payload(vault, "note.md")
         assert len(result["okf"]["review_assessments"]) == 800
         assert calls < 16000, f"{calls} identity parses for 800 reviews"
+    finally:
+        vault.close()
+
+
+def test_reviewed_whole_read_loads_persistent_receipts_once(tmp_path, monkeypatch):
+    from markdown_vault_mcp._cli_read import read_payload
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    original = "---\ntype: concept\n---\nBody\n"
+    (source / "note.md").write_text(original)
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        vault.writer.okf_verify("note.md", "alice", concept_snapshot(original))
+        calls = []
+        original_load = ReceiptStore._load
+
+        def counted(self):
+            calls.append(self._path)
+            return original_load(self)
+
+        monkeypatch.setattr(ReceiptStore, "_load", counted)
+        read_payload(vault, "note.md")
+        assert len(calls) == 1
+        assert calls[0] is not None
+        calls.clear()
+        from markdown_vault_mcp._okf_receipts import review_evidence
+
+        review_evidence(
+            vault.reader._receipt_store, "note.md", {}, concept_snapshot(original)
+        )
+        assert not calls
+        assessments, observation = review_evidence(
+            None, "note.md", {}, concept_snapshot(original)
+        )
+        assert assessments == [] and observation == {"state": "unavailable"}
+
+        def unavailable(self):
+            calls.append(self._path)
+            raise OSError("unreadable")
+
+        monkeypatch.setattr(ReceiptStore, "_load", unavailable)
+        result = read_payload(vault, "note.md")["okf"]
+        assert len(calls) == 1
+        assert result["observation"]["state"] == "unavailable"
+        assert result["review_assessments"][0]["local_evidence"] == "unavailable"
     finally:
         vault.close()

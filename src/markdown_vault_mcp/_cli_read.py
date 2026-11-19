@@ -322,22 +322,16 @@ def read_payload(
             snapshot = concept_snapshot(note.content)
         except (yaml.YAMLError, ValueError) as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
-        data["okf"] = (
-            derive_annotation(
-                note.frontmatter,
-                include_sources=True,
-                assessments=vault.reader.review_assessments(
-                    note.path, note.frontmatter, snapshot
-                ),
-            )
-            if active
-            else {}
-        )
-        data["okf"]["snapshot"] = snapshot
+        data["okf"] = {}
         if active:
-            data["okf"]["observation"] = vault.reader.review_observation(
-                note.path, note.frontmatter, data["okf"]["snapshot"]
+            reviews, observation = vault.reader.review_evidence(
+                note.path, note.frontmatter, snapshot
             )
+            data["okf"] = derive_annotation(
+                note.frontmatter, include_sources=True, assessments=reviews
+            )
+            data["okf"]["observation"] = observation
+        data["okf"]["snapshot"] = snapshot
     return data
 
 

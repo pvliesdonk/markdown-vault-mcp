@@ -223,6 +223,29 @@ class TestDeclaredBundle:
             "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
+    async def test_bound_claim_is_unknown_in_compact_surfaces(
+        self, okf_vault: Path
+    ) -> None:
+        note = okf_vault / "guides" / "playbook.md"
+        claim = (
+            "x-mvmcp:\n  reviews:\n    - by: human:peter\n"
+            '      at: "2026-01-01T00:00:00Z"\n'
+            "      check: human-review\n      snapshot:\n"
+            "        algo: mvmcp-concept-v1\n        digest: " + "a" * 64 + "\n"
+        )
+        note.write_text(PLAYBOOK.replace("sources:\n", claim + "sources:\n"))
+        async with Client(make_server()) as client:
+            hits = await _search(client)
+            context = _structured(
+                await client.call_tool(
+                    "get_context", {"path": "guides/playbook.md", "similar_limit": 0}
+                )
+            )
+        expected = {"review": "unknown", "basis": "snapshot_not_available"}
+        hit = next(item for item in hits if item["path"] == "guides/playbook.md")
+        assert hit["okf"]["review_applicability"] == expected
+        assert context["okf"]["review_applicability"] == expected
+
     async def test_read_includes_full_sources(self) -> None:
         async with Client(make_server()) as client:
             read = _structured(
