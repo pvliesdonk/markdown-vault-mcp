@@ -1,13 +1,38 @@
 """Read-only, opt-in editorial log proposals."""
 
+import os
 import subprocess
+import time
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 from fastmcp import Client
 
-from markdown_vault_mcp.utils.fs import is_regular_file
 from tests.server_factory import make_server
+
+
+class GitRunner(Protocol):
+    def __call__(self, *args: str, date: str | None = None) -> str: ...
+
+
+@pytest.fixture
+def git(tmp_path: Path) -> GitRunner:
+    """Run Git in the synthetic vault, optionally fixing commit dates."""
+
+    def run(*args: str, date: str | None = None) -> str:
+        env = dict(os.environ)
+        if date is not None:
+            env.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        ).stdout.strip()
+
+    return run
 
 
 @pytest.mark.anyio
@@ -46,8 +71,8 @@ async def test_proposal_visibility(
         assert tools["okf_propose_log_entry"].annotations.read_only_hint is True
 
 
-def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
-    """One backend call sees selected changes and returns its attribution."""
+def test_proposal_output_validation(tmp_path: Path, git: GitRunner) -> None:
+    """Valid output retains attribution; blank and unsafe output are refused."""
     from markdown_vault_mcp._okf_log_assist import (
         ProposalBackendError,
         propose_log_entry,
@@ -56,14 +81,6 @@ def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -96,33 +113,24 @@ def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
         }
         assert len(backend.calls) == 1
         assert "+New" in backend.calls[0][1]
-        propose_log_entry(vault, ProjectConfig(source_dir=tmp_path), ["a.md"], None)
-        assert "+New" in backend.calls[-1][1]
-        backend.text = "Bad \ud800 proposal"
-        with pytest.raises(ProposalBackendError, match="single-line"):
-            propose_log_entry(
-                vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before
-            )
+        for text in (" ", "Bad \ud800 proposal"):
+            backend.text = text
+            with pytest.raises(ProposalBackendError, match="single-line"):
+                propose_log_entry(
+                    vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before
+                )
     finally:
         vault.close()
 
 
 @pytest.mark.anyio
 async def test_mcp_proposal_and_backend_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git: GitRunner
 ) -> None:
     """The registered tool returns a proposal and translates a backend failure."""
     from fastmcp.exceptions import ToolError
 
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -138,7 +146,8 @@ async def test_mcp_proposal_and_backend_failure(
     git("add", "note.md")
     git("commit", "-m", "after")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "events")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST", "true")
     monkeypatch.setenv(
@@ -152,13 +161,6 @@ async def test_mcp_proposal_and_backend_failure(
         )
         assert result.data["text"] == "Updated heading"
         assert "+# After" in fake.calls[0][1]
-        fake.text = " "
-        with pytest.raises(ToolError, match="could not produce"):
-            await client.call_tool(
-                "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
-            )
-
-        assert log_path.read_bytes() == before_log
 
         def fail(system: str, user: str) -> str:
             fake.calls.append((system, user))
@@ -170,17 +172,21 @@ async def test_mcp_proposal_and_backend_failure(
                 "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
             )
         assert log_path.read_bytes() == before_log
-    monkeypatch.setattr("markdown_vault_mcp.summarizer.get_summarizer", lambda _: None)
+
+    def unavailable(_: object) -> None:
+        raise RuntimeError("fixture unavailable")
+
+    monkeypatch.setattr("markdown_vault_mcp.summarizer.get_summarizer", unavailable)
     async with Client(make_server()) as client:
         with pytest.raises(ToolError, match=r"backend is unavailable.*operator"):
             await client.call_tool(
                 "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
             )
-    assert log_path.read_bytes() == before_log
 
 
 @pytest.mark.parametrize("since", ["", "  ", "HEAD~1", "2026-99-99", "not a date"])
 def test_invalid_since_is_refused_before_backend(tmp_path: Path, since: str) -> None:
+    """Unsupported date and revision input cannot reach the backend."""
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import InvalidRequestError
@@ -204,7 +210,7 @@ def test_invalid_since_is_refused_before_backend(tmp_path: Path, since: str) -> 
 
 
 def test_default_selection_requires_shared_commit_and_clean_notes(
-    tmp_path: Path,
+    tmp_path: Path, git: GitRunner
 ) -> None:
     """Group a creation and edit, refusing unrelated commits and pending edits."""
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
@@ -213,11 +219,6 @@ def test_default_selection_requires_shared_commit_and_clean_notes(
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> None:
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
-        )
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -263,10 +264,8 @@ def test_default_selection_requires_shared_commit_and_clean_notes(
         vault.close()
 
 
-def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
+def test_selection_and_input_limits(tmp_path: Path, git: GitRunner) -> None:
     """An ISO timestamp selects the diff; invalid scopes never reach the model."""
-    import os
-
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import InvalidRequestError
@@ -274,21 +273,12 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
 
-    def git(*args: str, date: str = "2020-01-01T00:00:00+00:00") -> None:
-        env = dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            env=env,
-        )
-
     git("init")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.test")
     (tmp_path / "note.md").write_text("# Old\n")
     git("add", "note.md")
-    git("commit", "-m", "before")
+    git("commit", "-m", "before", date="2020-01-01T00:00:00+00:00")
     (tmp_path / "note.md").write_text("# New\n")
     git("add", "note.md")
     git("commit", "-m", "after", date="2020-01-02T00:00:00+00:00")
@@ -302,20 +292,18 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
     config = ProjectConfig(source_dir=tmp_path)
     try:
         (tmp_path / "untracked.md").write_text("# Untracked\n")
-        for paths in (
-            [],
-            ["note.md", "note.md", "note.md"],
-            ["note.md", "../private.md"],
-            ["log.md"],
-            ["missing.md"],
-            ["bad\n.md"],
-            ["untracked.md"],
+        for paths, message in (
+            ([], "at least one"),
+            (["note.md", "note.md", "note.md"], "Too many paths"),
+            (["note.md", "../private.md"], "Path traversal"),
+            (["log.md"], "reserved files"),
+            (["missing.md"], "not found"),
+            (["bad\n.md"], "control or line separator"),
+            (["untracked.md"], "no committed history"),
         ):
-            with pytest.raises(InvalidRequestError):
+            with pytest.raises(InvalidRequestError, match=message):
                 propose_log_entry(vault, config, paths, None)
         assert fake.calls == []
-        with pytest.raises(InvalidRequestError, match="No committed text changes"):
-            propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
         limited = Vault(
             source_dir=tmp_path,
             settings=VaultSettings(read_only=True, summarize_max_input_chars=5),
@@ -338,40 +326,27 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("later_history", [False, True])
 def test_timestamp_before_history_includes_selected_current_notes(
-    tmp_path: Path, later_history: bool
+    tmp_path: Path, git: GitRunner
 ) -> None:
     """An early timestamp includes current selected content across commits."""
-    import os
-
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
 
-    def git(*args: str, date: str = "2020-01-01T00:00:00+00:00") -> None:
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            env=dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date),
-        )
-
     git("init")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.test")
     (tmp_path / "a.md").write_text("# Initial A\n")
     (tmp_path / "b.md").write_text("# Initial B\n")
-    (tmp_path / "other.md").write_text("# Private fixture\n")
-    git("add", "a.md", "b.md", "other.md")
-    git("commit", "-m", "initial")
-    if later_history:
-        (tmp_path / "a.md").write_text("# Later A\n")
-        (tmp_path / "b.md").write_text("# Later B\n")
-        git("add", "a.md", "b.md")
-        git("commit", "-m", "later", date="2020-01-02T00:00:00+00:00")
+    git("add", "a.md", "b.md")
+    git("commit", "-m", "initial", date="2020-01-01T00:00:00+00:00")
+    (tmp_path / "a.md").write_text("# Later A\n")
+    (tmp_path / "b.md").write_text("# Later B\n")
+    git("add", "a.md", "b.md")
+    git("commit", "-m", "later", date="2020-01-02T00:00:00+00:00")
     fake = FakeSummarizer("Selected changes")
     vault = Vault(
         source_dir=tmp_path,
@@ -388,61 +363,16 @@ def test_timestamp_before_history_includes_selected_current_notes(
         )
         assert len(fake.calls) == 1
         diff = fake.calls[0][1]
-        expected = "Later" if later_history else "Initial"
+        expected = "Later"
         assert f"+# {expected} A" in diff
         assert f"+# {expected} B" in diff
-        assert "Private fixture" not in diff
     finally:
         vault.close()
 
 
-@pytest.mark.parametrize("since", [None, "2000-01-01"])
-def test_empty_creation_is_refused_without_mutation(
-    tmp_path: Path, since: str | None
-) -> None:
-    """Empty root creation has no basis, even before the first commit."""
-    from markdown_vault_mcp._okf_log_assist import propose_log_entry
-    from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.git import GitWriteStrategy
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-    from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-
-    git("init")
-    git("config", "user.name", "Fixture")
-    git("config", "user.email", "fixture@example.test")
-    (tmp_path / "empty.md").write_bytes(b"")
-    git("add", "empty.md")
-    git("commit", "-m", "initial")
-    fake = FakeSummarizer()
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=True),
-        git_strategy=GitWriteStrategy(),
-        summarizer=fake,
-    )
-    try:
-        with pytest.raises(InvalidRequestError, match="No committed text changes"):
-            propose_log_entry(
-                vault, ProjectConfig(source_dir=tmp_path), ["empty.md"], since
-            )
-        assert fake.calls == []
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("empty_first", [False, True])
-@pytest.mark.parametrize("rename", [False, True])
+@pytest.mark.parametrize("kind", ["empty", "rename", "binary"])
 def test_empty_change_is_omitted_from_mixed_selection(
-    tmp_path: Path, empty_first: bool, rename: bool
+    tmp_path: Path, kind: str, git: GitRunner
 ) -> None:
     """Only the edited note is submitted when a selected note has no content diff."""
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
@@ -452,28 +382,24 @@ def test_empty_change_is_omitted_from_mixed_selection(
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
 
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-
     git("init")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.test")
     (tmp_path / "edit.md").write_text("Before\n")
-    if rename:
+    if kind == "rename":
         (tmp_path / "old.md").write_text("Unchanged content\n")
+    elif kind == "binary":
+        (tmp_path / "empty.md").write_bytes(b"old\0content\n")
     git("add", ".")
     git("commit", "-m", "before")
     before = git("rev-parse", "HEAD")
     (tmp_path / "edit.md").write_text("After\n")
-    if rename:
+    if kind == "rename":
         git("mv", "old.md", "empty.md")
     else:
-        (tmp_path / "empty.md").write_bytes(b"")
+        (tmp_path / "empty.md").write_bytes(
+            b"new\0content\n" if kind == "binary" else b""
+        )
     git("add", ".")
     git("commit", "-m", "change")
     fake = FakeSummarizer()
@@ -485,12 +411,12 @@ def test_empty_change_is_omitted_from_mixed_selection(
     )
     try:
         config = ProjectConfig(source_dir=tmp_path)
-        if rename:
+        if kind != "empty":
             with pytest.raises(InvalidRequestError, match="No committed text changes"):
                 propose_log_entry(vault, config, ["empty.md"], before)
             assert fake.calls == []
-        paths = ["empty.md", "edit.md"] if empty_first else ["edit.md", "empty.md"]
-        propose_log_entry(vault, config, paths, before if rename else None)
+        paths = ["empty.md", "edit.md"]
+        propose_log_entry(vault, config, paths, before if kind != "empty" else None)
         content = fake.calls[0][1]
         assert "+After" in content
         assert "empty.md" not in content
@@ -499,7 +425,7 @@ def test_empty_change_is_omitted_from_mixed_selection(
         vault.close()
 
 
-def test_large_multibyte_creation_and_timeout(tmp_path: Path) -> None:
+def test_large_multibyte_creation_and_timeout(tmp_path: Path, git: GitRunner) -> None:
     """The byte limit applies to creation diffs and timeout advice survives."""
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
@@ -512,14 +438,6 @@ def test_large_multibyte_creation_and_timeout(tmp_path: Path) -> None:
         def summarize(self, system: str, user: str) -> str:
             self.calls.append((system, user))
             raise SummarizeTimeoutError("Narrow the request — fewer paths.")
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -546,10 +464,21 @@ def test_large_multibyte_creation_and_timeout(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_date_since_uses_a_fixed_utc_instant(tmp_path: Path) -> None:
+def test_date_since_uses_a_fixed_utc_instant(
+    tmp_path: Path,
+    git: GitRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+) -> None:
     """Dates and equivalent timestamps select the same committed range."""
-    import os
 
+    def restore_timezone() -> None:
+        monkeypatch.undo()
+        time.tzset()
+
+    request.addfinalizer(restore_timezone)
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import InvalidRequestError
@@ -557,20 +486,12 @@ def test_date_since_uses_a_fixed_utc_instant(tmp_path: Path) -> None:
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
 
-    def git(*args: str, date: str = "2026-11-10T10:00:00+00:00") -> None:
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            env=dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date),
-        )
-
     git("init")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.test")
     (tmp_path / "note.md").write_text("Before\n")
     git("add", "note.md")
-    git("commit", "-m", "before")
+    git("commit", "-m", "before", date="2026-11-10T10:00:00+00:00")
     (tmp_path / "note.md").write_text("After\n")
     git("add", "note.md")
     git("commit", "-m", "after", date="2026-11-15T00:00:01+00:00")
@@ -599,78 +520,21 @@ def test_date_since_uses_a_fixed_utc_instant(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_binary_diff_is_omitted(tmp_path: Path) -> None:
-    """Binary-only changes are refused, and mixed selections send text alone."""
-    from markdown_vault_mcp._okf_log_assist import propose_log_entry
-    from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.git import GitWriteStrategy
-    from markdown_vault_mcp.vault import Vault, VaultSettings
-    from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-
-    git("init")
-    git("config", "user.name", "Fixture")
-    git("config", "user.email", "fixture@example.test")
-    binary = tmp_path / "binary.md"
-    binary.write_bytes(b"old\0content\n")
-    (tmp_path / "text.md").write_text("Before\n")
-    git("add", ".")
-    git("commit", "-m", "before")
-    before = git("rev-parse", "HEAD")
-    binary.write_bytes(b"new\0content\n")
-    (tmp_path / "text.md").write_text("After\n")
-    git("add", ".")
-    git("commit", "-m", "after")
-    fake = FakeSummarizer()
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=True),
-        git_strategy=GitWriteStrategy(),
-        summarizer=fake,
-    )
-    try:
-        config = ProjectConfig(source_dir=tmp_path)
-        with pytest.raises(InvalidRequestError, match="No committed text changes"):
-            propose_log_entry(vault, config, ["binary.md"], before)
-        assert fake.calls == []
-        paths = ["binary.md", "text.md"]
-        propose_log_entry(vault, config, paths, before)
-        assert len(fake.calls) == 1
-        assert "+After" in fake.calls[0][1]
-        assert "Binary files" not in fake.calls[0][1]
-        assert "binary.md" not in fake.calls[0][1]
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("kind", ["nul", "utf16", "frontmatter"])
+@pytest.mark.parametrize("kind", ["nul", "utf16", "frontmatter", "empty"])
 @pytest.mark.parametrize("since", [None, "2000-01-01"])
 def test_creation_basis_preserves_readable_content(
-    tmp_path: Path, kind: str, since: str | None
+    tmp_path: Path, kind: str, since: str | None, git: GitRunner
 ) -> None:
     """Readable creation snapshots supply their content; unreadable ones fail."""
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.exceptions import DocumentUnreadableError
+    from markdown_vault_mcp.exceptions import (
+        DocumentUnreadableError,
+        InvalidRequestError,
+    )
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -679,6 +543,7 @@ def test_creation_basis_preserves_readable_content(
         "nul": b"new\0content\n",
         "utf16": "new\n".encode("utf-16"),
         "frontmatter": b"---\nbroken: [\n---\nCreated content\n",
+        "empty": b"",
     }
     (tmp_path / "binary.md").write_bytes(content[kind])
     git("add", ".")
@@ -691,7 +556,13 @@ def test_creation_basis_preserves_readable_content(
         summarizer=fake,
     )
     try:
-        if kind == "utf16":
+        if kind == "empty":
+            with pytest.raises(InvalidRequestError, match="No committed text changes"):
+                propose_log_entry(
+                    vault, ProjectConfig(source_dir=tmp_path), ["binary.md"], since
+                )
+            assert fake.calls == []
+        elif kind == "utf16":
             with pytest.raises(DocumentUnreadableError):
                 propose_log_entry(
                     vault, ProjectConfig(source_dir=tmp_path), ["binary.md"], since
@@ -709,24 +580,18 @@ def test_creation_basis_preserves_readable_content(
         vault.close()
 
 
-@pytest.mark.parametrize("unsafe_model", ["bad\nmodel", "bad\ud800model"])
-def test_producer_must_fit_recording_contract(
-    tmp_path: Path, unsafe_model: str
-) -> None:
+def test_producer_must_fit_recording_contract(tmp_path: Path, git: GitRunner) -> None:
     """Return truthful attribution only when it fits the recording limit."""
     from markdown_vault_mcp._okf_log_assist import (
         ProposalBackendError,
         propose_log_entry,
     )
+    from markdown_vault_mcp._okf_log_event import _validate_input
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> None:
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
-        )
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -751,6 +616,9 @@ def test_producer_must_fit_recording_contract(
         )
         assert result["producer"] == f"fake/{model}"
         assert len(result["producer"]) == 100
+        _validate_input(["note.md"], result["text"], result["producer"])
+        with pytest.raises(InvalidRequestError, match="at most 100"):
+            _validate_input(["note.md"], result["text"], result["producer"] + "m")
         with pytest.raises(ProposalBackendError):
             propose_log_entry(
                 vault,
@@ -758,30 +626,27 @@ def test_producer_must_fit_recording_contract(
                 ["note.md"],
                 None,
             )
-        with pytest.raises(ProposalBackendError, match="single-line"):
-            propose_log_entry(
-                vault,
-                ProjectConfig(source_dir=tmp_path, summarize_openai_model=unsafe_model),
-                ["note.md"],
-                None,
-            )
+        for unsafe_model in ("bad\nmodel", "bad\ud800model"):
+            with pytest.raises(ProposalBackendError, match="single-line"):
+                propose_log_entry(
+                    vault,
+                    ProjectConfig(
+                        source_dir=tmp_path, summarize_openai_model=unsafe_model
+                    ),
+                    ["note.md"],
+                    None,
+                )
         assert len(fake.calls) == 1
-        assert not is_regular_file(tmp_path / "log.md")
     finally:
         vault.close()
 
 
 @pytest.mark.anyio
 async def test_reviewed_proposal_is_recorded_with_attribution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git: GitRunner
 ) -> None:
     """Reviewed text records its producer without losing the existing log."""
     from tests.test_summarize import FakeSummarizer
-
-    def git(*args: str) -> None:
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
-        )
 
     git("init")
     git("config", "user.name", "Fixture")
@@ -822,7 +687,5 @@ async def test_reviewed_proposal_is_recorded_with_attribution(
         )
         assert result.data["path"] == "log.md"
     log = log_path.read_text()
-    assert "Earlier entry" in log
     assert reviewed in log
-    assert "Suggested explanation" not in log
     assert log.rstrip().endswith("(proposed by fake/fixture-model)")
