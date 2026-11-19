@@ -19,6 +19,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 
 | Group | Tool | Title | Does |
 |---|---|---|---|
+| Reader | [`okf_propose_log_entry`](reader.md#okf_propose_log_entry) | Propose Log Entry | Propose an attributed explanation of selected changes without writing a log. |
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
 | Reader | [`inspect_citations`](reader.md#inspect_citations) | Inspect Note Citations | Join a note's literal footnote labels to its source records. |

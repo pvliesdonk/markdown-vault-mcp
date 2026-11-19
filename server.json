@@ -246,6 +246,12 @@
           "default": "auto"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST",
+          "description": "Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_OKF_WRITE",
           "description": "Deprecated alias enabling OKF authoring, review, index and log maintenance. Explicit individual settings take precedence. Ordinary writes preserve provenance and review records. Requires OKF_MODE to be auto or on. Off by default.",
           "format": "boolean",
@@ -940,6 +946,12 @@
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
           "description": "OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode.",
           "default": "auto"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST",
+          "description": "Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default.",
+          "format": "boolean",
+          "default": "false"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_WRITE",

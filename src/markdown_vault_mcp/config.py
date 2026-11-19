@@ -443,6 +443,14 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    okf_log_assist: bool = field(
+        default=False,
+        metadata={
+            "help": "Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default.",
+            "tags": ("content", "readme"),
+            "wizard": {"group": "Content"},
+        },
+    )
     okf_write: bool = field(
         default=False,
         metadata={
@@ -1531,6 +1539,7 @@ class ProjectConfig:
                 env(_ENV_PREFIX, "CONVENTIONS_FILE")
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
+            okf_log_assist=to_bool(env(_ENV_PREFIX, "OKF_LOG_ASSIST"), default=False),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
             okf_verify=read_okf_verify(_ENV_PREFIX),
             okf_machine_review=to_bool(

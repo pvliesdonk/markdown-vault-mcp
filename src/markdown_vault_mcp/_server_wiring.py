@@ -313,6 +313,9 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
             mcp, max_notes=config.summarize.max_notes
         )
 
+    if not config.okf_log_assist or not config.summarize.has_provider():
+        mcp.disable(tags={"okf-log-assist"})
+
     # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
     # does not render the MCP Apps panels. Set
     # MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true to remove them from the tool

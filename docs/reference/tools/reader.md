@@ -11,6 +11,29 @@ kind: reference
 <!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
 <!-- DOMAIN-INTRO-END -->
 
+## `okf_propose_log_entry`
+
+**Propose Log Entry.** Read-only. Tags: `okf`, `okf-log-assist`.
+
+Propose an attributed explanation of selected changes without writing a log.
+
+The selected diffs are sent to the operator's configured language model.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `paths` | `array of string` | required | Vault-relative note paths to include. |
+| `since` | `string \| null` | `null` | Starting revision or date; omit to use the latest change. |
+
+**Returns**
+
+Suggested text, producer, and the basis used for the proposal.
+
+<!-- DOMAIN-EXAMPLE-okf_propose_log_entry-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_propose_log_entry-END -->
+
 ## `search`
 
 **Search Vault.** Read-only. Idempotent.

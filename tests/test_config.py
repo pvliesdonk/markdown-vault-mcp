@@ -2852,3 +2852,14 @@ def test_machine_review_does_not_shift_positional_config_fields() -> None:
         assert (
             params["service_subjects"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
         )
+
+
+def test_okf_log_assist_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The external-processing opt-in defaults off and loads from the environment."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST", raising=False)
+    assert not ProjectConfig.from_env().okf_log_assist
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST", "true")
+    assert ProjectConfig.from_env().okf_log_assist

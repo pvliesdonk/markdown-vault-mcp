@@ -704,6 +704,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "okf_log_assist",
+      "label": "Okf Log Assist",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST",
+      "help": "Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default.",
+      "advancedGroup": "Content"
+    },
+    {
       "id": "okf_write",
       "label": "Okf Write",
       "type": "bool",

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import asdict
 from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._cli_read import read_payload
@@ -15,7 +17,8 @@ from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
 from .._server_queryable import needs_queryable
-from ..domain import get_vault
+from ..config import ProjectConfig
+from ..domain import get_config, get_vault
 from ._common import (
     _maybe_wait_for_drain,
     _staleness_result,
@@ -28,6 +31,50 @@ from ._common import (
 
 def register(mcp: FastMCP) -> None:
     """Register read/query tools on *mcp*."""
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["okf_propose_log_entry"],
+        tags={"okf", "okf-log-assist"},
+        annotations={
+            "title": "Propose Log Entry",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def okf_propose_log_entry(
+        paths: list[str],
+        since: str | None = None,
+        vault: Vault = Depends(get_vault),
+        config: ProjectConfig = Depends(get_config),
+    ) -> dict[str, str]:
+        """Propose an attributed explanation of selected changes without writing a log.
+
+        The selected diffs are sent to the operator's configured language model.
+
+        Args:
+            paths: Vault-relative note paths to include.
+            since: Starting revision or date; omit to use the latest change.
+
+        Returns:
+            Suggested text, producer, and the basis used for the proposal.
+        """
+        from markdown_vault_mcp._okf_log_assist import (
+            ProposalBackendError,
+            propose_log_entry,
+        )
+
+        try:
+            return await asyncio.to_thread(
+                propose_log_entry, vault, config, paths, since
+            )
+        except ProposalBackendError:
+            raise ToolError(
+                "The model could not produce a usable proposal. Retry later or write the explanation yourself.",
+                log_level=logging.WARNING,
+            ) from None
 
     @mcp.tool(
         icons=_TOOL_ICONS["search"],
