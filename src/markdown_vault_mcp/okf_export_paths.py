@@ -637,23 +637,12 @@ class ExportPaths:
         bundle_target = target[len(self.scope) + 1 :]
         if not written.startswith("/") and apparent == bundle_target:
             return None
-        if written.startswith("/"):
-            replacement = "/" + bundle_target
-        else:
-            replacement = posixpath.relpath(
-                bundle_target or ".", posixpath.dirname(archive_source) or "."
+        return (
+            _field_internal_replacement(
+                written, path, bundle_target, archive_source, directory_form
             )
-            if not _FIELD_PATH.match(replacement):
-                replacement = "./" + replacement
-        if directory_form and not replacement.endswith("/"):
-            replacement += "/"
-        if "%" in written:
-            replacement = quote(
-                replacement,
-                safe="/%" if path == written else "/",
-                errors="surrogateescape",
-            )
-        return replacement + suffix
+            + suffix
+        )
 
     def _field_changes(
         self, root: object, source: str
@@ -885,6 +874,33 @@ def _frontmatter_paths(root: object) -> list[ScalarNode]:
         if isinstance(node, ScalarNode) and node.tag == "tag:yaml.org,2002:str":
             unique[id(node)] = node
     return list(unique.values())
+
+
+def _field_internal_replacement(
+    written: str,
+    path: str,
+    bundle_target: str,
+    archive_source: str,
+    directory_form: bool,
+) -> str:
+    """Relocate a selected metadata path while retaining its written form."""
+    if written.startswith("/"):
+        replacement = "/" + bundle_target
+    else:
+        replacement = posixpath.relpath(
+            bundle_target or ".", posixpath.dirname(archive_source) or "."
+        )
+        if not _FIELD_PATH.match(replacement):
+            replacement = "./" + replacement
+    if directory_form and not replacement.endswith("/"):
+        replacement += "/"
+    if "%" in written:
+        replacement = quote(
+            replacement,
+            safe="/%" if path == written else "/",
+            errors="surrogateescape",
+        )
+    return replacement
 
 
 def _field_parts(value: str) -> tuple[str, str]:
