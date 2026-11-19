@@ -1,6 +1,6 @@
 [project]
 name = "markdown-vault-mcp"
-version = "6.1.2"
+version = "6.1.4"
 description = "Generic markdown vault MCP with hybrid search"
 readme = "README.md"
 # PROJECT-LICENSE-START — the license you picked; replace the value below and
@@ -48,6 +48,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    # src/<module>/py.typed (PEP 561) ships with the package.
+    "Typing :: Typed",
     # PROJECT-LICENSE-CLASSIFIER-START — kept across copier update; the trove
     # name is not the SPDX id (Apache-2.0 is "Apache Software License"), which
     # is one reason this is a separate edit rather than a derived one.
@@ -178,14 +180,14 @@ mcp = ["fastmcp>=4,<5"]
 # update-lockfile's out-of-range fallback.
 embeddings-api = ["httpx>=0.25", "numpy", "openai>=1.45"]
 embeddings = ["fastembed>=0.3", "numpy"]
-file-watcher = ["watchdog>=4.0"]
+file-watcher = ["watchdog>=4.0.2"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
 # PostgreSQL/pgvector embedding store (#1504): psycopg 3 and its pool, and
 # pgvector's adapter. numpy is unbounded here for the same reason as above.
 postgres = ["psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5", "numpy"]
-all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0.2", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -207,7 +209,6 @@ dev = [
     "pre-commit>=3",
     "pip-audit>=2.7",
     "jsonschema>=4.18",
-    "copier>=9.4",  # template-conformance gate renders the template pristinely (#899)
     # scripts/gen_config_surface.py imports yaml. It arrived transitively via
     # mkdocs-material in the `docs` group, so a plain `uv sync` left it out
     # and the generator fell back to its network bootstrap — slower, offline-
@@ -217,6 +218,10 @@ dev = [
     # PyYAML ships no inline types, so `import yaml` in tests/test_compose.py
     # is an untyped import that fails `mypy src/ tests/` without these stubs.
     "types-PyYAML>=6",
+    # PROJECT-DEV-DEPS-START — this project's test and tooling dependencies
+    # (respx, hypothesis, ...); kept across copier update.  Never published,
+    # unlike an extra in PROJECT-EXTRAS.
+    # PROJECT-DEV-DEPS-END
 ]
 docs = [
     "mike>=2",
@@ -250,7 +255,11 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # version moves: 1.27 took it to 2.4 and 1.32 took it to 2.5.  A `<2` ceiling
 # would have stopped neither, so it buys the look of a guard without one.
 # Patch releases stay open; a minor bump is a deliberate edit here, paired
-# with a publisher that accepts whatever the new minor emits.
+# with a publisher that accepts whatever the new minor emits.  1.33 still
+# emits 2.5, which the pinned publisher's twine accepts (#839).  Renovate
+# opens the bump as a pull request that never automerges (renovate.json);
+# ci.yml's publisher check runs `twine check` against it, and
+# packaging/mcpb/pyproject.toml.in follows by hand (#2259).
 requires = ["hatchling>=1.33,<1.34"]
 build-backend = "hatchling.build"
 
@@ -355,20 +364,9 @@ ignore = ["E501"]
 "scripts/promote_release_notes.py" = ["S603", "S607"]
 # Package bookkeeping invokes gh with fixed argv and JSON on stdin, never a shell.
 "scripts/package_milestones.py" = ["S603", "S607"]
-# The copier-update migration reads the pre-update CLAUDE.md with a fixed-argv
-# `git show HEAD:CLAUDE.md` (a list, never a shell): the same S607 bare-name
-# and S603 subprocess exceptions as the stamper, and the same reason — the
-# file is template-owned, so a hit reddens the adopter's diff-gate (#524).
-"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
-# migrate_docs_nav.py reads `git show HEAD:mkdocs.yml` the same way, as a
-# list and never a shell; same exceptions, same reason (#713).
-"scripts/migrate_docs_nav.py" = ["S603", "S607"]
-"scripts/migrate_docs_pages.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
-"scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
 # The self-review hook resolves commits with fixed-argv `git rev-parse`.
 "scripts/check_self_review.py" = ["S603", "S607"]
-"scripts/check_template_conformance.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # Phase 1 write stubs: method signatures define the public API but bodies are
@@ -493,6 +491,10 @@ ignore = ["E501"]
 # reproducible synthetic notes, not secrets (S311). Gate-only rules, so a
 # `# noqa` would be stripped (RUF100).
 "scripts/envelope/*.py" = ["S311", "S603"]
+# The PostgreSQL image currency check (#1853) reads Docker Hub with urlopen only
+# on https://hub.docker.com URLs it checks (S310) and runs `gh`, resolved by
+# shutil.which, with fixed argv and no shell (S603). Gate-only, as above.
+"scripts/check_postgres_images.py" = ["S310", "S603"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]
@@ -523,6 +525,9 @@ addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
 markers = [
     "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
+    # PROJECT-MARKERS-START — this project's pytest markers; kept across
+    # copier update.  --strict-markers rejects any marker not declared here.
+    # PROJECT-MARKERS-END
 ]
 
 [tool.coverage.run]
@@ -563,14 +568,21 @@ module = ["fastmcp_pvl_core", "fastmcp_pvl_core.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Tests pre-date the template's `mypy src/ tests/` requirement (added in
-# template v1.2.0).  Typing the full test suite is tracked separately.
-module = ["tests.*"]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 module = ["jsonschema", "jsonschema.*"]
 ignore_missing_imports = true
+
+# PROJECT-MYPY-OVERRIDES-START — one [[tool.mypy.overrides]] table per untyped
+# third-party library this project imports, setting only
+# ignore_missing_imports = true; kept across copier update.  Prefer a stubs
+# package in PROJECT-DEV-DEPS when one exists.  tests/test_mypy_overrides.py
+# rejects any other setting, and any table that names this project's own
+# package or tests, so neither can loosen `mypy src/ tests/`.
+[[tool.mypy.overrides]]
+# The test suite is not typed yet (1374 errors in 126 files, #2254).
+# tests/test_mypy_overrides.py carries a strict xfail until this table goes.
+module = ["tests.*"]
+ignore_errors = true
+# PROJECT-MYPY-OVERRIDES-END
 
 [tool.pyright]
 # Point Pyright at the uv-managed venv so editor diagnostics resolve
