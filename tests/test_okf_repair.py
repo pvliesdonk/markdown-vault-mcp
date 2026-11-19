@@ -455,3 +455,35 @@ def test_library_write_then_retire_all_reviews(tmp_path) -> None:
         )
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("retire", [True, False])
+def test_review_can_follow_block_claims_with_sibling(retire: bool) -> None:
+    from markdown_vault_mcp._okf_review import bind_review
+
+    snapshot = {"algo": "mvmcp-concept-v1", "digest": "0" * 64}
+    text = (
+        "---\ntype: concept\nverified:\n"
+        "  - {by: 'human:a', at: '2026-01-01T00:00:00Z'}\n"
+        "  - {by: 'human:b', at: '2026-01-02T00:00:00Z'}\n"
+        "x-mvmcp:\n  reviews:\n"
+        "    - {by: 'human:a', at: '2026-01-01T00:00:00Z', check: schema}\n"
+        "    - {by: 'human:b', at: '2026-01-02T00:00:00Z', check: links}\n"
+        + ("" if retire else "  other: keep\n")
+        + "---\nBody\n"
+    )
+    if retire:
+        text = author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "fix"}}
+        )
+    entry = {"by": "human:c", "at": "2026-01-03T00:00:00Z"}
+    result = bind_review(
+        text, entry, {**entry, "check": "schema", "snapshot": snapshot}
+    )
+    meta = parse_frontmatter(result).metadata
+    assert meta["verified"][-1] == entry
+    assert meta["x-mvmcp"]["reviews"][-1]["check"] == "schema"
+    if retire:
+        assert len(meta["x-mvmcp"]["review_history"]) == 2
+    else:
+        assert meta["x-mvmcp"]["other"] == "keep"
