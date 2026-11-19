@@ -1030,3 +1030,42 @@ def test_legacy_ledger_rows_survive_version_three_upgrade(
     ledger.record_navigation("index.md", b"# Index\n")
     assert ledger.rows() == before
     assert json.loads(path.read_text())["version"] == 3
+
+
+@pytest.mark.parametrize(
+    "version,missing,warning",
+    [(1, True, False), (2, True, False), (3, True, True), (3, False, True)],
+)
+def test_navigation_absence_respects_ledger_version(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    version: int,
+    missing: bool,
+    warning: bool,
+) -> None:
+    import json
+    import logging
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    before = ledger.rows()
+    data = json.loads(path.read_text())
+    data["version"] = version
+    if missing:
+        del data["navigation"]
+    else:
+        data["navigation"] = None
+    path.write_text(json.dumps(data))
+    with caplog.at_level(logging.WARNING):
+        assert ledger.rows() == before
+    assert (
+        any("okf_navigation_history_reset" in r.message for r in caplog.records)
+        is warning
+    )

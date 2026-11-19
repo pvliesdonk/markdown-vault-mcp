@@ -507,3 +507,34 @@ def test_future_ledger_refuses_new_index(tmp_path: Path) -> None:
         assert not index.is_file()
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("first,second", [("alias", "a"), ("a", "alias")])
+@pytest.mark.parametrize("restart", [False, True])
+def test_generation_alias_shares_canonical_history(
+    tmp_path: Path, first: str, second: str, restart: bool
+) -> None:
+    root = tmp_path / "vault"
+    (root / "a").mkdir(parents=True)
+    (root / "a/note.md").write_text("# Note\n")
+    (root / "alias").symlink_to(root / "a", target_is_directory=True)
+    db = tmp_path / "db"
+    vault = designated_vault(root, ("a",), index_path=db)
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder=first)
+        if restart:
+            vault.close()
+            vault = designated_vault(root, ("a",), index_path=db)
+            vault.index.build_index()
+        index = root / "a/index.md"
+        index.write_text("# Unexpected\n")
+        vault.writer.okf_generate_index(folder=second)
+        divergences = vault.reader.okf_stats()["navigation"]["divergences"]
+        assert divergences["count"] == 1
+        assert divergences["examples"][0]["path"] == "a/index.md"
+        index.write_text("# Unexpected\n")
+        vault.writer.okf_generate_index(folder=first)
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()

@@ -34,7 +34,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._okf_convention import read_stored_index
+from markdown_vault_mcp._okf_convention import canonical_path, read_stored_index
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
@@ -308,6 +308,28 @@ class OkfMigrationManager:
         """Return whether an index may be generated under the active policy."""
         return self._doc_mgr.index_designation(folder) is True
 
+    def _history_path(self, folder: str) -> str:
+        """Return the canonical index path that keys navigation history."""
+        home = canonical_path(folder, self._doc_mgr._source_dir)
+        return f"{home}/index.md" if home else "index.md"
+
+    def _observe_index(self, folder: str, raw: str | None, generated: bytes) -> None:
+        """Report an unexpected designated-index body before it is replaced."""
+        ledger = self._doc_mgr._observations
+        if ledger is not None:
+            old = (
+                stored_body(raw)
+                if raw is not None and self._index_designated(folder)
+                else None
+            )
+            ledger.observe_navigation(self._history_path(folder), old, generated)
+
+    def _record_index(self, folder: str, generated: bytes) -> None:
+        """Record the generated body under the canonical index path."""
+        ledger = self._doc_mgr._observations
+        if ledger is not None:
+            ledger.record_navigation(self._history_path(folder), generated)
+
     def _generate_index(
         self,
         folder: str,
@@ -334,20 +356,13 @@ class OkfMigrationManager:
             else:
                 with okf_write_suppressed():
                     existing = self._doc_mgr._read_note(index_path, capped=False)
-                    ledger = self._doc_mgr._observations
                     raw = (
                         read_stored_index(self._doc_mgr, index_path)
                         if existing is not None
                         else None
                     )
                     generated = body.encode("utf-8")
-                    if ledger is not None:
-                        old = (
-                            stored_body(raw)
-                            if raw is not None and self._index_designated(folder)
-                            else None
-                        )
-                        ledger.observe_navigation(index_path, old, generated)
+                    self._observe_index(folder, raw, generated)
                     preserved = self._doc_mgr.replace_body(
                         index_path,
                         raw,
@@ -358,8 +373,7 @@ class OkfMigrationManager:
                         if raw is not None
                         else None,
                     )
-                    if ledger is not None:
-                        ledger.record_navigation(index_path, generated)
+                    self._record_index(folder, generated)
         return OkfIndexResult(
             path=index_path,
             entries=sum(len(items) for items in sections.values()),

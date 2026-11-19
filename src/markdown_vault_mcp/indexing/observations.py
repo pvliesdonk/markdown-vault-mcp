@@ -197,7 +197,7 @@ class ObservationLedger:
             rows = {key: Observation(**row) for key, row in data["rows"].items()}
             if any(not _valid_row(key, row) for key, row in rows.items()):
                 raise ValueError("Invalid observation row")
-            navigation = self._parse_navigation(data.get("navigation"))
+            navigation = self._parse_navigation(data.get("navigation"), version)
             return rows, True, navigation
         except FileNotFoundError:
             return {}, False, empty
@@ -205,9 +205,9 @@ class ObservationLedger:
             logger.warning("observation_ledger_reset path=%s", self._path)
             return {}, False, empty
 
-    def _parse_navigation(self, state: object) -> dict[str, object]:
+    def _parse_navigation(self, state: object, version: int) -> dict[str, object]:
         empty: dict[str, object] = {"generated": {}, "reported": {}}
-        if state is None:
+        if state is None and version < 3:
             return empty
         try:
             if not isinstance(state, dict):
