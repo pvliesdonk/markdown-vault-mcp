@@ -62,10 +62,30 @@ def _literal(text: str) -> str:
     return "".join("\\" + c if c in punctuation else c for c in escaped)
 
 
+def _label(path: str) -> str:
+    escaped = escape_link_text(path)
+    out = []
+    for i, char in enumerate(escaped):
+        intraword = (
+            char == "_"
+            and i > 0
+            and i + 1 < len(escaped)
+            and escaped[i - 1].isalnum()
+            and escaped[i + 1].isalnum()
+        )
+        out.append(
+            "\\" + char if char in "*`<~&" or (char == "_" and not intraword) else char
+        )
+    return "".join(out)
+
+
 def _description(text: str) -> str:
     lead = "**Deprecation**"
     if text.startswith(lead) and (len(text) == len(lead) or text[len(lead)] in " :"):
-        return lead + _literal(text[len(lead) :])
+        remainder = text[len(lead) :]
+        if remainder.startswith(":"):
+            return lead + ":" + _literal(remainder[1:])
+        return lead + _literal(remainder)
     literal = _literal(text)
     return re.sub(
         r"^(\d+)\.|^>",
@@ -80,7 +100,7 @@ def _unsafe(text: str) -> bool:
     return any(unicodedata.category(c) in {"Cc", "Cs", "Zl", "Zp"} for c in text)
 
 
-def _insert_preserving(body: str, updated: str, bullet: str) -> str:
+def _insert_preserving(body: str, updated: str, bullet: str, event_date: str) -> str:
     old_lines = body.splitlines(keepends=True)
     old = body.splitlines()
     new = updated.splitlines()
@@ -129,7 +149,21 @@ def _insert_preserving(body: str, updated: str, bullet: str) -> str:
         and any(c.type == "link_open" for c in t.children)
         for t in tokens
     )
-    if not has_item or not has_text:
+    headings = [
+        (token.tag, tokens[i + 1].content)
+        for i, token in enumerate(tokens[:-1])
+        if token.type == "heading_open"
+        and token.level == 0
+        and token.tag in {"h1", "h2"}
+        and token.map
+        and token.map[0] < bullet_index
+    ]
+    if (
+        not has_item
+        or not has_text
+        or not headings
+        or headings[-1] != ("h2", event_date)
+    ):
         raise InvalidRequestError(_UNSAFE_LAYOUT)
     return result
 
@@ -159,16 +193,18 @@ def _validate_input(
         raise InvalidRequestError("Concept paths must be single-line text.")
 
 
-def _require_exact_case(source_dir: Path, path: str) -> None:
+def _require_exact_case(
+    source_dir: Path, path: str, names: dict[Path, set[str]]
+) -> None:
     parent = source_dir
     for part in Path(path).parts:
         try:
-            with os.scandir(parent) as entries:
-                found = any(
-                    unicodedata.normalize("NFC", entry.name)
-                    == unicodedata.normalize("NFC", part)
-                    for entry in entries
-                )
+            if parent not in names:
+                with os.scandir(parent) as entries:
+                    names[parent] = {
+                        unicodedata.normalize("NFC", entry.name) for entry in entries
+                    }
+            found = unicodedata.normalize("NFC", part) in names[parent]
         except OSError as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
         if not found:
@@ -180,6 +216,7 @@ def _require_exact_case(source_dir: Path, path: str) -> None:
 
 def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
     canonical = []
+    names: dict[Path, set[str]] = {}
     for path in paths:
         doc_mgr._validate_path(path)
         target = canonical_path(path, doc_mgr._source_dir)
@@ -199,7 +236,7 @@ def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
                 pass
         except OSError as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
-        _require_exact_case(doc_mgr._source_dir, target)
+        _require_exact_case(doc_mgr._source_dir, target, names)
         if target not in canonical:
             canonical.append(target)
     return canonical
@@ -246,7 +283,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         log_path = f"{folder}/log.md" if folder else "log.md"
         # Filesystem names are URL path data, not Markdown escapes or fragments.
         links = ", ".join(
-            f"[{_literal(p)}](/{build_plain_destination(quote(p, safe='/'))})"
+            f"[{_label(p)}](/{build_plain_destination(quote(p, safe='/'))})"
             for p in canonical
         )
         summary = f"{_description(description.strip())} — {links}"
@@ -255,10 +292,9 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         raw = doc_mgr._read_snapshot(log_path)
         etag = compute_etag(raw.encode("utf-8")) if raw is not None else MISSING_ETAG
         body = stored_body(raw).decode("utf-8") if raw is not None else None
-        updated = append_okf_log_entry(
-            body, date=(today or date.today()).isoformat(), summary=summary
-        )
-        updated = _insert_preserving(body or "", updated, f"- {summary}")
+        event_date = (today or date.today()).isoformat()
+        updated = append_okf_log_entry(body, date=event_date, summary=summary)
+        updated = _insert_preserving(body or "", updated, f"- {summary}", event_date)
         with okf_write_suppressed():
             doc_mgr.replace_body(log_path, raw, updated, if_match=etag)
         return log_path

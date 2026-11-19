@@ -382,9 +382,8 @@ class WriterFacet:
             raise InvalidRequestError(
                 "OKF event logging is not configured; ask the operator to enable it."
             )
-        folders, report = self._event_policy
         return record_event(
-            self._doc_mgr, paths, description, (folders, report), proposed_by
+            self._doc_mgr, paths, description, self._event_policy, proposed_by
         )
 
     def okf_author(

@@ -546,7 +546,9 @@ def test_changed_history_is_still_refused():
     from markdown_vault_mcp._okf_log_event import _insert_preserving
 
     with pytest.raises(InvalidRequestError, match="unchanged"):
-        _insert_preserving("# Log\n- Old\n", "# Log\n- Changed\n- New\n", "- New")
+        _insert_preserving(
+            "# Log\n- Old\n", "# Log\n- Changed\n- New\n", "- New", "2026-03-03"
+        )
 
 
 @pytest.mark.parametrize(
@@ -716,5 +718,127 @@ def test_writes_mode_keeps_automatic_and_editorial_entries(tmp_path):
         vault.writer.okf_log_event(["a.md"], "Editorial")
         text = (tmp_path / "log.md").read_text()
         assert "**Update**" in text and "Editorial" in text
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("block", ["<!--", "<script>"])
+@pytest.mark.parametrize("older", [False, True])
+def test_hidden_date_heading_never_owns_event(tmp_path, block, older):
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    end = "-->" if block == "<!--" else "</script>"
+    prior = "2020-01-01\n----------\n\n- Previous\n\n" if older else ""
+    old = f"# Log\n\n{prior}{block}\n## 2026-03-03\n- Hidden\n{end}\n".encode()
+    log.write_bytes(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(InvalidRequestError, match="unchanged"):
+            record_event(
+                vault._doc_mgr, ["a.md"], "Change", (".",), today=date(2026, 3, 3)
+            )
+        assert log.read_bytes() == old
+    finally:
+        vault.close()
+
+
+def test_ordinary_event_label_is_scanner_path(tmp_path):
+    from markdown_vault_mcp.scanner import extract_links
+
+    (tmp_path / "policy").mkdir()
+    (tmp_path / "policy" / "my-note_v2.md").write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        result = record_event(
+            vault._doc_mgr, ["policy/my-note_v2.md"], "Change", (".",)
+        )
+        links = extract_links((tmp_path / result).read_text(), result)
+        assert [(link.target_path, link.link_text) for link in links] == [
+            ("policy/my-note_v2.md", "policy/my-note_v2.md")
+        ]
+    finally:
+        vault.close()
+
+
+def test_deprecation_colon_is_conventional_source_text(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        result = record_event(
+            vault._doc_mgr, ["a.md"], "**Deprecation**: retired *now*", (".",)
+        )
+        assert "- **Deprecation**: retired" in (tmp_path / result).read_text()
+    finally:
+        vault.close()
+
+
+def test_case_lookup_scans_shared_parent_once(tmp_path, monkeypatch):
+    import markdown_vault_mcp._okf_log_event as event
+
+    (tmp_path / "area").mkdir()
+    for name in ("a.md", "b.md", "c.md"):
+        (tmp_path / "area" / name).write_text("# A\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    actual_scandir = event.os.scandir
+    counts = []
+
+    def track(path):
+        if path == tmp_path / "area":
+            counts.append(path)
+        return actual_scandir(path)
+
+    try:
+        monkeypatch.setattr(event.os, "scandir", track)
+        record_event(
+            vault._doc_mgr, ["area/a.md", "area/b.md", "area/c.md"], "Change", (".",)
+        )
+        assert len(counts) == 1
+    finally:
+        vault.close()
+
+
+def test_event_log_reaches_git_commit(git_repo):
+    import subprocess
+
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    (git_repo / "a.md").write_text("# A\n")
+    strategy = GitWriteStrategy(
+        enable_pull=False, enable_push=False, git_lfs=False, repo_path=git_repo
+    )
+    vault = Vault(
+        source_dir=git_repo,
+        settings=VaultSettings(read_only=False),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
+    try:
+        record_event(vault._doc_mgr, ["a.md"], "Git event", (".",))
+        assert vault._write_callback.drain()
+        committed = subprocess.run(
+            ["git", "-C", str(git_repo), "show", "HEAD:log.md"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert "Git event" in committed and "/a.md" in committed
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_real_dated_section_with_subheading_accepts_event(tmp_path):
+    from markdown_it import MarkdownIt
+
+    (tmp_path / "a.md").write_text("# A\n")
+    log = tmp_path / "log.md"
+    old = "# Log\n\n## 2026-03-03\n\n### Detail\n\n- Earlier\n"
+    log.write_text(old)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_event(vault._doc_mgr, ["a.md"], "New", (".",), today=date(2026, 3, 3))
+        result = log.read_text()
+        assert result.startswith(old)
+        assert "New" in MarkdownIt("commonmark").render(result)
     finally:
         vault.close()
