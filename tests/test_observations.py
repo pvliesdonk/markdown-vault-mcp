@@ -768,13 +768,13 @@ def test_shared_vault_ledgers_serialize_sweeps(  # noqa: PLR0915, RUF100
         entered = threading.Event()
         errors = []
         save = ledger_a._save
-        load = ledger_b._load
+        load = ledger_b._load_full
 
-        def paused_save(rows):
+        def paused_save(rows, navigation):
             ready.set()
             if not release.wait(10):
                 raise TimeoutError("first sweep not released")
-            save(rows)
+            save(rows, navigation)
 
         def marked_load():
             entered.set()
@@ -789,7 +789,7 @@ def test_shared_vault_ledgers_serialize_sweeps(  # noqa: PLR0915, RUF100
                 errors.append(exc)
 
         monkeypatch.setattr(ledger_a, "_save", paused_save)
-        monkeypatch.setattr(ledger_b, "_load", marked_load)
+        monkeypatch.setattr(ledger_b, "_load_full", marked_load)
         threads.append(threading.Thread(target=run, args=(ledger_a,)))
         threads[-1].start()
         assert ready.wait(5)
@@ -1069,3 +1069,65 @@ def test_navigation_absence_respects_ledger_version(
         any("okf_navigation_history_reset" in r.message for r in caplog.records)
         is warning
     )
+
+
+@pytest.mark.parametrize("operation", ["refresh_many", "sweep"])
+@pytest.mark.parametrize("future_version", [False, True])
+def test_reconciliation_uses_one_validated_ledger_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    future_version: bool,
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    note = root / "note.md"
+    note.write_text("# Before\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    ledger.record_navigation("index.md", b"# Generated\n")
+    ledger.observe_navigation("index.md", b"# Edited\n", b"# Generated\n")
+    original = json.loads(path.read_text())
+    if future_version:
+        original["version"] = 4
+        path.write_text(json.dumps(original))
+    note.write_text("# After\n")
+    original_read = Path.read_text
+    reads = 0
+
+    def count_read(target: Path, *args: object, **kwargs: object) -> str:
+        nonlocal reads
+        if target == path:
+            reads += 1
+        return original_read(target, *args, **kwargs)
+
+    def reconcile() -> None:
+        if operation == "sweep":
+            ledger.sweep()
+        else:
+            ledger.refresh_many({"note.md"})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_text", count_read)
+        if future_version:
+            with pytest.raises(StoreUnsupportedSchemaError):
+                reconcile()
+        else:
+            reconcile()
+    assert reads == 1
+    after = json.loads(path.read_text())
+    assert after["navigation"] == original["navigation"]
+    if future_version:
+        assert after == original
+    else:
+        assert (
+            after["rows"]["note.md"]["content_digest"]
+            != original["rows"]["note.md"]["content_digest"]
+        )

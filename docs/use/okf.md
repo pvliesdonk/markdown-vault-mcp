@@ -345,7 +345,9 @@ The ledger is instance-local state beside the change tracker. With an in-memory
 index and no configured state path it stays in memory: a restart loses history,
 including evidence of removals during downtime. Back up persistent state to
 retain its history. One process must own a shared persistent state file;
-independent indexes must not share a tracker or ledger. If a ledger is missing
+independent indexes must not share a tracker or ledger. Ledger versions are checked
+when an operation reads state; stop the previous owner before starting an upgraded
+owner on the same state. If a ledger is missing
 or corrupt, the next sweep starts a new history from the files it can read. A
 newer schema is refused rather than overwritten.
 

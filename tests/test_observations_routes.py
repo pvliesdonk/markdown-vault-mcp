@@ -569,7 +569,7 @@ def test_failed_save_keeps_evidence_for_retry(
         ledger = vault._index_mgr.observations
         save = ledger._save
 
-        def fail(_rows: object) -> None:
+        def fail(_rows: object, _navigation: object = None) -> None:
             raise OSError("disk full")
 
         monkeypatch.setattr(ledger, "_save", fail)
@@ -690,9 +690,9 @@ def test_folder_move_batches_ledger_save(
         save = ledger._save
         calls: list[int] = []
 
-        def record(rows: object) -> None:
+        def record(rows: object, navigation: dict[str, object] | None = None) -> None:
             calls.append(1)
-            save(rows)  # type: ignore[arg-type]
+            save(rows, navigation)  # type: ignore[arg-type]
 
         monkeypatch.setattr(ledger, "_save", record)
         vault._doc_mgr.move_folder("old", "new")
@@ -916,7 +916,7 @@ def test_async_ledger_outage_does_not_gate_search_or_rename(
         vault.index.build_index()
         ledger = vault._index_mgr.observations
 
-        def fail(_rows: object) -> None:
+        def fail(_rows: object, _navigation: object = None) -> None:
             raise OSError("disk full")
 
         monkeypatch.setattr(ledger, "_save", fail)
@@ -1176,7 +1176,7 @@ def test_recreated_source_move_evidence_survives_retry(
                 return "blocked"
             return observe(path, visit)  # type: ignore[arg-type]
 
-        def fail(_rows: object) -> None:
+        def fail(_rows: object, _navigation: object = None) -> None:
             raise OSError("disk full")
 
         if interruption == "blocked":

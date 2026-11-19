@@ -282,7 +282,7 @@ class ObservationLedger:
             paths: Canonical vault-relative paths to inspect.
         """
         with self._lock:
-            rows, valid = self._load()
+            rows, valid, navigation = self._load_full()
             previous = rows.copy()
             with self._pending_lock:
                 removals = self._removals.copy()
@@ -301,7 +301,7 @@ class ObservationLedger:
             if self._path is None:
                 self._rows = rows
             elif rows != previous or not valid:
-                self._save(rows)
+                self._save(rows, navigation)
             self._consume_evidence(pending, removals, previous, states)
 
     @staticmethod
@@ -440,7 +440,7 @@ class ObservationLedger:
     def sweep(self) -> None:
         """Reconcile a live inventory sweep; incomplete walks retain absent rows."""
         with self._lock:
-            previous, valid = self._load()
+            previous, valid, navigation = self._load_full()
             result = previous.copy()
             found: set[str] = set()
             contradicted: set[str] = set()
@@ -488,7 +488,7 @@ class ObservationLedger:
             if self._path is None:
                 self._rows = result
             elif result != previous or not valid:
-                self._save(result)
+                self._save(result, navigation)
             self._consume_evidence(
                 {path: hint for path, hint in pending.items() if path in contradicted},
                 removals,

@@ -120,6 +120,7 @@ def test_future_ledger_refusal_leaves_index_untouched(tmp_path: Path) -> None:
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
+        assert vault.index.wait_for_drain(timeout=10.0)
         ledger = vault._index_mgr.observations
         assert ledger is not None and ledger._path is not None
         data = json.loads(ledger._path.read_text())
@@ -495,6 +496,7 @@ def test_future_ledger_refuses_new_index(tmp_path: Path) -> None:
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
+        assert vault.index.wait_for_drain(timeout=10.0)
         ledger = vault._index_mgr.observations
         assert ledger is not None and ledger._path is not None
         data = json.loads(ledger._path.read_text())

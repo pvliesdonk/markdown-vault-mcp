@@ -7925,7 +7925,9 @@ times, presence, removal time and origin. Builds (including warm builds),
 reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
 Persistent ledger sweeps for the same resolved path share a process-local lock.
 Shared persistent state has one owning process; independent indexes must not
-share tracker or ledger state.
+share tracker or ledger state. Ledger versions are checked when an operation
+reads state; stop the previous owner before starting an upgraded owner on the
+same state.
 The server's pull tick and post-pull reconciliation also sweep on current,
 deferred or failed search state; webhook delivery may sweep twice. A failed
 search reconcile keeps its failed outcome while the fallback sweep observes the
