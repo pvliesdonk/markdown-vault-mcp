@@ -506,6 +506,20 @@ def test_receipt_store_read_once_per_export(tmp_path, monkeypatch):
         vault.close()
 
 
+def test_receipt_batch_ignores_rows_without_string_paths(tmp_path):
+    import json
+
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+
+    receipt_path = tmp_path / "receipts.json"
+    valid = {"path": "note.md", "check": "human-review"}
+    receipt_path.write_text(
+        json.dumps({"version": 1, "rows": [{}, {"path": 42}, valid]})
+    )
+    store = ReceiptStore(receipt_path, tmp_path / "vault")
+    assert store.receipts_by_path() == {"note.md": [valid]}
+
+
 @pytest.mark.parametrize("state", ["corrupt", "unreadable"])
 def test_receipt_store_unavailable_fails_closed(tmp_path, monkeypatch, state):
     from markdown_vault_mcp._okf_receipts import ReceiptStore
