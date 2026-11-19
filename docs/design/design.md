@@ -1484,7 +1484,7 @@ transport), it does not place a single recursive watch on `source_dir`,
 which on a home-directory vault
 would register an OS-level recursive stream over every unrelated subtree
 (and, on macOS, trigger repeated TCC consent prompts). Instead it derives
-its watch roots: each non-excluded immediate child directory of
+its search watch roots: each eligible non-excluded immediate child directory of
 `source_dir` is watched recursively — so events deep inside a deliberately
 watched dot-root such as `.claude/` are delivered — and `source_dir`
 itself is watched non-recursively as a floor for root-level files. The
@@ -1509,7 +1509,8 @@ symlinked ancestor (`/var` resolving to `/private/var`) and symlink-farm
 vaults whose top-level children are symlinks to real directories from being
 watched but blind (edits seen only by scans). Prune rules still match the
 child's vault-visible name inside `source_dir`, not the resolved target's
-basename, so exclude patterns keep working across the link. `Path.resolve`
+basename, so exclude patterns keep working across the link. A shared resolved
+root retains every indexed alias for search exclusion routing. `Path.resolve`
 (`strict=False`) resolves best-effort and does not raise on a broken symlink or
 a missing component, so this is not about missing targets; when it does fail on
 a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python <
@@ -1556,8 +1557,8 @@ boundaries during each sweep. Directory modifications and attribute events
 request observation without inferring whether a metadata change was part of an
 adjacent child event. A non-note change can therefore trigger a full sweep per
 quiet debounce window; an unchanged sweep writes nothing. A ledger save can
-cause one follow-up sweep that writes nothing. A warm sweep of 5,000 notes was
-measured at about 0.21 seconds. Search roots and the floor are registered before
+cause one follow-up sweep that writes nothing. Sweep cost grows with the size
+of the inventory. Search roots and the floor are registered before
 observation-only roots, so those subscriptions get priority at the watch limit.
 An inaccessible root keeps its existing watch until it can be inspected. At a
 non-recursive observation ancestor, direct directory notices reconcile children,
@@ -1571,8 +1572,7 @@ versions provide attribute events that rebuild the observation root. Existing se
 for these cases remains unverified. On macOS, tested FSEvents recursive streams
 delivered changes after restoration on watchdog 4.0.2 and 7.1. A direct directory
 notice on a non-recursive piece reconciles direct children against watches, with
-cost growing with both. Walking a 20,000 directory excluded tree at startup was
-measured at about 0.45 seconds.
+cost growing with both. Initial registration walks excluded directory trees.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a

@@ -1020,7 +1020,7 @@
       "label": "File Watcher",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
-      "help": "Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
+      "help": "Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
       "advancedGroup": "Change detection"
     },
     {
@@ -1028,7 +1028,7 @@
       "label": "File Watcher Debounce S",
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S",
-      "help": "Seconds of quiet after the last filesystem event before reindexing.",
+      "help": "Seconds of quiet after the last filesystem event before reindexing or an observation sweep.",
       "advancedGroup": "Change detection"
     },
     {

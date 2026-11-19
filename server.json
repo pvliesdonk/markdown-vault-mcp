@@ -446,13 +446,13 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
-          "description": "Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
+          "description": "Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
           "format": "boolean",
           "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S",
-          "description": "Seconds of quiet after the last filesystem event before reindexing.",
+          "description": "Seconds of quiet after the last filesystem event before reindexing or an observation sweep.",
           "format": "number",
           "default": "2.0"
         },
@@ -1124,13 +1124,13 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
-          "description": "Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
+          "description": "Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
           "format": "boolean",
           "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S",
-          "description": "Seconds of quiet after the last filesystem event before reindexing.",
+          "description": "Seconds of quiet after the last filesystem event before reindexing or an observation sweep.",
           "format": "number",
           "default": "2.0"
         },

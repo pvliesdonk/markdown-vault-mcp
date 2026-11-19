@@ -23,7 +23,7 @@ import os
 import stat
 import threading
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -242,11 +242,15 @@ class _WatchRoot:
         path: Absolute directory to watch.
         recursive: Whether to watch descendants, rather than direct entries only.
         search: Whether events from this root can trigger search reindexing.
+        names: Indexed top-level names that lead to *path*; watchdog reports a
+            watched symlink at its resolved target, so search eligibility is
+            judged under each of these spellings.
     """
 
     path: Path
     recursive: bool
     search: bool = True
+    names: tuple[str, ...] = field(default=(), compare=False)
 
 
 def _resolve_internal_dirs(internal_dirs: Sequence[Path]) -> list[Path]:
@@ -384,6 +388,54 @@ def _tree_roots(root: Path) -> list[_WatchRoot]:
     return visit(root)[1]
 
 
+def _merge_aliases(roots: list[_WatchRoot]) -> list[_WatchRoot]:
+    """Collapse roots that resolve to one path, keeping every indexed name.
+
+    Args:
+        roots: Derived roots, possibly several symlink aliases of one target.
+
+    Returns:
+        One root per resolved path; it can trigger search when any of them
+        can, and lists only the names of the roots that can.
+    """
+    merged: dict[Path, _WatchRoot] = {}
+    for root in roots:
+        names = root.names if root.search else ()
+        kept = merged.get(root.path)
+        merged[root.path] = (
+            replace(root, names=names)
+            if kept is None
+            else replace(
+                kept, search=kept.search or root.search, names=kept.names + names
+            )
+        )
+    return list(merged.values())
+
+
+def _indexed_spellings(
+    endpoint: str, source: Path, root: _WatchRoot
+) -> list[str] | None:
+    """Return the vault spellings of *endpoint*, or ``None`` outside the vault.
+
+    Args:
+        endpoint: Absolute path from a watchdog event, under *root*'s path.
+        source: Resolved vault root.
+        root: The watch the event was delivered under.
+
+    Returns:
+        The resolved spelling plus one per indexed name leading to the root.
+    """
+    path = Path(endpoint)
+    try:
+        spellings = [path.relative_to(source).as_posix()]
+    except ValueError:
+        return None
+    if path.is_relative_to(root.path):
+        below = path.relative_to(root.path)
+        spellings += [(Path(name) / below).as_posix() for name in root.names]
+    return spellings
+
+
 def _derive_watch_roots(
     source_dir: Path,
     exclude_patterns: Sequence[str] | None,
@@ -486,7 +538,7 @@ def _derive_watch_roots(
             if observe and child.name in INTERNAL_DIRECTORY_NAMES:
                 continue
             roots.append(
-                _WatchRoot(_resolve_or_original(child), recursive=True, search=search)
+                _WatchRoot(_resolve_or_original(child), True, search, (child.name,))
             )
         except OSError:
             logger.warning(
@@ -495,7 +547,7 @@ def _derive_watch_roots(
 
     if root_floor:
         roots.append(_WatchRoot(source_dir, recursive=False))
-    return roots
+    return _merge_aliases(roots)
 
 
 _MAX_LOGGED_ROOTS = 12
@@ -658,19 +710,22 @@ class VaultFileWatcher:
         except Exception:
             logger.error("file_watcher_on_change_raised", exc_info=True)
 
-    def _search_event_allowed(self, event: FileSystemEvent) -> bool:
+    def _search_filter(
+        self, root: _WatchRoot
+    ) -> Callable[[FileSystemEvent], bool] | None:
+        if not self._on_observation:
+            return None
+        return lambda event: self._search_event_allowed(event, root)
+
+    def _search_event_allowed(self, event: FileSystemEvent, root: _WatchRoot) -> bool:
         source = _resolve_or_original(self._source_dir)
+        excluded = is_subtree_excluded if event.is_directory else is_path_excluded
+        patterns = self._exclude_patterns or ()
         for endpoint in _event_paths(event):
-            try:
-                relative = Path(endpoint).relative_to(source).as_posix()
-            except ValueError:
+            spellings = _indexed_spellings(endpoint, source, root)
+            if spellings is None:
                 return True  # Preserve search for symlinked watch roots.
-            excluded = (
-                is_subtree_excluded(relative, self._exclude_patterns or ())
-                if event.is_directory
-                else is_path_excluded(relative, self._exclude_patterns)
-            )
-            if not excluded:
+            if not all(excluded(spelling, patterns) for spelling in spellings):
                 return True
         return False
 
@@ -682,7 +737,7 @@ class VaultFileWatcher:
         handler = _VaultEventHandler(
             self._schedule,
             root.path,
-            self._search_event_allowed if self._on_observation else None,
+            self._search_filter(root),
             observe=self._schedule_observation if self._on_observation else None,
             root_info=root,
             sync=self._sync if self._on_observation else None,

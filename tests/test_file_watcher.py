@@ -947,7 +947,7 @@ def test_search_directory_file_glob_and_excluded_close_notice(tmp_path: Path) ->
     root = tmp_path / "visible"
     calls: list[int] = []
     handler = _VaultEventHandler(
-        lambda: calls.append(1), root, watcher._search_event_allowed
+        lambda: calls.append(1), root, watcher._search_filter(_WatchRoot(root, True))
     )
     handler.on_any_event(DirDeletedEvent(str(root / "folder.md")))
     assert calls == [1]
@@ -987,6 +987,104 @@ def test_derive_observation_does_not_follow_excluded_symlink(tmp_path: Path) -> 
     (tmp_path / "excluded").symlink_to(target, target_is_directory=True)
     roots = _derive_watch_roots(tmp_path, ["excluded/**"], observe=True)
     assert sum(root.path == target.resolve() for root in roots) == 1
+
+
+def test_indexed_aliases_of_excluded_target_refresh_search(tmp_path: Path) -> None:
+    """An edit to an excluded target refreshes every indexed symlink alias."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    if sys.version_info < (3, 13):
+        pytest.skip("indexing follows directory symlink aliases from Python 3.13")
+    source = tmp_path / "vault"
+    target = source / "excluded"
+    target.mkdir(parents=True)
+    (target / "note.md").write_text("originalword")
+    for alias in ("visible", "another"):
+        (source / alias).symlink_to(target, target_is_directory=True)
+    config = ProjectConfig(
+        source_dir=source,
+        state_path=tmp_path / "state.json",
+        exclude=["excluded/**"],
+        file_watcher_debounce_s=0.08,
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            expected = {"visible/note.md", "another/note.md"}
+            assert {
+                r.path for r in vault.reader.search("originalword", mode="keyword")
+            } == expected
+            await asyncio.sleep(0.5)
+            (source / "visible" / "note.md").write_text("replacementword")
+            digest = hashlib.sha256(b"replacementword").hexdigest()
+            for _ in range(100):
+                row = vault._index_mgr.observations.rows().get("excluded/note.md")
+                if row is not None and row.content_digest == digest:
+                    break
+                await asyncio.sleep(0.05)
+            assert row is not None and row.content_digest == digest
+            for _ in range(60):
+                hits = {
+                    r.path
+                    for r in vault.reader.search("replacementword", mode="keyword")
+                }
+                if hits == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert hits == expected
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("patterns", "names", "allowed"),
+    [
+        (["shared/**", "a/**"], ("b",), True),
+        (["shared/**", "a/**", "b/**"], (), False),
+        (["shared/skip/**", "a/skip/**"], ("a", "b", "shared"), True),
+        (["shared/skip/**", "a/skip/**", "b/skip/**"], ("a", "b", "shared"), False),
+    ],
+)
+def test_alias_spellings_authorize_search_per_indexed_alias(
+    tmp_path: Path, patterns: list[str], names: tuple[str, ...], allowed: bool
+) -> None:
+    """Search runs when any indexed spelling of the changed path is eligible."""
+    target = tmp_path / "shared"
+    (target / "skip").mkdir(parents=True)
+    for alias in ("a", "b"):
+        (tmp_path / alias).symlink_to(target, target_is_directory=True)
+    root = next(
+        r
+        for r in _derive_watch_roots(tmp_path, patterns, observe=True)
+        if r.path == target.resolve()
+    )
+    watcher = VaultFileWatcher(
+        tmp_path, lambda: None, exclude_patterns=patterns, on_observation=lambda: None
+    )
+    event = FileModifiedEvent(str(target.resolve() / "skip" / "n.md"))
+    assert root.names == names
+    assert watcher._search_event_allowed(event, root) is allowed
+
+
+def test_outside_vault_symlink_root_keeps_search(tmp_path: Path) -> None:
+    """A symlink farm target outside the vault is never classified by excludes."""
+    source = tmp_path / "vault"
+    outside = tmp_path / "outside"
+    source.mkdir()
+    outside.mkdir()
+    (source / "farm").symlink_to(outside, target_is_directory=True)
+    roots = _derive_watch_roots(source, ["*.md"], observe=True)
+    root = next(r for r in roots if r.path == outside.resolve())
+    watcher = VaultFileWatcher(
+        source, lambda: None, exclude_patterns=["*.md"], on_observation=lambda: None
+    )
+    event = FileModifiedEvent(str(outside.resolve() / "n.md"))
+    assert watcher._search_event_allowed(event, root) is True
 
 
 def test_observation_tree_isolates_refused_entry(tmp_path: Path) -> None:

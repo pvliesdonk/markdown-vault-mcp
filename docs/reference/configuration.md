@@ -527,8 +527,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing or an observation sweep. |
 | `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans. |
 | `MARKDOWN_VAULT_MCP_BOOT_REINDEX` | `true` | No | Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp admin reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault. |
 | `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | (none) | No | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. |
