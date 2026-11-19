@@ -426,3 +426,38 @@ def consume(reader: ReaderFacet, manager: SearchManager) -> None:
         timeout=120,
     )
     assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_search_omits_note_that_disappears_after_selection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A vanished filtered hit has no display decision and is omitted."""
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    for name in ("gone.md", "healthy.md"):
+        (tmp_path / name).write_text("zebra")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        manager = vault._search_mgr
+        original = manager._needs_review
+        gone_calls = 0
+
+        def disappear_on_display(path, filters):
+            nonlocal gone_calls
+            if path == "gone.md":
+                gone_calls += 1
+                if gone_calls == 2:
+                    (tmp_path / path).unlink()
+            return original(path, filters)
+
+        monkeypatch.setattr(manager, "_needs_review", disappear_on_display)
+        hits = vault.reader.search(
+            "zebra", limit=2, mode="keyword", filters={"needs_review": "true"}
+        )
+        assert gone_calls == 2
+        assert [hit.path for hit in hits] == ["healthy.md"]
+        assert hits[0].needs_review["needed"] is True
+        ordinary = vault.reader.search("zebra", mode="keyword")
+        assert ordinary and all(not hasattr(hit, "needs_review") for hit in ordinary)
+    finally:
+        vault.close()

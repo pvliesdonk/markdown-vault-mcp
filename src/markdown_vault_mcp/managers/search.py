@@ -1149,7 +1149,7 @@ class SearchManager:
                         needs_review=assessment,
                     )
                 )
-            else:
+            elif "needs_review" not in okf_filters:
                 ranked.append(
                     RankedSearchResult(**vars(result), retrieval_policy=result_policy)
                 )
