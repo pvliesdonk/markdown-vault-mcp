@@ -736,3 +736,6 @@ phase owns.
 
 The `okf collapse-indexes` operator command previews and removes obsolete
 undesignated generated index boundaries, refreshing their designated parents.
+
+
+The `okf merge-logs` migration and writer facet preview undesignated descendant logs against the nearest designated ancestor, with root always designated. Apply retains repeated entries under descending dates, omits and reports source frontmatter, preserves target frontmatter, and removes only successfully merged sources. Unparseable or unsafe inputs remain and are reported; interrupted target writes require inspection before retry.

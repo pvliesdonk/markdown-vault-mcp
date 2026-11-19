@@ -236,3 +236,196 @@ def merge_log_texts(upstream: str, local: str) -> LogMerge:
     ):
         return LogMerge(None, 0, "self_check_" + reason)
     return LogMerge(merged, added, "")
+
+
+@dataclasses.dataclass(frozen=True)
+class LogMove:
+    """A source log and its destination in a migration."""
+
+    source: str
+    target: str
+    entries: int
+    frontmatter: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class LogMigration:
+    """Merged or mergeable logs and sources kept with their reasons."""
+
+    merged: tuple[LogMove, ...]
+    kept: tuple[tuple[str, str], ...]
+    target_frontmatter: tuple[str, ...]
+    source_frontmatter: tuple[str, ...]
+
+
+def _migration_text(target: str | None, source: str) -> tuple[str | None, int, str]:
+    """Merge entries without deduplication; refuse content that cannot move safely."""
+    right, reason = _parse(source)
+    if right is None:
+        return None, 0, reason
+    # Relative Markdown and wiki links would acquire a different meaning.
+    if re.search(r"\]\((?![a-zA-Z][\w+.-]*:|/|#)[^)]|\[\[", source) or any(
+        not re.match(r"(?:[a-zA-Z][\w+.-]*:|/|#)", href)
+        for href, _ in right.refs.values()
+    ):
+        return None, 0, "relative or wiki link"
+    if target is None:
+        return (
+            source[len(right.prefix) :],
+            sum(len(s.entries) for s in right.sections),
+            "",
+        )
+    left, reason = _parse(target)
+    if left is None:
+        return None, 0, "target: " + reason
+    if _normalise_line_endings(left.preamble) != _normalise_line_endings(
+        right.preamble
+    ):
+        return None, 0, "preamble differs"
+    if left.refs != right.refs:
+        return None, 0, "reference definitions differ"
+    eol_match = re.search(r"\r\n|\r|\n", target)
+    eol = eol_match.group() if eol_match else "\n"
+    insertions: dict[int, list[str]] = {}
+    count = 0
+    for section in right.sections:
+        if not section.entries:
+            continue
+        count += len(section.entries)
+        existing = next((s for s in left.sections if s.date == section.date), None)
+        pos = (
+            existing.end
+            if existing
+            else next(
+                (s.start for s in left.sections if s.date < section.date),
+                len(left.lines),
+            )
+        )
+        while existing and pos > existing.start + 1 and not left.lines[pos - 1].strip():
+            pos -= 1
+        body = "".join(eol.join(entry) + eol for entry in section.entries)
+        if not existing:
+            body = f"## {section.date}{eol}{eol}" + body + eol
+        insertions.setdefault(pos, []).append(body)
+    output = left.lines[:]
+    for pos in sorted(insertions, reverse=True):
+        if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
+            output[pos - 1] += eol
+        output[pos:pos] = insertions[pos]
+    merged = left.prefix + "".join(output)
+    checked, reason = _parse(merged)
+    if (
+        checked is None
+        or sum(len(s.entries) for s in checked.sections)
+        != sum(len(s.entries) for s in left.sections) + count
+    ):
+        return None, 0, "self-check: " + reason
+    return merged, count, ""
+
+
+def migrate_logs(
+    doc: Any, designation: Any, *, apply: bool = False, allow_protected: bool = False
+) -> LogMigration:
+    """Preview or apply a conservative migration of descendant logs.
+
+    Args:
+        doc: Vault document manager.
+        designation: Active folder designation policy.
+        apply: Apply eligible moves.
+        allow_protected: Allow operator-protected paths.
+
+    Returns:
+        Eligible or completed moves and the sources retained with reasons.
+    """
+    import posixpath
+
+    from markdown_vault_mcp._okf_write import okf_write_suppressed
+    from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
+    from markdown_vault_mcp.utils.fs import walk_files_strict
+
+    if designation is None or designation("") is None:
+        raise InvalidRequestError("An active OKF bundle is required to merge logs.")
+    if apply:
+        doc.ensure_writable()
+    inspector = doc._inspector()
+    if inspector.path_presence(".md") == "blocked":
+        raise InvalidRequestError("Cannot inspect vault root.")
+    paths = walk_files_strict(
+        doc._source_dir, prune=lambda p: doc._index_skips(inspector, p)
+    )
+    sources = [
+        p.relative_to(doc._source_dir).as_posix()
+        for p in paths
+        if p.name == "log.md" and not doc._index_skips(inspector, p, leaf=True)
+    ]
+    merged: list[LogMove] = []
+    kept: list[tuple[str, str]] = []
+    headers: set[str] = set()
+    source_headers: set[str] = set()
+    simulated: dict[str, str] = {}
+    with okf_write_suppressed(), doc.write_scope():
+        for source in sources:
+            folder = posixpath.dirname(source)
+            if not folder or designation(folder):
+                continue
+            parent = posixpath.dirname(folder)
+            while parent and not designation(parent):
+                parent = posixpath.dirname(parent)
+            target = f"{parent}/log.md" if parent else "log.md"
+            wrote = False
+            try:
+                reason = doc.protection_reason(
+                    source, allow_protected=allow_protected
+                ) or doc.protection_reason(target, allow_protected=allow_protected)
+                if reason:
+                    kept.append((source, reason))
+                    continue
+                src = doc._read_note(source, capped=False)
+                dst = doc._read_note(target, capped=False)
+                if (
+                    src is None
+                    or src.path != source
+                    or (dst is not None and dst.path != target)
+                ):
+                    kept.append((source, "missing or aliased log"))
+                    continue
+                if strip_frontmatter_block(src.content) != src.content:
+                    source_headers.add(source)
+                previous = simulated.get(target, dst.content if dst else None)
+                if (
+                    previous is not None
+                    and strip_frontmatter_block(previous) != previous
+                ):
+                    headers.add(target)
+                text, count, reason = _migration_text(previous, src.content)
+                if text is None:
+                    kept.append((source, reason))
+                    continue
+                frontmatter = source in source_headers
+                if apply:
+                    wrote = True
+                    doc.write(
+                        target,
+                        text,
+                        if_match=dst.etag if dst else None,
+                        allow_overwrite=True,
+                        allow_protected=allow_protected,
+                    )
+                    doc.delete(
+                        source, if_match=src.etag, allow_protected=allow_protected
+                    )
+                else:
+                    simulated[target] = text
+                merged.append(LogMove(source, target, count, frontmatter))
+            except (MarkdownMCPError, OSError) as exc:
+                if wrote:
+                    raise InvalidRequestError(
+                        f"Merge interrupted: {target} may have changed; {source} may remain: {exc}"
+                    ) from exc
+                kept.append((source, str(exc)))
+    return LogMigration(
+        tuple(merged),
+        tuple(kept),
+        tuple(sorted(headers)),
+        tuple(sorted(source_headers)),
+    )

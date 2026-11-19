@@ -741,7 +741,7 @@ class Vault:
         capabilities = self._okf_capabilities
         from markdown_vault_mcp._okf_convention import IndexDesignation
 
-        designation = IndexDesignation(
+        self._folder_designation = IndexDesignation(
             capabilities.folders, lambda: self._okf.state().active
         )
 
@@ -760,7 +760,7 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             protected_paths=settings.protected_paths,
             designated_index=designated_index if capabilities.index else None,
-            designation=designation if capabilities.index else None,
+            designation=self._folder_designation if capabilities.index else None,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
@@ -864,6 +864,7 @@ class Vault:
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
+            log_designation=self._folder_designation,
             receipt_store=receipt_store,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,

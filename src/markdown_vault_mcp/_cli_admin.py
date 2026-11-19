@@ -197,6 +197,7 @@ def register_okf_commands(app: typer.Typer) -> None:
     group.command(
         "collapse-indexes", help="Preview or remove obsolete deep generated indexes."
     )(collapse_indexes)
+    group.command("merge-logs", help="Preview or merge descendant logs.")(merge_logs)
     app.add_typer(group, name="okf")
 
 
@@ -276,3 +277,51 @@ def _print_collapse(result: CollapsePlan, source_dir: str | None, apply: bool) -
         if source_dir:
             words += ["--source-dir", source_dir]
         typer.echo(f"To apply, run: {shlex.join([*words, '--apply'])}")
+
+
+def merge_logs(
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    apply: bool = typer.Option(False, "--apply", help="Merge logs and remove sources."),
+) -> None:
+    """Preview or merge descendant logs into designated folders.
+
+    Args:
+        source_dir: Optional vault directory override.
+        apply: Apply the migration.
+    """
+    from markdown_vault_mcp._cli_output import terminal_text
+    from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
+    from markdown_vault_mcp.exceptions import MarkdownMCPError
+
+    try:
+        built = (
+            _build_owning_vault("okf merge-logs", source_dir)
+            if apply
+            else _build_vault(
+                source_dir, ":memory:", scratch_state=True, shared_files=True
+            )
+        )
+        try:
+            built.vault.index.build_index()
+            result = built.vault.writer.okf_merge_logs(apply=apply)
+        finally:
+            built.close()
+        for move in result.merged:
+            action = "Merged" if apply else "Would merge"
+            header = "; source frontmatter omitted" if move.frontmatter else ""
+            typer.echo(
+                f"{action} {terminal_text(move.source)} -> {terminal_text(move.target)}: {move.entries} entries{header}"
+            )
+        for path, reason in result.kept:
+            typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
+        for path in result.source_frontmatter:
+            typer.echo(f"Source frontmatter encountered: {terminal_text(path)}")
+        for path in result.target_frontmatter:
+            typer.echo(f"Target frontmatter preserved: {terminal_text(path)}")
+        if not result.merged:
+            typer.echo("No logs to merge.")
+    except (MarkdownMCPError, OSError) as exc:
+        typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
+        raise typer.Exit(1) from exc

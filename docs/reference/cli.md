@@ -683,3 +683,12 @@ Preview or remove obsolete deep generated indexes.
 |---|---|---|---|
 | `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
 | `--apply` |  | False | Remove generated indexes and refresh their parents. |
+
+## `markdown-vault-mcp okf merge-logs`
+
+Preview or merge descendant logs.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
+| `--apply` |  | False | Merge logs and remove sources. |

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
     from markdown_vault_mcp._okf_index_collapse import CollapsePlan
+    from markdown_vault_mcp._okf_log_merge import LogMigration
     from markdown_vault_mcp._okf_log_repair import (
         LogRepairPreview,
         LogRepairResult,
@@ -99,6 +100,7 @@ class WriterFacet:
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
         receipt_store: ReceiptStore | None = None,
+        log_designation: Callable[[str], bool | None] | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -125,6 +127,7 @@ class WriterFacet:
                 ``None`` (the default) makes such a call raise
                 :exc:`RuntimeError`.
         """
+        self._log_designation = log_designation
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
         self._convention_maintainer = convention_maintainer
@@ -320,6 +323,27 @@ class WriterFacet:
         """
         return self._migrate().convert_links(
             folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_merge_logs(
+        self, *, apply: bool = False, allow_protected: bool = False
+    ) -> LogMigration:
+        """Preview or merge descendant logs into designated ancestors.
+
+        Args:
+            apply: Write the merged logs and remove merged sources.
+            allow_protected: Permit changes to protected paths.
+
+        Returns:
+            Sources merged or eligible, and sources kept with reasons.
+        """
+        from markdown_vault_mcp._okf_log_merge import migrate_logs
+
+        return migrate_logs(
+            self._doc_mgr,
+            self._log_designation,
+            apply=apply,
+            allow_protected=allow_protected,
         )
 
     def okf_collapse_indexes(
