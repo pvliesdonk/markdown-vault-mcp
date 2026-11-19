@@ -501,7 +501,7 @@ failures leave the existing listing in place and convention maintenance logs a
 warning. The primary note write is not rolled back. A vault whose index was
 never built and has no scheduled build is listed without waiting, by filename.
 Membership comes from one name-only directory walk of the selected subtree: no
-note is opened or parsed, dot and wholly excluded directories are not entered,
+note contents are read, dot and wholly excluded directories are not entered,
 and excluded, dot and non-regular files are omitted. Directory links are
 followed where the scanner follows them, but a link that resolves outside the
 vault is omitted, as is anything the inspection policy owner holds as server
