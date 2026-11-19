@@ -279,3 +279,19 @@ def test_transfer_external_base_with_review():
     assert _bundle_options(
         "okf-bundle?external_base=https%3A%2F%2Fexample.org&require_review"
     ) == ("", {"external_base": "https://example.org", "require_review": True})
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"require_check": ""},
+        {"review_evidence": "unknown"},
+    ],
+)
+def test_invalid_library_review_policy_is_rejected(tmp_path, policy):
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(ValueError, match="Invalid review assurance policy"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), **policy)
+    finally:
+        vault.close()
