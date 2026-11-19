@@ -465,8 +465,6 @@ Dict with:
 **Outcomes and errors**
 
 - InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused.
-- TimeoutError: If queued writes do not reach the index within 60 seconds; earlier index writes may remain.
-- IndexUnavailableError: If the index build failed; earlier writes may remain.
 - DocumentUnreadableError: If an index cannot be read; it is left untouched, though earlier writes may remain.
 
 <!-- DOMAIN-EXAMPLE-okf_generate_index-START -->

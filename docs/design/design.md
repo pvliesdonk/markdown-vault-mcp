@@ -1611,9 +1611,9 @@ and retain its paths, while a primary parse error survives a second failure
 during graph recovery. Follow-up embeddings need not finish, but earlier
 queued jobs can delay the refresh. The wait happens outside the file-write
 lock. It waits behind an already queued initial build without adding a build
-prerequisite to disk-only rename/move calls. OKF generators check readiness
-after the refresh, so convention maintenance also waits behind a queued build;
-a never-built index still fails their existing readiness check. Per-path read/validation failures
+prerequisite to disk-only rename/move calls. Link conversion checks readiness
+after the refresh; index generation instead reads live inventory without a build.
+Per-path read/validation failures
 refresh the other notes, then fail the job and retain the snapshot; tombstone
 read and stale-row deletion failures also remain retryable. A per-row success
 callback lets the writer enqueue embeddings for completed rows even if a sibling
@@ -2166,7 +2166,8 @@ the spec itself says, dated and sourced, in
   substitution is a new rewrite the rename/move engine does not provide,
   computed per occurrence so distinct aliases survive.
   ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
-  from the note list, creating missing descendant indexes and preserving
+  from live inventory independently of search admission, excluding index-excluded
+  and dot-path files, creating missing descendant indexes and preserving
   existing descendant indexes. Automatic maintenance instead folds notes
   through undesignated folders up to the next index. Both paths preserve
   existing frontmatter (the root ``okf_version`` declaration

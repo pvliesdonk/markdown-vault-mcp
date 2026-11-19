@@ -68,8 +68,8 @@ def test_all_folders_existing_child_preserves_parent(
         vault.index.build_index()
         from unittest.mock import Mock
 
-        search = Mock(wraps=vault._search_mgr.list)
-        monkeypatch.setattr(vault._search_mgr, "list", search)
+        inventory = Mock(wraps=vault._doc_mgr.inspect_bundle)
+        monkeypatch.setattr(vault._doc_mgr, "inspect_bundle", inventory)
         if operation == "write":
             vault.writer.write("child/note.md", "# Updated\n")
             wait_for_writer_drain(vault)
@@ -78,8 +78,8 @@ def test_all_folders_existing_child_preserves_parent(
             vault.writer.okf_generate_index(folder="child")
             assert "[Note](/child/note.md)" in (root / "child/index.md").read_text()
         assert (root / "index.md").read_text() == parent
-        assert search.call_count == 1
-        assert search.call_args.kwargs["folder"] == "child"
+        assert inventory.call_count == 1
+        assert inventory.call_args.args[0].root == "child"
     finally:
         vault.close()
 
@@ -264,20 +264,20 @@ def test_generation_queries_subtree_once(
     vault = designated_vault(root, ("**",))
     try:
         vault.index.build_index()
-        original = vault._search_mgr.list
-        calls: list[str | None] = []
+        original = vault._doc_mgr.inspect_bundle
+        calls: list[str] = []
 
-        def counted(*, folder: str | None = None, **kwargs: object) -> object:
-            calls.append(folder)
-            return original(folder=folder, **kwargs)  # type: ignore[arg-type]
+        def counted(request: object) -> object:
+            calls.append(request.root)  # type: ignore[attr-defined]
+            return original(request)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(vault._search_mgr, "list", counted)
+        monkeypatch.setattr(vault._doc_mgr, "inspect_bundle", counted)
         if automatic:
             vault.writer.write("root-note.md", "# Root note\n")
         else:
             vault.writer.okf_generate_index()
         wait_for_writer_drain(vault)
-        assert calls == [None]
+        assert calls == [""]
     finally:
         vault.close()
 

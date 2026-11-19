@@ -9,7 +9,7 @@ dirtying, and the git-commit callback all come for free):
   bundle-root-absolute markdown links, reusing the *already-resolved*
   outlink targets so the link graph is preserved edge-for-edge.
 - :meth:`generate_index` (re)writes a reserved ``index.md`` progressive-
-  disclosure listing from the table of contents, preserving any existing
+  disclosure listing from live inventory, preserving any existing
   frontmatter (notably the root ``okf_version`` declaration).
 - :meth:`seed_log` seeds a reserved ``log.md`` change history from git.
 
@@ -17,7 +17,7 @@ Generated reserved files have no new frontmatter; existing index headers are pre
 
 These are write tools gated on read-only mode only, not on a future
 ``OKF_WRITE`` flag (design §7): they are deliberate migrations, not ongoing
-enforcement. The index-dependent transforms refresh prior queued writes
+enforcement. The index-dependent link transform refreshes prior queued writes
 before reading their inputs (#1464); a refresh error refuses the transform.
 
 Every write they issue goes straight to
@@ -35,6 +35,7 @@ import re
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
     DocumentUnreadableError,
     InvalidRequestError,
@@ -105,14 +106,13 @@ class OkfMigrationManager:
         """Hold the collaborators the transforms delegate to.
 
         Args:
-            doc_mgr: Reads (raw content, TOC, reserved-file existence) and
+            doc_mgr: Reads (raw content, inventory, reserved-file existence) and
                 writes (the shared write path); supplies the read-only gate
                 and git-commit callback.
             link_mgr: Resolved outlinks for the link converter.
             search_mgr: Note listing and per-note metadata (descriptions).
             git_query_mgr: Vault-wide history for the log seeder.
-            require_built: Index-readiness gate; the link/TOC-dependent
-                transforms call it first.
+            require_built: Index-readiness gate for link conversion.
         """
         self._doc_mgr = doc_mgr
         self._link_mgr = link_mgr
@@ -216,7 +216,7 @@ class OkfMigrationManager:
         allow_protected: bool = False,
         designated: Callable[[str], bool] | None = None,
     ) -> OkfIndexResult:
-        """Generate a reserved ``index.md`` listing for *folder* from the TOC.
+        """Generate a reserved ``index.md`` listing for *folder* from inventory.
 
         Without active index maintenance, migration creates missing indexes recursively.
         Under an active designation policy, eligible indexes fold descendants
@@ -244,8 +244,6 @@ class OkfMigrationManager:
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
                 cannot be read; it is left untouched (#1608).
-            IndexUnavailableError: If the index is not built.
-            TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         folder = normalize_folder(folder) or ""
         if designated is None:
@@ -299,8 +297,6 @@ class OkfMigrationManager:
     ) -> OkfIndexResult:
         """Generate eligible indexes and collect protected paths."""
         self._doc_mgr.ensure_writable()
-        self._doc_mgr.ensure_index_current()
-        self._require_built()
         folder = normalize_folder(folder) or ""
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         if tree is None:
@@ -337,25 +333,54 @@ class OkfMigrationManager:
         )
 
     def _index_tree(self, folder: str) -> _IndexTree:
-        """Bucket one indexed subtree into immediate notes and child folders."""
-        from markdown_vault_mcp.types import NoteInfo
-
+        """Bucket visible inventory notes into immediate folders."""
         prefix = f"{folder}/" if folder else ""
         tree: _IndexTree = {folder: ([], set())}
-        for note in self._search_mgr.list(folder=folder or None):
-            if not isinstance(note, NoteInfo) or not note.path.startswith(prefix):
-                continue
-            parts = note.path[len(prefix) :].split("/")
-            parent = folder
-            for sub in parts[:-1]:
-                tree.setdefault(parent, ([], set()))[1].add(sub)
-                parent = posixpath.join(parent, sub)
-                tree.setdefault(parent, ([], set()))
-            if not is_okf_reserved_file(parts[-1]):
-                raw = note.frontmatter.get("description")
-                desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
-                tree[parent][0].append((note.title, f"/{note.path}", desc))
+        cursor = None
+        while True:
+            page = self._doc_mgr.inspect_bundle(
+                BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
+            )
+            for entry in page.entries:
+                if (
+                    entry.role
+                    not in {"concept_candidate", "navigation", "history", "support"}
+                    or entry.visibility != "visible"
+                    or entry.hidden_path
+                    or entry.state in {"unavailable", "missing"}
+                    or self._doc_mgr.in_submodule(entry.path)
+                ):
+                    continue
+                self._add_inventory_entry(tree, folder, prefix, entry.path)
+            if page.next_cursor is None:
+                break
+            cursor = page.next_cursor
         return tree
+
+    def _add_inventory_entry(
+        self, tree: _IndexTree, folder: str, prefix: str, path: str
+    ) -> None:
+        """Add a note and its ancestor folders to the listing tree."""
+        parts = path[len(prefix) :].split("/")
+        parent = folder
+        for sub in parts[:-1]:
+            tree.setdefault(parent, ([], set()))[1].add(sub)
+            parent = posixpath.join(parent, sub)
+            tree.setdefault(parent, ([], set()))
+        if is_okf_reserved_file(parts[-1]):
+            return
+        try:
+            note = self._doc_mgr.read(path)
+        except (DocumentUnreadableError, NoteTooLargeError):
+            note = None
+        if note is None:
+            title = posixpath.splitext(parts[-1])[0]
+            desc = None
+        else:
+            title = note.title
+            raw = note.frontmatter.get("description")
+            desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
+        tree[parent][0].append((title, f"/{path}", desc))
 
     def _fold_index(
         self,

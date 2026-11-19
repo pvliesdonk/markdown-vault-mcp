@@ -435,7 +435,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
   (#1372); around local midnight the two can name different days, which is
   the two rules stating what they each mean, not a defect. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
-  `index.md` content derives from the same data as `get_toc`.
+  `index.md` content derives from live inventory, independently of search admission.
   **Status:** shipped in phase 5b (see §9). Maintenance runs only for
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
@@ -491,18 +491,8 @@ write lock so concurrent writes into one folder cannot lost-update the log;
 the `index.md` refresh is a full idempotent regeneration, safe without extra
 locking.
 
-Cost note: `generate_index` now waits for a successful queued FTS refresh
-before deriving its listing (#1464), just like explicit link conversion.
-The refresh queues behind an in-flight initial build before the generator checks
-readiness, covering convention maintenance during cold startup as well.
-The wait requires a successful build outcome, including marker and readiness
-publication, with one 60-second budget for the build and refresh. Failed or
-cancelled attempts also prevent regeneration; failures leave the existing listing in
-place and convention maintenance logs a warning. The primary note write
-is not rolled back. Follow-up embedding work need not finish, although
-jobs already ahead of the refresh can delay it. The old separate 10-second
-best-effort drain is no longer wired by Vault; the optional maintainer
-preflight hook remains available to existing integrations.
+Generated indexes read live inventory without refreshing or requiring the search
+index. Search-excluded and dot-path files are omitted from the listing.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
 write committed separately; since #1264 the dispatcher buffers every write a
@@ -534,7 +524,7 @@ Per-file conformance makes incremental adoption natural. Recommended order —
    machinery:
    - wikilink → bundle-root-absolute markdown-link conversion (the same
      link-rewriting engine behind `rename`/`move_folder`);
-   - `index.md` generation from `get_toc` data;
+   - `index.md` generation from live inventory;
    - `log.md` seeding from git history via `GitQueryManager`, so a
      git-backed vault starts with real change history.
 
