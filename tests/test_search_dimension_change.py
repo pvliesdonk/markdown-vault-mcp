@@ -15,6 +15,7 @@ from markdown_vault_mcp.exceptions import StoreIncompatibleError
 from markdown_vault_mcp.managers.embeddings import EmbeddingsManager
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vector_store_files import stored_vector_files
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,18 +61,6 @@ def _built_at_16(tmp_path: Path, store: str) -> None:
         vault.close()
 
 
-def _store_files(tmp_path: Path) -> dict[str, bytes]:
-    # SQLite's -shm and -wal files come and go with connections; the writer
-    # checkpoints on close, so they hold no rows here.
-    return {
-        p.name: p.read_bytes()
-        for p in tmp_path.iterdir()
-        if p.is_file()
-        and p.name.startswith("vectors")
-        and not p.name.endswith(("-shm", "-wal"))
-    }
-
-
 @pytest.mark.parametrize("store", STORES)
 @pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 def test_a_search_rebuilds_once_at_the_new_dimension(
@@ -107,7 +96,7 @@ def test_a_read_only_reader_refuses_another_dimension(
     tmp_path: Path, store: str
 ) -> None:
     _built_at_16(tmp_path, store)
-    before = _store_files(tmp_path)
+    before = stored_vector_files(tmp_path)
     assert before
     reader = _vault(tmp_path, store, 32, owns_index_files=False)
     try:
@@ -117,7 +106,7 @@ def test_a_read_only_reader_refuses_another_dimension(
             reader.reader.search("Boats", limit=1, mode="semantic")
     finally:
         reader.close()
-    assert _store_files(tmp_path) == before
+    assert stored_vector_files(tmp_path) == before
 
 
 def test_an_injected_store_of_another_dimension_is_refused(tmp_path: Path) -> None:

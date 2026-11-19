@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><title>Synthetic vault host</title>
+<iframe title="Vault Explorer" src="/app.html" style="width:100%;height:800px"></iframe>
+<script>
+// Synthetic MCP Apps host: no vault, credentials, or external side effects.
+window.pending = [];
+window.respond = (result, error = false) => {
+  const request = window.pending.shift();
+  request.source.postMessage({jsonrpc: '2.0', id: request.id,
+    ...(error ? {error: {code: -32603, message: 'Synthetic failure'}} : {result})}, location.origin);
+};
+window.addEventListener('message', ({data, source}) => {
+  if (!data || data.jsonrpc !== '2.0') return;
+  const reply = (result) => source.postMessage({jsonrpc: '2.0', id: data.id, result}, location.origin);
+  if (data.method === 'ui/initialize') {
+    reply({protocolVersion: data.params.protocolVersion,
+      hostInfo: {name: 'Synthetic host', version: '1'}, hostCapabilities: {serverTools: {}},
+      hostContext: {theme: 'light', platform: 'web', availableDisplayModes: ['inline']}});
+  } else if (data.method === 'ui/notifications/initialized') {
+    source.postMessage({jsonrpc: '2.0', method: 'ui/notifications/tool-input',
+      params: {arguments: {view: 'context'}}}, location.origin);
+  } else if (data.method === 'tools/call') {
+    if (data.params.name.endsWith('vault_context')) window.pending.push({id: data.id, source});
+    else reply({content: [{type: 'text', text: data.params.name.endsWith('vault_search')
+      ? '[]' : '{"folders":[],"notes":[]}'}]});
+  } else if (data.id !== undefined) reply({});
+});
+</script></html>

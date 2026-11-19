@@ -61,6 +61,7 @@ from markdown_vault_mcp.git.interfaces import (
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for the historic import surface
+    GitWriteSettings,
     GitWriteStrategy,
     _stage_and_commit,
     git_write_strategy,
@@ -94,6 +95,7 @@ __all__ = [
     "PUSH_REASON_NO_REMOTE",
     "PUSH_REASON_PUSH_FAILED",
     "REMOTE_STATE_UNSYNCED",
+    "GitWriteSettings",
     "GitWriteStrategy",
     "HistorySource",
     "PullResult",

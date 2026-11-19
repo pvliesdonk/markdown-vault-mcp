@@ -553,8 +553,11 @@ _RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
 #: honoured, whitespace-separated, at the end of the parenthesised text.
 #: Spaces and tabs separate it (§6.3; a NBSP is an ordinary destination
 #: character, Ex. 507); a line ending never reaches here (#1334).
+#: A failed separator run must not be retried at each interior space/tab:
+#: every retry meets the same next token and cannot change the result (#1749).
+#: Consume the first separator before the guard to retain the engine's skip.
 trailing_title_pattern = re.compile(
-    r"""[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*$"""
+    r"""[ \t](?<![ \t]{2})[ \t]*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*$"""
 )
 
 

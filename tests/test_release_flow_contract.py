@@ -1928,6 +1928,23 @@ def test_build_backend_is_bounded_at_the_minor() -> None:
     )
 
 
+def test_mcpb_build_backend_matches_the_root_pin() -> None:
+    """``packaging/mcpb/pyproject.toml.in`` pins the same hatchling as the root.
+
+    Renovate bumps the root ``[build-system]`` pin but does not read the
+    ``.in`` file, which also pins this package as ``${VERSION}`` (#2259).
+    This fails the bump's pull request until the bundle's copy follows.
+    """
+    text = (REPO_ROOT / "packaging" / "mcpb" / "pyproject.toml.in").read_text(
+        encoding="utf-8"
+    )
+    pins = re.findall(r'"(hatchling[<>=!~ ][^"]*)"', text)
+    assert pins == [_hatchling_requirement()], (
+        f"packaging/mcpb/pyproject.toml.in pins {pins!r}; the root "
+        f"pyproject.toml pins {_hatchling_requirement()!r}. Make them match."
+    )
+
+
 def test_pypi_publisher_understands_current_metadata() -> None:
     """The pinned publisher is new enough to accept what the backend emits.
 
@@ -2463,8 +2480,8 @@ def test_every_coverage_patch_poster_posts_under_all_outcomes(
 ) -> None:
     """Both posters of ``coverage/patch`` report something, always.
 
-    `extra_required_checks` lets a project make ``coverage/patch`` a required
-    context.  A required check that never reports does not turn a pull request
+    Listing ``coverage/patch`` in a ruleset's ``required_status_checks`` makes
+    it a required context.  A required check that never reports does not turn a pull request
     red — it leaves it waiting forever on a status that is not coming, and the
     only exits are an admin bypass or a ruleset edit.  So "post an ``error``"
     and "post nothing" are not equivalent failure modes, and the difference is
@@ -2535,6 +2552,6 @@ def test_server_json_description_fits_the_registry_cap() -> None:
     assert len(description) <= MCP_REGISTRY_DESCRIPTION_MAX, (
         f"server.json description is {len(description)} chars; the MCP registry "
         f"caps it at {MCP_REGISTRY_DESCRIPTION_MAX} and publish-registry — the "
-        f"last job of a release — would fail with 422 (#481). Shorten it here "
-        f"and in .copier-answers.yml (domain_description)."
+        f"last job of a release — would fail with 422 (#481). Shorten it here, "
+        f"in pyproject.toml, plugin.json and release.yml's PLUGIN_DESC."
     )

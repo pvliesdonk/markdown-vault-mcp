@@ -32,7 +32,7 @@ Over stdio there is no network listener and no authentication. The MCP client st
 
 An authenticated caller has every tool the instance exposes. Each tool runs with the server's own privileges: its filesystem and network access, and any credential in its configuration. `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim that set for an instance; see [Configuration](reference/configuration.md).
 
-<!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
+<!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach -->
 Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
 Some tools send data beyond the vault:
@@ -45,6 +45,8 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
 The CLI can send reads and mutations to a selected HTTP(S) MCP endpoint. Hosted writer commands use the existing server tools and their permissions; `fetch` downloads on the server. `okf verify` refuses locally because this CLI cannot obtain human review confirmation. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Hosted commands do not open the local vault or fall back to it. See the [CLI reference](reference/cli.md#search-a-hosted-vault).
+
+The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 ## What answers without a credential

@@ -1,10 +1,84 @@
 # Reference research log
 
+## 2026-11-17
+
+- [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
+  observed `next` URL host for #1853, from a full pagination of both sources.
+  Other claims and review date unchanged.
+- Updated: [File creation permissions and default ACLs](file-creation-permissions.md),
+  for #2054. Rechecked acl(5)'s permission-bit correspondence for a default
+  ACL without a mask; the runtime now reads the default-ACL xattr instead of
+  creating a probe file.
+
+## 2026-11-16
+
+- Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
+  Observed anonymous responses for both repositories, pagination and strict tag
+  shapes; checked variants against the chosen patterns. Next review: 2027-05-16.
+- New: [File creation permissions and default ACLs](file-creation-permissions.md),
+  for #2054. Checked Linux ACL inheritance, chmod masks and private staging;
+  reproduced the new-file group-write loss against plain creation.
+- [SQLite FTS5](sqlite-fts5.md): checked the documented default docsize
+  rowid inventory in SQLite FTS5 §§4.5 and 9.3 for #1538; pinned insert
+  and delete behavior in a fixture. Other claims and review date unchanged.
+
+## 2026-11-15
+
+- New: [LEANN query-time embedding recomputation](leann.md), for #1368.
+  Cross-checked the technique against paper v2, §§1, 3–4.2 and 7.1,
+  and the upstream README. No implementation or deployment benchmark.
+  Next review: 2027-05-15.
+
 ## 2026-11-14
 
 - Added the hosted CLI slow-reindex regression pin to the current [FastMCP task-mode claim](fastmcp-4.md#per-server-task-backend) for #2060. Native FastMCP 4.1.8 source inspection and a real-server HTTP reproduction confirm that legacy mode preserves the foreground job response; the default modern connection waits beyond the CLI deadline. Existing sourced claim and review date remain unchanged.
 
 - Added [Typer parameter sources](typer-parameter-sources.md) for #2060. Inspected installed Typer 0.29.1 and Click 8.5.1 sources and reproduced the unequal enum members and explicit false option. Refute pass checked source names and the default-value distinction. Next review: 2027-05-14.
+
+- New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
+  Tagged observer, inotify and FSEvents sources establish mutation masks and
+  the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and
+  an at-most-one-overflow claim. Pins cover production scheduling, native mask
+  construction and mutation admission. Next review: 2027-05-14.
+- [Git history and revision queries](git-history-queries.md): added Python's
+  subprocess newline/encoding behavior behind path streams (#1290).
+  Sources: Python 3.14 subprocess documentation and CPython source; observed
+  CR/CRLF corruption with Python 3.12 and Git 2.43.0 in synthetic fixtures.
+  Raw capture preserves path stdout, while stderr retains text normalization.
+  Existing Git claims were not re-researched; next review remains 2027-03-06.
+- [Git submodules](git-submodules.md): added the plain embedded-repository
+  facet for #1949. Read Git v2.55.0 repository-layout, git-add and dir.c;
+  refuted marker-only discovery with inert-directory/gitfile fixtures.
+  Observed silent no-staging on Git 2.43.0 in a synthetic Boat sandbox and
+  pinned it to the real Vault regression. Replan 2 replaces working-root
+  equality with native structural resolution and strict gitfile reads, after
+  configured/foreign-owned and unreadable-marker counterexamples. Read Git
+  v2.55.0 setup.c and early rev-parse handling; pins cover the corrected owner.
+  Follow-up confirms the native 1 MiB gitfile limit before open; memory-capped
+  and unreadable-oversize fixtures pin bounded preliminary reads.
+  Other claims and review deadline remain unchanged.
+- New: [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md),
+  for #1952. Read Linux 6.8 and pinned nsfs UAPI constants, namespace and kill
+  manual pages, and Docker's static-label contract. Guards are pinned to unit
+  tests; the real Docker SIGKILL regression awaits a Docker-capable CI worker.
+  Next review: 2027-05-14.
+- New: [CLI reader test logging lifetimes](cli-test-logging.md), for #2023.
+  Read locked pytest, Click, pvl-core, Python logging and Rich source; reproduced
+  a natural pytest capture closing beneath a retained handler and the real
+  index writer contaminating a later command capture. Historical handler
+  attribution remains unknown. Next review: 2027-05-14.
+- New: [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md),
+  for #2029. Read and refuted the lockfile-matched python-frontmatter 1.3.0 and
+  PyYAML 6.0.3 source distributions: keyword forwarding, default sorting,
+  recursive mapping representation, loading order and formatting boundaries.
+  Next review: 2027-05-14, or when either pinned dependency changes.
+- New: [OpenAI-compatible embedding responses](openai-compatible-embeddings.md),
+  for bug #2050. Sources: the OpenAI OpenAPI spec's `Embedding` and
+  `CreateEmbeddingResponse` schemas, openai-python's `Embedding` type and
+  `BaseModel.construct`, the ProtoJSON format's default-value rule and
+  Google's OpenAI compatibility page, all read 2026-11-14. Observations: raw
+  Gemini batch responses and per-text comparisons from #2050 and a rerun on
+  `gemini-embedding-2`. Next review: 2027-05-14.
 
 ## 2026-11-07
 
