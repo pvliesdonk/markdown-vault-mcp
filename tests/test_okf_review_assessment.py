@@ -156,7 +156,7 @@ def test_distinct_claims_and_compact_annotations() -> None:
 
 
 def test_corrupt_receipts_are_unavailable(tmp_path) -> None:
-    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp._okf_receipts import ReceiptStore, assess_reviews
 
     path = tmp_path / "receipts.json"
     path.write_text('{"version": 99, "rows": []}')
@@ -164,8 +164,10 @@ def test_corrupt_receipts_are_unavailable(tmp_path) -> None:
     snapshot = concept_snapshot("Body")
     entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
     claim = {**entry, "check": "links", "snapshot": snapshot}
-    item = store.review_assessments(
-        "note.md", {"verified": entry, "x-mvmcp": {"reviews": [claim]}}, snapshot
+    item = assess_reviews(
+        {"verified": entry, "x-mvmcp": {"reviews": [claim]}},
+        snapshot,
+        lambda: store.receipts("note.md"),
     )[0]
     assert (item["snapshot"], item["origin"], item["local_evidence"]) == (
         "matches",

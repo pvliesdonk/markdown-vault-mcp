@@ -412,6 +412,15 @@ def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, 
     }
 
 
+def _review_claims(metadata: dict[str, Any]) -> list[Any] | None:
+    """Return supplied ``x-mvmcp.reviews``, or None when its container is malformed."""
+    extension = metadata.get("x-mvmcp", {})
+    if not isinstance(extension, dict):
+        return None
+    reviews = extension.get("reviews", [])
+    return reviews if isinstance(reviews, list) else None
+
+
 def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
     """Describe whether supplied review entries have a snapshot binding."""
     if entries:
@@ -468,39 +477,22 @@ def derive_annotation(
     annotation["review_applicability"] = _review_applicability(
         entries, annotation["review"]
     )
-    extension = metadata.get("x-mvmcp")
     if assessments is not None:
         annotation["review_assessments"] = assessments
-        unknown = next(
-            (
-                item["snapshot_basis"]
-                for item in assessments
-                if item.get("snapshot_basis")
-            ),
-            None,
-        )
+        unknown = [
+            item["snapshot_basis"] for item in assessments if "snapshot_basis" in item
+        ]
         if unknown:
-            annotation["review_applicability"] = {"review": "unknown", "basis": unknown}
+            annotation["review_applicability"] = {
+                "review": "unknown",
+                "basis": unknown[0],
+            }
         elif any(item["snapshot"] != "unbound" for item in assessments):
             annotation["review_applicability"] = {
                 "review": "assessed",
                 "basis": "per_review",
             }
-        elif entries:
-            annotation["review_applicability"] = {
-                "snapshot": "unbound",
-                "basis": "no_snapshot_binding",
-            }
-    elif entries and (
-        ("x-mvmcp" in metadata and not isinstance(extension, dict))
-        or (
-            isinstance(extension, dict)
-            and "reviews" in extension
-            and (
-                not isinstance(extension["reviews"], list) or bool(extension["reviews"])
-            )
-        )
-    ):
+    elif entries and _review_claims(metadata) != []:
         annotation["review_applicability"] = {
             "review": "unknown",
             "basis": "snapshot_not_available",

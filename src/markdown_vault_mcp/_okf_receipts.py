@@ -18,6 +18,7 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.indexing.observations import _LEDGER_LOCKS
 from markdown_vault_mcp.okf import (
     _parse_stale_after,
+    _review_claims,
     _review_recorded,
     verified_entries,
 )
@@ -87,20 +88,9 @@ def assess_reviews(
         Separate binding, check and origin facts in recorded order.
     """
     entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
-    extension = metadata.get("x-mvmcp")
-    raw = extension.get("reviews") if isinstance(extension, dict) else None
-    malformed_container = (
-        "x-mvmcp" in metadata and not isinstance(extension, dict)
-    ) or (
-        isinstance(extension, dict)
-        and "reviews" in extension
-        and not isinstance(raw, list)
-    )
-    claims = (
-        [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
-    )
+    raw = _review_claims(metadata)
+    claims = [row for row in raw or [] if isinstance(row, dict)]
     receipts: list[dict[str, Any]] | None = None
-    loaded = False
     result = []
     for entry in entries:
 
@@ -110,9 +100,8 @@ def assess_reviews(
             ) == _parse_stale_after(reference["at"])
 
         candidates = [row for row in claims if identity(row)]
-        if candidates and not loaded:
-            receipts = load() if load is not None else None
-            loaded = True
+        if candidates and receipts is None:
+            receipts = (load() if load is not None else None) or []
 
         def receipt_for(
             claim: dict[str, Any], rows: list[dict[str, Any]] | None = receipts
@@ -135,7 +124,7 @@ def assess_reviews(
             (row for row in candidates if receipt_for(row) is not None),
             candidates[0] if candidates else None,
         )
-        item = _assess_claim(entry, claim, snapshot, malformed_container)
+        item = _assess_claim(entry, claim, snapshot, raw is None)
         if claim is not None:
             claims.remove(claim)
             receipt = receipt_for(claim)
@@ -283,12 +272,6 @@ class ReceiptStore:
         except (OSError, StoreUnsupportedSchemaError):
             return None
         return [row for row in rows if row.get("path") == path]
-
-    def review_assessments(
-        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str]
-    ) -> list[dict[str, Any]]:
-        """Assess reviews with this instance's path-scoped receipts."""
-        return assess_reviews(metadata, snapshot, lambda: self.receipts(path))
 
     def append(self, receipt: dict[str, Any]) -> None:
         """Record the receipt of a review already written to its note.

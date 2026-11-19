@@ -576,9 +576,10 @@ class ReaderFacet:
         """Assess reviews using this instance's receipts, when available."""
         from markdown_vault_mcp._okf_receipts import assess_reviews
 
-        if self._receipt_store is None:
-            return assess_reviews(metadata, snapshot, None)
-        return self._receipt_store.review_assessments(path, metadata, snapshot)
+        store = self._receipt_store
+        return assess_reviews(
+            metadata, snapshot, None if store is None else lambda: store.receipts(path)
+        )
 
     def review_observation(
         self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None
