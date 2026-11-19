@@ -20,7 +20,6 @@ from fastmcp_pvl_core import (
     FetchResult,
     HealthCheck,
     InstructionRole,
-    JobsConfig,
     ServerConfig,
     TransferConfig,
     TransferKind,
@@ -85,8 +84,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # The jobs settings (#2308).
-    "JobsConfig",
     # Transfer links and URL fetching (#2282).
     "FetchResult",
     "TransferConfig",

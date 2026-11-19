@@ -34,7 +34,6 @@ from pathlib import Path
 
 import markdown_vault_mcp
 from markdown_vault_mcp._pvl_core import (
-    JobsConfig,
     ServerConfig,
     TransferConfig,
     finalize_instructions,
@@ -125,12 +124,14 @@ def _transfer_config_source_file() -> Path:
 
 
 def _jobs_config_source_file() -> Path:
-    """Resolve the installed ``JobsConfig`` source file (server tier).
+    """Resolve the ``JobsConfig`` source file (server tier).
 
-    ``JobsConfig`` is a pvl-core-owned section composed into
-    :class:`ProjectConfig` (#1033), resolved the same way as
-    ``TransferConfig`` above.
+    ``JobsConfig`` is a section composed into :class:`ProjectConfig` (#1033),
+    resolved the same way as ``TransferConfig`` above. It moved out of
+    pvl-core in #2308 and keeps its server tier.
     """
+    from markdown_vault_mcp.config_sections import JobsConfig
+
     src = inspect.getsourcefile(JobsConfig)
     assert src is not None, "JobsConfig source file not found"
     return Path(src)

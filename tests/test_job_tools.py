@@ -29,7 +29,6 @@ from markdown_vault_mcp._job_tools import (
 )
 from markdown_vault_mcp._jobs import Jobs, build_jobs
 from markdown_vault_mcp._pvl_core import (
-    JobsConfig,
     ServerConfig,
     apply_tool_visibility,
     finalize_instructions,
@@ -38,6 +37,7 @@ from markdown_vault_mcp._pvl_core import (
 )
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE, is_tool_boundary
+from markdown_vault_mcp.config_sections import JobsConfig
 
 _BOUNDARY_LOGGER = "markdown_vault_mcp._tool_boundary"
 _FAST_CONFIG = JobsConfig(soft_deadline_s=0.15, result_ttl_s=60.0)

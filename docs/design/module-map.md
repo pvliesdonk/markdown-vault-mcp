@@ -128,6 +128,7 @@ src/markdown_vault_mcp/
     embeddings.py        -- EmbeddingsConfig: provider selection + per-provider and shared embedding knobs
     git.py               -- GitConfig: git auth, identity, sync cadence
     indexing.py          -- IndexingConfig: paths, frontmatter, exclusions
+    jobs.py              -- JobsConfig: JOBS_* soft deadline, job-record TTL and per-subject cap (#2308)
     search.py            -- SearchConfig: ranking weights + snippet-truncation knobs
     summarize.py         -- SummarizeConfig: OpenAI-compatible summarization backend settings
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings

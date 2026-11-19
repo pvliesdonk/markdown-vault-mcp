@@ -34,7 +34,6 @@ from markdown_vault_mcp._pvl_core import (
 # the import genuinely used, and a redundant directive fails RUF100.
 from markdown_vault_mcp._env import env
 from markdown_vault_mcp._pvl_core import (
-    JobsConfig,
     ServerConfig,
     TransferConfig,
 )
@@ -44,6 +43,7 @@ from markdown_vault_mcp.config_sections import (
     EmbeddingsConfig,
     GitConfig,
     IndexingConfig,
+    JobsConfig,
     SearchConfig,
     SummarizeConfig,
     SyncConfig,
@@ -1076,7 +1076,7 @@ class ProjectConfig:
     )
     # The soft deadline before a still-running summarize call is promoted to
     # a background job is no longer a summarize-specific knob: it is owned by
-    # the pvl-core jobs subsystem (JOBS_SOFT_DEADLINE_S and friends, #1033).
+    # the jobs section (JOBS_SOFT_DEADLINE_S and friends, #1033).
     # The transfer subsystem's operator knobs are owned by
     # ``fastmcp_pvl_core.TransferConfig`` (link TTL default/max, post-success
     # grace window, crashed-handler lease, per-upload cap). Compose it as a
@@ -1088,11 +1088,11 @@ class ProjectConfig:
         metadata={"tags": ("transfer",)},
     )
 
-    # The jobs subsystem's operator knobs (soft deadline before a slow tool
-    # call is promoted to a pollable background job, job-record TTL,
-    # per-subject cap) are owned by ``fastmcp_pvl_core.JobsConfig`` (#1033).
-    # Composed the same way as ``transfer`` above so the config-surface
-    # generator discovers the ``JOBS_*`` env vars from core's field metadata.
+    # The jobs settings (soft deadline before a slow tool call is promoted to
+    # a pollable background job, job-record TTL, per-subject cap) are
+    # ``config_sections.JobsConfig`` (#1033, #2308). Composed the same way as
+    # ``transfer`` above, so the config-surface generator discovers the
+    # ``JOBS_*`` env vars from that class's field metadata.
     jobs: JobsConfig = field(
         default_factory=JobsConfig,
         metadata={"tags": ("jobs",)},
@@ -1356,8 +1356,8 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
-        # ``transfer`` and ``jobs`` are composed pvl-core section fields
-        # (not section-view properties); each validates its own bounds in its
+        # ``transfer`` and ``jobs`` are composed section fields (not
+        # section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
         self._check_embedding_store()
