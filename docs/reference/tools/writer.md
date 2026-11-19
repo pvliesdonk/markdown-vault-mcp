@@ -435,10 +435,11 @@ See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
 
 Generate a folder's Open Knowledge Format index.md, preserving frontmatter.
 
-Designated folders fold descendants up to existing indexes and are linked
-from their nearest existing designated parent index, except under `**`.
-Without index maintenance, missing subfolder indexes are generated
-recursively.
+Lists every note, by filename when search has not indexed it, and
+leaves out hidden and index-excluded paths. Designated folders fold
+descendants up to existing indexes and are linked from their nearest
+existing designated parent index, except under `**`. Without index
+maintenance, missing subfolder indexes are generated recursively.
 
 **Parameters**
 
@@ -464,9 +465,9 @@ Dict with:
 
 **Outcomes and errors**
 
-- InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused.
+- InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused. A visible folder that cannot be listed refuses before any write.
 - TimeoutError: If queued writes do not reach the index within 60 seconds; earlier index writes may remain.
-- IndexUnavailableError: If the index build failed; earlier writes may remain.
+- IndexUnavailableError: If a scheduled index build failed or was cancelled; earlier writes may remain.
 - DocumentUnreadableError: If an index cannot be read; it is left untouched, though earlier writes may remain.
 
 <!-- DOMAIN-EXAMPLE-okf_generate_index-START -->

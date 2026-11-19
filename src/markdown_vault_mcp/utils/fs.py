@@ -103,25 +103,12 @@ def could_be_regular_file(path: Path) -> bool:
         return True
 
 
-def is_symlink(path: Path) -> bool:
-    """True if *path* itself is a symbolic link; False if nothing is there.
-
-    Raises:
-        OSError: If the ``lstat`` is refused for another reason (#1625).
-    """
-    try:
-        return stat.S_ISLNK(path.lstat().st_mode)
-    except OSError as exc:
-        if exc.errno in _ABSENT_ERRNOS:
-            return False
-        raise
-
-
 def walk_files_strict(
     root: Path,
     *,
     include_dirs: bool = False,
     prune: Callable[[Path], bool] | None = None,
+    follow_links: bool = False,
 ) -> list[Path]:
     """Return every file below *root*, sorted, refusing an unreadable directory.
 
@@ -132,6 +119,8 @@ def walk_files_strict(
     ``rglob()``. With *include_dirs*, include directories and directory links.
     A directory for which *prune* returns true is neither listed nor entered,
     so an unreadable directory the caller ignores cannot refuse the walk.
+    With *follow_links*, directory links are followed where
+    :func:`iter_markdown_files` follows them (#508).
 
     Raises:
         OSError: If *root* or a directory below it cannot be listed.
@@ -141,7 +130,9 @@ def walk_files_strict(
         raise exc
 
     found: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(root, onerror=_raise):
+    for dirpath, dirnames, filenames in os.walk(
+        root, onerror=_raise, followlinks=follow_links and _WALK_FOLLOWLINKS
+    ):
         if prune is not None:
             dirnames[:] = [d for d in dirnames if not prune(Path(dirpath) / d)]
         names = filenames + dirnames if include_dirs else filenames

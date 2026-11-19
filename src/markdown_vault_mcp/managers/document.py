@@ -96,10 +96,10 @@ from markdown_vault_mcp.utils import (
     validate_path,
 )
 from markdown_vault_mcp.utils.fs import (
+    could_be_regular_file,
     is_directory,
     is_regular_file,
     is_subtree_excluded,
-    is_symlink,
     path_exists,
     walk_files_strict,
 )
@@ -565,10 +565,9 @@ class DocumentManager:
     def index_note_paths(self, folder: str) -> list[str]:
         """List every note a generated index under *folder* may show.
 
-        Names come from directory listings alone; no note is opened, so an
-        unreadable note keeps its place. Dot and wholly excluded directories
-        are never entered, and directory links are not followed. A note link
-        is kept only when it resolves to a regular file inside the vault.
+        Discovery follows the scanner's rules for directory links and file
+        types, but dot and wholly excluded directories are not entered. No
+        note is opened, so an unreadable note keeps its place.
 
         Args:
             folder: Normalized vault-relative folder (``""`` for the root).
@@ -577,57 +576,35 @@ class DocumentManager:
             Sorted vault-relative note paths; empty for a missing folder.
 
         Raises:
-            InvalidRequestError: If *folder* escapes the vault or is reached
-                through a directory alias, or it or a visible directory below
-                it cannot be listed.
+            InvalidRequestError: If *folder* or a visible directory below it
+                cannot be listed.
         """
-        if (
-            resolve_inside(folder, self._source_dir)
-            != self._source_dir.resolve() / folder
-        ):
-            raise InvalidRequestError(
-                f"Folder {folder!r} is reached through an alias. Pass its real "
-                "folder to okf_generate_index."
-            )
-        root = self._source_dir / folder
+
+        def rel(path: Path) -> str:
+            return path.relative_to(self._source_dir).as_posix()
 
         def prune(path: Path) -> bool:
-            rel = path.relative_to(self._source_dir).as_posix()
             return path.name.startswith(".") or is_subtree_excluded(
-                rel, self._exclude_patterns or ()
+                rel(path), self._exclude_patterns or ()
             )
 
+        root = self._source_dir / folder
         try:
             if not is_directory(root):
                 return []
-            skip = len(str(self._source_dir).rstrip(os.sep)) + 1
-            paths = [
-                str(path)[skip:].replace(os.sep, "/")
-                for path in walk_files_strict(root, prune=prune)
-            ]
             return [
-                path
-                for path in paths
-                if is_note(path)
-                and self.index_path_visible(path)
-                and self._index_alias_supported(path)
+                rel(path)
+                for path in walk_files_strict(root, prune=prune, follow_links=True)
+                if is_note(path.name)
+                and could_be_regular_file(path)
+                and self.index_path_visible(rel(path))
             ]
         except OSError as exc:
             raise InvalidRequestError(
                 f"Cannot list all of folder {folder!r}; no index was written. "
-                "Exclude the unreadable folder or ask the operator to restore "
-                "access, then call okf_generate_index again."
+                "Ask the user to restore access to it or exclude it, then call "
+                "okf_generate_index again."
             ) from exc
-
-    def _index_alias_supported(self, path: str) -> bool:
-        """Whether a listed note is a plain file or a contained file link."""
-        if not is_symlink(self._source_dir / path):
-            return True
-        try:
-            resolve_inside(path, self._source_dir)
-        except InvalidRequestError:
-            return False
-        return is_regular_file(self._source_dir / path)
 
     def _vault_relative(self, path: Path) -> str:
         return path.relative_to(self._source_dir.resolve()).as_posix()

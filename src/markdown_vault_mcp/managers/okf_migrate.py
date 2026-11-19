@@ -352,8 +352,7 @@ class OkfMigrationManager:
         Membership comes from the folder's live listing; titles and
         descriptions stay the search index's, with the filename for a note
         it has not admitted. *folder*'s own ``index.md`` is bucketed too, so
-        a parent links a boundary generated empty, unless that path is
-        hidden or excluded.
+        a parent links a boundary generated empty.
         """
         from markdown_vault_mcp.types import NoteInfo
 
@@ -364,9 +363,8 @@ class OkfMigrationManager:
                 desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
                 labels[note.path] = (note.title, desc)
         paths = self._doc_mgr.index_note_paths(top)
-        boundary = f"{folder}/index.md"
-        if folder != top and self._doc_mgr.index_path_visible(boundary):
-            paths.append(boundary)
+        if folder != top:
+            paths.append(f"{folder}/index.md")
         prefix = f"{top}/" if top else ""
         tree: _IndexTree = {top: ([], set()), folder: ([], set())}
         for path in paths:
@@ -397,10 +395,13 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
-            has_index = self._has_index(child)
+            visible = self._doc_mgr.index_path_visible(f"{child}/index.md")
+            has_index = visible and self._has_index(child)
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
-            if not (has_index or designated is None or designated(child)):
+            if not visible or not (
+                has_index or designated is None or designated(child)
+            ):
                 inner, made = self._fold_index(
                     child, tree, skipped, allow_protected, designated
                 )

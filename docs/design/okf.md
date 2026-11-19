@@ -502,7 +502,8 @@ warning. The primary note write is not rolled back. A vault whose index was
 never built and has no scheduled build is listed without waiting, by filename.
 Membership comes from one name-only directory walk of the selected subtree: no
 note is opened or parsed, dot and wholly excluded directories are not entered,
-and excluded or dot files are omitted. A visible directory that cannot be
+and excluded, dot and non-regular files are omitted. Directory links are
+followed where the scanner follows them. A visible directory that cannot be
 listed refuses the whole call before any write. The optional maintainer
 preflight hook remains available to existing integrations.
 
