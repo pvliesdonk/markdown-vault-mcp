@@ -16,14 +16,10 @@ from __future__ import annotations
 from fastmcp_pvl_core import (
     CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
     GENERATED_INSTRUCTIONS_TARGET_UTF16,
-    JOB_POLL_TOOL_NAME,
     ConfigurationError,
     FetchResult,
     HealthCheck,
     InstructionRole,
-    JobLimitExceededError,
-    JobNotFoundError,
-    Jobs,
     JobsConfig,
     ServerConfig,
     TransferConfig,
@@ -36,7 +32,6 @@ from fastmcp_pvl_core import (
     apply_tool_visibility,
     build_auth,
     build_bearer_auth,
-    build_jobs,
     configure_logging_from_env,
     domain_env_suffixes,
     domain_env_surface,
@@ -90,12 +85,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # The job manager, its store and records (#2307).
-    "JOB_POLL_TOOL_NAME",
-    "JobLimitExceededError",
-    "JobNotFoundError",
-    "Jobs",
-    "build_jobs",
     # The jobs settings (#2308).
     "JobsConfig",
     # Transfer links and URL fetching (#2282).

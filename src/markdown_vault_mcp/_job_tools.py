@@ -12,10 +12,8 @@ Two entry points, both built on the ``Jobs`` mechanics (``build_jobs``):
 - :func:`register_job_tools` registers the one polling tool,
   ``get_job_result``, which retrieves every job on the shared ``Jobs``.
 
-``Jobs``, the job records and the instructions builder still come from
-pvl-core through the shim, until #2307 and #2305 move them. The exceptions
-caught here must stay the classes the job store raises, so they move with
-the store, not with this module.
+The instructions builder still comes from pvl-core through the shim, until
+#2305 moves it.
 
 How FastMCP builds the tool descriptions and instructions snippets
 registered here, and how clients read them, is in
@@ -32,13 +30,12 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.exceptions import ToolError
 from mcp.types import Icon, ToolAnnotations
 
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp._job_store import (
     JOB_POLL_TOOL_NAME,
-    InstructionRole,
     JobLimitExceededError,
     JobNotFoundError,
-    instructions_for,
 )
+from markdown_vault_mcp._pvl_core import InstructionRole, instructions_for
 from markdown_vault_mcp._tool_boundary import tool_boundary
 
 if TYPE_CHECKING:
@@ -46,7 +43,7 @@ if TYPE_CHECKING:
 
     from fastmcp import FastMCP
 
-    from markdown_vault_mcp._pvl_core import Jobs
+    from markdown_vault_mcp._jobs import Jobs
 
 # Lucide "loader" icon (MIT): raw SVG, base64-encoded once at import time
 # into a data URI, so the polling tool carries an icon with no file-system
