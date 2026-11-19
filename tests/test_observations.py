@@ -999,7 +999,7 @@ def test_malformed_navigation_history_resets_without_losing_rows(
     data = json.loads(path.read_text())
     data["navigation"] = navigation
     path.write_text(json.dumps(data))
-    assert ledger.generated_navigation() == {}
+    assert ledger.navigation_stats() == {"count": 0, "examples": []}
     assert ledger.rows() == before
 
 

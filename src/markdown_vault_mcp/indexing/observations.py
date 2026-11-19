@@ -519,13 +519,6 @@ class ObservationLedger:
             ):
                 raise ValueError("invalid divergence history")
 
-    def generated_navigation(self) -> dict[str, str]:
-        """Return the last generated body digests as one local snapshot."""
-        with self._lock:
-            generated = self._load_full()[2]["generated"]
-            assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
-            return dict(generated)
-
     def observe_navigation(self, path: str, old: bytes | None, new: bytes) -> None:
         """Report an unexpected body before replacing a designated index."""
         with self._lock:
@@ -560,8 +553,9 @@ class ObservationLedger:
     def _save_navigation(
         self, rows: dict[str, Observation], state: dict[str, object]
     ) -> None:
-        self._navigation = state
-        if self._path is not None:
+        if self._path is None:
+            self._navigation = state
+        else:
             self._save(rows, state)
 
     def navigation_stats(self) -> dict[str, object]:

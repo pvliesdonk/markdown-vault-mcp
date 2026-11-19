@@ -27,10 +27,13 @@ def test_fresh_baseline_and_divergences_are_capped_and_deduplicated(
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 0
         with caplog.at_level(logging.WARNING):
             for i in range(12):
-                index.write_bytes(header + f"# Edit {i}\n".encode())
+                edited = header + f"# Edit {i}\n".encode()
+                index.write_bytes(edited)
                 vault.index.reindex()
+                assert index.read_bytes() == edited
+                vault.writer.okf_generate_index(folder="")
             index.write_bytes(header + b"# Edit 0\n")
-            vault.index.reindex()
+            vault.writer.okf_generate_index(folder="")
         assert index.read_bytes().startswith(header)
         assert b"# Edit" not in index.read_bytes()
         divergences = vault.reader.okf_stats()["navigation"]["divergences"]
@@ -45,7 +48,7 @@ def test_fresh_baseline_and_divergences_are_capped_and_deduplicated(
     try:
         vault.index.build_index()
         index.write_bytes(header + b"# Edit 0\n")
-        vault.index.reindex()
+        vault.writer.okf_generate_index(folder="")
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 12
     finally:
         vault.close()
@@ -189,6 +192,8 @@ def test_unreadable_index_does_not_block_other_folders_and_retries(
             assert index_b.read_bytes() == (bad if bad is not None else before)
             index_b.write_text("# Repaired manually\n")
             vault.index.reindex()
+            assert "Repaired manually" in index_b.read_text()
+            vault.writer.okf_generate_index(folder="b")
             assert "Repaired manually" not in index_b.read_text()
             stats = vault.reader.okf_stats()
             assert stats is not None
@@ -237,6 +242,7 @@ def test_body_line_endings_are_compared_as_stored(
         if entry == "explicit":
             vault.writer.okf_generate_index(folder="a")
         else:
+            (root / "a/note.md").write_text("# Note\n\nChanged body\n")
             vault.index.reindex()
         assert index.read_bytes() == baseline
         stats = vault.reader.okf_stats()
@@ -271,9 +277,13 @@ def test_generated_body_matches_stored_bytes(tmp_path: Path, header: bytes) -> N
         assert generated.startswith(header)
         ledger = vault._index_mgr.observations
         assert ledger is not None
+        import json
+
         from markdown_vault_mcp.hashing import compute_etag
 
-        assert ledger.generated_navigation()["index.md"] == compute_etag(
+        assert ledger._path is not None
+        state = json.loads(ledger._path.read_text())
+        assert state["navigation"]["generated"]["index.md"] == compute_etag(
             stored_body(generated.decode("utf-8"))
         )
         vault.writer.okf_generate_index(folder="")
@@ -359,6 +369,7 @@ def test_external_edit_during_generation_is_not_lost_silently(
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
+        vault.index.reindex()
         ledger = vault._index_mgr.observations
         assert ledger is not None
         with monkeypatch.context() as patch:
@@ -384,6 +395,9 @@ def test_external_edit_during_generation_is_not_lost_silently(
                 vault.writer.okf_generate_index(folder="")
         assert index.read_text() == "# External edit\n"
         vault.index.reindex()
+        assert index.read_text() == "# External edit\n"
+        (root / "note.md").write_text("# Note\n\nChanged body\n")
+        vault.index.reindex()
         assert index.read_text() != "# External edit\n"
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
     finally:
@@ -392,7 +406,12 @@ def test_external_edit_during_generation_is_not_lost_silently(
 
 @pytest.mark.parametrize(
     "replacement",
-    [b"---\ntitle: Changed\n---\n# Edit\n", b"---\ntitle: [broken\n---\n", b"\xff"],
+    [
+        b"---\ntitle: Changed\n---\n# Edit\n",
+        b"---\ntitle: [broken\n---\n",
+        b"\xff",
+        b"\xef\xbb\xbf---\ntitle: [broken\n---\n",
+    ],
 )
 def test_snapshot_change_after_preliminary_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: bytes

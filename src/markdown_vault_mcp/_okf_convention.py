@@ -38,8 +38,6 @@ from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
-from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
@@ -47,6 +45,7 @@ from markdown_vault_mcp.okf import (
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of, normalize_folder, resolve_inside
 from markdown_vault_mcp.utils.fs import is_regular_file
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -192,8 +191,9 @@ def read_stored_index(doc_mgr: DocumentManager, path: str) -> str:
         DocumentUnreadableError: If the stored index cannot be read.
     """
     try:
-        raw = doc_mgr._validate_path(path).read_bytes().decode("utf-8")
-        parse_frontmatter(raw)
+        data = doc_mgr._validate_path(path).read_bytes()
+        raw = data.decode("utf-8")
+        parse_frontmatter(decode_utf8(data))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise DocumentUnreadableError(path, str(exc)) from exc
     return raw
@@ -471,7 +471,6 @@ class ConventionMaintainer:
             )
             anchors = {p: self._anchor_of(p) for p in safe}
             folders = [folder for folder in anchors.values() if folder is not None]
-            folders.extend(self._changed_index_folders(rows))
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
@@ -484,26 +483,6 @@ class ConventionMaintainer:
             if success and previous != current:
                 self._checkpoint.save(current)
             return success
-
-    def _changed_index_folders(self, rows: Mapping[str, Observation]) -> list[str]:
-        """Find designated indexes whose stored body left the generated one."""
-        ledger = self._doc_mgr._observations
-        generated = {} if ledger is None else ledger.generated_navigation()
-        folders: list[str] = []
-        for path, digest in generated.items():
-            row = rows.get(path)
-            folder = folder_of(path)
-            if row is None or row.presence != "present" or not self._may_index(folder):
-                continue
-            try:
-                if self._doc_mgr._read_note(path, capped=False) is None:
-                    continue
-                body = stored_body(read_stored_index(self._doc_mgr, path))
-            except DocumentUnreadableError:
-                continue  # A concept-triggered refresh reports the failure.
-            if compute_etag(body) != digest:
-                folders.append(folder)
-        return folders
 
     def _has_designated_index(self, folder: str) -> bool:
         """Whether *folder* already has a designated index, so a listing may keep it.
