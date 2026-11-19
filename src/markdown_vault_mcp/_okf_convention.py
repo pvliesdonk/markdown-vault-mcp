@@ -257,12 +257,6 @@ class ConventionMaintainer:
         """Whether *folder*'s ``index.md`` may be generated automatically."""
         return self._designated(folder) and self._destination_ok(folder, "index.md")
 
-    def _may_log(self, folder: str) -> bool:
-        """Whether a write into *folder* may append to its ``log.md``."""
-        return self._capabilities.log == "writes" and self._destination_ok(
-            folder, "log.md"
-        )
-
     def _maintain_index(self, folder: str) -> None:
         """Refresh the designated anchor that owns *folder* if allowed."""
         anchor = self.indexed_anchor(folder)
@@ -452,7 +446,7 @@ class ConventionMaintainer:
             with self._write_lock:
                 folder = self._log_anchor(folder)
                 log_path = f"{folder}/log.md" if folder else "log.md"
-                if not self._may_log(folder):
+                if not self._destination_ok(folder, "log.md"):
                     return
                 existing = self._doc_mgr.read(log_path)
                 body = (

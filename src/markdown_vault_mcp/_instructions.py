@@ -136,7 +136,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     (#1035). Any ``okf_mode`` other than ``"off"`` emits the OKF sentence, on
     the same permits-rather-than-detects reasoning as the conventions one, and
     resolved capabilities decide which upkeep it asks for. The server can
-    maintain either file independently and only in designated folders.
+    maintain logs and designated indexes independently.
     With ``boot_reindex`` off, files changed while no server ran stay out of
     the index until a reindex runs, and nothing else prompts the model to run
     one, so the sentence names the tool (#1542); a deployment that keeps the
@@ -200,14 +200,18 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             elif not index and not log:
                 upkeep = "For edits, update 'log.md'/'index.md'."
             else:
-                scope = ", ".join(caps.folders)
-                upkeep = (
-                    f"In designated folders ({scope}) the server maintains {'index.md' if index else 'log.md'}; "
-                    f"maintain {'log.md' if index else 'index.md'} yourself. "
-                    "Elsewhere maintain both."
-                    if index != log
-                    else f"In designated folders ({scope}) leave 'log.md'/'index.md' to the server; elsewhere maintain both."
+                log_advice = (
+                    "Leave 'log.md' to the server."
+                    if log
+                    else "For edits, update 'log.md'."
                 )
+                index_advice = (
+                    f"The server maintains designated 'index.md' files ({', '.join(caps.folders)}); "
+                    "maintain other indexes yourself."
+                    if index
+                    else "For edits, update 'index.md'."
+                )
+                upkeep = f"{log_advice} {index_advice}"
             upkeep += " "
         snippets.append(
             Snippet(
