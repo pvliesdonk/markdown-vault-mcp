@@ -416,13 +416,17 @@ class Service:
                     logger.info(
                         "file_watcher_reindex_skipped reason=index_not_queryable"
                     )
+                    vault._sweep_observations("file_watcher")
                 except Exception:
                     logger.error("file_watcher_reindex_failed", exc_info=True)
+                    vault._sweep_observations("file_watcher")
 
-            # Never watch the vault's own write targets: reindex() rewrites the
-            # state file on every run, and a watch on its dir would re-trigger
-            # the watcher into a self-feedback loop (#830). .git is protected
-            # too so local git-write commits don't storm reindexes.
+            def _on_observation() -> None:
+                vault._sweep_observations("file_watcher")
+
+            # Search excludes internal write targets to avoid reindex feedback
+            # (#830). Observation filters note events and lets inventory decide
+            # which files to include in its sweep.
             internal_dirs = [config.source_dir / ".git"]
             for extra in (
                 settings.effective_state_path(config.source_dir),
@@ -439,6 +443,7 @@ class Service:
                 exclude_patterns=config.indexing.exclude_patterns,
                 root_floor=config.sync.file_watcher_root_floor,
                 internal_dirs=internal_dirs,
+                on_observation=_on_observation,
             )
             self._file_watcher.start()
         elif not config.sync.file_watcher_enabled:

@@ -929,7 +929,8 @@ class ProjectConfig:
         default=True,
         metadata={
             "help": (
-                "Watch the vault for external filesystem changes; "
+                "Watch for external filesystem changes, including observation "
+                "of excluded notes; "
                 "auto-disabled when git pull is active or a webhook can "
                 "deliver (HTTP/SSE transports only). "
                 "Requires the file-watcher extra."
@@ -942,7 +943,8 @@ class ProjectConfig:
         default=2.0,
         metadata={
             "help": (
-                "Seconds of quiet after the last filesystem event before reindexing."
+                "Seconds of quiet after the last filesystem event before "
+                "reindexing or an observation sweep."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection"},
@@ -955,7 +957,8 @@ class ProjectConfig:
                 "Keep the non-recursive watch on the vault root; set false "
                 "to register zero source-dir-rooted FSEvents streams (avoids "
                 "repeated macOS access prompts on a home-rooted vault) at "
-                "the cost of root-level files relying on scans."
+                "the cost of root-level files and new top-level folders "
+                "relying on scans."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection"},

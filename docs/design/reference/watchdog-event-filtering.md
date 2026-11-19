@@ -34,6 +34,10 @@ sources:
     title: Watchdog 4.0.1 FSEvents schedule override
     resource: https://github.com/gorakhargosh/watchdog/blob/v4.0.1/src/watchdog/observers/fsevents.py
     accessed: 2026-11-14
+  - id: fs7
+    title: Watchdog 7.1.0 FSEvents emitter
+    resource: https://github.com/gorakhargosh/watchdog/blob/v7.1.0/src/watchdog/observers/fsevents.py
+    accessed: 2026-11-18
   - id: fs402
     title: Watchdog 4.0.2 FSEvents schedule override
     resource: https://github.com/gorakhargosh/watchdog/blob/v4.0.2/src/watchdog/observers/fsevents.py
@@ -106,6 +110,10 @@ or recursive exclusion policy.
   frequency have not been reproduced; a synthetic overflow experiment would be
   needed to quantify them.
 
+- In inspected FSEvents 7.1, a combined modification and metadata flag is
+  delivered as a modification; the metadata branch covers inode, extended
+  attribute and owner changes. [source: fs7]
+
 ## Refutation pass
 
 Comparing the three FSEvents overrides refutes the tempting >=4.0.0 floor;
@@ -119,8 +127,37 @@ platforms. [source: fs400] [source: fs401] [source: fs402] [source: changes]
 ## Where this project departs from the subject
 
 The project chooses eight mutation classes rather than watchdog's unfiltered
-default and keeps its handler guard and root-relative hidden-path checks; see
-the [watcher design](../design.md). The scheduling pin covers recursive visible
+default. When observation is enabled, it also subscribes to attribute event
+classes where watchdog provides them, routing these events to observation only.
+Older versions deliver access changes as modification events. Each watch root
+has a handler; they route search and observation through a shared debounce.
+Observation-only trees split around internal directories; inherited search
+roots retain their recursive subscriptions. On macOS with watchdog 7.1 and
+Python 3.14, a non-recursive floor delivered root modification notices for
+new, recreated and moved-in directories; a recursive watch did not survive
+deletion and recreation of its root. A later nested `.git` creation was
+delivered to its recursive observation watch. A probe of 400 non-recursive
+registrations added 400 emitter threads; the source for the inspected inotify
+emitter creates an instance per emitter. These probes do not establish native
+Linux behavior, including native move-self delivery. [source: ino7] A replaced
+search root is registered for observation only until restart. With the source
+floor off, new, recreated or moved top-level roots rely on a later scan.
+Non-recursive FSEvents registrations still use
+recursive native streams, so the internal-directory boundary applies to
+registrations. [source: fs402] The
+search handler retains root-relative hidden-path checks; see
+the [watcher design](../design.md). Observation does not suppress adjacent
+parent notices: a directory notice can carry a coalesced access change. It can
+cause one full sweep per quiet debounce window, including for non-note changes;
+an unchanged sweep does not write the ledger. A direct directory event under a
+non-recursive observation piece reconciles its children, so a child omitted
+while unreadable can be watched after access is restored. Source inspection of
+inotify shows that a directory created unreadable inside an already recursive
+watch can be omitted: on watchdog 4.0.2 through 6.x a scan records its current notes,
+but restoring watch coverage may require a restart. Search-owned roots retain their inherited behavior. FSEvents
+probes with watchdog 4.0.2 and 7.1 delivered later edits after restoration through
+its recursive stream; native Linux execution remains unverified. [source: ino4]
+[source: ino7] The scheduling pin covers recursive visible
 and dot-roots, the optional floor, excluded children and protected state paths.
 [pins: tests/test_file_watcher.py::test_start_filters_mutations_on_every_watch]
 

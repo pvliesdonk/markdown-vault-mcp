@@ -91,7 +91,7 @@ For VS Code or Goose Desktop, use the
 [remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)
 or the [local Goose configuration](docs/get-started/installation.md#goose-desktop-local-vault).
 
-The file watcher requires watchdog 4.0.2 or later. Its mutation-only subscriptions suppress Linux read-event traffic during indexing while preserving file and directory changes; see the [subscription reference](docs/design/reference/watchdog-event-filtering.md).
+The file watcher requires watchdog 4.0.2 or later. Its filtered subscriptions suppress Linux read-event traffic during indexing while preserving file and directory changes. It observes readable search-excluded and hidden paths as well; see [observation scope and recovery](docs/use/okf.md#local-observation-state) and the [subscription reference](docs/design/reference/watchdog-event-filtering.md).
 
 When watching is active, external saves that replace a note from a hidden temporary file also trigger reindexing.
 <!-- DOMAIN-README-EXTRAS-END -->
@@ -111,7 +111,7 @@ Everything is configured through environment variables with the `MARKDOWN_VAULT_
 | `MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE` | `auto` | No | Mode used when a search call omits 'mode': auto, keyword, semantic, or hybrid. The default 'auto' picks hybrid when embeddings are configured and keyword when they are not. Pin 'keyword' to keep unqualified searches off the embedding provider (each hybrid or semantic search embeds the query, which costs an API call on a metered provider). A configured semantic/hybrid default also degrades to keyword without embeddings, so no setting can make a vault unsearchable; an explicit mode= argument is never downgraded. |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed; setting it turns on search by meaning. Unset auto-detects from the environment (never voyage), but only when EMBEDDINGS_PATH is set or EMBEDDING_STORE=postgres. Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | (none) | No | OpenAI-compatible endpoint base URL for the summarize tool; setting it enables the tool even without an API key. The bare OPENAI_BASE_URL routes traffic only when a key already enables the feature. |
 <!-- GENERATED-ENV-TABLE-DOMAIN-END -->
 

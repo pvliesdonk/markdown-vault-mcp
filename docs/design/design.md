@@ -1484,20 +1484,21 @@ transport), it does not place a single recursive watch on `source_dir`,
 which on a home-directory vault
 would register an OS-level recursive stream over every unrelated subtree
 (and, on macOS, trigger repeated TCC consent prompts). Instead it derives
-its watch roots: each non-excluded immediate child directory of
+its search watch roots: each eligible non-excluded immediate child directory of
 `source_dir` is watched recursively — so events deep inside a deliberately
 watched dot-root such as `.claude/` are delivered — and `source_dir`
 itself is watched non-recursively as a floor for root-level files. The
 floor is gated by `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` (default
 on); setting it false removes every `source_dir`-rooted registration, at
-the cost of root-level files being picked up only by scans. The vault's
-own state / index / embeddings directories and `.git` are never watched
-(#830): `reindex()` rewrites the state file on every run, so a watch on
-its directory would re-trigger the watcher into a self-feedback loop.
-Consequences: a top-level directory created after startup needs a restart
+the cost of root-level files being picked up only by scans. Search never
+watches the vault's own state / index / embeddings directories or `.git`
+(#830): `reindex()` rewrites the state file on every run, so a search watch
+on its directory would re-trigger the watcher into a self-feedback loop.
+For search, a top-level directory created after startup needs a restart
 to be watched, and a state/index/embeddings path configured beneath a
 content directory un-watches that whole top-level directory (keep those
-paths at the vault root or outside the vault). Every derived watch root
+paths at the vault root or outside the vault). Observation has separate
+subscriptions described below. Every derived watch root
 (`source_dir`, its floor, and each kept child) is resolved to its realpath
 at derive time (#849), because watchdog's macOS FSEvents emitter resolves
 the scheduled path with `os.path.realpath` and delivers events whose
@@ -1508,7 +1509,8 @@ symlinked ancestor (`/var` resolving to `/private/var`) and symlink-farm
 vaults whose top-level children are symlinks to real directories from being
 watched but blind (edits seen only by scans). Prune rules still match the
 child's vault-visible name inside `source_dir`, not the resolved target's
-basename, so exclude patterns keep working across the link. `Path.resolve`
+basename, so exclude patterns keep working across the link. A shared resolved
+root retains every indexed alias for search exclusion routing. `Path.resolve`
 (`strict=False`) resolves best-effort and does not raise on a broken symlink or
 a missing component, so this is not about missing targets; when it does fail on
 a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python <
@@ -1535,6 +1537,42 @@ Each qualifying event schedules once, including moves from a hidden temporary
 file onto a visible note and moves of visible content into hidden or outside
 storage. Hidden-only and root-self noise stays ignored, including below
 intentionally watched dot-roots; other mutations consider only their source.
+
+The watcher also observes search-excluded and hidden paths, including notes
+beside or beneath configured state-file parents. Observation-only trees split
+into non-recursive internal-directory ancestors and recursive clean subtrees;
+new internal directories cause their observation root to be split again.
+Existing search-owned recursive roots retain their native watch behavior,
+including nested internal directories, whose events are ignored. On macOS a
+non-recursive watchdog registration still uses a recursive native stream; the
+internal-directory guarantee concerns registrations, not the native stream.
+The root floor discovers new top-level observation roots. Without that floor,
+root-level files and new, recreated or moved top-level directories rely on
+startup, pull or reindex; native Linux move-self behavior remains unverified.
+A new or replaced top-level root is observation-only until restart; search
+may reindex on creation but does not watch later edits there. Search and
+observation events share one debounce: reindex sweeps the ledger, with a
+standalone sweep if reindex fails. Inventory enforces access and internal-path
+boundaries during each sweep. Directory modifications and attribute events
+request observation without inferring whether a metadata change was part of an
+adjacent child event. A non-note change can therefore trigger a full sweep per
+quiet debounce window; an unchanged sweep writes nothing. A ledger save can
+cause one follow-up sweep that writes nothing. Sweep cost grows with the size
+of the inventory. Search roots and the floor are registered before
+observation-only roots, so those subscriptions get priority at the watch limit.
+An inaccessible root keeps its existing watch until it can be inspected. At a
+non-recursive observation ancestor, direct directory notices reconcile children,
+so a formerly inaccessible child can acquire a watch without restarting.
+
+The inspected inotify implementations can omit watches under an unreadable
+directory. A directory created unreadable inside an already recursive observation
+root can remain unwatched after restoration on watchdog 4.0.2 through 6.x. A later
+scan records its current notes, while restart restores watch coverage; later
+versions provide attribute events that rebuild the observation root. Existing search-owned roots retain inherited behavior. Native Linux delivery
+for these cases remains unverified. On macOS, tested FSEvents recursive streams
+delivered changes after restoration on watchdog 4.0.2 and 7.1. A direct directory
+notice on a non-recursive piece reconciles direct children against watches, with
+cost growing with both. Initial registration walks excluded directory trees.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
@@ -7894,7 +7932,10 @@ search reconcile keeps its failed outcome while the fallback sweep observes the
 tree. A failed fallback sweep is logged and reported as failed, allowing the
 pull tick to continue to its independent pending push retry. A tick reads the full
 observation scope, normally every 600 seconds. The watcher is disabled when
-periodic pulls are active. Byte or presence changes advance the change time;
+periodic pulls or a deliverable webhook are active; external changes then wait
+for the next startup, pull or reindex sweep. With the watcher root floor off,
+root-level notes and newly created top-level directories have the same bound.
+Byte or presence changes advance the change time;
 a role-only refresh leaves it intact. Unchanged rows remain stable;
 inaccessible paths and their subtrees do not establish removal, but do not block
 removal elsewhere. A readable empty root records prior files as removed even

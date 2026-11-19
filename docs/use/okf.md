@@ -390,8 +390,22 @@ result. A ledger failure on a pull tick or `git_sync` is logged and reported as
 failed; the tick still retries a pending push.
 
 Each pull tick reads the full observation scope, normally every 600 seconds.
-Periodic pulls disable the file watcher. When the watcher runs, excluded
-top-level folders wait for the next sweep until its scope is expanded. A readable empty root records previously observed files as removed,
+When the watcher runs, external changes in readable hidden and search-excluded
+paths also trigger an observation sweep; excluded changes alone do not trigger
+a search reindex. When the watcher is disabled, including for periodic pulls
+or an active webhook, external changes are observed at the next startup, pull
+or reindex sweep. A replaced or moved-away search root is observed at its old
+path after replacement, but later edits there do not trigger search reindex
+until restart. With the watcher root floor disabled, root-level files and
+new, recreated or moved top-level directories rely on a later startup, pull or
+reindex sweep; restart also begins watching those directories. Native Linux
+move-self delivery remains unverified. Non-note changes in observed folders can
+also trigger a full sweep after a quiet debounce window. An unchanged sweep does
+not write the ledger. On Linux with watchdog 4.0.2 through 6.x, a directory created
+unreadable inside an existing recursive watch may need a later scan to record
+edits after access restoration; restart restores watch coverage.
+
+A readable empty root records previously observed files as removed,
 even if search refuses to prune its own rows for an empty root.
 
 The library's `Vault.force_pull()` sweeps after Git succeeds but does not

@@ -283,10 +283,9 @@ warning and leaves semantic search disabled.
 #### Indexing {#indexing-and-search}
 
 Persistent deployments normally put `INDEX_PATH`, `EMBEDDINGS_PATH`, and
-`STATE_PATH` outside content folders. The file watcher excludes the directories
-holding those files so index writes cannot trigger another scan; placing state
-inside a content directory also prevents sibling content in that directory
-from being watched.
+`STATE_PATH` outside content folders. Search never watches the folders holding
+those files, so index writes cannot trigger a reindex. Observation still watches
+readable notes beside them; the files themselves are not notes in the ledger.
 
 `INDEXED_FIELDS` controls structured filters. `SEARCHABLE_FIELDS` defaults to
 the same list and controls keyword-searchable frontmatter plus first-chunk
@@ -531,9 +530,9 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing or an observation sweep. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files and new top-level folders relying on scans. |
 | `MARKDOWN_VAULT_MCP_BOOT_REINDEX` | `true` | No | Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp admin reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault. |
 | `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | (none) | No | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. |
 | `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN` | (none) | No | Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. GitLab generates this value; copy the `whsec_` token it shows under Generate signing token rather than inventing one. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected. |
