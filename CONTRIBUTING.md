@@ -88,21 +88,15 @@ Merging is not releasing. When and from where to cut: the `releasing` skill.
 
 ## Where to send fixes
 
-- **Library-level fix** (anything in `fastmcp_pvl_core`): open a PR on
+- **Anything in this repository**, including files that came from
+  `fastmcp-server-template` (`Dockerfile`, workflows, the `server.py`
+  skeleton, `AGENTS.md`, the skills, the documentation pages): open a PR
+  here. This project no longer tracks the template, so nothing arrives
+  from it and no fix needs to go there.
+- **`fastmcp-pvl-core` behaviour** (anything in `fastmcp_pvl_core`): until
+  #2241 folds the library into this repository, open a PR on
   `pvliesdonk/fastmcp-pvl-core`, where each public name lives in a private
-  `_<area>.py` module. Leave this project's `fastmcp-pvl-core` constraint in
-  `pyproject.toml` alone; it is template-owned. After the library release,
-  if the constraint admits it, run
-  `uv lock --upgrade-package fastmcp-pvl-core` and commit `uv.lock`;
-  otherwise open a template PR that bumps the constraint in
-  `pyproject.toml.jinja`.
-- **Template-level fix** (anything template-owned: `Dockerfile`, workflows,
-  `server.py` skeleton, `AGENTS.md` sections, template documentation pages):
-  open a PR on `pvliesdonk/fastmcp-server-template` against the rendered
-  file's path with `.jinja` appended (`docs/deploy/docker.md.jinja`), or the
-  same path for a file copied verbatim, such as this one. The weekly
-  `copier update` workflow brings the released fix here; dispatch it to get
-  it sooner.
-- **Domain-only fix** (anything inside a `DOMAIN-*`, `CONFIG-*` or
-  `PROJECT-*` sentinel block, `tools.py`, `resources.py`, `prompts.py`,
-  `domain.py`, `tests/`): open a PR on this repo.
+  `_<area>.py` module. After the library release, run
+  `uv lock --upgrade-package fastmcp-pvl-core` and commit `uv.lock`, and
+  raise the `fastmcp-pvl-core` constraint in `pyproject.toml` here first if
+  it does not admit the release.
