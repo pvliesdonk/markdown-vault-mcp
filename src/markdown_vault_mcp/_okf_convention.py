@@ -495,10 +495,12 @@ class ConventionMaintainer:
             if row is None or row.presence != "present" or not self._may_index(folder):
                 continue
             try:
+                if self._doc_mgr._read_note(path, capped=False) is None:
+                    continue
                 body = stored_index_body(self._doc_mgr, path)
             except DocumentUnreadableError:
-                body = None  # The per-folder refresh reports the unreadable index.
-            if body is None or compute_etag(body) != digest:
+                continue  # A concept-triggered refresh reports the failure.
+            if compute_etag(body) != digest:
                 folders.append(folder)
         return folders
 
