@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from markdown_vault_mcp.utils.fs import path_exists
 from tests.fixtures.designated_index import designated_vault
 
 
@@ -45,7 +46,7 @@ def test_apply_refreshes_designated_root_and_preserves_frontmatter(
         vault.index.build_index()
         result = vault.writer.okf_collapse_indexes(apply=True)
         assert [path for path, _ in result.removable] == ["deep/index.md"]
-        assert not (root / "deep/index.md").exists()
+        assert not path_exists(root / "deep/index.md")
         assert (root / "index.md").read_text().startswith(header)
         assert "/deep/note.md" in (root / "index.md").read_text()
         assert (root / "log.md").read_text() == "# History\n"
@@ -265,3 +266,28 @@ def test_protected_parent_refuses_before_any_deletion(tmp_path: Path) -> None:
         assert child.read_text().startswith("# deep")
     finally:
         vault.close()
+
+
+def test_cli_apply_respects_preview_protection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    child = root / "deep/index.md"
+    child.write_text("# deep\n\n- [Note](/deep/note.md)\n")
+    (root / "deep/note.md").write_text("# Note\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_INDEX", "true")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "deep/index.md")
+    args = ["okf", "collapse-indexes", "--source-dir", str(root)]
+    preview = CliRunner().invoke(app, args)
+    applied = CliRunner().invoke(app, [*args, "--apply"])
+    assert preview.exit_code == applied.exit_code == 0
+    assert "Keep deep/index.md:" in preview.output
+    assert "Keep deep/index.md:" in applied.output
+    assert child.read_text().startswith("# deep")

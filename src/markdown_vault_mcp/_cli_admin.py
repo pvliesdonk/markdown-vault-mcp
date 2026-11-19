@@ -191,7 +191,9 @@ def register_okf_commands(app: typer.Typer) -> None:
         app: The application receiving the OKF group.
     """
     group = typer.Typer(help="Migrate OKF vault conventions.", no_args_is_help=True)
-    group.command("collapse-indexes")(collapse_indexes)
+    group.command(
+        "collapse-indexes", help="Preview or remove obsolete deep generated indexes."
+    )(collapse_indexes)
     app.add_typer(group, name="okf")
 
 
@@ -203,7 +205,12 @@ def collapse_indexes(
         False, "--apply", help="Remove generated indexes and refresh their parents."
     ),
 ) -> None:
-    """Preview or remove obsolete deep generated indexes."""
+    """Preview or remove obsolete deep generated indexes.
+
+    Args:
+        source_dir: Optional vault directory override.
+        apply: Remove the planned indexes and refresh their parents.
+    """
     import shlex
 
     from markdown_vault_mcp._cli_output import terminal_text
@@ -221,9 +228,7 @@ def collapse_indexes(
         try:
             built.vault.index.build_index()
 
-            result = built.vault.writer.okf_collapse_indexes(
-                apply=apply, allow_protected=apply
-            )
+            result = built.vault.writer.okf_collapse_indexes(apply=apply)
         finally:
             built.close()
         for path, _ in result.removable:
