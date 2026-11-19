@@ -16,6 +16,8 @@ import typer
 
 from markdown_vault_mcp.config import _ENV_PREFIX
 
+_REMOVAL_NOTICE = " (any frontmatter in it is removed too)"
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -236,7 +238,7 @@ def collapse_indexes(
         for owner in exc.written:
             typer.echo(f"Regenerated owner {terminal_text(owner or '.')}")
         for path in exc.removed:
-            typer.echo(f"Removed {terminal_text(path)}")
+            typer.echo(f"Removed {terminal_text(path)}{_REMOVAL_NOTICE}")
         for path in exc.pending:
             typer.echo(f"Pending or possibly changed {terminal_text(path)}")
         typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
@@ -253,7 +255,9 @@ def _print_collapse(result: CollapsePlan, source_dir: str | None, apply: bool) -
     from markdown_vault_mcp._cli_output import terminal_text
 
     for path, _, _ in result.removable:
-        typer.echo(f"{'Removed' if apply else 'Would remove'} {terminal_text(path)}")
+        typer.echo(
+            f"{'Removed' if apply else 'Would remove'} {terminal_text(path)}{_REMOVAL_NOTICE}"
+        )
     for path, reason in result.kept:
         typer.echo(f"Keep {terminal_text(path)}: {terminal_text(reason)}")
     if result.removable:

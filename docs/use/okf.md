@@ -432,7 +432,7 @@ with `--apply` to remove matching generated indexes and refresh their designated
 parents. Each invocation recomputes candidates; apply does not reuse a saved
 preview. An etag guards each candidate between planning and deletion within
 the apply invocation. The preview also names every index that apply will create or regenerate.
-Apply writes those indexes first, then removes the matching indexes. Removing indexes may break links to them; use
+Apply writes those indexes first, then removes the matching indexes and refreshes owners against surviving boundaries. Generated indexes are eligible regardless of size. Removing indexes may break links to them; use
 `markdown-vault-mcp links broken` to find broken links. The root index is never removed; if designated, its body can be
 refreshed and its frontmatter is preserved. An index with a different body is
 kept as authored. Index aliases are kept as boundaries, as are indexes below a surviving boundary outside designated folders or

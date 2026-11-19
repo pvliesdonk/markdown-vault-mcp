@@ -146,7 +146,7 @@ def plan_collapse(
         path = f"{top}/index.md"
         reason = doc.protection_reason(path, allow_protected=allow_protected)
         try:
-            note = doc.read(path)
+            note = doc._read_note(path, capped=False)
             if reason is None and note is not None:
                 if note.path != path:
                     kept.append((path, "alias"))
@@ -161,7 +161,7 @@ def plan_collapse(
                         removable.append((path, note.etag, parent))
                         removed.add(top)
                         continue
-        except (DocumentUnreadableError, NoteTooLargeError):
+        except DocumentUnreadableError:
             reason = "unreadable"
         kept.append((path, reason or "unreadable"))
     refresh = _preview(migrate, removable, kept, allow_protected)
@@ -220,7 +220,7 @@ def apply_collapse(
                     continue
                 try:
                     with doc.write_scope():
-                        note = doc.read(path)
+                        note = doc._read_note(path, capped=False)
                         if note is not None and note.path != path:
                             kept.append((path, "changed since preview"))
                             blocked.append(posixpath.dirname(path))
@@ -236,8 +236,7 @@ def apply_collapse(
                     except (MarkdownMCPError, OSError) as refresh_error:
                         raise exc from refresh_error
                     raise
-            if len(removed) != len(plan.removable):
-                _reconcile(migrate, owners, removed, allow_protected)
+            _reconcile(migrate, owners, removed, allow_protected)
     except (MarkdownMCPError, OSError) as exc:
         completed = [path for path, _, _ in removed]
         pending = [path for path, _, _ in plan.removable if path not in completed]

@@ -184,7 +184,7 @@ def test_cli_preview_and_apply(
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     child = root / "deep/index.md"
-    child.write_text("# deep\n\n- [Note](/deep/note.md)\n")
+    child.write_text("---\nowner: author\n---\n# deep\n\n- [Note](/deep/note.md)\n")
     (root / "deep/note.md").write_text("# Note\n")
     before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.rglob("*.md")}
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
@@ -195,6 +195,7 @@ def test_cli_preview_and_apply(
         args += ["--source-dir", str(root)]
     result = CliRunner().invoke(app, [*args, "--apply"] if apply else args)
     assert result.exit_code == 0, result.output
+    assert "deep/index.md (any frontmatter in it is removed too)" in result.output
     assert "may break links" in result.output
     assert "markdown-vault-mcp links broken" in result.output
     if apply:
@@ -741,7 +742,7 @@ def test_cli_reports_removed_path_when_reconciliation_fails(
     )
     assert result.exit_code == 1
     assert "Regenerated owner ." in result.output
-    assert "Removed a/index.md" in result.output
+    assert "Removed a/index.md (any frontmatter in it is removed too)" in result.output
     assert "Pending or possibly changed b/index.md" in result.output
     assert "disk full" in result.output
     assert not path_exists(root / "a/index.md")
@@ -812,5 +813,69 @@ def test_retargeted_index_kept_and_reconciled(tmp_path: Path) -> None:
         assert path_exists(root / "a/index.md")
         assert path_exists(root / "b/index.md")
         assert "/b/index.md" in (root / "index.md").read_text()
+    finally:
+        vault.close()
+
+
+def test_intervening_note_write_reconciles_after_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp._okf_write import OkfWriteIntent, okf_write_intent
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    header = b'---\r\nokf_version: "0.3"\r\ntitle: Bundle\r\nlicense: CC0\r\n---\r\n'
+    (root / "index.md").write_bytes(header + b"# Root\n")
+    for folder in ("a", "b"):
+        (root / folder).mkdir()
+        (root / folder / "note.md").write_text("# Original\n")
+        (root / folder / "index.md").write_text(
+            f"# {folder}\n\n- [Original](/{folder}/note.md)\n"
+        )
+    vault = designated_vault(root, (".",))
+    try:
+        vault.index.build_index()
+        generate = vault._okf_migrate.generate_index
+        changed = False
+
+        def generate_then_write(*args: object, **kwargs: object) -> object:
+            nonlocal changed
+            result = generate(*args, **kwargs)
+            if kwargs.get("preview") is None and not changed:
+                changed = True
+                with okf_write_intent(OkfWriteIntent()):
+                    vault.writer.write("b/note.md", "# Changed\n")
+            return result
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", generate_then_write)
+        vault.writer.okf_collapse_indexes(apply=True)
+        assert (root / "index.md").read_bytes().startswith(header)
+        body = (root / "index.md").read_text()
+        assert "/a/note.md" in body and "[Changed](/b/note.md)" in body
+        assert "/a/index.md" not in body and "/b/index.md" not in body
+        assert path_exists(root / "a/note.md") and path_exists(root / "b/note.md")
+    finally:
+        vault.close()
+
+
+def test_oversized_generated_index_can_collapse(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import NoteTooLargeError
+
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text("# Root\n")
+    (root / "deep/note.md").write_text("# Note\n")
+    (root / "deep/index.md").write_text("# deep\n\n- [Note](/deep/note.md)\n")
+    vault = designated_vault(root, (".",))
+    try:
+        vault.index.build_index()
+        vault._doc_mgr._max_note_read_bytes = 20
+        with pytest.raises(NoteTooLargeError):
+            vault._doc_mgr.read("deep/index.md")
+        plan = vault.writer.okf_collapse_indexes()
+        assert [path for path, _, _ in plan.removable] == ["deep/index.md"]
+        result = vault.writer.okf_collapse_indexes(apply=True)
+        assert [path for path, _, _ in result.removable] == ["deep/index.md"]
+        assert not path_exists(root / "deep/index.md")
     finally:
         vault.close()
