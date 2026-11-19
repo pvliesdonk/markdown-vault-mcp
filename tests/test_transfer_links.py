@@ -38,12 +38,12 @@ from starlette.routing import Route
 from markdown_vault_mcp._pvl_core import (
     ServerConfig,
     TransferConfig,
-    TransferReadResult,
     apply_tool_visibility,
     finalize_instructions,
     instructions_for,
 )
 from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE, is_tool_boundary
+from markdown_vault_mcp._transfer_contract import TransferReadResult
 from markdown_vault_mcp._transfer_links import (
     TransferLinks,
     add_transfer_workflow,

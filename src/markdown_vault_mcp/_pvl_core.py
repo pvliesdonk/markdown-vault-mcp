@@ -21,13 +21,6 @@ from fastmcp_pvl_core import (
     InstructionRole,
     ServerConfig,
     TransferConfig,
-    TransferKind,
-    TransferReadResult,
-    TransferResourceGoneError,
-    TransferSink,
-    TransferSinkError,
-    TransferUnavailableError,
-    TransferValidator,
     apply_tool_visibility,
     build_auth,
     build_bearer_auth,
@@ -49,8 +42,12 @@ from fastmcp_pvl_core import (
     wire_middleware_stack,
 )
 from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
-from fastmcp_pvl_core._transfer.routes import make_transfer_handler
-from fastmcp_pvl_core._transfer.store import TransferStore
+from fastmcp_pvl_core._transfer.store import (
+    TokenInFlightError,
+    TransferStore,
+    TransferToken,
+    TransferTokenError,
+)
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -84,17 +81,11 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # The transfer routes and the sink contract (#2319).
-    "TransferKind",
-    "TransferReadResult",
-    "TransferResourceGoneError",
-    "TransferSink",
-    "TransferSinkError",
-    "TransferUnavailableError",
-    "TransferValidator",
-    "make_transfer_handler",
     # The transfer token store (#2320).
+    "TokenInFlightError",
     "TransferStore",
+    "TransferToken",
+    "TransferTokenError",
     # The transfer settings (#2321).
     "TransferConfig",
 ]
