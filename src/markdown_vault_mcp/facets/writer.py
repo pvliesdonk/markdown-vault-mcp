@@ -698,9 +698,8 @@ class WriterFacet:
             and not is_okf_reserved_file(new_path)
         ):
             # The old folder still lists the note; the new one does not yet
-            # (#1609). Regenerating the nearest indexed level at or above the
-            # new folder lists it there and indexes every missing level below
-            # (#1647). A rename to or from a reserved name triggers nothing:
+            # (#1609). Refresh the designated anchor for the new folder.
+            # A rename to or from a reserved name triggers nothing:
             # regenerating would overwrite the file just placed, and a
             # reserved-file change never triggers itself (#1414).
             maintainer = self._convention_maintainer
@@ -753,8 +752,7 @@ class WriterFacet:
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609). The
-            # nearest indexed level above the destination gets it listed, with
-            # every missing level between indexed (#1647).
+            # designated anchor above the destination gets it listed.
             maintainer = self._convention_maintainer
             new_root = new_dir.strip("/")
             maintainer.refresh_indexes(

@@ -2166,10 +2166,10 @@ the spec itself says, dated and sourced, in
   substitution is a new rewrite the rename/move engine does not provide,
   computed per occurrence so distinct aliases survive.
   ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
-  from the note list — one level only (immediate notes plus a pointer
-  into each immediate subfolder's own ``index.md``), matching OKF's
-  progressive-disclosure intent rather than flattening the subtree — and
-  preserves existing frontmatter (the root ``okf_version`` declaration
+  from the note list, creating missing descendant indexes and preserving
+  existing descendant indexes. Automatic maintenance instead folds notes
+  through undesignated folders up to the next index. Both paths preserve
+  existing frontmatter (the root ``okf_version`` declaration
   survives regeneration). ``okf_seed_log``
   writes a reserved ``log.md`` from git history (newest-first
   ``## YYYY-MM-DD`` sections), refusing to overwrite an existing log. The

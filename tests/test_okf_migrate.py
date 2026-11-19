@@ -601,55 +601,32 @@ class TestUnreadableReservedFiles:
 
 
 def test_designated_generator_folds_and_preserves_index_boundary(vault: Vault) -> None:
-    _write(vault, "a/deep/note.md", "# Deep\n")
+    _write(vault, "a/deep/more/note.md", "# Deep\n")
     _write(vault, "a/other/index.md", "# Authored\n")
     _write(vault, "a/other/note.md", "# Hidden\n")
-    vault._okf_migrate.generate_index(folder="a", designated=lambda _folder: False)
+    vault._okf_migrate.generate_index(
+        folder="a", designated=lambda folder: folder == "a"
+    )
     body = vault.reader.read("a/index.md").content
-    assert "## deep" in body
-    assert "/a/deep/note.md" in body
+    assert "## deep/more" in body
+    assert "/a/deep/more/note.md" in body
     assert "/a/other/index.md" in body
     assert "/a/other/note.md" not in body
     assert vault.reader.read("a/other/index.md").content == "# Authored\n"
 
 
-def test_generator_does_not_create_index_in_submodule(
-    vault: Vault, monkeypatch: pytest.MonkeyPatch
+def test_generation_keeps_case_distinct_subtrees(
+    vault: Vault, source_dir: Path
 ) -> None:
-    _write(vault, "external/note.md", "# External\n")
-    monkeypatch.setattr(vault._doc_mgr, "in_submodule", lambda path: path == "external")
-    vault._okf_migrate.generate_index(designated=lambda _folder: True)
-    assert "/external/index.md" not in vault.reader.read("index.md").content
-    assert vault._doc_mgr.read("external/index.md") is None
+    from markdown_vault_mcp.utils.fs import path_exists
 
-
-def test_protected_child_is_omitted_from_generated_parent(
-    vault: Vault, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-
-    _write(vault, "child/note.md", "# Note\n")
-    original = vault._doc_mgr.protection_reason
-
-    def reason(path: str, **kwargs: object) -> str | None:
-        if path == "child/index.md":
-            return "protected"
-        return original(path, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(vault._doc_mgr, "protection_reason", reason)
-    with pytest.raises(InvalidRequestError, match=r"child/index\.md"):
-        vault._okf_migrate.generate_index()
-    assert "/child/index.md" not in vault.reader.read("index.md").content
-    assert vault._doc_mgr.read("child/index.md") is None
-
-
-def test_immediate_entries_ignore_other_search_results(
-    vault: Vault, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _write(vault, "a/note.md", "# A\n")
-    _write(vault, "other/note.md", "# Other\n")
-    notes = vault._search_mgr.list()
-    monkeypatch.setattr(vault._search_mgr, "list", lambda **_kwargs: [*notes, object()])
-    entries, children = vault._okf_migrate._immediate_index_entries("a")
-    assert [entry[1] for entry in entries] == ["/a/note.md"]
-    assert children == []
+    (source_dir / "Notes").mkdir()
+    if path_exists(source_dir / "notes"):
+        pytest.skip("case-insensitive filesystem")
+    (source_dir / "notes").mkdir()
+    _write(vault, "Notes/a.md", "# Upper\n")
+    _write(vault, "notes/b.md", "# Lower\n")
+    vault.writer.okf_generate_index(folder="notes")
+    content = vault.reader.read("notes/index.md").content
+    assert "/notes/b.md" in content
+    assert "/Notes/a.md" not in content

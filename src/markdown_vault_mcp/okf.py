@@ -39,8 +39,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.git.health import one_line
-from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.scanner import normalize_heading, parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -1063,7 +1062,9 @@ def build_index_markdown(
         if section and group:
             if lines[-1]:
                 lines.append("")
-            label = re.sub(r"([\\`*_{}\[\]<>()#+.!|~&])", r"\\\1", one_line(section))
+            label = re.sub(
+                r"([\\`*_{}\[\]<>()#+.!|~&])", r"\\\1", normalize_heading(section)
+            )
             lines.extend([f"## {label}", ""])
         for title, path, description in group:
             line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"

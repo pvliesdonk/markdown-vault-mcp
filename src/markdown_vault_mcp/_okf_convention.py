@@ -219,8 +219,8 @@ class ConventionMaintainer:
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
 
-        Index maintenance reaches a designated ancestor through folders that
-        have no index. An undesignated existing index stops that traversal.
+        Index maintenance reaches the designated ancestor, whose listing
+        preserves an undesignated existing index as a boundary.
         Log maintenance remains limited to the written folder's designation.
 
         A no-op unless *operation* is a content write (``write`` / ``edit``)
@@ -324,8 +324,7 @@ class ConventionMaintainer:
     def indexed_anchor(self, folder: str) -> str:
         """Choose the listing that owns a folder's generated navigation.
 
-        An existing undesignated index is a boundary. Otherwise start at the
-        nearest designated folder, then walk contiguous designated parents to
+        Start at the nearest designated folder, then walk contiguous designated parents to
         an existing index, preserving recursive generation for that chain.
 
         Args:
@@ -335,9 +334,7 @@ class ConventionMaintainer:
             The anchor folder, or ``""`` when no level has an index.
         """
         current = self._canonical(folder)
-        while not self._designated(current) and not self._has_index(current):
-            if not current:
-                return current
+        while current and not self._designated(current):
             current = folder_of(current)
         while current and self._designated(current) and not self._has_index(current):
             parent = folder_of(current)
@@ -398,7 +395,6 @@ class ConventionMaintainer:
                 )
                 self._doc_mgr.replace_body(
                     log_path,
-                    existing.content if existing is not None else None,
                     new_text,
                 )
         except Exception:

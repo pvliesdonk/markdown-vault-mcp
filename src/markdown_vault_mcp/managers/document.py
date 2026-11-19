@@ -755,6 +755,11 @@ class DocumentManager:
                 raise InvalidRequestError("section must be a non-empty heading or None")
             return self._read_section(path, section.strip())
 
+        return self._read_note(path, self._max_note_read_bytes)
+
+    def _read_note(self, path: str, max_bytes: int) -> NoteContent | None:
+        """Read a whole note with the caller's byte limit (zero disables it)."""
+        reject_nul(path)
         abs_path = (self._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._source_dir.resolve()):
             return None
@@ -773,20 +778,20 @@ class DocumentManager:
         # reads short-circuit with an early return above; non-.md paths fall
         # through to parse_note(), so the cap stays scoped to its env-var name).
         is_md = path.lower().endswith(".md")
-        if is_md and self._max_note_read_bytes > 0:
+        if is_md and max_bytes > 0:
             size_bytes = file_stat.st_size
-            if size_bytes > self._max_note_read_bytes:
+            if size_bytes > max_bytes:
                 logger.info(
                     "read_refused_oversized path=%s size_bytes=%d limit_bytes=%d "
                     "setting=%s",
                     path,
                     size_bytes,
-                    self._max_note_read_bytes,
+                    max_bytes,
                     "MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES",
                 )
                 raise NoteTooLargeError(
                     f"Document {path!r} is {size_bytes:,} bytes, over the "
-                    f"{self._max_note_read_bytes:,}-byte limit this server "
+                    f"{max_bytes:,}-byte limit this server "
                     "returns in one read. Read it a section at a time with "
                     f"read({path!r}, section=...); get_toc or a search result's "
                     "heading field names the sections."
@@ -1139,7 +1144,6 @@ class DocumentManager:
     def replace_body(
         self,
         path: str,
-        original: str | None,
         body: str,
         *,
         allow_protected: bool = False,
@@ -1149,7 +1153,6 @@ class DocumentManager:
 
         Args:
             path: Relative document path.
-            original: Content returned by a preceding read, or None for a new file.
             body: Replacement Markdown body.
             allow_protected: Allow changes to operator-protected paths.
             allow_designated: Permit generated indexes only.
@@ -1157,20 +1160,23 @@ class DocumentManager:
         Returns:
             Whether an existing frontmatter block was preserved.
         """
-        head = (original or "")[: _head_end(original or "")]
-        separator = "\n" if head and not head.endswith("\n") else ""
-        with self.exact_byte_writes():
-            text = head + separator + body
-            if head:
-                raw = self._validate_path(path).read_bytes().decode("utf-8")
-                text = _keep_head(raw, _read_view(raw), text)
-            self.write(
-                path,
-                text,
-                allow_overwrite=True,
-                allow_protected=allow_protected,
-                allow_designated=allow_designated,
-            )
+        with self.write_scope():
+            existing = self._read_note(path, 0)
+            original = existing.content if existing is not None else ""
+            head = original[: _head_end(original)]
+            separator = "\n" if head and not head.endswith("\n") else ""
+            with self.exact_byte_writes():
+                text = head + separator + body
+                if head:
+                    raw = self._validate_path(path).read_bytes().decode("utf-8")
+                    text = _keep_head(raw, _read_view(raw), text)
+                self.write(
+                    path,
+                    text,
+                    allow_overwrite=True,
+                    allow_protected=allow_protected,
+                    allow_designated=allow_designated,
+                )
         return bool(head)
 
     def _finalize_content_write(
