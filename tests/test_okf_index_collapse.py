@@ -68,7 +68,11 @@ def test_apply_refreshes_designated_parent(
 def test_apply_reports_failure_and_refreshes_parent(
     tmp_path: Path, changed: bool
 ) -> None:
-    from markdown_vault_mcp._okf_index_collapse import apply_collapse, plan_collapse
+    from markdown_vault_mcp._okf_index_collapse import (
+        CollapseInterrupted,
+        apply_collapse,
+        plan_collapse,
+    )
 
     root = tmp_path / "vault"
     for folder in ("a", "b"):
@@ -87,17 +91,82 @@ def test_apply_reports_failure_and_refreshes_parent(
             child.write_text("# Changed\n")
         else:
             child.unlink()
-        result = apply_collapse(vault._doc_mgr, vault._okf_migrate, plan)
-        assert [path for path, _, _ in result.removable] == ["a/index.md"]
-        reason = dict(result.kept)["b/index.md"]
-        assert (
-            reason == "changed since preview"
-            if changed
-            else reason.startswith("could not remove:")
-        )
+        if changed:
+            result = apply_collapse(vault._doc_mgr, vault._okf_migrate, plan)
+            assert [path for path, _, _ in result.removable] == ["a/index.md"]
+            assert dict(result.kept)["b/index.md"] == "changed since preview"
+        else:
+            with pytest.raises(CollapseInterrupted) as interrupted:
+                apply_collapse(vault._doc_mgr, vault._okf_migrate, plan)
+            assert interrupted.value.removed == ("a/index.md",)
+            assert "b/index.md" in interrupted.value.pending
         body = (root / "index.md").read_text()
         assert "/a/note.md" in body
         assert ("/b/index.md" if changed else "/b/note.md") in body
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("refresh_fails", [False, True])
+def test_post_unlink_failure_reports_uncertain_and_refreshes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refresh_fails: bool
+) -> None:
+    from markdown_vault_mcp._okf_index_collapse import (
+        CollapseInterrupted,
+        apply_collapse,
+        plan_collapse,
+    )
+
+    root = tmp_path / "vault"
+    for folder in ("a", "b", "c"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "index.md").write_text(
+            f"# {folder}\n\n- [Note](/{folder}/note.md)\n"
+        )
+        (root / folder / "note.md").write_text("# Note\n")
+    (root / "index.md").write_text("# Root\n")
+    vault = designated_vault(root, (".",))
+    try:
+        vault.index.build_index()
+        plan = plan_collapse(vault._doc_mgr, vault._okf_migrate)
+        fire = vault._doc_mgr._notifier.fire
+
+        def fail_after_unlink(path: Path, content: str, operation: str) -> None:
+            if operation == "delete" and path.parent.name == "b":
+                raise OSError("callback failed after unlink")
+            fire(path, content, operation)
+
+        monkeypatch.setattr(vault._doc_mgr._notifier, "fire", fail_after_unlink)
+        generate = vault._okf_migrate.generate_index
+        calls = 0
+
+        def generate_with_failure(*args: object, **kwargs: object) -> object:
+            nonlocal calls
+            calls += 1
+            if refresh_fails and calls == 2:
+                raise OSError("refresh failed")
+            return generate(*args, **kwargs)
+
+        if refresh_fails:
+            monkeypatch.setattr(
+                vault._okf_migrate, "generate_index", generate_with_failure
+            )
+        with pytest.raises(CollapseInterrupted) as interrupted:
+            apply_collapse(vault._doc_mgr, vault._okf_migrate, plan)
+        assert interrupted.value.removed == ("a/index.md",)
+        assert "b/index.md" in interrupted.value.pending
+        assert "c/index.md" in interrupted.value.pending
+        assert isinstance(interrupted.value.__cause__, OSError)
+        assert "callback failed after unlink" in str(interrupted.value.__cause__)
+        assert not path_exists(root / "b/index.md")
+        assert path_exists(root / "c/index.md")
+        if refresh_fails:
+            assert str(interrupted.value.__cause__.__cause__) == "refresh failed"
+        else:
+            body = (root / "index.md").read_text()
+            assert "/a/note.md" in body
+            assert "/b/note.md" in body
+            assert "/c/index.md" in body
     finally:
         vault.close()
 

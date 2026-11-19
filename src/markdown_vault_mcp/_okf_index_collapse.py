@@ -165,6 +165,20 @@ def plan_collapse(
     return CollapsePlan(tuple(removable), tuple(kept), refresh)
 
 
+def _reconcile(
+    migrate: OkfMigrationManager,
+    owners: list[str],
+    removed: list[tuple[str, str, str]],
+    allow_protected: bool,
+) -> None:
+    """Refresh owners against the remaining visible boundaries."""
+    actual = {posixpath.dirname(path) for path, _, _ in removed}
+    for owner in owners:
+        migrate.generate_index(
+            folder=owner, allow_protected=allow_protected, dissolve=actual
+        )
+
+
 def apply_collapse(
     doc: DocumentManager,
     migrate: OkfMigrationManager,
@@ -204,20 +218,17 @@ def apply_collapse(
                 try:
                     doc.delete(path, if_match=etag, allow_protected=allow_protected)
                     removed.append((path, etag, owner))
-                except (MarkdownMCPError, OSError) as exc:
-                    reason = (
-                        "changed since preview"
-                        if isinstance(exc, ConcurrentModificationError)
-                        else f"could not remove: {exc}"
-                    )
-                    kept.append((path, reason))
+                except ConcurrentModificationError:
+                    kept.append((path, "changed since preview"))
                     blocked.append(posixpath.dirname(path))
+                except (MarkdownMCPError, OSError) as exc:
+                    try:
+                        _reconcile(migrate, owners, removed, allow_protected)
+                    except (MarkdownMCPError, OSError) as refresh_error:
+                        raise exc from refresh_error
+                    raise
             if len(removed) != len(plan.removable):
-                actual = {posixpath.dirname(path) for path, _, _ in removed}
-                for owner in owners:
-                    migrate.generate_index(
-                        folder=owner, allow_protected=allow_protected, dissolve=actual
-                    )
+                _reconcile(migrate, owners, removed, allow_protected)
     except (MarkdownMCPError, OSError) as exc:
         completed = [path for path, _, _ in removed]
         pending = [path for path, _, _ in plan.removable if path not in completed]
