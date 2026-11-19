@@ -33,7 +33,7 @@ from itertools import groupby, islice
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import ReadOnlyError, StoreCorruptError
 from markdown_vault_mcp.indexing._embedding_stage import EmbeddingStage, _misses
 from markdown_vault_mcp.interfaces import (
     IteratesChunks,
@@ -215,6 +215,7 @@ class _Pass:
     stored: dict[str, RevisionToken | None]
     result: ReconcileResult
     site: str
+    recover_corruption: bool
     pending: list[tuple[_PendingEmbed, list[str]]] = field(default_factory=list)
 
 
@@ -381,6 +382,7 @@ class EmbeddingReconciler:
         paths: Collection[str] | None = None,
         *,
         site: str,
+        recover_corruption: bool = False,
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
@@ -399,6 +401,7 @@ class EmbeddingReconciler:
             store: The store to write.
             paths: The documents to reconcile; ``None`` for a whole-store pass.
             site: Which caller, for the log lines.
+            recover_corruption: Propagate typed write corruption for recovery.
 
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
@@ -406,7 +409,7 @@ class EmbeddingReconciler:
         stored = store.tokens()
         docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
-        state = _Pass(store, stored, ReconcileResult(), site)
+        state = _Pass(store, stored, ReconcileResult(), site, recover_corruption)
         self._remove_unbacked(state, sorted(held - set(docs)))
         retoken: list[_Document] = []
         ordered = sorted(docs)
@@ -708,6 +711,8 @@ class EmbeddingReconciler:
         except ReadOnlyError:
             raise
         except Exception as exc:
+            if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+                raise
             # Broad by design: each backend raises its own I/O error. The
             # generation did not publish, so every document keeps its rows.
             state.result.kept += sum(len(doc.texts) for doc in docs)
@@ -873,12 +878,14 @@ class EmbeddingReconciler:
 
     @staticmethod
     def _write_failed(state: _Pass, path: str, chunks: int, exc: Exception) -> None:
-        """Keep *path*'s rows after a store write failed, for the next flush.
+        """Keep *path*'s rows after a write failure, unless corruption is recoverable.
 
-        A store that writes durably raises its own I/O errors (a full disk,
-        a lock timeout); like a provider failure, it costs this path, not
-        the pass (#1497).
+        Other store write errors, such as a full disk or lock timeout, cost
+        this path rather than the pass (#1497). Recoverable corruption
+        propagates to the owner for rebuilding (#1976).
         """
+        if isinstance(exc, StoreCorruptError) and state.recover_corruption:
+            raise exc
         state.result.kept += chunks
         state.result.retry.add(path)
         logger.warning(
