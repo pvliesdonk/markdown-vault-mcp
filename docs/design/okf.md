@@ -277,7 +277,7 @@ table or schema. Internal keys are not a security boundary: unsupported guessed
 names can reach derived rows through keyword filters; public `list_tags` and
 exact queries retain registration validation. No fields are automatically
 registered when OKF is off; inactive filters/ranking keep existing semantics.
-Index semantics version 12 rebuilds unchanged skills' tags once; no on-disk
+Index semantics version 13 rebuilds unchanged skills' tags once; no on-disk
 note migration is required. Shared-index adoption refuses absent, older,
 malformed or newer semantics versions and requires the same complete indexed
 field set. Canonical sorted JSON preserves field boundaries while ignoring
