@@ -358,20 +358,20 @@ the agent applies that judgment visibly. Ranking changes ship in their own
 phase because their risk profile (silent behavior change on existing vaults
 that declare OKF) differs from the additive layers.
 
-**Status:** shipped in phase 6 (#965). The factors (`okf.py`:
-`OKF_DEPRECATED_WEIGHT = 0.5`, `OKF_STALE_WEIGHT = 0.75`,
-`OKF_RESERVED_WEIGHT = 0.5`) compose multiplicatively via
-`okf_downweight_factor`, so `deprecated < stale < normal` holds and a note that
-is both deprecated and stale sinks below either alone. The pure re-ranker
-`apply_okf_downweight` (alongside `apply_folder_boost`) runs as the conservative
-last score mutation — immediately after the folder boost, before grouping — in
-all three channels (keyword, semantic, hybrid), gated on
-`self._okf.state().active`; the per-hit OKF factor comes from the same
-`get_note` → frontmatter → `derive_annotation` path the annotation and filter
-layers use, memoised per path. It mirrors `apply_folder_boost` in scaling only
-positive scores, so a negative cosine is never promoted. On any vault where
-detection is off, `_rank_okf` returns its rows untouched, so ranking is
-byte-identical.
+**Status:** shipped in phase 6 (#965), with retrieval purposes (#1447). The
+`current` purpose uses deprecated, stale and reserved multipliers of 0.5,
+0.75 and 0.5. `historical` keeps only the reserved multiplier; `review` uses
+unity for all three. Inactive bundles use unity for every purpose. The policy
+is observed once per search and returned on each search hit. Multipliers
+compose for matching notes and apply only to positive scores; zero and negative
+scores stay unchanged so a negative cosine is never promoted.
+
+The pure re-ranker `apply_okf_downweight` runs after the folder boost and before
+grouping in keyword, semantic and hybrid searches. `okf_downweight_factor`
+uses the precomputed weights and annotations from the note's frontmatter,
+memoised per path. Unity weights leave rows unchanged. Length and folder
+ranking remain in effect for every purpose. Trust tiers and filters do not
+change with purpose.
 
 ---
 

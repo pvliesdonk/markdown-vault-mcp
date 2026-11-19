@@ -31,7 +31,7 @@ src/markdown_vault_mcp/
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     link_report.py     -- UnresolvedLinkReporter: the unresolved links one write/edit/append added, read back from the index rows get_broken_links uses (#1725); internal collaborator, not re-exported
-    search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
+    search.py          -- SearchManager: keyword/semantic/hybrid search with a per-search OKF retrieval policy, list, context, stats
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
     embedding_import.py -- import_embeddings: `embeddings import` from another store — source resolution (DSN from the environment only), the refusals in order, the dry-run count, ImportReport/ImportRefused (#1505)
@@ -104,11 +104,11 @@ src/markdown_vault_mcp/
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
-  types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
+  types.py             -- shared dataclasses and result types (RankedSearchResult, GroupedResult, NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
-  okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  okf.py               -- OKF detection, read-side annotations and retrieval policy weights (#961, #1447)
   bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442); descriptor-relative full observation traversal
   okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
   _cli_bundle.py       -- CLI adapter for bounded OKF inventory

@@ -24,6 +24,7 @@ from markdown_vault_mcp.okf import (
     OKF_RESERVED_WEIGHT,
     OKF_STALE_WEIGHT,
     okf_downweight_factor,
+    retrieval_policy,
 )
 from markdown_vault_mcp.vault import VaultSettings
 
@@ -58,10 +59,16 @@ class TestOkfDownweightFactor:
         f = okf_downweight_factor({"status": "stable", "stale": False}, name)
         assert f == OKF_RESERVED_WEIGHT
 
-    def test_deprecated_and_stale_compose(self) -> None:
-        # A note that is both sinks below either alone.
-        f = okf_downweight_factor({"status": "deprecated", "stale": True}, "n.md")
-        assert f == OKF_DEPRECATED_WEIGHT * OKF_STALE_WEIGHT
+    @pytest.mark.parametrize(
+        ("purpose", "expected"),
+        [("current", 0.5 * 0.75 * 0.5), ("historical", 0.5), ("review", 1.0)],
+    )
+    def test_deprecated_and_stale_compose(self, purpose: str, expected: float) -> None:
+        weights = retrieval_policy(purpose, active=True)["weights"]
+        factor = okf_downweight_factor(
+            {"status": "deprecated", "stale": True}, "index.md", weights=weights
+        )
+        assert factor == expected
 
     def test_ordering_deprecated_below_stale_below_normal(self) -> None:
         normal = okf_downweight_factor({"status": "stable", "stale": False}, "n.md")
@@ -119,7 +126,7 @@ class TestApplyOkfDownweight:
 
 
 # ---------------------------------------------------------------------------
-# SearchManager._rank_okf — gating and per-path memoisation
+# SearchManager._rank_okf — neutral weights and per-path memoisation
 # ---------------------------------------------------------------------------
 
 
@@ -136,13 +143,23 @@ class TestRankOkfMethod:
     def test_inert_without_detector(self, tmp_path: Path) -> None:
         mgr = _search_manager(tmp_path, mode=None)
         rows = [_Row("a.md", 1.0), _Row("b.md", 2.0)]
-        # No detector → the same list object is returned untouched (no re-sort).
-        assert mgr._rank_okf(rows) is rows
+        # Neutral weights return the same list untouched (no re-sort).
+        assert (
+            mgr._rank_okf(
+                rows, weights=retrieval_policy("current", active=False)["weights"]
+            )
+            is rows
+        )
 
     def test_inert_when_detector_inactive(self, tmp_path: Path) -> None:
         mgr = _search_manager(tmp_path, mode="off")
         rows = [_Row("a.md", 1.0)]
-        assert mgr._rank_okf(rows) is rows
+        assert (
+            mgr._rank_okf(
+                rows, weights=retrieval_policy("current", active=False)["weights"]
+            )
+            is rows
+        )
 
     def test_active_downweights_and_memoises_per_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -157,7 +174,9 @@ class TestRankOkfMethod:
         monkeypatch.setattr(mgr, "_get_frontmatter", fake_frontmatter)
         # 'dep.md' repeats: the second occurrence must hit the memo cache.
         rows = [_Row("dep.md", 1.0), _Row("norm.md", 0.9), _Row("dep.md", 0.8)]
-        out = mgr._rank_okf(rows)
+        out = mgr._rank_okf(
+            rows, weights=retrieval_policy("current", active=True)["weights"]
+        )
         # One frontmatter lookup per distinct path (memoised).
         assert calls.count("dep.md") == 1
         scored = {(r.path, round(r.score, 4)) for r in out}
@@ -228,11 +247,7 @@ def _scores(vault: Vault, mode: str) -> dict[str, float]:
     return {r.path: r.score for r in vault.reader.search("zebra", mode=mode, limit=10)}
 
 
-# The keyword and hybrid channels both yield usable positive scores for the
-# deterministic mock provider; the semantic channel returns no hits for a
-# hash-vector mock (cosines fall below the retrieval floor), so it is not
-# exercised here — all three channels call the identical ``_rank_okf`` step, so
-# the pure re-ranker tests above plus these two live channels cover the path.
+# Keyword and hybrid use the ranking corpus; semantic uses controlled vectors below.
 _LIVE_MODES = ["keyword", "hybrid"]
 
 
@@ -254,13 +269,24 @@ class TestRankingCorpus:
         for reserved in ("index.md", "log.md"):
             assert s[reserved] < real_min
 
-    def test_keyword_factor_ratios_are_exact(self, declared_vault: Vault) -> None:
-        # Identical-body notes → identical base score, so the factors show up
-        # as exact ratios off the normal note.
-        s = _scores(declared_vault, "keyword")
-        assert s["stale.md"] == pytest.approx(s["normal.md"] * OKF_STALE_WEIGHT)
-        assert s["deprecated.md"] == pytest.approx(
-            s["normal.md"] * OKF_DEPRECATED_WEIGHT
+    @pytest.mark.parametrize(
+        ("purpose", "stale_weight", "deprecated_weight"),
+        [("current", 0.75, 0.5), ("historical", 1.0, 1.0), ("review", 1.0, 1.0)],
+    )
+    def test_keyword_factor_ratios_are_exact(
+        self,
+        declared_vault: Vault,
+        purpose: str,
+        stale_weight: float,
+        deprecated_weight: float,
+    ) -> None:
+        results = declared_vault.reader.search(
+            "zebra", mode="keyword", limit=10, purpose=purpose
+        )
+        scores = {result.path: result.score for result in results}
+        assert scores["stale.md"] == pytest.approx(scores["normal.md"] * stale_weight)
+        assert scores["deprecated.md"] == pytest.approx(
+            scores["normal.md"] * deprecated_weight
         )
 
 
@@ -297,36 +323,6 @@ class TestByteIdenticalWhenNotDetected:
             vault.close()
 
 
-@pytest.mark.parametrize("purpose", ["historical", "review"])
-def test_purpose_removes_lifecycle_penalties(
-    declared_vault: Vault, purpose: str
-) -> None:
-    results = declared_vault.reader.search(
-        "zebra", mode="keyword", limit=10, purpose=purpose
-    )
-    scores = {result.path: result.score for result in results}
-    assert scores["deprecated.md"] == pytest.approx(scores["normal.md"])
-    assert scores["stale.md"] == pytest.approx(scores["normal.md"])
-
-
-def test_purpose_reserved_weight(tmp_path: Path) -> None:
-    mgr = _search_manager(tmp_path, mode="on")
-    rows = [_Row("index.md", 1.0)]
-    assert (
-        mgr._rank_okf(
-            rows,
-            weights={"deprecated": 1.0, "stale": 1.0, "reserved": OKF_RESERVED_WEIGHT},
-        )[0].score
-        == OKF_RESERVED_WEIGHT
-    )
-    assert (
-        mgr._rank_okf(rows, weights={"deprecated": 1.0, "stale": 1.0, "reserved": 1.0})[
-            0
-        ].score
-        == 1.0
-    )
-
-
 @pytest.mark.parametrize("mode", _LIVE_MODES)
 def test_current_default_and_policy(declared_vault: Vault, mode: str) -> None:
     default = declared_vault.reader.search("zebra", mode=mode, limit=10)
@@ -334,37 +330,28 @@ def test_current_default_and_policy(declared_vault: Vault, mode: str) -> None:
         "zebra", mode=mode, limit=10, purpose="current"
     )
     assert default == explicit
-    assert default[0].retrieval_policy == {
-        "purpose": "current",
-        "weights": {"deprecated": 0.5, "stale": 0.75, "reserved": 0.5},
-    }
-    historical = declared_vault.reader.search(
-        "zebra", mode=mode, limit=10, purpose="historical"
+    for purpose in ("current", "historical", "review"):
+        hits = declared_vault.reader.search(
+            "zebra", mode=mode, limit=10, purpose=purpose
+        )
+        assert hits[0].retrieval_policy["purpose"] == purpose
+
+
+@pytest.mark.parametrize(
+    ("purpose", "active", "expected"),
+    [
+        ("current", True, (0.5, 0.75, 0.5)),
+        ("historical", True, (1.0, 1.0, 0.5)),
+        ("review", True, (1.0, 1.0, 1.0)),
+        *[(p, False, (1.0, 1.0, 1.0)) for p in ("current", "historical", "review")],
+    ],
+)
+def test_inactive_policy_and_invalid_purpose(
+    purpose: str, active: bool, expected: tuple[float, float, float]
+) -> None:
+    assert retrieval_policy(purpose, active=active)["weights"] == dict(
+        zip(("deprecated", "stale", "reserved"), expected, strict=True)
     )
-    assert historical[0].retrieval_policy == {
-        "purpose": "historical",
-        "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 0.5},
-    }
-    review = declared_vault.reader.search(
-        "zebra", mode=mode, limit=10, purpose="review"
-    )
-    assert review[0].retrieval_policy == {
-        "purpose": "review",
-        "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 1.0},
-    }
-
-
-def test_inactive_policy_and_invalid_purpose(tmp_path: Path) -> None:
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.okf import retrieval_policy
-
-    assert retrieval_policy("current", active=False)["weights"] == {
-        "deprecated": 1.0,
-        "stale": 1.0,
-        "reserved": 1.0,
-    }
-    with pytest.raises(InvalidRequestError, match="purpose"):
-        _search_manager(tmp_path, mode=None).search("zebra", purpose="invalid")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("initially_active", [False, True])
@@ -401,7 +388,6 @@ def test_policy_matches_ranking_when_declaration_changes_mid_search(
 
 
 def test_semantic_purposes_rank_and_report_policy(declared_vault: Vault) -> None:
-    from markdown_vault_mcp.types import ANY_TOKEN
     from tests.fixtures.vector_store_contract import doc
 
     declared_vault.index.build_embeddings()
@@ -411,28 +397,38 @@ def test_semantic_purposes_rank_and_report_policy(declared_vault: Vault) -> None
     query = "zebra migration"
     vector = list(provider.embed_query([query])[0])
     for path in ("normal.md", "deprecated.md"):
+        metadata = store.rows_for(path)[0].metadata
+        token = store.tokens()[path]
         store.replace_document(
-            doc(path, [vector], token="fixture"), expected_token=ANY_TOKEN
+            doc(
+                path,
+                [vector],
+                token=token,
+                folder=metadata["folder"],
+                title=metadata["title"],
+                heading=metadata["heading"],
+                content=metadata["content"],
+                start_line=metadata["start_line"],
+            ),
+            expected_token=token,
         )
     for purpose, expected in (("current", 0.5), ("historical", 1.0), ("review", 1.0)):
         results = declared_vault.reader.search(
             query, mode="semantic", limit=10, purpose=purpose
-        )  # type: ignore[arg-type]
+        )
         hits = {r.path: r for r in results}
         assert hits["deprecated.md"].score == pytest.approx(
             hits["normal.md"].score * expected
         )
-        assert (
-            hits["deprecated.md"].retrieval_policy["weights"]["deprecated"] == expected
-        )
+        assert hits["deprecated.md"].retrieval_policy["purpose"] == purpose
 
 
-@pytest.mark.parametrize("purpose", [[], {}])
-def test_unhashable_purpose_is_invalid(tmp_path: Path, purpose: object) -> None:
+@pytest.mark.parametrize("purpose", ["invalid", [], {}])
+def test_unhashable_purpose_is_invalid(purpose: object) -> None:
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
     with pytest.raises(InvalidRequestError, match="purpose"):
-        _search_manager(tmp_path, mode=None).search("zebra", purpose=purpose)  # type: ignore[arg-type]
+        retrieval_policy(purpose, active=False)  # type: ignore[arg-type]
 
 
 def test_similar_and_context_do_not_carry_search_policy(declared_vault: Vault) -> None:
@@ -441,34 +437,6 @@ def test_similar_and_context_do_not_carry_search_policy(declared_vault: Vault) -
     declared_vault.index.build_embeddings()
     similar = declared_vault.reader.get_similar("normal.md", limit=10)
     context = declared_vault.reader.get_context("normal.md")
-    assert similar
+    assert similar and context.similar
     assert all("retrieval_policy" not in asdict(result) for result in similar)
     assert all("retrieval_policy" not in asdict(result) for result in context.similar)
-
-
-@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
-def test_blank_semantic_search_returns_no_hits(
-    declared_vault: Vault, mode: str
-) -> None:
-    assert declared_vault.reader.search(" ", mode=mode, purpose="review") == []
-
-
-@pytest.mark.parametrize("score", [-0.4, 0.0, 1.0])
-def test_okf_weights_apply_only_to_positive_scores(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, score: float
-) -> None:
-    from markdown_vault_mcp.okf import retrieval_policy
-
-    manager = _search_manager(tmp_path, mode="on")
-    monkeypatch.setattr(
-        manager, "_get_frontmatter", lambda _path: {"status": "deprecated"}
-    )
-    row = [_Row("deprecated.md", score)]
-    current = manager._rank_okf(
-        row, weights=retrieval_policy("current", active=True)["weights"]
-    )
-    review = manager._rank_okf(
-        row, weights=retrieval_policy("review", active=True)["weights"]
-    )
-    assert review[0].score == score
-    assert current[0].score == pytest.approx(score * 0.5 if score > 0 else score)

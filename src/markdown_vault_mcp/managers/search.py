@@ -690,7 +690,7 @@ class SearchManager:
         return kept
 
     def _rank_okf(
-        self, rows: builtins.list[_RankT], *, weights: dict[str, float] | None = None
+        self, rows: builtins.list[_RankT], *, weights: dict[str, float]
     ) -> builtins.list[_RankT]:
         """Apply the OKF ranking downweight (design §5, #965) on active bundles.
 
@@ -701,15 +701,11 @@ class SearchManager:
 
         Args:
             rows: Candidate rows carrying ``path`` and ``score``.
-            weights: Effective multipliers, or the active current policy if omitted.
+            weights: Effective multipliers for this search.
 
         Returns:
             The rows, downweighted and re-sorted when applicable.
         """
-        if weights is None:
-            if self._okf is None or not self._okf.state().active:
-                return rows
-            weights = retrieval_policy("current", active=True)["weights"]
         if all(weight == 1.0 for weight in weights.values()):
             return rows
         factors: dict[str, float] = {}
@@ -1166,8 +1162,8 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
+        weights: dict[str, float],
         okf_filters: dict[str, str | None] | None = None,
-        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1287,8 +1283,8 @@ class SearchManager:
         folder: str | None = None,
         chunks_per_file: int,
         snippet_words: int,
+        weights: dict[str, float],
         okf_filters: dict[str, str | None] | None = None,
-        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1334,8 +1330,8 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
+        weights: dict[str, float],
         okf_filters: dict[str, str | None] | None = None,
-        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
         okf_filters = okf_filters or {}
