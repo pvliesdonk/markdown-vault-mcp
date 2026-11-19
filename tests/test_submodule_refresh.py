@@ -22,7 +22,7 @@ from markdown_vault_mcp.git.health import (
     SUBMODULE_REASON_NOT_CURRENT,
     SyncHealthTracker,
 )
-from markdown_vault_mcp.git.strategy import GitWriteStrategy
+from markdown_vault_mcp.git.strategy import GitWriteSettings, GitWriteStrategy
 from markdown_vault_mcp.git.submodule_refresh import (
     SUBMODULE_REASON_DIRTY,
     SUBMODULE_REASON_REMOTE_NOT_ALLOWED,
@@ -546,15 +546,24 @@ def test_an_empty_setting_is_off(
         assert ProjectConfig.from_env().git.submodule_remotes == ()
 
 
+@pytest.mark.parametrize("grouped", [False, True])
 def test_commit_only_mode_says_the_refresh_is_inactive(
     caplog: pytest.LogCaptureFixture,
+    grouped: bool,
 ) -> None:
     with caplog.at_level(logging.WARNING):
+        settings = GitWriteSettings(enable_pull=False, enable_push=False, git_lfs=False)
         strategy = GitWriteStrategy(
-            enable_pull=False,
-            enable_push=False,
-            git_lfs=False,
             submodule_remotes=("https://example.invalid/x.git",),
+            **(
+                {"settings": settings}
+                if grouped
+                else {
+                    "enable_pull": False,
+                    "enable_push": False,
+                    "git_lfs": False,
+                }
+            ),
         )
     strategy.close()
     assert "git_submodule_refresh_inactive reason=pull_disabled" in caplog.text

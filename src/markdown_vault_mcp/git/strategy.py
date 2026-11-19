@@ -315,7 +315,7 @@ class GitWriteStrategy:
         self._submodules = (
             SubmoduleRefresher(submodule_remotes) if submodule_remotes else None
         )
-        if self._submodules is not None and not enable_pull:
+        if self._submodules is not None and not resolved.enable_pull:
             logger.warning("git_submodule_refresh_inactive reason=pull_disabled")
         self._submodule_observer: Callable[[], None] | None = None
         self._closed = False
