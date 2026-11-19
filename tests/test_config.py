@@ -2852,6 +2852,10 @@ def test_machine_review_does_not_shift_positional_config_fields() -> None:
         assert (
             params["service_subjects"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
         )
+    assert (
+        inspect.signature(ProjectConfig).parameters["okf_log_assist"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
 
 
 def test_okf_log_assist_requires_explicit_opt_in(

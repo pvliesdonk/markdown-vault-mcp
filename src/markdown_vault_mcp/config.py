@@ -445,6 +445,7 @@ class ProjectConfig:
     )
     okf_log_assist: bool = field(
         default=False,
+        kw_only=True,
         metadata={
             "help": "Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default.",
             "tags": ("content", "readme"),

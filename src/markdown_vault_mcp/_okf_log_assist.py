@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
+from difflib import unified_diff
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_convention import canonical_path
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.managers.git_query import _SHA_RE
 from markdown_vault_mcp.okf import is_okf_reserved_file
+from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.types import HistoryEntry
     from markdown_vault_mcp.vault import Vault
 
 
@@ -34,13 +39,13 @@ def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
             raise InvalidRequestError(
                 "Pass paths without control or line separator characters to okf_propose_log_entry."
             )
-        vault._doc_mgr._validate_path(path)
+        resolved = vault._doc_mgr._validate_path(path)
         target = canonical_path(path, vault.source_dir)
         if is_okf_reserved_file(path) or is_okf_reserved_file(target):
             raise InvalidRequestError(
                 "Pass concept notes, not reserved files, in paths to okf_propose_log_entry."
             )
-        if vault._doc_mgr._read_note(target, capped=False) is None:
+        if not is_regular_file(resolved):
             raise InvalidRequestError(
                 f"Note {target!r} was not found; choose an existing path for okf_propose_log_entry."
             )
@@ -49,19 +54,68 @@ def _selected_paths(vault: Vault, paths: list[str]) -> list[str]:
     return selected
 
 
+def _validate_since(since: str | None) -> None:
+    """Reject dates and revisions that the proposal contract does not support."""
+    if since is None or re.fullmatch(_SHA_RE, since):
+        return
+    try:
+        if not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?",
+            since,
+        ):
+            raise ValueError
+        datetime.fromisoformat(since.replace("z", "Z"))
+    except ValueError:
+        raise InvalidRequestError(
+            "Invalid since; pass a commit SHA or an ISO 8601 date or timestamp to okf_propose_log_entry."
+        ) from None
+
+
+def _committed_selection(
+    vault: Vault, selected: list[str], since: str | None
+) -> dict[str, list[HistoryEntry]]:
+    """Check that every selected working note matches its latest committed version."""
+    histories: dict[str, list[HistoryEntry]] = {}
+    for path in selected:
+        history = vault.reader.get_history(path, limit=2)
+        if not history:
+            raise InvalidRequestError(
+                f"Note {path!r} has no committed history; commit it in a git-backed vault before calling okf_propose_log_entry."
+            )
+        if vault._git_query_mgr.committed_revision(path) != history[0].sha:
+            raise InvalidRequestError(
+                f"Cannot confirm {path!r} matches its latest commit; commit any uncommitted edits and retry okf_propose_log_entry."
+            )
+        histories[path] = history
+    if since is None and len({history[0].sha for history in histories.values()}) > 1:
+        raise InvalidRequestError(
+            f"Notes {selected!r} changed in a different commit; select notes changed together, or pass since to okf_propose_log_entry."
+        )
+    return histories
+
+
 def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str:
     """Collect the selected diffs within the configured input budget."""
+    histories = _committed_selection(vault, selected, since)
     diffs: list[str] = []
     for path in selected:
         start = since
         if start is None:
-            history = vault.reader.get_history(path, limit=2)
-            if len(history) < 2:
-                raise InvalidRequestError(
-                    f"Note {path!r} has fewer than two commits; pass since for okf_propose_log_entry."
+            history = histories[path]
+            if len(history) == 1:
+                snapshot = vault.reader.read_revision(path, history[0].sha).content
+                creation = "".join(
+                    unified_diff(
+                        [],
+                        snapshot.splitlines(keepends=True),
+                        fromfile="/dev/null",
+                        tofile=f"b/{path}",
+                    )
                 )
+                diffs.append(creation)
+                continue
             start = history[1].sha
-        if re.fullmatch(r"[0-9a-f]{4,64}", start):
+        if re.fullmatch(_SHA_RE, start):
             diff = vault.reader.get_diff(path, since_sha=start)
         else:
             diff = vault.reader.get_diff(path, since_timestamp=start)
@@ -92,11 +146,13 @@ def propose_log_entry(
         vault: Vault providing validated note and Git access.
         config: Summarizer model configuration.
         paths: Selected note paths.
-        since: Starting commit SHA or timestamp, or None for the latest changes.
+        since: Starting commit SHA or ISO 8601 date or timestamp, or None for
+            the latest commit shared by the selected notes.
 
     Returns:
         Suggested text, producer identifier and diff basis.
     """
+    _validate_since(since)
     selected = _selected_paths(vault, paths)
     content = _selected_diffs(vault, selected, since)
     if vault._summarizer is None:
@@ -107,13 +163,17 @@ def propose_log_entry(
             content,
         ).strip()
     except RuntimeError as exc:
-        raise ProposalBackendError from exc
+        raise ProposalBackendError(
+            "The model could not produce a proposal. Retry later or write the explanation yourself."
+        ) from exc
     if (
         not text
         or len(text) > 500
         or any(unicodedata.category(c) in {"Cc", "Zl", "Zp"} for c in text)
     ):
-        raise ProposalBackendError
+        raise ProposalBackendError(
+            "The model could not produce a usable single-line proposal of at most 500 characters. Write the explanation yourself or retry with a narrower selection."
+        )
     return {
         "text": text,
         "producer": f"{vault._summarizer.provider_name}/{config.summarize.openai_model}",

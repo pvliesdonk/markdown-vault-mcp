@@ -24,7 +24,7 @@ The selected diffs are sent to the operator's configured language model.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `paths` | `array of string` | required | Vault-relative note paths to include. |
-| `since` | `string \| null` | `null` | Starting revision or date; omit to use the latest change. |
+| `since` | `string \| null` | `null` | Starting commit SHA or ISO 8601 date or timestamp; omit to explain the latest commit shared by all selected notes. |
 
 **Returns**
 

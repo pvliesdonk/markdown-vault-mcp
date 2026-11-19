@@ -56,7 +56,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             paths: Vault-relative note paths to include.
-            since: Starting revision or date; omit to use the latest change.
+            since: Starting commit SHA or ISO 8601 date or timestamp; omit to explain
+                the latest commit shared by all selected notes.
 
         Returns:
             Suggested text, producer, and the basis used for the proposal.
@@ -70,9 +71,9 @@ def register(mcp: FastMCP) -> None:
             return await asyncio.to_thread(
                 propose_log_entry, vault, config, paths, since
             )
-        except ProposalBackendError:
+        except ProposalBackendError as exc:
             raise ToolError(
-                "The model could not produce a usable proposal. Retry later or write the explanation yourself.",
+                str(exc),
                 log_level=logging.WARNING,
             ) from None
 

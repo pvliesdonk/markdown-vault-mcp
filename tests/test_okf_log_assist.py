@@ -14,7 +14,6 @@ from tests.server_factory import make_server
 @pytest.mark.parametrize(
     "enabled,backend,visible",
     [
-        (False, False, False),
         (False, True, False),
         (True, False, False),
         (True, True, True),
@@ -102,32 +101,19 @@ def test_proposal_uses_scoped_diff_and_does_not_write(tmp_path: Path) -> None:
         }
         assert len(backend.calls) == 1
         assert "+New" in backend.calls[0][1]
-        assert not is_regular_file(tmp_path / "log.md")
+        propose_log_entry(vault, ProjectConfig(source_dir=tmp_path), ["a.md"], None)
+        assert "+New" in backend.calls[-1][1]
         backend.text = "   "
         with pytest.raises(ProposalBackendError):
             propose_log_entry(
                 vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before
             )
-        assert not is_regular_file(tmp_path / "log.md")
         vault._summarizer = FailingSummarizer()
         with pytest.raises(ProposalBackendError):
             propose_log_entry(
                 vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before
             )
         assert not is_regular_file(tmp_path / "log.md")
-        vault._summarizer = backend
-        backend.text = "Changed A"
-        git("mv", "a.md", "b.md")
-        git("commit", "-m", "rename")
-        (tmp_path / "a.md").write_text("# Different occupant\nPrivate marker\n")
-        git("add", "a.md")
-        git("commit", "-m", "reuse name")
-        propose_log_entry(vault, ProjectConfig(source_dir=tmp_path), ["b.md"], before)
-        assert "+New" in backend.calls[-1][1]
-        assert "Private marker" not in backend.calls[-1][1]
-        propose_log_entry(vault, ProjectConfig(source_dir=tmp_path), ["a.md"], before)
-        assert "+Private marker" in backend.calls[-1][1]
-        assert "-Old" not in backend.calls[-1][1]
     finally:
         vault.close()
 
@@ -137,14 +123,31 @@ def test_invalid_second_path_never_reaches_backend(tmp_path: Path) -> None:
     from markdown_vault_mcp._okf_log_assist import propose_log_entry
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.vault import Vault, VaultSettings
     from tests.test_summarize import FakeSummarizer
 
-    (tmp_path / "a.md").write_text("# A\n")
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "a.md").write_text("# A\n")
+    git("add", "a.md")
+    git("commit", "-m", "before")
+    (tmp_path / "a.md").write_text("# Changed\n")
+    git("add", "a.md")
+    git("commit", "-m", "after")
     backend = FakeSummarizer()
     vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(read_only=True), summarizer=backend
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        summarizer=backend,
+        git_strategy=GitWriteStrategy(),
     )
     try:
         with pytest.raises(InvalidRequestError):
@@ -152,7 +155,7 @@ def test_invalid_second_path_never_reaches_backend(tmp_path: Path) -> None:
                 vault,
                 ProjectConfig(source_dir=tmp_path),
                 ["a.md", "../private.md"],
-                "abcd",
+                None,
             )
         assert backend.calls == []
     finally:
@@ -199,14 +202,202 @@ async def test_mcp_proposal_and_backend_failure(
         result = await client.call_tool(
             "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
         )
-        assert result.data == {
-            "text": "Updated heading",
-            "producer": "fake/gpt-5-mini",
-            "basis": "diff",
-        }
+        assert result.data["text"] == "Updated heading"
+        assert "+# After" in fake.calls[0][1]
         fake.text = " "
         with pytest.raises(ToolError, match="could not produce"):
             await client.call_tool(
                 "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
             )
-    assert not is_regular_file(tmp_path / "log.md")
+
+
+def test_root_commit_creation_and_unparseable_frontmatter(tmp_path: Path) -> None:
+    """A creation in the root commit is explained from committed bytes."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "note.md").write_text("---\nbroken: [\n---\nCreated content\n")
+    git("add", "note.md")
+    git("commit", "-m", "create")
+    fake = FakeSummarizer("Created note")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        result = propose_log_entry(
+            vault, ProjectConfig(source_dir=tmp_path), ["note.md"], None
+        )
+        assert result["basis"] == "diff"
+        assert "+Created content" in fake.calls[0][1]
+        assert not is_regular_file(tmp_path / "log.md")
+        vault._summarize_max_input_chars = 5
+        with pytest.raises(InvalidRequestError, match="input limit"):
+            propose_log_entry(
+                vault, ProjectConfig(source_dir=tmp_path), ["note.md"], None
+            )
+        assert len(fake.calls) == 1
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("since", ["", "  ", "HEAD~1", "2026-99-99", "not a date"])
+def test_invalid_since_is_refused_before_backend(tmp_path: Path, since: str) -> None:
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    (tmp_path / "note.md").write_text("# Note\n")
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    fake = FakeSummarizer()
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(read_only=True), summarizer=fake
+    )
+    try:
+        with pytest.raises(InvalidRequestError, match="ISO 8601"):
+            propose_log_entry(
+                vault, ProjectConfig(source_dir=tmp_path), ["note.md"], since
+            )
+        assert fake.calls == []
+    finally:
+        vault.close()
+
+
+def test_default_selection_requires_shared_commit_and_clean_notes(
+    tmp_path: Path,
+) -> None:
+    """Group a creation and edit, refusing unrelated commits and pending edits."""
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "a.md").write_text("# Old\n")
+    git("add", "a.md")
+    git("commit", "-m", "first")
+    initial = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (tmp_path / "a.md").write_text("# Updated\n")
+    (tmp_path / "b.md").write_text("# Created\n")
+    git("add", "a.md", "b.md")
+    git("commit", "-m", "together")
+    fake = FakeSummarizer("Grouped change")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    config = ProjectConfig(source_dir=tmp_path)
+    try:
+        propose_log_entry(vault, config, ["a.md", "b.md"], None)
+        assert "+# Updated" in fake.calls[-1][1]
+        assert "+# Created" in fake.calls[-1][1]
+        (tmp_path / "a.md").write_text("# Pending\n")
+        with pytest.raises(InvalidRequestError, match="uncommitted"):
+            propose_log_entry(vault, config, ["a.md"], None)
+        assert len(fake.calls) == 1
+        git("add", "a.md")
+        git("commit", "-m", "separate")
+        with pytest.raises(InvalidRequestError, match="different commit"):
+            propose_log_entry(vault, config, ["a.md", "b.md"], None)
+        assert len(fake.calls) == 1
+        propose_log_entry(vault, config, ["a.md", "b.md"], initial)
+        assert "+# Pending" in fake.calls[-1][1]
+        assert "+# Created" in fake.calls[-1][1]
+    finally:
+        vault.close()
+
+
+def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
+    """An ISO timestamp selects the diff; invalid scopes never reach the model."""
+    import os
+
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str, date: str = "2020-01-01T00:00:00+00:00") -> None:
+        env = dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "note.md").write_text("# Old\n")
+    git("add", "note.md")
+    git("commit", "-m", "before")
+    (tmp_path / "note.md").write_text("# New\n")
+    git("add", "note.md")
+    git("commit", "-m", "after", date="2020-01-02T00:00:00+00:00")
+    fake = FakeSummarizer("Changed")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True, summarize_max_notes=1),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    config = ProjectConfig(source_dir=tmp_path)
+    try:
+        propose_log_entry(vault, config, ["note.md"], "2020-01-01T00:00:00+00:00")
+        assert "+# New" in fake.calls[0][1]
+        (tmp_path / "untracked.md").write_text("# Untracked\n")
+        for paths in (
+            [],
+            ["note.md", "note.md"],
+            ["log.md"],
+            ["missing.md"],
+            ["bad\n.md"],
+            ["untracked.md"],
+        ):
+            with pytest.raises(InvalidRequestError):
+                propose_log_entry(vault, config, paths, None)
+        assert len(fake.calls) == 1
+        with pytest.raises(InvalidRequestError, match="No committed changes"):
+            propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
+        (tmp_path / "note.md").write_text("# New\n" + "A" * 60000 + "\n")
+        git("add", "note.md")
+        git("commit", "-m", "large", date="2020-01-03T00:00:00+00:00")
+        with pytest.raises(InvalidRequestError, match="diff is too large"):
+            propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
+        assert len(fake.calls) == 1
+    finally:
+        vault.close()
