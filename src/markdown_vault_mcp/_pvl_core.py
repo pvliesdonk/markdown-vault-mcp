@@ -42,12 +42,6 @@ from fastmcp_pvl_core import (
     wire_middleware_stack,
 )
 from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
-from fastmcp_pvl_core._transfer.store import (
-    TokenInFlightError,
-    TransferStore,
-    TransferToken,
-    TransferTokenError,
-)
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -81,11 +75,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # The transfer token store (#2320).
-    "TokenInFlightError",
-    "TransferStore",
-    "TransferToken",
-    "TransferTokenError",
     # The transfer settings (#2321).
     "TransferConfig",
 ]
