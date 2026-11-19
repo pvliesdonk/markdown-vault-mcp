@@ -2115,7 +2115,7 @@ the spec itself says, dated and sourced, in
   gets the same unstamped rewrite the tool does. Bundle export
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
-  ref on pvl-core's ``create_download_link`` and generates the archive at
+  ref on ``create_download_link`` and generates the archive at
   fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
@@ -2232,21 +2232,22 @@ lifespan scaffold constructs and drives; the lifespan's `finally` block calls
 (#902/#910, #1765). Callers using `Vault` as a Python library must call
 `close()` explicitly, then close the collaborators they passed in.
 
-### One-Time Transfer Links (pvl-core `register_transfer_routes`)
+### One-Time Transfer Links (`register_transfer_routes`)
 
 The transfer subsystem lets vault files move out-of-band (to a browser or
 another service) without passing bytes through the LLM context. It is an
 HTTP-layer feature: the route and tools are registered only on HTTP/SSE
 transports and only when `MARKDOWN_VAULT_MCP_BASE_URL` is set.
 
-The capability-link machinery — the `/transfer/{token}` route, the KV-backed
+The capability-link machinery is the `/transfer/{token}` route, the KV-backed
 token store, the generic `create_download_link` / `create_upload_link` tools
 (with their titles, hints, icons, and the `write` tag on upload), the TTL
-clamp, and the per-upload size cap — is owned by `fastmcp-pvl-core`
-(`register_transfer_routes`, ADR 0001). It was previously a hand-rolled
-in-memory subsystem in this repo (`transfer/`); #979 retired that and adopted
-the shared framework. markdown-vault-mcp now supplies only the domain hook: a
-`VaultTransferSink` (`_transfer_sink.py`) implementing the core `TransferSink`
+clamp, and the per-upload size cap. It was a hand-rolled in-memory subsystem
+in this repo (`transfer/`) until #979 adopted `fastmcp-pvl-core`'s shared
+framework, and #2241 folds that back in: the registration and the link tools
+are `_transfer_links.py` (#2318), while the route handler, token store and
+sink contract still come from pvl-core until #2319 and #2320. The domain part
+is a `VaultTransferSink` (`_transfer_sink.py`) implementing the `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
 vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
 DOMAIN-WIRING block calls; it calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,

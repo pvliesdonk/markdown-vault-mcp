@@ -140,18 +140,18 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
 
 def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
     """Mount the capability-link transfer routes on an HTTP transport."""
-    # One-time capability-link transfer (#622, #979) via pvl-core's shared
-    # framework. HTTP/SSE only and only with base_url set: the /transfer/{token}
+    # One-time capability-link transfer (#622, #979) via ``_transfer_links``.
+    # HTTP/SSE only and only with base_url set: the /transfer/{token}
     # route needs an HTTP server, and register_transfer_routes raises without a
-    # public base URL. pvl-core owns the route, the KV-backed token store, and
-    # the two generic create_*_link tools (their names, titles, hints, icons,
+    # public base URL. ``_transfer_links`` owns the route, the KV-backed token
+    # store, and the two generic create_*_link tools (their names, titles, hints, icons,
     # and the ``write`` tag on upload that the read-only disable pass
     # honours); the domain supplies only the VaultTransferSink (note/attachment
     # read + write) and its validator. The optional notes add vault-specific
     # context to the generic tool descriptions without changing their shape.
     if transport == "stdio" or not config.server.base_url:
         return
-    from markdown_vault_mcp._pvl_core import register_transfer_routes
+    from markdown_vault_mcp._transfer_links import register_transfer_routes
     from markdown_vault_mcp._transfer_sink import VaultTransferSink
 
     transfer_sink = VaultTransferSink(config)
