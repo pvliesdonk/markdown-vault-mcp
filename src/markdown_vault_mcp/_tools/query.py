@@ -12,8 +12,8 @@ from pydantic import Field
 from typing_extensions import TypedDict
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
-from markdown_vault_mcp._pvl_core import tool_boundary
 from markdown_vault_mcp._server_queryable import needs_queryable
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._common import (
     _maybe_wait_for_drain,
     _staleness_result,

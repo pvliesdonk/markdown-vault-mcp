@@ -135,6 +135,7 @@ src/markdown_vault_mcp/
   _env.py              -- env/env_int/env_float/parse_bool/parse_list: every {PREFIX}_{NAME} read; imports no server stack (#2275, #2016)
   _kv_store.py         -- build_kv_store (KV_STORE_URL backend dispatch, /data/state default) and build_event_store over it (#2279)
   _pvl_core.py         -- the only importer of fastmcp_pvl_core: re-exports the names still in use, grouped by the #2241 area that removes them (#2274)
+  _tool_boundary.py    -- tool_boundary / is_tool_boundary: every tool's unexpected exception becomes one logged fault ToolError (#2280)
   _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
   _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)
   _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
