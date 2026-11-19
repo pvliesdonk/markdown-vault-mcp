@@ -610,8 +610,10 @@ def matches_okf_filters(
     Semantics (design §4): ``status`` matches the derived lifecycle value,
     so ``status=stable`` matches notes with *absent* ``status`` (the spec
     default); ``stale`` compares the derived staleness; ``trust_tier``
-    compares the derived tier. Null ``type`` matches a missing or empty type.
-    Filters compose with AND; the caller excludes reserved paths.
+    compares the derived tier. ``freshness`` and ``review`` match their
+    derived evidence states; ``review=none`` includes missing and empty
+    reviews. Null ``type`` matches a missing or empty type. Filters compose
+    with AND; the caller excludes reserved paths.
 
     Args:
         metadata: The note's frontmatter dict (may be empty).

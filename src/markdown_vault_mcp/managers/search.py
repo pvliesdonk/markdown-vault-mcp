@@ -613,14 +613,14 @@ class SearchManager:
 
         OKF dimensions and null ``type`` use OKF semantics only when active.
         Other string values remain plain filters. Null is supported only for
-        type on active bundles; ``stale`` is validated before matching.
+        type on active bundles; selector values are validated before matching.
 
         Returns:
             Plain filters and OKF filters; the latter are empty when inactive.
 
         Raises:
             InvalidRequestError: If a null filter is unsupported or an active
-                ``stale`` value is not a true/false spelling.
+                OKF selector value is invalid.
         """
         if not filters:
             return None, {}
@@ -1863,7 +1863,10 @@ class SearchManager:
                 ANDed. Applied post-hoc against each candidate's full
                 frontmatter (any key — not limited to
                 ``indexed_frontmatter_fields``); list-valued fields match by
-                membership.
+                membership. On active OKF bundles, ``status``, ``stale``,
+                ``trust_tier``, ``freshness`` and ``review`` use derived
+                semantics. The last two names select evidence rather than
+                literal fields and exclude reserved index and log files.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
@@ -1874,7 +1877,8 @@ class SearchManager:
             DocumentNotFoundError: If no document exists at the given path.
             EmbeddingsNotConfiguredError: If the vault has no embeddings: an
                 opt-in feature left off, which the caller works around (#1599).
-            InvalidRequestError: If ``chunks_per_file`` < 1.
+            InvalidRequestError: If ``chunks_per_file`` < 1 or an active OKF
+                selector value is invalid.
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
