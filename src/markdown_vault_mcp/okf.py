@@ -542,8 +542,9 @@ def okf_downweight_factor(
     """Return the multiplicative ranking factor for one OKF hit (design §5).
 
     The curated-pipeline downweight for phase 6 (#965). Composes the
-    deprecated / stale / reserved-file factors so deprecated < stale < normal,
-    and a note that is both deprecated and stale sinks below either alone.
+    deprecated / stale / reserved-file factors. Under the current policy,
+    deprecated < stale < normal, and a note that is both deprecated and stale
+    sinks below either alone.
     ``1.0`` means no change.
 
     Args:

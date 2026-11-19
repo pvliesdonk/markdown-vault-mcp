@@ -536,6 +536,7 @@ class ReaderFacet:
             wraps one document with up to ``chunks_per_file`` sections.
 
         Raises:
+            InvalidRequestError: If the purpose is unknown or a filter is invalid.
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
                 ``"hybrid"`` but no embedding provider is configured.
         """

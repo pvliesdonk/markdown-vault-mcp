@@ -961,8 +961,9 @@ class SearchManager:
             by descending file score (max of section scores).
 
         Raises:
-            InvalidRequestError: If a null filter is unsupported or an active
-                OKF ``stale`` value is not a true/false spelling.
+            InvalidRequestError: If the purpose is unknown, a null filter is
+                unsupported, or an active OKF ``stale`` value is not a
+                true/false spelling.
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
                 ``"hybrid"`` but no embedding provider is configured (a
                 ``ValueError`` subclass).
@@ -1515,8 +1516,9 @@ class SearchManager:
             objects.
 
         Raises:
-            InvalidRequestError: If a null filter is unsupported or an active
-                OKF ``stale`` value is not a true/false spelling.
+            InvalidRequestError: If the purpose is unknown, a null filter is
+                unsupported, or an active OKF ``stale`` value is not a
+                true/false spelling.
         """
         folder = normalize_folder(folder)
         plain_filters, okf_filters = self._split_okf_filters(filters)
