@@ -6,7 +6,12 @@ from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
-def designated_vault(root: Path, folders: tuple[str, ...] = ("guides",)) -> Vault:
+def designated_vault(
+    root: Path,
+    folders: tuple[str, ...] = ("guides",),
+    exclude: tuple[str, ...] = (),
+    index_path: Path | None = None,
+) -> Vault:
     """Open a writable OKF vault with generated indexes in selected folders."""
     capabilities = ContentConfig(
         okf_mode="on", okf_index=True, okf_folders=folders
@@ -14,6 +19,10 @@ def designated_vault(root: Path, folders: tuple[str, ...] = ("guides",)) -> Vaul
     return Vault(
         source_dir=root,
         settings=VaultSettings(
-            read_only=False, okf_mode="on", okf_capabilities=capabilities
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=capabilities,
+            exclude_patterns=list(exclude),
+            index_path=index_path,
         ),
     )

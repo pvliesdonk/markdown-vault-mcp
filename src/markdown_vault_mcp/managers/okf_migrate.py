@@ -9,7 +9,7 @@ dirtying, and the git-commit callback all come for free):
   bundle-root-absolute markdown links, reusing the *already-resolved*
   outlink targets so the link graph is preserved edge-for-edge.
 - :meth:`generate_index` (re)writes a reserved ``index.md`` progressive-
-  disclosure listing from the table of contents, preserving any existing
+  disclosure listing of every visible note, preserving any existing
   frontmatter (notably the root ``okf_version`` declaration).
 - :meth:`seed_log` seeds a reserved ``log.md`` change history from git.
 
@@ -35,6 +35,7 @@ import re
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
     DocumentUnreadableError,
     InvalidRequestError,
@@ -65,7 +66,9 @@ logger = logging.getLogger(__name__)
 
 
 _IndexEntry = tuple[str, str, str | None]
-_IndexTree = dict[str, tuple[list[_IndexEntry], set[str]]]
+# folder -> (its notes, its subfolders); a subfolder maps to whether its own
+# index.md is among the listed paths.
+_IndexTree = dict[str, tuple[list[_IndexEntry], dict[str, bool]]]
 
 
 def _render_fold(heading: str, sections: dict[str, list[_IndexEntry]]) -> str:
@@ -105,14 +108,13 @@ class OkfMigrationManager:
         """Hold the collaborators the transforms delegate to.
 
         Args:
-            doc_mgr: Reads (raw content, TOC, reserved-file existence) and
+            doc_mgr: Reads (raw content, note names, reserved-file existence) and
                 writes (the shared write path); supplies the read-only gate
                 and git-commit callback.
             link_mgr: Resolved outlinks for the link converter.
-            search_mgr: Note listing and per-note metadata (descriptions).
+            search_mgr: Per-note listing labels (titles, descriptions).
             git_query_mgr: Vault-wide history for the log seeder.
-            require_built: Index-readiness gate; the link/TOC-dependent
-                transforms call it first.
+            require_built: Index-readiness gate for link conversion.
         """
         self._doc_mgr = doc_mgr
         self._link_mgr = link_mgr
@@ -216,12 +218,15 @@ class OkfMigrationManager:
         allow_protected: bool = False,
         designated: Callable[[str], bool] | None = None,
     ) -> OkfIndexResult:
-        """Generate a reserved ``index.md`` listing for *folder* from the TOC.
+        """Generate a reserved ``index.md`` listing every visible note in *folder*.
 
         Without active index maintenance, migration creates missing indexes recursively.
         Under an active designation policy, eligible indexes fold descendants
         until an existing index boundary and outside targets are refused. Existing frontmatter is preserved, including
         the root ``okf_version`` declaration. Submodules are never written.
+        Dot, excluded, outside-vault and server-owned paths are omitted; a note the search index has not
+        admitted is listed by filename. The folder and any connected parent
+        are listed before the first write, so a refusal writes nothing.
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -238,16 +243,25 @@ class OkfMigrationManager:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
 
         Raises:
-            InvalidRequestError: If the target is undesignated or protected paths were
+            InvalidRequestError: If the target is undesignated, a visible folder
+                cannot be listed (nothing written), or protected paths were
                 skipped; eligible writes remain.
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
                 cannot be read; it is left untouched (#1608).
-            IndexUnavailableError: If the index is not built.
+            IndexUnavailableError: If a scheduled index build failed or was
+                cancelled.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         folder = normalize_folder(folder) or ""
+        try:
+            BundleTreeRequest(root=folder)
+        except ValueError as exc:
+            raise InvalidRequestError(
+                f"Invalid folder {folder!r}. Pass a vault-relative folder with plain "
+                "path components to okf_generate_index, or omit folder for the root."
+            ) from exc
         if designated is None:
             verdict = self._doc_mgr.index_designation(folder)
             if verdict is False:
@@ -259,9 +273,16 @@ class OkfMigrationManager:
             if verdict:
                 designated = self._index_designated
         skipped: dict[str, str] = {}
-        result = self._generate_index(folder, skipped, allow_protected, designated)
-        if designated is not None and result.path not in skipped:
-            self._connect_parent(folder, skipped, allow_protected, designated)
+        self._doc_mgr.ensure_writable()
+        self._doc_mgr.ensure_index_current()
+        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
+        parent = self._parent_to_connect(folder, designated)
+        tree = self._index_tree(folder if parent is None else parent, folder)
+        result = self._generate_index(
+            folder, skipped, allow_protected, designated, tree
+        )
+        if parent is not None and result.path not in skipped:
+            self._generate_index(parent, skipped, allow_protected, designated, tree)
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
             raise InvalidRequestError(
@@ -270,20 +291,15 @@ class OkfMigrationManager:
             )
         return result
 
-    def _connect_parent(
-        self,
-        folder: str,
-        skipped: dict[str, str],
-        allow_protected: bool,
-        designated: Callable[[str], bool],
-    ) -> None:
-        """Link a boundary from its nearest existing designated ancestor."""
-        while folder and self._doc_mgr.index_may_fold():
+    def _parent_to_connect(
+        self, folder: str, designated: Callable[[str], bool] | None
+    ) -> str | None:
+        """Find the existing designated ancestor that needs a refreshed link."""
+        while folder and designated is not None and self._doc_mgr.index_may_fold():
             folder = posixpath.dirname(folder)
             if self._has_index(folder):
-                if designated(folder):
-                    self._generate_index(folder, skipped, allow_protected, designated)
-                return
+                return folder if designated(folder) else None
+        return None
 
     def _index_designated(self, folder: str) -> bool:
         """Return whether an index may be generated under the active policy."""
@@ -295,16 +311,9 @@ class OkfMigrationManager:
         skipped: dict[str, str],
         allow_protected: bool,
         designated: Callable[[str], bool] | None,
-        tree: _IndexTree | None = None,
+        tree: _IndexTree,
     ) -> OkfIndexResult:
         """Generate eligible indexes and collect protected paths."""
-        self._doc_mgr.ensure_writable()
-        self._doc_mgr.ensure_index_current()
-        self._require_built()
-        folder = normalize_folder(folder) or ""
-        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
-        if tree is None:
-            tree = self._index_tree(folder)
         sections, created = self._fold_index(
             folder, tree, skipped, allow_protected, designated
         )
@@ -336,25 +345,38 @@ class OkfMigrationManager:
             created=tuple(created),
         )
 
-    def _index_tree(self, folder: str) -> _IndexTree:
-        """Bucket one indexed subtree into immediate notes and child folders."""
+    def _index_tree(self, top: str, folder: str) -> _IndexTree:
+        """Bucket every visible note under *top* into immediate folders.
+
+        Membership comes from the folder's live listing; titles and
+        descriptions stay the search index's, with the filename for a note
+        it has not admitted. *folder*'s own ``index.md`` is bucketed too, so
+        a parent links a boundary generated empty.
+        """
         from markdown_vault_mcp.types import NoteInfo
 
-        prefix = f"{folder}/" if folder else ""
-        tree: _IndexTree = {folder: ([], set())}
-        for note in self._search_mgr.list(folder=folder or None):
-            if not isinstance(note, NoteInfo) or not note.path.startswith(prefix):
-                continue
-            parts = note.path[len(prefix) :].split("/")
-            parent = folder
-            for sub in parts[:-1]:
-                tree.setdefault(parent, ([], set()))[1].add(sub)
-                parent = posixpath.join(parent, sub)
-                tree.setdefault(parent, ([], set()))
-            if not is_okf_reserved_file(parts[-1]):
+        labels: dict[str, tuple[str, str | None]] = {}
+        for note in self._search_mgr.list(folder=top or None):
+            if isinstance(note, NoteInfo):
                 raw = note.frontmatter.get("description")
                 desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
-                tree[parent][0].append((note.title, f"/{note.path}", desc))
+                labels[note.path] = (note.title, desc)
+        paths = self._doc_mgr.index_note_paths(top)
+        if folder != top:
+            paths.append(f"{folder}/index.md")
+        tree: _IndexTree = {top: ([], {}), folder: ([], {})}
+        for path in paths:
+            parts = path[len(top) :].lstrip("/").split("/")
+            parent = top
+            for sub in parts[:-1]:
+                subs = tree.setdefault(parent, ([], {}))[1]
+                parent = posixpath.join(parent, sub)
+                subs[sub] = subs.get(sub, False) or path == f"{parent}/index.md"
+                tree.setdefault(parent, ([], {}))
+            if not is_okf_reserved_file(parts[-1]):
+                stem = posixpath.splitext(parts[-1])[0]
+                title, desc = labels.get(path, (stem, None))
+                tree[parent][0].append((title, f"/{path}", desc))
         return tree
 
     def _fold_index(
@@ -372,10 +394,13 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
-            has_index = self._has_index(child)
+            visible = self._may_hold_index(child, subfolders[sub])
+            has_index = visible and self._has_index(child)
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
-            if not (has_index or designated is None or designated(child)):
+            if not visible or not (
+                has_index or designated is None or designated(child)
+            ):
                 inner, made = self._fold_index(
                     child, tree, skipped, allow_protected, designated
                 )
@@ -393,6 +418,16 @@ class OkfMigrationManager:
             if f"{child}/index.md" not in skipped:
                 entries.append((f"{sub}/", f"/{child}/index.md", None))
         return sections, created
+
+    def _may_hold_index(self, folder: str, listed: bool) -> bool:
+        """Whether *folder*'s ``index.md`` may be linked or generated.
+
+        It must be visible, and an existing one counts only when the listing
+        shows it: a file the server owns or a link out is no boundary.
+        """
+        return self._doc_mgr.index_path_visible(f"{folder}/index.md") and (
+            listed or not self._has_index(folder)
+        )
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* has an ``index.md``; an unreadable one counts.

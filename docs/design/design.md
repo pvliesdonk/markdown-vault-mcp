@@ -1565,7 +1565,7 @@ classification remain intact.
 
 | Captured build state | Index-dependent mutation policy |
 | --- | --- |
-| No build requested | Refresh known dirty paths; retain disk-only rename/move support. OKF generators still require a built index. |
+| No build requested | Refresh known dirty paths; retain disk-only rename/move support. Link conversion still requires a built index; index generation proceeds, listing notes the index lacks by filename. |
 | Pending or running | Wait within the shared build/refresh deadline. |
 | Succeeded, including marker publication | Wait for the queued refresh, then proceed. |
 | Failed during submission, scan, or marker I/O | Raise `IndexUnavailableError(reason="build_failed")` before mutation. |
@@ -1611,9 +1611,11 @@ and retain its paths, while a primary parse error survives a second failure
 during graph recovery. Follow-up embeddings need not finish, but earlier
 queued jobs can delay the refresh. The wait happens outside the file-write
 lock. It waits behind an already queued initial build without adding a build
-prerequisite to disk-only rename/move calls. OKF generators check readiness
-after the refresh, so convention maintenance also waits behind a queued build;
-a never-built index still fails their existing readiness check. Per-path read/validation failures
+prerequisite to disk-only rename/move calls. Link conversion checks readiness
+after the refresh. Index generation, including convention maintenance, waits
+behind a queued build the same way and refuses after a failed or cancelled one,
+but an index that was never built and has no scheduled build does not stop it.
+Per-path read/validation failures
 refresh the other notes, then fail the job and retain the snapshot; tombstone
 read and stale-row deletion failures also remain retryable. A per-row success
 callback lets the writer enqueue embeddings for completed rows even if a sibling
@@ -2166,7 +2168,12 @@ the spec itself says, dated and sourced, in
   substitution is a new rewrite the rename/move engine does not provide,
   computed per occurrence so distinct aliases survive.
   ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
-  from the note list, creating missing descendant indexes and preserving
+  from the folder's live listing independently of search admission, excluding
+  index-excluded, dot-path and outside-vault files and the server's own state
+  files (by the inspection policy), and labelling each note with the search
+  index's title and description, or its filename when the index lacks it.
+  No note contents are read, so an unreadable note keeps its link; a visible folder
+  that cannot be listed refuses the call before any write. Creating missing descendant indexes and preserving
   existing descendant indexes. Automatic maintenance instead folds notes
   through undesignated folders up to the next index. Both paths preserve
   existing frontmatter (the root ``okf_version`` declaration

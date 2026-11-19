@@ -10,6 +10,7 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import errno
 import itertools
 import logging
 import os
@@ -20,6 +21,7 @@ import sqlite3
 import stat
 from collections import defaultdict
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -41,6 +43,7 @@ from markdown_vault_mcp._okf_log_repair import (
 )
 from markdown_vault_mcp._path_guard import PathGuard
 from markdown_vault_mcp.bundle_inventory import (
+    BundleChildrenRequest,
     BundleInspection,
     BundleInspectionRequest,
     BundleInspector,
@@ -96,8 +99,10 @@ from markdown_vault_mcp.utils import (
     validate_path,
 )
 from markdown_vault_mcp.utils.fs import (
+    could_be_regular_file,
     is_directory,
     is_regular_file,
+    is_subtree_excluded,
     path_exists,
     walk_files_strict,
 )
@@ -320,6 +325,16 @@ class DocumentManager:
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
 
+    def _inspector(self) -> BundleInspector:
+        """Build the inspection policy owner from this manager's settings."""
+        return BundleInspector(
+            self._source_dir,
+            self._exclude_patterns or (),
+            self._artifacts.extensions(),
+            self._max_note_read_bytes,
+            self._inspection_policy,
+        )
+
     def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
         """Inspect a selected directory and report available index state.
 
@@ -329,13 +344,7 @@ class DocumentManager:
         Returns:
             Current policy-visible observations, without content or write authority.
         """
-        inspection = BundleInspector(
-            self._source_dir,
-            self._exclude_patterns or (),
-            self._artifacts.extensions(),
-            self._max_note_read_bytes,
-            self._inspection_policy,
-        ).inspect(request)
+        inspection = self._inspector().inspect(request)
 
         if (
             self._inventory_ready is not None
@@ -546,6 +555,81 @@ class DocumentManager:
             ``self._exclude_patterns``.
         """
         return is_path_excluded(path, self._exclude_patterns)
+
+    def index_path_visible(self, path: str) -> bool:
+        """Whether a generated index may list or link *path*.
+
+        Args:
+            path: Vault-relative path of a note or index file.
+
+        Returns:
+            ``False`` for a path with a dot component or matching an exclude
+            pattern; ``True`` otherwise.
+        """
+        hidden = any(part.startswith(".") for part in path.split("/"))
+        return not hidden and not self._is_path_excluded(path)
+
+    def index_note_paths(self, folder: str) -> list[str]:
+        """List every note a generated index under *folder* may show.
+
+        The walk reads no note contents, so an unreadable note keeps its place.
+        It leaves out dot and excluded paths, links resolving outside the
+        vault, and whatever the inspection policy owns as server state.
+
+        Args:
+            folder: Normalized vault-relative folder (``""`` for the root).
+
+        Returns:
+            Sorted vault-relative note paths; empty for a missing folder.
+
+        Raises:
+            InvalidRequestError: If *folder* or a directory below it cannot be
+                listed; the message names that directory.
+        """
+        top = self._source_dir / folder
+        inspector = self._inspector()
+        try:
+            if not is_directory(top):
+                return []
+            # The owner's ownership test needs an inspection to prepare it.
+            root = inspector.inspect(BundleChildrenRequest(root="", entry_limit=1))
+            if root.state != "inspected":
+                raise OSError(errno.EACCES, "Cannot inspect", self._source_dir)
+            return [
+                path.relative_to(self._source_dir).as_posix()
+                for path in walk_files_strict(
+                    top, prune=partial(self._index_skips, inspector), follow_links=True
+                )
+                if is_note(path.name)
+                and could_be_regular_file(path)
+                and not self._index_skips(inspector, path, leaf=True)
+            ]
+        except OSError as exc:
+            where = Path(exc.filename or top).relative_to(self._source_dir).as_posix()
+            raise InvalidRequestError(
+                f"Cannot list {where!r}; no index was written. Ask the user to "
+                "restore access to it, then call okf_generate_index again."
+            ) from exc
+
+    def _index_skips(
+        self, inspector: BundleInspector, path: Path, *, leaf: bool = False
+    ) -> bool:
+        """Whether a generated index leaves *path* out, or the walk prunes it."""
+        rel = path.relative_to(self._source_dir).as_posix()
+        if leaf and not self.index_path_visible(rel):
+            return True
+        if not leaf and (
+            path.name.startswith(".")
+            or is_subtree_excluded(rel, self._exclude_patterns or ())
+        ):
+            return True
+        if inspector._internal(rel):  # the policy owner decides server state
+            return True
+        try:
+            # Only a link can leave the vault; the writer refuses the same.
+            return path.is_symlink() and not resolve_inside(rel, self._source_dir)
+        except InvalidRequestError:
+            return True
 
     def _vault_relative(self, path: Path) -> str:
         return path.relative_to(self._source_dir.resolve()).as_posix()

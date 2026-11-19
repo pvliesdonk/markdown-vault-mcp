@@ -304,7 +304,7 @@ def test_okf_refresh_waits_behind_initial_build(
         col.close()
 
 
-@pytest.mark.parametrize("operation", ["convert", "generate"])
+@pytest.mark.parametrize("operation", ["convert"])
 def test_okf_refresh_still_rejects_never_built_index(
     tmp_path: Path, operation: str
 ) -> None:

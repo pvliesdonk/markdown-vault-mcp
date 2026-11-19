@@ -439,7 +439,9 @@ The operator controls explicit authoring, review, index and log maintenance inde
   (#1372); around local midnight the two can name different days, which is
   the two rules stating what they each mean, not a defect. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
-  `index.md` content derives from the same data as `get_toc`.
+  `index.md` membership derives from the folder's live listing, independently of
+  search admission; titles and descriptions come from the search index, falling
+  back to the filename for a note the index has not admitted.
   **Status:** shipped in phase 5b (see §9). Maintenance runs only for
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
@@ -495,17 +497,22 @@ write lock so concurrent writes into one folder cannot lost-update the log;
 the `index.md` refresh is a full idempotent regeneration, safe without extra
 locking.
 
-Cost note: `generate_index` now waits for a successful queued FTS refresh
-before deriving its listing (#1464), just like explicit link conversion.
-The refresh queues behind an in-flight initial build before the generator checks
-readiness, covering convention maintenance during cold startup as well.
-The wait requires a successful build outcome, including marker and readiness
-publication, with one 60-second budget for the build and refresh. Failed or
-cancelled attempts also prevent regeneration; failures leave the existing listing in
-place and convention maintenance logs a warning. The primary note write
-is not rolled back. Follow-up embedding work need not finish, although
-jobs already ahead of the refresh can delay it. The old separate 10-second
-best-effort drain is no longer wired by Vault; the optional maintainer
+Cost note: `generate_index` still waits for a successful queued FTS refresh
+before labelling its listing (#1464), so a just-written note shows its title.
+The refresh queues behind an in-flight initial build, with one 60-second budget
+for the build and refresh. Failed or cancelled attempts prevent regeneration;
+failures leave the existing listing in place and convention maintenance logs a
+warning. The primary note write is not rolled back. A vault whose index was
+never built and has no scheduled build is listed without waiting, by filename.
+Membership comes from one name-only directory walk of the selected subtree: no
+note contents are read, dot and wholly excluded directories are not entered,
+and excluded, dot and non-regular files are omitted. Directory links are
+followed where the scanner follows them, but a link that resolves outside the
+vault is omitted, as is anything the inspection policy owner holds as server
+state (index, tracker, vector and state paths, with their aliases and
+hardlinks). An existing subfolder `index.md` is a boundary only when that walk lists
+it, so a server-owned one is not. A visible directory that cannot be listed refuses the whole call
+before any write and is named in the refusal. The optional maintainer
 preflight hook remains available to existing integrations.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
@@ -538,7 +545,7 @@ Per-file conformance makes incremental adoption natural. Recommended order —
    machinery:
    - wikilink → bundle-root-absolute markdown-link conversion (the same
      link-rewriting engine behind `rename`/`move_folder`);
-   - `index.md` generation from `get_toc` data;
+   - `index.md` generation from the folder's live listing;
    - `log.md` seeding from git history via `GitQueryManager`, so a
      git-backed vault starts with real change history.
 
