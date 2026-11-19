@@ -12,8 +12,8 @@ Inventory tiers:
 * **domain** -- every ``MARKDOWN_VAULT_MCP_*`` (and known-bare) env read across
   the ``markdown_vault_mcp`` package, covering both the config layer
   (``config_sections``/``config.py``) and the server/CLI layer.
-* **server** -- the upstream ``fastmcp_pvl_core.ServerConfig`` source, resolved
-  via :func:`inspect.getsourcefile` so it tracks the installed version.
+* **server** -- the ``ServerConfig`` source (``config_sections/server.py``
+  since #2288), resolved via :func:`inspect.getsourcefile`.
 * **framework** -- ``FASTMCP_*`` vars read by FastMCP itself, not by our code.
 * **extra** -- vars read through runtime indirection the static extractor
   cannot resolve (documented individually in ``EXTRA_KNOWN_VARS``).
@@ -35,7 +35,7 @@ from pathlib import Path
 import markdown_vault_mcp
 from markdown_vault_mcp._health import register_health_routes
 from markdown_vault_mcp._instructions_builder import finalize_instructions
-from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 

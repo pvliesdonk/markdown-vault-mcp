@@ -131,6 +131,7 @@ src/markdown_vault_mcp/
     jobs.py              -- JobsConfig: JOBS_* soft deadline, job-record TTL and per-subject cap (#2308)
     search.py            -- SearchConfig: ranking weights + snippet-truncation knobs
     summarize.py         -- SummarizeConfig: OpenAI-compatible summarization backend settings
+    server.py            -- ServerConfig: transport, host, port, auth (OIDC, bearer), stores, tool visibility, apps domain; from_env and server_config_env_suffixes (#2288)
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
     transfer.py          -- TransferConfig: TRANSFER_* link TTL default/max, grace window, lease and upload cap (#2321)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)

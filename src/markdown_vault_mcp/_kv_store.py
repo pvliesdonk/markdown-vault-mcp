@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from fastmcp.server.event_store import EventStore
     from key_value.aio.protocols.key_value import AsyncKeyValue
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 logger = logging.getLogger(__name__)
 

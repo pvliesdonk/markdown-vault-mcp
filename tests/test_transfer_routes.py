@@ -19,9 +19,9 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from httpx import ASGITransport, AsyncClient
 
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._transfer_links import TransferLinks
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from tests.fixtures.git import make_nested_repository, make_superproject
 from tests.server_factory import make_server
 

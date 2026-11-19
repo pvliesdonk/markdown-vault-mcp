@@ -15,7 +15,8 @@ from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.prefix_collections import PrefixCollectionsWrapper
 
 from markdown_vault_mcp._kv_store import build_kv_store
-from markdown_vault_mcp._pvl_core import ConfigurationError, ServerConfig
+from markdown_vault_mcp._pvl_core import ConfigurationError
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 """Root ignores directory permission bits, so the unwritable-directory

@@ -21,9 +21,9 @@ from markdown_vault_mcp._job_store import (
     JobNotFoundError,
 )
 from markdown_vault_mcp._jobs import Jobs, build_jobs
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE
 from markdown_vault_mcp.config_sections import JobsConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _LOGGER = "markdown_vault_mcp._jobs"
 _FAST_CONFIG = JobsConfig(soft_deadline_s=0.15, result_ttl_s=60.0)

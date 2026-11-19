@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import uvicorn
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 
 def _build_uvicorn_config(

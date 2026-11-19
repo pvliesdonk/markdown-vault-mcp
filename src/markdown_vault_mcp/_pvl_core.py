@@ -13,21 +13,12 @@ name up at call time.
 
 from __future__ import annotations
 
-from fastmcp_pvl_core import (
-    ConfigurationError,
-    ServerConfig,
-    server_config_env_suffixes,
-)
+from fastmcp_pvl_core import ConfigurationError
 from fastmcp_pvl_core import __version__ as CORE_VERSION
-from fastmcp_pvl_core._config import DEFAULT_BEARER_SUBJECT
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
-    # Configuration, environment helpers and the config error (#2275).
+    # The config error, which becomes this project's own class with #2283.
     "ConfigurationError",
-    # ServerConfig and its readers (#2288).
-    "DEFAULT_BEARER_SUBJECT",
-    "ServerConfig",
-    "server_config_env_suffixes",
     # The installed pvl-core version get_server_info reports (#2283).
     "CORE_VERSION",
 ]

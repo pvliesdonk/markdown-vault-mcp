@@ -6,8 +6,8 @@ documents every :class:`ServerConfig` field, and ``domain_env_surface`` /
 to list the variables it reads. ``scripts/gen_config_surface.py`` builds the
 configuration reference, env examples and wizard spec from these.
 
-``ServerConfig`` still comes from pvl-core through the shim until #2288 moves
-it; the tree walk excludes it by class identity, so the two must agree.
+The tree walk excludes :class:`ServerConfig` by class identity, so it imports
+the same class ``ProjectConfig.server`` holds (#2288).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 
 @dataclass(frozen=True)

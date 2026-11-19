@@ -38,8 +38,8 @@ from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
     from markdown_vault_mcp.config_sections import JobsConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 logger = logging.getLogger(__name__)
 

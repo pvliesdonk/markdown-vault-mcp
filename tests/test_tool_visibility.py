@@ -14,13 +14,13 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools.base import Tool
 
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._tool_visibility import (
     _index_tools_by_name,
     apply_tool_visibility,
     effective_tool_names,
     registered_tool_names,
 )
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 

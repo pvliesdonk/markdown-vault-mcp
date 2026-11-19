@@ -40,13 +40,13 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
     from markdown_vault_mcp._transfer_contract import (
         TransferKind,
         TransferSink,
         TransferValidator,
     )
     from markdown_vault_mcp.config_sections import TransferConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 # Lucide icons (MIT): raw SVG markup, base64-encoded once at import time into
 # data URIs, so the tools carry icons with no file-system or network

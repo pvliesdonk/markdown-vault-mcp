@@ -1,6 +1,6 @@
 """Configuration for Markdown Vault MCP.
 
-Composes :class:`fastmcp_pvl_core.ServerConfig` via the domain
+Composes :class:`~markdown_vault_mcp.config_sections.ServerConfig` via the domain
 :class:`ProjectConfig` dataclass — never inherits.
 
 Add domain-specific fields between the CONFIG-FIELDS sentinels, populate
@@ -33,7 +33,6 @@ from markdown_vault_mcp._pvl_core import (
 # additions don't need a new import.  No `noqa: F401` — that factory makes
 # the import genuinely used, and a redundant directive fails RUF100.
 from markdown_vault_mcp._env import env
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
@@ -72,6 +71,7 @@ from markdown_vault_mcp.config_sections._helpers import (
     parse_weight_map,
 )
 from markdown_vault_mcp.config_sections.indexing import store_default_search
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 

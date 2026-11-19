@@ -26,7 +26,7 @@ from markdown_vault_mcp._config_surface import (
     server_config_surface,
 )
 from markdown_vault_mcp._env import env, env_float, env_int
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp.config_sections.server import (
     DEFAULT_BEARER_SUBJECT,
     ServerConfig,
     server_config_env_suffixes,
