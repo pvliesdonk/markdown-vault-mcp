@@ -11,10 +11,41 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.managers import _write_kernel as kernel
+from markdown_vault_mcp.utils.fs import path_exists
 from tests.fixtures.permissions import encode_acl
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+@pytest.mark.parametrize("failure", ["collision", errno.EPERM, errno.ENOTSUP])
+def test_exclusive_publication_failures_preserve_target_and_clean_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | int
+) -> None:
+    target = tmp_path / "note.md"
+    link = kernel.os.link
+
+    def fail_link(source: Path, destination: Path) -> None:
+        if failure == "collision":
+            target.write_text("external data\n")
+            link(source, destination)
+        else:
+            assert isinstance(failure, int)
+            raise OSError(failure, "unavailable")
+
+    monkeypatch.setattr(kernel.os, "link", fail_link)
+    if failure == "collision":
+        with pytest.raises(FileExistsError):
+            kernel.atomic_write(target, "new\n", create_only=True)
+        assert target.read_text() == "external data\n"
+    else:
+        with pytest.raises(OSError, match="exclusive creation requires hard links"):
+            kernel.atomic_write(target, "new\n", create_only=True)
+        assert not path_exists(target)
+        target.write_text("existing\n")
+        kernel.atomic_write(target, "replacement\n")
+        assert target.read_text() == "replacement\n"
+    assert list(tmp_path.iterdir()) == [target]
 
 
 @pytest.fixture

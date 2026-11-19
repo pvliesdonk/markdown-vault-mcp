@@ -63,6 +63,11 @@ from markdown_vault_mcp._okf_log_merge import merge_log_texts
             "# Log\r\n\r\n## 2026-11-18\r\n\r\n- upstream\r\n- local\r\n  continuation\r\n",
         ),
         (
+            "## 2025-01-01\n\n- a\n\u00a0\n",
+            "## 2025-01-01\n\n- a\n",
+            "## 2025-01-01\n\n- a\n\u00a0\n- a\n",
+        ),
+        (
             "## 2026-11-18\n\n- upstream\n",
             "## 2026-11-18\n\n- upstream\n",
             "## 2026-11-18\n\n- upstream\n",

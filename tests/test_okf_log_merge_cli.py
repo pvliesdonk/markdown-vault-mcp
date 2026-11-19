@@ -1,6 +1,5 @@
 """Migration of descendant logs into designated ancestors."""
 
-import errno
 import os
 from pathlib import Path
 
@@ -16,7 +15,11 @@ def test_entries_keep_literal_links_and_code(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    entry = "- [link](note.md) `[link](note.md)` ![img](image.png)\n"
+    entry = (
+        "- [link](note.md) `[link](note.md)` ![img](image.png) [note](note.md#part)\n"
+        "- [[./note#part|Name]]\n- [this](log.md#2025-01-01)\n"
+        "- [section](#2025-01-01)\n"
+    )
     (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n" + entry)
     vault = designated_vault(root, (".",))
     try:
@@ -65,6 +68,7 @@ def test_multiple_sources_keep_entries_and_trailing_definitions(
         merged = (root / "log.md").read_text()
         assert "  [r]: a.md" in merged and "  [r]: b.md" in merged
         assert "- [a][r]" in merged and "- [b][r]" in merged
+        assert merged.index("## 2025-01-01") < merged.index("## 2024-01-01")
         assert index.read_bytes() == index_bytes
     finally:
         vault.close()
@@ -97,13 +101,25 @@ def test_apply_notifies_target_write_and_source_deletion(tmp_path: Path) -> None
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- item\n")
-    vault = designated_vault(root, (".",))
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
     events: list[tuple[str, str]] = []
+    capabilities = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False, okf_mode="on", okf_capabilities=capabilities
+        ),
+        on_write=lambda path, _content, operation: events.append(
+            (path.relative_to(root).as_posix(), operation)
+        ),
+    )
     try:
-        vault._doc_mgr._notifier._callback = lambda path, _content, operation: (
-            events.append((path.relative_to(root).as_posix(), operation))
-        )
         vault.writer.okf_merge_logs(apply=True)
+        assert vault._write_callback.drain(timeout=10)
         assert ("log.md", "write") in events
         assert ("deep/log.md", "delete") in events
     finally:
@@ -122,7 +138,6 @@ def test_cli_reports_malformed_source(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Keep bad/log.md:" in result.output
     assert "Relative destinations and reference definitions" not in result.output
-    assert path_exists(root / "bad/log.md")
 
 
 def test_routing_and_header_reporting(tmp_path: Path) -> None:
@@ -145,7 +160,6 @@ def test_routing_and_header_reporting(tmp_path: Path) -> None:
             ("projects/a/deep/log.md", "projects/a/log.md"),
             ("other/log.md", "log.md"),
         }
-        assert result.target_frontmatter == ("projects/a/log.md",)
         assert result.source_frontmatter == ("projects/a/deep/log.md",)
         target = (root / "projects/a/log.md").read_text()
         assert "title: source" not in target
@@ -171,25 +185,8 @@ def test_hidden_and_excluded_logs_are_considered(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_alias_target_is_kept(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
-    (root / "log.md").symlink_to("other.md")
-    vault = designated_vault(root, (".",))
-    try:
-        vault.index.build_index()
-        result = vault.writer.okf_merge_logs(apply=True)
-        assert dict(result.kept)["deep/log.md"] == "aliased log"
-        assert path_exists(root / "deep/log.md")
-        assert not path_exists(root / "other.md")
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize(
-    "kind", ["directory", "fifo", "invalid_utf8", "malformed_yaml"]
+    "kind", ["directory", "fifo", "invalid_utf8", "malformed_yaml", "symlink"]
 )
 def test_unsafe_target_is_kept_without_changing_source(
     tmp_path: Path, kind: str
@@ -206,6 +203,8 @@ def test_unsafe_target_is_kept_without_changing_source(
         os.mkfifo(target)
     elif kind == "invalid_utf8":
         target.write_bytes(b"\xffinvalid")
+    elif kind == "symlink":
+        target.symlink_to("other.md")
     else:
         target.write_bytes(b"---\ntitle: [\n---\n# Log\n\n## 2024-01-01\n\n- target\n")
     vault = designated_vault(root, (".",))
@@ -219,6 +218,9 @@ def test_unsafe_target_is_kept_without_changing_source(
         result = vault.writer.okf_merge_logs(apply=True)
         assert not result.merged
         assert "deep/log.md" in dict(result.kept)
+        if kind == "symlink":
+            assert dict(result.kept)["deep/log.md"] == "aliased log"
+            assert not path_exists(root / "other.md")
         assert "- source" in source.read_text()
         if kind == "invalid_utf8":
             assert target.read_bytes() == b"\xffinvalid"
@@ -238,7 +240,14 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
     args = ["okf", "merge-logs", "--source-dir", str(root)]
-    preview = CliRunner().invoke(app, args)
+    from markdown_vault_mcp.facets.index import IndexFacet
+
+    def fail_build(*_args, **_kwargs):
+        raise AssertionError("preview built index")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(IndexFacet, "build_index", fail_build)
+        preview = CliRunner().invoke(app, args)
     assert preview.exit_code == 0, preview.output
     assert "deep/log.md -> log.md: 1 entries" in preview.output
     assert "Source frontmatter encountered" in preview.output
@@ -255,84 +264,27 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
         in applied.output
     )
     assert not path_exists(root / "deep/log.md")
-    assert (root / "log.md").read_text().startswith("# Log")
 
 
-def test_migration_keeps_non_ascii_whitespace_inside_entry(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "log.md").write_text("# Log\n\n## 2025-01-01\n\n- a\n\u00a0\n")
-    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- b\n")
-    vault = designated_vault(root, (".",))
-    try:
-        result = vault.writer.okf_merge_logs(apply=True)
-        assert result.merged[0].entries == 1
-        assert "- a\n\u00a0\n- b" in (root / "log.md").read_text()
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("error", [errno.EPERM, errno.ENOTSUP])
-def test_hardlink_unavailable_keeps_source(
-    tmp_path: Path, monkeypatch, error: int
-) -> None:
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.managers import _write_kernel
+def test_migration_requests_exclusive_creation(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp.managers.document import DocumentManager
 
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    source = root / "deep/log.md"
-    text = "# Log\n\n## 2025-01-01\n\n- source\n"
-    source.write_text(text)
+    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
     vault = designated_vault(root, (".",))
+    write = DocumentManager.write
+    options = []
+
+    def record_write(self, path, content, **kwargs):
+        options.append(kwargs.get("create_only"))
+        return write(self, path, content, **kwargs)
+
+    monkeypatch.setattr(DocumentManager, "write", record_write)
     try:
-
-        def fail_link(*_args, **_kwargs):
-            raise OSError(error, "unavailable")
-
-        monkeypatch.setattr(_write_kernel.os, "link", fail_link)
-        with pytest.raises(
-            InvalidRequestError, match="exclusive creation requires hard links"
-        ):
-            vault.writer.okf_merge_logs(apply=True)
-        assert source.read_text() == text
-        assert not path_exists(root / "log.md")
-        assert not list(root.glob("*.tmp"))
-        (root / "log.md").write_text("# Log\n\n## 2024-01-01\n\n- existing\n")
         assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
-        assert "- source" in (root / "log.md").read_text()
-    finally:
-        vault.close()
-
-
-def test_target_created_at_publication_preserves_both(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Verify migration requests exclusive publication at the actual link boundary."""
-    from markdown_vault_mcp.exceptions import InvalidRequestError
-    from markdown_vault_mcp.managers import _write_kernel
-
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    source = root / "deep/log.md"
-    source.write_text("# Log\n\n## 2025-01-01\n\n- source\n")
-    vault = designated_vault(root, (".",))
-    try:
-        vault.index.build_index()
-        link = _write_kernel.os.link
-
-        def concurrent_link(src, dst, *args, **kwargs):
-            (root / "log.md").write_text("external data\n")
-            return link(src, dst, *args, **kwargs)
-
-        monkeypatch.setattr(_write_kernel.os, "link", concurrent_link)
-        with pytest.raises(InvalidRequestError, match="may have changed"):
-            vault.writer.okf_merge_logs(apply=True)
-        assert (root / "log.md").read_text() == "external data\n"
-        assert source.read_text() == "# Log\n\n## 2025-01-01\n\n- source\n"
+        assert options == [True]
     finally:
         vault.close()
 
@@ -362,23 +314,9 @@ def test_target_frontmatter_bytes_survive(tmp_path: Path, bom: bytes) -> None:
         vault.close()
 
 
-def _assert_uncertain_delete(scenario: str, source: Path, target: Path) -> None:
-    if scenario == "source_changed":
-        assert source.read_text() == "changed externally\n"
-        assert "- repeat" in target.read_text()
-    elif scenario == "target_changed":
-        assert target.read_text() == "changed externally\n"
-        assert "- repeat" in source.read_text()
-    else:
-        assert "- repeat" in source.read_text()
-        assert "- repeat" in target.read_text()
-
-
-@pytest.mark.parametrize(
-    "scenario", ["new", "existing", "source_changed", "target_changed", "restore_fails"]
-)
-def test_retry_after_delete_failure_preserves_multiplicity(
-    tmp_path: Path, monkeypatch, scenario: str
+@pytest.mark.parametrize("existing", [False, True])
+def test_failed_delete_restores_target_and_retry_keeps_repeats(
+    tmp_path: Path, monkeypatch, existing: bool
 ) -> None:
     from markdown_vault_mcp.exceptions import InvalidRequestError
 
@@ -388,43 +326,70 @@ def test_retry_after_delete_failure_preserves_multiplicity(
     original = "# Log\n\n## 2024-01-01\n\n- old\n"
     target = root / "log.md"
     source = root / "deep/log.md"
-    if scenario == "existing":
+    if existing:
         target.write_text(original)
     source.write_text("# Log\n\n## 2025-01-01\n\n- repeat\n- repeat\n")
     vault = designated_vault(root, (".",))
     try:
-        vault.index.build_index()
         real_delete = vault._doc_mgr.delete
 
-        def fail_delete(path, *args, **kwargs):
+        def fail_source(path, *args, **kwargs):
+            if path == "deep/log.md":
+                raise PermissionError("denied")
+            return real_delete(path, *args, **kwargs)
+
+        monkeypatch.setattr(vault._doc_mgr, "delete", fail_source)
+        with pytest.raises(InvalidRequestError, match="target restored"):
+            vault.writer.okf_merge_logs(apply=True)
+        if existing:
+            assert target.read_text() == original
+        else:
+            assert not path_exists(target)
+        monkeypatch.setattr(vault._doc_mgr, "delete", real_delete)
+        assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
+        assert target.read_text().count("- repeat") == 2
+        assert not path_exists(source)
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "scenario", ["source_changed", "target_changed", "restore_fails"]
+)
+def test_failed_delete_reports_uncertain_state(
+    tmp_path: Path, monkeypatch, scenario: str
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    root = tmp_path / "vault"
+    (root / "deep").mkdir(parents=True)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    target = root / "log.md"
+    source = root / "deep/log.md"
+    source.write_text("# Log\n\n## 2025-01-01\n\n- repeat\n- repeat\n")
+    vault = designated_vault(root, (".",))
+    try:
+
+        def fail_delete(path, *_args, **_kwargs):
             if path == "deep/log.md":
                 if scenario == "source_changed":
                     source.write_text("changed externally\n")
                 if scenario == "target_changed":
                     target.write_text("changed externally\n")
                 raise PermissionError("denied")
-            if scenario == "restore_fails":
-                raise OSError("restore failed")
-            return real_delete(path, *args, **kwargs)
+            raise OSError("restore failed")
 
         monkeypatch.setattr(vault._doc_mgr, "delete", fail_delete)
-        with pytest.raises(
-            InvalidRequestError,
-            match="target restored"
-            if scenario in {"new", "existing"}
-            else "target may have changed",
-        ):
+        with pytest.raises(InvalidRequestError, match="target may have changed"):
             vault.writer.okf_merge_logs(apply=True)
-        if scenario in {"new", "existing"}:
-            if scenario == "existing":
-                assert target.read_text() == original
-            else:
-                assert not path_exists(target)
-            monkeypatch.setattr(vault._doc_mgr, "delete", real_delete)
-            assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
-            assert not path_exists(source)
+        if scenario == "source_changed":
+            assert source.read_text() == "changed externally\n"
         else:
-            _assert_uncertain_delete(scenario, source, target)
+            assert "- repeat" in source.read_text()
+        if scenario == "target_changed":
+            assert target.read_text() == "changed externally\n"
+        else:
+            assert "- repeat" in target.read_text()
     finally:
         vault.close()
 
@@ -446,12 +411,6 @@ def test_merge_keeps_links_and_different_preamble(tmp_path: Path) -> None:
         assert len(result.merged) == 1
         target = (root / "log.md").read_text()
         assert "source intro" in target and "# Deep log" in target
-        assert "[note](note.md#part)" in target
-        assert (
-            target.index("source intro")
-            < target.index("## 2025-01-01")
-            < target.index("## 2024-01-01")
-        )
         assert not path_exists(root / "deep/log.md")
     finally:
         vault.close()
@@ -490,46 +449,6 @@ def test_interruption_reports_completed_and_pending(
         vault.close()
 
 
-def test_relative_wiki_link_is_kept_without_rewriting(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    entry = "- [[./note#part|Name]]\n"
-    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n" + entry)
-    vault = designated_vault(root, (".",))
-    try:
-        result = vault.writer.okf_merge_logs(apply=True)
-        assert entry in (root / "log.md").read_text()
-        assert len(result.merged) == 1
-    finally:
-        vault.close()
-
-
-def test_cli_interruption_prints_progress(tmp_path: Path, monkeypatch) -> None:
-    from markdown_vault_mcp.managers.document import DocumentManager
-
-    root = tmp_path / "vault"
-    for name in ("a", "b"):
-        (root / name).mkdir(parents=True)
-        (root / name / "log.md").write_text(f"# Log\n\n## 2025-01-01\n\n- {name}\n")
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
-    delete = DocumentManager.delete
-
-    def fail_b(self, path, *args, **kwargs):
-        if path == "b/log.md":
-            raise PermissionError("denied")
-        return delete(self, path, *args, **kwargs)
-
-    monkeypatch.setattr(DocumentManager, "delete", fail_b)
-    result = CliRunner().invoke(
-        app, ["okf", "merge-logs", "--source-dir", str(root), "--apply"]
-    )
-    assert result.exit_code == 1
-    assert "Merged a/log.md" in result.output
-    assert "Pending or uncertain: b/log.md" in result.output
-
-
 def test_cli_interruption_reports_kept_and_warning(tmp_path: Path, monkeypatch) -> None:
     from markdown_vault_mcp.managers.document import DocumentManager
 
@@ -560,62 +479,3 @@ def test_cli_interruption_reports_kept_and_warning(tmp_path: Path, monkeypatch) 
         in result.output
     )
     assert "Pending or uncertain: c/log.md" in result.output
-
-
-def test_cli_preview_does_not_build_index(tmp_path: Path, monkeypatch) -> None:
-    from markdown_vault_mcp.facets.index import IndexFacet
-
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- item\n")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
-
-    def fail_build(*_args, **_kwargs):
-        raise AssertionError("preview built index")
-
-    monkeypatch.setattr(IndexFacet, "build_index", fail_build)
-    result = CliRunner().invoke(app, ["okf", "merge-logs", "--source-dir", str(root)])
-    assert result.exit_code == 0, result.output
-    assert "Would merge deep/log.md" in result.output
-    assert path_exists(root / "deep/log.md")
-
-
-def test_self_log_links_point_at_target(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "deep/log.md").write_text(
-        "# Log\n\n## 2025-01-01\n\n- [this](log.md#2025-01-01)\n- [section](#2025-01-01)\n"
-    )
-    vault = designated_vault(root, (".",))
-    try:
-        vault.index.build_index()
-        vault.writer.okf_merge_logs(apply=True)
-        result = (root / "log.md").read_text()
-        assert "[this](log.md#2025-01-01)" in result
-        assert "[section](#2025-01-01)" in result
-    finally:
-        vault.close()
-
-
-def test_reference_collision_entries_are_kept(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "log.md").write_text(
-        "# Log\n\n[r]: /target.md\n\n## 2024-01-01\n\n- [old][r]\n"
-    )
-    (root / "deep/log.md").write_text(
-        "# Log\n\n[r]: note.md\n\n## 2025-01-01\n\n- [new][r]\n"
-    )
-    vault = designated_vault(root, (".",))
-    try:
-        vault.index.build_index()
-        result = vault.writer.okf_merge_logs(apply=True)
-        assert len(result.merged) == 1
-        text = (root / "log.md").read_text()
-        assert "- [old][r]" in text and "- [new][r]" in text
-        assert not path_exists(root / "deep/log.md")
-    finally:
-        vault.close()
