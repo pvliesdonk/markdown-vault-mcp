@@ -399,6 +399,25 @@ async def test_strict_bundle_download_returns_refusal_report(
     assert payload["report"]["verdict"] == "nonconformant"
 
 
+async def test_review_bundle_refusal_log_matches_document(
+    sink: VaultTransferSink, caplog: pytest.LogCaptureFixture
+) -> None:
+    import json
+
+    ref = "okf-bundle?require_review"
+    assert await sink.validate(ref, "download") == ref
+    with caplog.at_level(logging.INFO):
+        result = await sink.read(ref)
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
+    assert any(
+        record.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and record.args == ("(root)", payload["reason"])
+        for record in caplog.records
+    )
+
+
 async def test_bundle_collision_returns_actionable_refusal(
     sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

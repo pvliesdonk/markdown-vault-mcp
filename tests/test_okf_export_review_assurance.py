@@ -64,16 +64,20 @@ def test_check_kind_is_explicit(tmp_path):
         vault.close()
 
 
-def test_subtree_path_rewrite_invalidates_binding(tmp_path):
+@pytest.mark.parametrize("kind", ["path", "wikilink"])
+def test_subtree_path_rewrite_invalidates_binding(tmp_path, kind):
     folder = tmp_path / "sub"
     folder.mkdir()
     text = reviewed(
         "---\ntype: concept\nresource: /sub/other.md\n---\n[other](/sub/other.md)\n"
+        if kind == "path"
+        else "---\ntype: concept\n---\n[[other]]\n"
     )
     (folder / "note.md").write_text(text)
     (folder / "other.md").write_text(reviewed("Other\n"))
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
+        vault.index.build_index()
         with pytest.raises(PublicationRefused) as exc:
             build_okf_bundle(
                 vault,
@@ -208,16 +212,21 @@ def test_cli_uses_only_configured_source_receipts(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 1
+    import json
+
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review"
+    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
 
 
 def test_binding_does_not_load_receipts(tmp_path, monkeypatch):
     (tmp_path / "note.md").write_text(reviewed("Body\n"))
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
 
-    def unavailable(_path):
+    def unavailable():
         raise AssertionError("binding mode must not load receipts")
 
-    monkeypatch.setattr(vault.reader._receipt_store, "receipts", unavailable)
+    monkeypatch.setattr(vault.reader._receipt_store, "receipts_by_path", unavailable)
     try:
         build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), require_review=True)
     finally:
@@ -293,5 +302,81 @@ def test_invalid_library_review_policy_is_rejected(tmp_path, policy):
     try:
         with pytest.raises(ValueError, match="Invalid review assurance policy"):
             build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), **policy)
+    finally:
+        vault.close()
+
+
+def test_receipt_store_read_once_per_export(tmp_path, monkeypatch):
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(read_only=False, state_path=tmp_path / "state"),
+    )
+    try:
+        for index in range(5):
+            path = f"{index}.md"
+            text = f"Body {index}\n"
+            (source / path).write_text(text)
+            vault.writer.okf_verify(path, "alice", concept_snapshot(text))
+        calls = []
+        original = ReceiptStore._load
+
+        def counted(store):
+            calls.append(1)
+            return original(store)
+
+        monkeypatch.setattr(ReceiptStore, "_load", counted)
+        build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=source),
+            require_review=True,
+            review_evidence="local_receipt",
+        )
+        assert len(calls) == 1
+        (source / "copy.md").write_bytes((source / "0.md").read_bytes())
+        with pytest.raises(PublicationRefused) as exc:
+            build_okf_bundle(
+                vault,
+                ProjectConfig(source_dir=source),
+                require_review=True,
+                review_evidence="local_receipt",
+            )
+        assert [
+            failure["path"] for failure in exc.value.report.review_assurance.failures
+        ] == ["copy.md"]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("state", ["missing", "corrupt", "unreadable"])
+def test_receipt_store_unavailable_fails_closed(tmp_path, monkeypatch, state):
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+
+    source = tmp_path / "vault"
+    source.mkdir()
+    (source / "note.md").write_text(reviewed("Body\n"))
+    state_path = tmp_path / "state"
+    receipt_path = state_path.with_name(state_path.name + ".receipts.json")
+    if state == "corrupt":
+        receipt_path.write_text('{"version": 99, "rows": []}')
+    if state == "unreadable":
+
+        def unavailable(_self):
+            raise OSError("unreadable")
+
+        monkeypatch.setattr(ReceiptStore, "_load", unavailable)
+    vault = Vault(source_dir=source, settings=VaultSettings(state_path=state_path))
+    try:
+        with pytest.raises(PublicationRefused) as exc:
+            build_okf_bundle(
+                vault,
+                ProjectConfig(source_dir=source),
+                require_review=True,
+                review_evidence="local_receipt",
+            )
+        assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
     finally:
         vault.close()

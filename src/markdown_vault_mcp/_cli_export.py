@@ -66,7 +66,13 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     try:
         config = ProjectConfig.from_env()
         original_settings = VaultSettings.from_project_config(config)
-        configured_source = config.source_dir.resolve()
+        state_path = original_settings.effective_state_path(config.source_dir)
+        inspection_policy = InspectionPolicy(
+            original_settings.conventions_file,
+            (state_path,) if state_path is not None else (),
+            original_settings.effective_embeddings_path(),
+            original_settings.index_path,
+        )
         config = replace(
             config,
             embedding_provider=None,
@@ -77,23 +83,10 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
             read_only=True,
             okf_write=False,
         )
-        built = _build_reader_vault(config, source_dir, True)
-        config = replace(config, source_dir=built.vault.source_dir)
-        state_path = original_settings.effective_state_path(config.source_dir)
-        # Keep the configured inventory boundary even though the reader opens no stores.
-        built.vault._doc_mgr._inspection_policy = InspectionPolicy(
-            original_settings.conventions_file,
-            (state_path,) if state_path is not None else (),
-            original_settings.effective_embeddings_path(),
-            original_settings.index_path,
+        built = _build_reader_vault(
+            config, source_dir, True, inspection_policy=inspection_policy
         )
-        if state_path is not None and config.source_dir.resolve() == configured_source:
-            from markdown_vault_mcp._okf_receipts import ReceiptStore
-
-            built.vault.reader._receipt_store = ReceiptStore(
-                state_path.with_name(state_path.name + ".receipts.json"),
-                config.source_dir,
-            )
+        config = replace(config, source_dir=built.vault.source_dir)
         try:
             _check_destination(destination, config.source_dir)
             built.vault.index.build_index()

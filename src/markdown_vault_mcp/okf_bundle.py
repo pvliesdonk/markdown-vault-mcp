@@ -40,6 +40,7 @@ from markdown_vault_mcp.utils.text import decode_utf8
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
+    from typing import Any
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
     from markdown_vault_mcp.config import ProjectConfig
@@ -369,6 +370,16 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     ) = review_policy
     if snapshot is not None:
         report.snapshot.commit = snapshot.commit
+
+    @cache
+    def receipt_index() -> dict[str, list[dict[str, Any]]] | None:
+        store = vault.reader._receipt_store
+        return store.receipts_by_path() if store is not None else None
+
+    def path_receipts(path: str) -> list[dict[str, Any]] | None:
+        index = receipt_index()
+        return index.get(path, []) if index is not None else None
+
     buf = io.BytesIO()
     notes = attachments = excluded = 0
     cursor = None
@@ -511,7 +522,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 )
                 final = _note_bytes(raw, (item, name), paths, report, resolver)
                 if item.role == "concept_candidate" and review_policy[0]:
-                    _assess_export_review(vault, item.path, name, final, report)
+                    _assess_export_review(path_receipts, item.path, name, final, report)
                 _write(zf, name, final)
                 notes += 1
     if snapshot is not None:
@@ -559,7 +570,11 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 
 
 def _assess_export_review(
-    vault: Vault, source: str, name: str, raw: bytes, report: OkfExportReport
+    load: Callable[[str], list[dict[str, Any]] | None],
+    source: str,
+    name: str,
+    raw: bytes,
+    report: OkfExportReport,
 ) -> None:
     """Assess final concept bytes against their own claims and source receipts."""
     from markdown_vault_mcp._okf_receipts import assess_reviews
@@ -570,13 +585,10 @@ def _assess_export_review(
     try:
         content = decode_utf8(raw)
         metadata = parse_frontmatter(content.removeprefix("\ufeff")).metadata
-        store = vault.reader._receipt_store
         assessments = assess_reviews(
             metadata,
             concept_snapshot(content),
-            (lambda: store.receipts(source))
-            if store is not None and policy.evidence == "local_receipt"
-            else None,
+            (lambda: load(source)) if policy.evidence == "local_receipt" else None,
         )
     except (UnicodeError, ValueError, TypeError, yaml.YAMLError, RecursionError):
         pass

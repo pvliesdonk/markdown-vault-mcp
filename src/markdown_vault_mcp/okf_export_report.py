@@ -108,6 +108,27 @@ class ExportCollisionError(ValueError):
     """An outside reference would address a different archive member."""
 
 
+def refusal_reason(exc: PublicationRefused | ExportCollisionError) -> str:
+    """Return the primary cause for an export refusal.
+
+    Args:
+        exc: Publication or collision refusal.
+
+    Returns:
+        The reason used in both logs and refusal documents.
+    """
+    strict = isinstance(exc, PublicationRefused)
+    return (
+        "review"
+        if isinstance(exc, PublicationRefused)
+        and exc.report.review_assurance.required
+        and exc.report.review_assurance.failures
+        else "strict"
+        if strict
+        else "collision"
+    )
+
+
 def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
     """Serialize a publication refusal for a downloader or CLI caller.
 
@@ -117,20 +138,10 @@ def refusal_document(exc: PublicationRefused | ExportCollisionError) -> bytes:
     Returns:
         UTF-8 JSON; collision reports are null because no artifact was audited.
     """
-    strict = isinstance(exc, PublicationRefused)
-    reason = (
-        "review"
-        if isinstance(exc, PublicationRefused)
-        and exc.report.review_assurance.required
-        and exc.report.review_assurance.failures
-        else "strict"
-        if strict
-        else "collision"
-    )
     return json.dumps(
         {
             "okf_export": "refused",
-            "reason": reason,
+            "reason": refusal_reason(exc),
             "message": str(exc),
             "report": asdict(exc.report)
             if isinstance(exc, PublicationRefused)

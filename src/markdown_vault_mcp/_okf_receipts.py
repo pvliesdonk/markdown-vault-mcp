@@ -286,6 +286,24 @@ class ReceiptStore:
             return None
         return [row for row in rows if row.get("path") == path]
 
+    def receipts_by_path(self) -> dict[str, list[dict[str, Any]]] | None:
+        """Read and index receipts once, or return None when unavailable.
+
+        Returns:
+            Receipts grouped by their vault-relative path, or None if unreadable.
+        """
+        try:
+            with self._lock:
+                rows = self._load()
+        except (OSError, StoreUnsupportedSchemaError):
+            return None
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            path = row.get("path")
+            if isinstance(path, str):
+                grouped.setdefault(path, []).append(row)
+        return grouped
+
     def append(self, receipt: dict[str, Any]) -> None:
         """Record the receipt of a review already written to its note.
 

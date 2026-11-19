@@ -52,6 +52,7 @@ from markdown_vault_mcp.okf_export_report import (
     ExportCollisionError,
     PublicationRefused,
     refusal_document,
+    refusal_reason,
 )
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -185,12 +186,9 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
 
 def _external_base_option(equals: str, value: str) -> str:
     """Decode and validate an external bundle URL."""
-    if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
-        raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.")
-    try:
-        decoded = unquote(value, errors="strict")
-    except UnicodeDecodeError:
-        raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.") from None
+    decoded = _decode_bundle_value(
+        equals, value, "Pass external_base as a percent-encoded HTTP(S) URL."
+    )
     try:
         ExportPaths("", set(), decoded)
     except ValueError as exc:
@@ -198,14 +196,21 @@ def _external_base_option(equals: str, value: str) -> str:
     return decoded
 
 
+def _decode_bundle_value(equals: str, value: str, message: str) -> str:
+    """Decode one strictly percent-encoded option value."""
+    if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
+        raise _reject(message)
+    try:
+        return unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        raise _reject(message) from None
+
+
 def _review_option(key: str, equals: str, value: str) -> str:
     """Decode and validate one review policy option."""
-    if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
-        raise _reject("Pass a valid value for the OKF review option.")
-    try:
-        decoded = unquote(value, errors="strict")
-    except UnicodeDecodeError:
-        raise _reject("Pass a valid value for the OKF review option.") from None
+    decoded = _decode_bundle_value(
+        equals, value, "Pass a valid value for the OKF review option."
+    )
     if key == "review_evidence" and decoded not in {"binding", "local_receipt"}:
         raise _reject("Pass review_evidence=binding or local_receipt.")
     return decoded
@@ -494,7 +499,7 @@ class VaultTransferSink:
             logger.info(
                 "transfer_download_bundle_refused scope=%s reason=%s",
                 scope or "(root)",
-                "strict" if isinstance(exc, PublicationRefused) else "collision",
+                refusal_reason(exc),
             )
             return TransferReadResult(
                 refusal_document(exc), "application/json", "okf-export-refusal.json"
