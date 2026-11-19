@@ -116,6 +116,7 @@ src/markdown_vault_mcp/
   _okf_review.py       -- versioned concept snapshot digest and lossless YAML review binding
   _okf_receipts.py     -- versioned local review receipts and current concept comparison
   _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
+  _okf_index_checkpoint.py -- durable last-applied concept state for generated indexes
   _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after writes, structural changes and observed reindexes, from the designated anchor that owns the affected folder
   _okf_write.py        -- review subject resolution and maintenance suppression context
   _path_guard.py       -- operator-configured mutation protection and path matching

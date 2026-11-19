@@ -7,6 +7,7 @@ LangChain wrappers, and CLI commands all go through this class.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import subprocess
@@ -621,9 +622,18 @@ class Vault:
             if self._state_path is not None
             else None
         )
+        self._okf_checkpoint_path = (
+            self._state_path.with_name(self._state_path.name + ".index-applied.json")
+            if self._state_path is not None
+            else None
+        )
         policy = InspectionPolicy(
             settings.conventions_file,
-            tuple(p for p in (self._state_path, observation_path) if p is not None),
+            tuple(
+                p
+                for p in (self._state_path, observation_path, self._okf_checkpoint_path)
+                if p is not None
+            ),
             self._embeddings_path,
             self._index_path,
         )
@@ -631,8 +641,13 @@ class Vault:
             policy = replace(
                 inspection_policy,
                 state_paths=inspection_policy.state_paths
-                + ((observation_path,) if observation_path is not None else ()),
+                + tuple(
+                    p
+                    for p in (observation_path, self._okf_checkpoint_path)
+                    if p is not None
+                ),
             )
+        self._inspection_policy = policy
         observations = ObservationLedger(
             observation_path,
             BundleInspector(
@@ -846,6 +861,33 @@ class Vault:
             capabilities.index or capabilities.log == "writes"
         ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
+            from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
+
+            scope = json.dumps(
+                {
+                    "source": str(self._source_dir.resolve()),
+                    "folders": sorted(capabilities.folders),
+                    "exclude": sorted(self._exclude_patterns or []),
+                    "required": sorted(self._required_frontmatter or []),
+                    "title": self._title_field,
+                    "inspection": {
+                        "conventions": self._inspection_policy.conventions_file,
+                        "state_paths": sorted(
+                            str(p.resolve())
+                            for p in self._inspection_policy.state_paths
+                        ),
+                        "embeddings": str(
+                            self._inspection_policy.embeddings_path.resolve()
+                        )
+                        if self._inspection_policy.embeddings_path is not None
+                        else None,
+                        "index": str(self._inspection_policy.index_path.resolve())
+                        if self._inspection_policy.index_path is not None
+                        else None,
+                    },
+                },
+                sort_keys=True,
+            )
 
             self._okf_convention = ConventionMaintainer(
                 doc_mgr=self._doc_mgr,
@@ -854,6 +896,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 source_dir=self._source_dir,
                 capabilities=capabilities,
+                checkpoint=IndexCheckpoint(self._okf_checkpoint_path, scope),
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
@@ -881,7 +924,11 @@ class Vault:
         self._index_facet = IndexFacet(
             coordinator=self._coordinator,
             index_mgr=self._index_mgr,
-            after_reindex=self._converge_okf_indexes if self._okf_convention else None,
+            after_reindex=(
+                self._converge_okf_indexes
+                if self._okf_convention is not None and capabilities.index
+                else None
+            ),
         )
         self._head_reconciler = self._build_head_reconciler()
         # Summarize facet is present only when a backend was supplied (the

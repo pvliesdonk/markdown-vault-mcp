@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 from unicodedata import normalize
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
+from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import InvalidRequestError
@@ -186,6 +187,7 @@ class ConventionMaintainer:
         today: Callable[[], date] = date.today,
         source_dir: Path | None = None,
         capabilities: OkfCapabilities | None = None,
+        checkpoint: IndexCheckpoint | None = None,
     ) -> None:
         """Hold the collaborators the secondary writes delegate to.
 
@@ -211,6 +213,7 @@ class ConventionMaintainer:
                 (#1609). ``None`` (tests) treats every folder as having one.
             capabilities: Resolved maintenance authority and folder scope.
                 ``None`` preserves the legacy all-folders behavior.
+            checkpoint: Last-applied concept state, or an in-memory default.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
@@ -220,7 +223,7 @@ class ConventionMaintainer:
             write_lock if write_lock is not None else nullcontext()
         )
         self._today = today
-        self._applied: dict[str, tuple[str, str]] | None = None
+        self._checkpoint = checkpoint or IndexCheckpoint(None, "")
         self._source_dir = source_dir
         self._capabilities = (
             capabilities or ContentConfig(okf_write=True).okf_capabilities
@@ -329,7 +332,7 @@ class ConventionMaintainer:
             Whether every attempted refresh succeeded.
         """
         if not self._capabilities.index or not self._maintains_after(trigger_paths):
-            return True
+            return False
         anchors = (self.indexed_anchor(f) for f in folders)
         wanted = [f for f in anchors if self._may_index(f) and self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
@@ -350,36 +353,42 @@ class ConventionMaintainer:
             Whether the attempted refreshes succeeded.
         """
         with self._write_lock:
+            intent = current_okf_intent()
+            if intent is not None and intent.suppress:
+                return False
             current = {
-                p: (row.presence, row.content_digest)
+                p: row.content_digest
                 for p, row in rows.items()
-                if row.role == "concept_candidate" and not self._is_reserved(p)
+                if row.role == "concept_candidate" and row.presence == "present"
             }
-            previous = self._applied
+            previous = self._checkpoint.load()
+            old = previous or {}
+            changed = {
+                p
+                for p in current.keys() | old.keys()
+                if current.get(p) != old.get(p) and not self._is_reserved(p)
+            }
+            arrivals = changed & (current.keys() - old.keys())
+            removed = changed & (old.keys() - current.keys())
+            boundaries = (self._removed_index_boundary(folder_of(p)) for p in removed)
+            folders = [folder_of(p) for p in changed]
+            folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
-                success = self.refresh_indexes(
-                    self.subtree_folders(""), trigger_paths=()
-                )
-            else:
-                changed = {
-                    p
-                    for p in current.keys() | previous.keys()
-                    if current.get(p) != previous.get(p)
-                }
-                arrivals = {
-                    p
-                    for p in changed
-                    if current.get(p, ("removed", ""))[0] == "present"
-                    and previous.get(p, ("removed", ""))[0] != "present"
-                }
-                success = self.refresh_indexes(
-                    [folder_of(p) for p in changed],
-                    trigger_paths=changed,
-                    create={self.indexed_anchor(folder_of(p)) for p in arrivals},
-                )
-            if success:
-                self._applied = current
+                folders.extend(self.subtree_folders(""))
+            success = self.refresh_indexes(
+                folders,
+                trigger_paths=changed,
+                create={self.indexed_anchor(folder_of(p)) for p in arrivals},
+            )
+            if success and previous != current:
+                self._checkpoint.save(current)
             return success
+
+    def _removed_index_boundary(self, folder: str) -> str | None:
+        """Find the nearest existing boundary above a removed concept's folder."""
+        while folder and not self._has_index(folder):
+            folder = folder_of(folder)
+        return folder if self._has_index(folder) and self._designated(folder) else None
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.

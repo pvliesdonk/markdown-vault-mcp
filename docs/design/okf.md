@@ -481,10 +481,11 @@ The operator controls explicit authoring, review, index and log maintenance inde
   nothing, both because a reserved-file change never triggers itself (#1414)
   and because regenerating would overwrite the note just renamed onto it.
   Reindex also compares the observation ledger with the maintainer’s last applied
-  concept state. The first pass reconciles existing designated indexes; later
-  arrivals may create a missing designated anchor. Edits and removals refresh
+  concept state, stored beside persistent observation state. With no compatible
+  checkpoint, the first pass reconciles existing designated indexes and can
+  create anchors for observed concepts. Later arrivals may create an anchor. Edits and removals refresh
   existing anchors, while reserved-file-only changes do not trigger generation.
-  A failed refresh leaves the applied state unchanged for retry. Identical bytes
+  A failed refresh or checkpoint save leaves the applied state unchanged for retry. Identical bytes
   are not rewritten. This maintenance creates neither provenance nor log entries.
   Pull sweeps retain observations until reindex updates search labels.
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,

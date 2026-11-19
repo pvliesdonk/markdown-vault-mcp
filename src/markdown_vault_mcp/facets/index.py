@@ -47,6 +47,7 @@ class IndexFacet:
                 root. Only its public operations are surfaced here.
             index_mgr: The shared :class:`IndexManager`, queried by
                 :meth:`IndexFacet.embeddings_status`.
+            after_reindex: Optional convergence callback run after a reindex.
         """
         self._coordinator = coordinator
         self._index_mgr = index_mgr
