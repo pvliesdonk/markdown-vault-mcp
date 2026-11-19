@@ -75,7 +75,7 @@ def test_routing_headers_and_unsafe_sources(tmp_path: Path) -> None:
         target = (root / "projects/a/log.md").read_text()
         assert target.startswith("---\ntitle: existing\n---")
         assert "title: source" not in target
-        assert "[link](/projects/a/unsafe/note.md)" in target
+        assert "[link](unsafe/note.md)" in target
         assert not path_exists(root / "projects/a/unsafe/log.md")
     finally:
         vault.close()
@@ -105,7 +105,7 @@ def test_refuses_incompatible_preamble_and_reference_links(tmp_path: Path) -> No
         }
         assert not result.kept
         assert "# Other" in (root / "log.md").read_text()
-        assert "[ref]: /reference/note.md" in (root / "log.md").read_text()
+        assert "[ref]: reference/note.md" in (root / "log.md").read_text()
         assert "[source](#section)" in (root / "log.md").read_text()
     finally:
         vault.close()
@@ -340,7 +340,12 @@ def test_merge_relocates_links_and_keeps_different_preamble(tmp_path: Path) -> N
         assert len(result.merged) == 1
         target = (root / "log.md").read_text()
         assert "source intro" in target and "# Deep log" in target
-        assert "[note](/deep/note.md#part)" in target
+        assert "[note](deep/note.md#part)" in target
+        assert (
+            target.index("source intro")
+            < target.index("## 2025-01-01")
+            < target.index("## 2024-01-01")
+        )
         assert not path_exists(root / "deep/log.md")
     finally:
         vault.close()
@@ -425,6 +430,20 @@ def test_relocates_explicit_relative_wikilink(tmp_path: Path) -> None:
         vault.close()
 
 
+def test_relocation_preserves_destination_spelling() -> None:
+    from markdown_vault_mcp._okf_log_merge import _relocate_links
+
+    source = (
+        "[parent](../b.md#h) [sibling](sib.md) [space](<my note.md>)\n"
+        "![image][img]\n\n[img]: ./z%20q.md\n"
+    )
+    moved = _relocate_links(source, "x/y/log.md", "x/log.md")
+    assert "[parent](b.md#h)" in moved
+    assert "[sibling](y/sib.md)" in moved
+    assert "[space](<y/my note.md>)" in moved
+    assert "[img]: y/z%20q.md" in moved
+
+
 def test_cli_interruption_prints_progress(tmp_path: Path, monkeypatch) -> None:
     from markdown_vault_mcp.managers.document import DocumentManager
 
@@ -482,17 +501,6 @@ def test_failed_delete_does_not_rollback_changed_target(
         vault.close()
 
 
-def test_new_older_date_has_blank_separator() -> None:
-    from markdown_vault_mcp._okf_log_merge import _migration_text
-
-    merged, _, reason = _migration_text(
-        "# Log\n\n## 2025-01-01\n\n- old\n",
-        "# Log\n\n## 2024-01-01\n\n- older\n",
-    )
-    assert merged is not None, reason
-    assert "- old\n\n## 2024-01-01" in merged
-
-
 def test_self_log_links_point_at_target(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
@@ -505,7 +513,7 @@ def test_self_log_links_point_at_target(tmp_path: Path) -> None:
         vault.index.build_index()
         vault.writer.okf_merge_logs(apply=True)
         result = (root / "log.md").read_text()
-        assert "[this](/log.md#2025-01-01)" in result
+        assert "[this](log.md#2025-01-01)" in result
         assert "[section](#2025-01-01)" in result
     finally:
         vault.close()
@@ -530,7 +538,7 @@ def test_images_and_html_are_merged_with_notes(tmp_path: Path, monkeypatch) -> N
     assert "relative image URL not rewritten" in applied.output
     text = (root / "log.md").read_text()
     assert "![inline](a.png)" in text and '<img src="a.png"> <br>' in text
-    assert "[img]: /deep/pictures/a.png" in text
+    assert "[img]: deep/pictures/a.png" in text
     assert not path_exists(root / "deep/log.md")
 
 

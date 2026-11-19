@@ -1374,10 +1374,7 @@ class DocumentManager:
         """
         observed_path = self._vault_relative(abs_path)
         staged = self._staged(content)
-        if create_only:
-            atomic_write(abs_path, staged, create_only=True)
-        else:
-            atomic_write(abs_path, staged)
+        atomic_write(abs_path, staged, create_only=create_only)
         if self._observations is not None:
             data = (
                 staged

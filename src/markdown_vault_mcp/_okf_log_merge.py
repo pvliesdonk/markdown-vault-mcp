@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import posixpath
 import re
 from typing import TYPE_CHECKING, Any
 
 from markdown_it import MarkdownIt
 
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.okf import _LOG_HEADING_RE
 from markdown_vault_mcp.scanner import (
     _collect_reference_definitions,
@@ -294,12 +295,8 @@ def _relocation_notes(text: str) -> set[str]:
     return notes
 
 
-def _migration_text(
-    target: str | None, source: str, source_path: str = "", target_path: str = ""
-) -> tuple[str | None, int, str]:
+def _migration_text(target: str | None, source: str) -> tuple[str | None, int, str]:
     """Merge entries without deduplication; refuse content that cannot move safely."""
-    if source_path:
-        source = _relocate_links(source, source_path, target_path)
     right, reason = _parse(source)
     if right is None:
         return None, 0, reason
@@ -312,33 +309,27 @@ def _migration_text(
     left, reason = _parse(target)
     if left is None:
         return None, 0, "target: " + reason
-    if right.preamble and _normalise_line_endings(
-        left.preamble
-    ) != _normalise_line_endings(right.preamble):
-        eol_match = re.search(r"\r\n|\r|\n", target)
-        eol = eol_match.group() if eol_match else "\n"
-        first = left.sections[0].start
-        left.lines[first:first] = [right.preamble + eol + eol]
-        for section in left.sections:
-            section.start += 1
-            section.end += 1
     return _combine_migration(left, right, target)
 
 
 def _relocate_links(source: str, source_path: str, target_path: str) -> str:
     """Use the shared link scanner and rewriter to retain relative destinations."""
-    from urllib.parse import quote
-
     for raw in _collect_reference_definitions(_normalise_line_endings(source)).values():
         decoded = decode_markdown_destination(raw)
-        if _is_external_target(decoded) or decoded.startswith(("/", "#")):
+        if _is_external_target(decoded) or decoded.startswith("#"):
             continue
         resolved, fragment = _resolve_link_path(raw, source_path, decode_markdown=True)
+        old_path = resolved
         if resolved == source_path and target_path:
             resolved = target_path
-        destination = "/" + quote(resolved, safe="/-._~")
-        if fragment:
-            destination += "#" + fragment
+        destination = compute_new_raw_target(
+            "reference",
+            raw,
+            fragment,
+            resolved,
+            source_path=target_path,
+            old_path=old_path,
+        )
         source = apply_link_replacement(source, "reference", raw, destination)
     for link in extract_links(source, source_path, attachment_extensions=frozenset()):
         resolved = (
@@ -346,26 +337,20 @@ def _relocate_links(source: str, source_path: str, target_path: str) -> str:
             if link.target_path == source_path and target_path
             else link.target_path
         )
-        if link.link_type == "wikilink":
-            if (
-                link.raw_target.startswith(("./", "../"))
-                or resolved != link.target_path
-            ):
-                destination = compute_new_raw_target(
-                    "wikilink", link.raw_target, link.fragment, resolved
-                )
-                source = apply_link_replacement(
-                    source, "wikilink", link.raw_target, destination
-                )
+        if link.link_type == "wikilink" and not (
+            link.raw_target.startswith(("./", "../")) or resolved != link.target_path
+        ):
             continue
-        if link.link_type not in {
-            "markdown",
-            "reference",
-        } or (link.raw_target.startswith("/") and resolved == link.target_path):
+        if link.link_type not in {"markdown", "wikilink"}:
             continue
-        destination = "/" + quote(resolved, safe="/-._~")
-        if link.fragment:
-            destination += "#" + link.fragment
+        destination = compute_new_raw_target(
+            link.link_type,
+            link.raw_target,
+            link.fragment,
+            resolved,
+            source_path=target_path,
+            old_path=link.target_path,
+        )
         source = apply_link_replacement(
             source, link.link_type, link.raw_target, destination
         )
@@ -379,16 +364,16 @@ def _combine_migration(
     eol_match = re.search(r"\r\n|\r|\n", target)
     eol = eol_match.group() if eol_match else "\n"
     insertions, _, count = _insertions(left, right, eol, dedupe=False)
+    if right.preamble and _normalise_line_endings(
+        left.preamble
+    ) != _normalise_line_endings(right.preamble):
+        insertions.setdefault(left.sections[0].start, []).insert(
+            0, right.preamble + eol + eol
+        )
     output = left.lines[:]
     for pos in sorted(insertions, reverse=True):
         if pos and output[pos - 1] and not output[pos - 1].endswith(("\n", "\r")):
             output[pos - 1] += eol
-        if (
-            pos
-            and output[pos - 1].strip(" \t\r\n")
-            and insertions[pos][0].startswith("## ")
-        ):
-            insertions[pos][0] = eol + insertions[pos][0]
         output[pos:pos] = insertions[pos]
     merged = left.prefix + "".join(output)
     checked, reason = _parse(merged)
@@ -434,13 +419,10 @@ def migrate_logs(
         for p in paths
         if p.name == "log.md"
         and not inspector._internal(p.relative_to(doc._source_dir).as_posix())
-    ]
-    import posixpath
-
-    sources = [
-        s
-        for s in sources
-        if posixpath.dirname(s) and not designation(posixpath.dirname(s))
+        and posixpath.dirname(p.relative_to(doc._source_dir).as_posix())
+        and not designation(
+            posixpath.dirname(p.relative_to(doc._source_dir).as_posix())
+        )
     ]
     runner = _LogMigrationRunner(doc, designation, apply, allow_protected)
     with okf_write_suppressed(), doc.write_scope():
@@ -479,13 +461,7 @@ class _LogMigrationRunner:
 
     def process(self, source: str) -> None:
         """Choose a destination and record a source's outcome."""
-        import posixpath
-
-        from markdown_vault_mcp.exceptions import MarkdownMCPError
-
         folder = posixpath.dirname(source)
-        if not folder or self.designation(folder):
-            return
         parent = posixpath.dirname(folder)
         while parent and not self.designation(parent):
             parent = posixpath.dirname(parent)
@@ -525,7 +501,7 @@ class _LogMigrationRunner:
         self._note_ref_collisions(source, relocated, previous)
         if previous is not None and strip_frontmatter_block(previous) != previous:
             self.headers.add(target)
-        text, count, reason = _migration_text(previous, src.content, source, target)
+        text, count, reason = _migration_text(previous, relocated)
         if text is None:
             raise InvalidRequestError(reason)
         if self.apply:
@@ -562,8 +538,6 @@ class _LogMigrationRunner:
         source_etag: str | None,
         target_state: tuple[str | None, str | None],
     ) -> None:
-        from markdown_vault_mcp.exceptions import MarkdownMCPError
-
         target_etag, original = target_state
         try:
             with self.doc.exact_byte_writes():
@@ -599,7 +573,6 @@ class _LogMigrationRunner:
         original: str | None,
     ) -> bool:
         """Undo a published target only while both observations still match."""
-        from markdown_vault_mcp.exceptions import MarkdownMCPError
         from markdown_vault_mcp.hashing import compute_etag
 
         try:
