@@ -33,7 +33,7 @@ Apply a later edit with `docker compose up -d`, which recreates the container wi
 
 ## Docker Compose
 
-`compose.yml` is a working deployment, not an illustration. It is re-rendered on every `copier update`, so fixes and new defaults reach it; edit it inside the sentinel blocks described below and your changes survive.
+`compose.yml` is a working deployment, not an illustration. Fixes and new defaults land in it with each release; keep your own changes inside the sentinel blocks described below, so they stay apart from the shipped lines.
 
 ### The service
 
@@ -76,11 +76,11 @@ services:
       - "8000:8000"
 ```
 
-`!override` replaces the mapping instead of appending to it. The override file leaves `compose.yml` unedited, so a template update does not conflict with the change.
+`!override` replaces the mapping instead of appending to it. The override file leaves `compose.yml` unedited, so a new release of it does not conflict with the change.
 
-### Domain content and `copier update`
+### Your additions to `compose.yml`
 
-Four sentinel blocks mark the parts of `compose.yml` a project owns. Content inside them survives a template update; content outside them does not, and will conflict.
+Four sentinel blocks mark the parts of `compose.yml` meant for additions. Keep your changes inside them; the lines outside them change with releases, and an edit there will conflict when you update.
 
 | Block | For |
 |-------|-----|

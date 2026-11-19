@@ -47,20 +47,22 @@ _INDEX_BUSY_RETRY_S = 5.0
 # out-of-context accessor (transfer sink, webhook routes) raises with.
 _vault_unavailable: str | None = None
 
-# Config handoff: make_server sets the config it already loaded so the no-arg
-# ``Service()`` the template's server_lifespan constructs builds the vault from
-# that same config — the caller-supplied config stays authoritative and the
-# environment is not parsed a second time (#609). NOT cleared on read: FastMCP's
-# lifespan is ref-counted and re-enters (constructs a fresh ``Service()``) each
-# time a new session opens after all sessions closed, so the value must survive
-# to rebuild the vault from the same config on every re-entry. Single-server-
-# per-process (last make_server wins), like the vault singleton above.
+# Config handoff: make_server sets the config it already loaded, so a
+# ``Service()`` built without a config uses that same config instead of parsing
+# the environment a second time (#609). server_lifespan now passes the bound
+# config explicitly (template v11.7.0), so this is the fallback for callers that
+# construct ``Service()`` themselves. NOT cleared on read: FastMCP's lifespan is
+# ref-counted and re-enters (constructs a fresh ``Service``) each time a new
+# session opens after all sessions closed, so the value must survive every
+# re-entry. Single-server-per-process (last make_server wins), like the vault
+# singleton above.
 _pending_config: ProjectConfig | None = None
 
 
 # Transport handoff: the transport is a make_server() argument, not a config
 # field — the CLI's ``--transport`` flag is authoritative and shadows any env
-# value — so the no-arg ``Service()`` cannot recover it from ProjectConfig.
+# value — so the ``Service`` server_lifespan constructs cannot recover it from
+# ProjectConfig.
 # Staged the same way as _pending_config above, and NOT cleared on read for the
 # same ref-counted-lifespan-re-entry reason. Service.start needs it to ask
 # whether a configured webhook can actually deliver on this transport before
@@ -144,10 +146,10 @@ class Service:
         config: ProjectConfig | None = None,
         transport: str | None = None,
     ) -> None:
-        # Prefer an explicit config, then the one make_server staged (#609), then
-        # a fresh env read. The staged config is NOT cleared: a ref-counted
-        # lifespan re-entry constructs a new Service() and must rebuild from the
-        # same config, not re-read env.
+        # Prefer an explicit config (server_lifespan passes the one make_server
+        # bound), then the one make_server staged (#609), then a fresh env read.
+        # The staged config is NOT cleared: a ref-counted lifespan re-entry
+        # constructs a new Service and must rebuild from the same config.
         self._config = config or _pending_config or ProjectConfig.from_env()
         self._transport = transport if transport is not None else _pending_transport
         self._vault: Vault | None = None

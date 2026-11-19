@@ -16,7 +16,7 @@ priority: optional
 maintainer: "Peter van Liesdonk <pvliesdonk@users.noreply.github.com>"
 # DOMAIN-NFPM-DESCRIPTION-START — replace the prose below; kept across copier
 # update.  `apt show` and `dnf info` impose no length limit, so a paragraph
-# belongs here: it starts as `domain_description`, which is capped at 100
+# belongs here: it starts as the one-line project description, capped at 100
 # characters only because the MCP registry rejects longer in server.json
 # (#581).  Keep the two-space indent — the block scalar ends at the first
 # unindented line, which is also why these markers sit outside it rather than
