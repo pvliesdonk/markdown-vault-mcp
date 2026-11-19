@@ -1826,7 +1826,7 @@ name = "markdown-vault-mcp"
 version = "6.1.4"
 source = { editable = "." }
 dependencies = [
-    { name = "fastmcp" },
+    { name = "fastmcp", extra = ["tasks"] },
     { name = "fastmcp-pvl-core" },
     { name = "httpx" },
     { name = "python-frontmatter" },
@@ -1909,9 +1909,9 @@ docs = ">=3.11.5"
 requires-dist = [
     { name = "fastembed", marker = "extra == 'all'", specifier = ">=0.3" },
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
-    { name = "fastmcp", specifier = ">=4" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
+    { name = "fastmcp", extras = ["tasks"], specifier = ">=4" },
     { name = "fastmcp-pvl-core", specifier = ">=10.1.0,<11" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", specifier = ">=0.25" },

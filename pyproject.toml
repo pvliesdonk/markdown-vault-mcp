@@ -159,8 +159,10 @@ dependencies = [
 
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
     # directly by _server_apps.py, so the floor is declared here even though
-    # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.
-    "fastmcp>=4",
+    # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.  The
+    # [tasks] extra brings fastmcp-tasks and pydocket, which _tasks.py
+    # imports to register the SEP-2663 tasks extension (#2292).
+    "fastmcp[tasks]>=4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
