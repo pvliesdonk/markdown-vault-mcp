@@ -5,7 +5,11 @@ The managers depend on these concepts:
 - :class:`KeywordIndex` — the relational document store plus full-text search
   and the build-state bookkeeping the indexing pipeline keeps;
   :class:`RunsExactQueries` is the optional part an index implements to
-  answer exact population queries (#1842).
+  answer exact population queries (#1842), and :class:`ListsNoteStates`
+  the optional part that lists live notes' build state without their
+  frontmatter (#1938), and :class:`IteratesChunks` the optional part that
+  pages every chunk in whole-document windows for a full embedding build
+  (#1938).
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
@@ -46,7 +50,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.fts_index import ChunkingMeta
@@ -78,6 +82,7 @@ __all__ = [
     "DescribesStore",
     "EmbeddingStore",
     "GraphStore",
+    "IteratesChunks",
     "KeywordGraphIndex",
     "KeywordIndex",
     "ReadsMetadataInBatches",
@@ -94,6 +99,15 @@ __all__ = [
 ]
 
 StoreT_co = TypeVar("StoreT_co", covariant=True)
+
+
+@runtime_checkable
+class IteratesChunks(Protocol):
+    """Optional ordered, document-grouped traversal of all indexed chunks."""
+
+    def iter_chunks(self) -> Iterator[dict[str, Any]]:
+        """Yield ``list_chunks()`` rows in its order, grouped by path."""
+        ...
 
 
 @runtime_checkable
@@ -408,6 +422,20 @@ class RunsExactQueries(Protocol):
 
 
 @runtime_checkable
+class ListsNoteStates(Protocol):
+    """A keyword index that lists live notes' build state alone (#1938); optional.
+
+    A build's final sweep and exclusion purge need each live note's path,
+    title, hash and modification time. An index without this reads them
+    through :meth:`KeywordIndex.list_notes`, frontmatter included.
+    """
+
+    def list_note_states(self) -> list[dict[str, Any]]:
+        """Return ``path``, ``title``, ``content_hash`` and ``modified_at`` per live note."""
+        ...
+
+
+@runtime_checkable
 class StoreLifecycle(Protocol):
     """What every open store owes its owner (#1766).
 
@@ -682,6 +710,8 @@ class VectorPublisher(Protocol):
 
         A reader sees the previous generation until this returns; an
         interrupted publication leaves the previous generation in place.
+        *documents* is re-iterable; it does not promise a length, indexing,
+        or a meaningful truth value.
         """
         ...
 

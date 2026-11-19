@@ -21,8 +21,14 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
-from markdown_vault_mcp.fts_index import canonical_indexed_fields, should_optimize
+from markdown_vault_mcp.fts_index import (
+    INDEX_SEMANTICS_VERSION,
+    ChunkingMeta,
+    canonical_indexed_fields,
+    should_optimize,
+)
 from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.interfaces import ListsNoteStates
 from markdown_vault_mcp.managers.embeddings import (
     _EMBED_KEPT,
     _EMBEDDING_BATCH_SIZE,
@@ -88,6 +94,16 @@ class _KeptRows:
     skip_reasons: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
+@dataclass
+class _ScanResult:
+    """What a build's scan left: thin note states, counts and walk errors."""
+
+    notes: list[ParsedNote] = field(default_factory=list)
+    chunks: int = 0
+    errored: int = 0
+    walk_errors: list[OSError] = field(default_factory=list)
+
+
 def _unhashed_state_note(row: dict[str, Any]) -> ParsedNote:
     """A tracker-state note for a kept row, hash-less so it re-parses (#1929)."""
     return ParsedNote(
@@ -149,6 +165,7 @@ class IndexManager:
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
     """
 
     def __init__(
@@ -170,6 +187,7 @@ class IndexManager:
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
+        scratch_dir: Path | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -203,6 +221,32 @@ class IndexManager:
             embedding_batch_size=embedding_batch_size,
             is_path_excluded=self._is_path_excluded,
             vector_slot=vector_slot,
+            scratch_dir=scratch_dir,
+        )
+
+    @property
+    def chunking_meta(self) -> ChunkingMeta:
+        """Return the canonical provenance of this manager's build inputs.
+
+        The build writer and the vault's warm-start comparison both consume
+        this representation, so field lists and attachment settings are not
+        rendered independently at the two sites.
+
+        Returns:
+            Stable build inputs in the existing stored representation.
+        """
+        return ChunkingMeta(
+            model=self._embed_model_name,
+            max_chunk_chars_override=self._max_chunk_chars_override,
+            title_field=self._title_field,
+            searchable_fields=",".join(self._embed_builder.searchable_fields),
+            indexed_frontmatter_fields=canonical_indexed_fields(
+                self._indexed_frontmatter_fields
+            ),
+            semantics_version=INDEX_SEMANTICS_VERSION,
+            attachment_extensions=canonical_attachment_extensions(
+                self._attachment_extensions
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -416,10 +460,16 @@ class IndexManager:
                 dropped.append(row["path"])
         return dropped
 
+    def _build_state_rows(self) -> list[dict[str, Any]]:
+        """Read live notes' build state, frontmatter-free where the index can (#1938)."""
+        if isinstance(self._fts, ListsNoteStates):
+            return self._fts.list_note_states()
+        return self._fts.list_notes()
+
     def _wipe_for_rebuild(
-        self, keep: tuple[str, ...], *, spare: set[str] | None = None
+        self, keep: tuple[str, ...], *, spare: set[str], force: bool
     ) -> _KeptRows:
-        """Delete every row a build replaces, sparing unread folders (#1929).
+        """Delete every row the build did not rewrite, sparing unread folders (#1929).
 
         A directory the walk could not read is not an authoritative absence
         (#1625, #1785): the notes and tombstones under it keep their rows,
@@ -427,24 +477,25 @@ class IndexManager:
 
         Args:
             keep: Prefixes from :func:`~markdown_vault_mcp.tracker.unread_prefixes`.
-            spare: Notes the build is about to rewrite, left in place rather
-                than deleted first, along with excluded notes, which the
-                purge removes with their vectors; ``None`` deletes them too
-                (#1965).
+            spare: Parsed paths already attempted by this build. Their rows
+                must survive this final sweep, including prior rows kept
+                after a non-forced upsert failed (#1965).
+            force: Whether excluded rows are deleted here too. Non-forced
+                builds leave them to the purge that also removes vectors.
 
         Returns:
             The kept notes, as hash-less tracker-state notes, and the kept
             tombstones' skip reasons.
         """
         kept = _KeptRows()
-        for row in self._fts.list_notes():
-            if spare is not None and self._spared(row["path"], spare):
+        for row in self._build_state_rows():
+            if self._spared(row["path"], spare, force=force):
                 continue
             if is_under(row["path"], keep):
                 kept.notes.append(_unhashed_state_note(row))
             else:
                 self._fts.delete_by_path(row["path"])
-        # list_notes() is live-only, so tombstones need their own wipe;
+        # The state rows are live-only, so tombstones need their own wipe;
         # the scan re-creates one per still-skipped candidate.
         for row in self._fts.list_tombstones():
             if is_under(row["path"], keep):
@@ -462,13 +513,13 @@ class IndexManager:
             )
         return kept
 
-    def _spared(self, path: str, rewritten: set[str]) -> bool:
-        """Whether a non-forced build leaves *path*'s row to another step (#1965).
+    def _spared(self, path: str, rewritten: set[str], *, force: bool) -> bool:
+        """Whether the final build sweep leaves *path*'s row in place (#1965).
 
-        A note the build rewrites is replaced in place. An excluded note is
-        left to :meth:`_purge_stale_excluded`, which removes its vectors too.
+        Parsed paths have already been attempted. In a non-forced build an
+        excluded note is left to the purge, which removes its vectors too.
         """
-        return path in rewritten or self._is_path_excluded(path)
+        return path in rewritten or (not force and self._is_path_excluded(path))
 
     def _state_notes_from_index(self) -> list[ParsedNote]:
         """Build tracker-state notes from the index's current contents.
@@ -531,7 +582,7 @@ class IndexManager:
             return 0, vectors
         stale_paths = [
             row["path"]
-            for row in self._fts.list_notes()
+            for row in self._build_state_rows()
             if (keep_paths is None or row["path"] not in keep_paths)
             and self._is_path_excluded(row["path"])
         ]
@@ -551,6 +602,56 @@ class IndexManager:
     # Index building
     # ------------------------------------------------------------------
 
+    def _index_build_note(
+        self, note: ParsedNote, *, force: bool
+    ) -> tuple[ParsedNote, int, bool]:
+        """Write one parsed note, retaining only its thin tracker state."""
+        state = _unhashed_state_note(
+            {"path": note.path, "title": note.title, "modified_at": note.modified_at}
+        )
+        try:
+            chunks = self._fts.upsert_note(note)
+        except sqlite3.OperationalError:
+            # Database-level failures must fail the build, not become a
+            # successful-looking IndexStats after a per-note warning.
+            raise
+        except Exception:
+            logger.warning("build_index_index_failed path=%s", note.path, exc_info=True)
+            if force:
+                # The failed upsert rolled back, leaving the prior row; a
+                # forced build keeps no row it could not rewrite.
+                self._fts.delete_by_path(note.path)
+            return state, 0, True
+        return replace(state, content_hash=note.content_hash), chunks, False
+
+    def _scan_and_index(
+        self, *, force: bool, on_skip: Callable[[SkippedFile], None]
+    ) -> _ScanResult:
+        """Index each note as the scan yields it, keeping only its state (#1938)."""
+        result = _ScanResult()
+        for note in scan_directory(
+            self._source_dir,
+            required_frontmatter=self._required_frontmatter,
+            chunk_strategy=self._chunk_strategy,
+            exclude_patterns=self._exclude_patterns,
+            on_skip=on_skip,
+            title_field=self._title_field,
+            attachment_extensions=self._attachment_extensions,
+            on_walk_error=result.walk_errors.append,
+        ):
+            state, chunks, failed = self._index_build_note(note, force=force)
+            result.notes.append(state)
+            result.chunks += chunks
+            result.errored += failed
+            del note
+        for exc in result.walk_errors:
+            # Not swallowed (#1785): an unreadable directory makes the scan
+            # incomplete, and the build says so instead of claiming a full one.
+            logger.warning(
+                "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
+            )
+        return result
+
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
@@ -567,8 +668,9 @@ class IndexManager:
         flag after this method returns.
 
         Args:
-            force: When ``True``, drop every row before rewriting, sparing
-                what the walk could not read.
+            force: When ``True``, keep no old row the build does not rewrite,
+                a readable note that fails to index included, sparing what
+                the walk could not read.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
@@ -594,58 +696,21 @@ class IndexManager:
             skip_reasons[sf.path] = {"category": sf.category, "detail": sf.detail}
             skip_files[sf.path] = sf
 
-        walk_errors: list[OSError] = []
-        notes = list(
-            scan_directory(
-                self._source_dir,
-                required_frontmatter=self._required_frontmatter,
-                chunk_strategy=self._chunk_strategy,
-                exclude_patterns=self._exclude_patterns,
-                on_skip=_collect_skip,
-                title_field=self._title_field,
-                attachment_extensions=self._attachment_extensions,
-                on_walk_error=walk_errors.append,
-            )
-        )
-        for exc in walk_errors:
-            # Not swallowed (#1785): an unreadable directory makes the scan
-            # incomplete, and the build says so instead of claiming a full one.
-            logger.warning(
-                "build_index_walk_incomplete dir=%s err=%s", exc.filename, exc
-            )
-        # A non-forced build runs when the index cannot be reused (its
-        # provenance changed, or the last build never finished): it spares
-        # the notes it is about to rewrite, but a row the walk did not find
-        # goes, as in a forced build (#1965).
+        scan = self._scan_and_index(force=force, on_skip=_collect_skip)
+        notes, total_chunks, errored = scan.notes, scan.chunks, scan.errored
+        walk_errors = scan.walk_errors
+        # Wait for complete unread-prefix evidence before pruning old rows.
+        # Parsed paths have already been attempted: spare their fresh rows
+        # and, without force, the old row of a failed replacement (#1965).
+        indexed_paths = {note.path for note in notes}
         kept = self._wipe_for_rebuild(
             unread_prefixes(walk_errors, self._source_dir),
-            spare=None if force else {note.path for note in notes},
+            spare=indexed_paths,
+            force=force,
         )
-
-        total_chunks = 0
-        errored = 0
-        for i, note in enumerate(notes):
-            try:
-                total_chunks += self._fts.upsert_note(note)
-            except sqlite3.OperationalError:
-                # Database-level failure (e.g. SQLITE_LOCKED retry budget
-                # exhausted via FTSIndex._retry_on_locked, #560). Don't
-                # silently demote to a per-note warning — propagate so
-                # the caller sees the build failed rather than getting a
-                # successful-looking IndexStats with everything missing.
-                raise
-            except Exception:
-                errored += 1
-                notes[i] = replace(note, content_hash="")
-                logger.warning(
-                    "build_index_index_failed path=%s",
-                    note.path,
-                    exc_info=True,
-                )
 
         # Purge stale excluded docs from a persistent index that was built
         # before exclude_patterns were configured (upgrade scenario, #255).
-        indexed_paths = {note.path for note in notes}
         docs_before_purge = self._fts.count_documents()
         purged, vectors = self._purge_stale_excluded(
             self._embeddings._loaded_store(), keep_paths=indexed_paths
@@ -729,18 +794,16 @@ class IndexManager:
         # fields) so a later warm restart can reject the short-circuit on a
         # genuine option change (#649, #927). Paired with the completeness
         # sentinel the coordinator sets after this returns.
+        meta = self.chunking_meta
         self._fts.set_chunking_meta(
-            model=self._embed_model_name,
-            max_chunk_chars_override=self._max_chunk_chars_override,
-            title_field=self._title_field,
-            searchable_fields=",".join(self._embed_builder.searchable_fields),
-            indexed_frontmatter_fields=canonical_indexed_fields(
-                self._indexed_frontmatter_fields
-            ),
-            attachment_extensions=canonical_attachment_extensions(
-                self._attachment_extensions
-            ),
+            model=meta.model,
+            max_chunk_chars_override=meta.max_chunk_chars_override,
+            title_field=meta.title_field,
+            searchable_fields=meta.searchable_fields,
+            indexed_frontmatter_fields=meta.indexed_frontmatter_fields,
+            attachment_extensions=meta.attachment_extensions,
         )
+        self._embeddings.finish_vector_recovery()
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,
@@ -909,6 +972,7 @@ class IndexManager:
             self._embeddings.reconcile_paths(vectors, dropped, site="purge")
             vectors.checkpoint()
 
+        self._embeddings.finish_vector_recovery()
         return ReindexResult(
             added=indexed_added,
             modified=indexed_modified,

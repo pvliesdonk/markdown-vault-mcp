@@ -21,7 +21,7 @@ from fastmcp import Client
 
 from tests.server_factory import make_server
 
-from .conftest import _CLEAR_VARS, _parse_tool_data, wait_for_mcp_writer_drain
+from .conftest import _parse_tool_data, wait_for_mcp_writer_drain
 
 ROOT_INDEX = """---
 okf_version: "0.2"
@@ -113,27 +113,27 @@ def scaffold_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _scaffold_env(scaffold_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _scaffold_env(
+    _clear_env: None, scaffold_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(scaffold_vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
-def _okf_env(okf_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _okf_env(
+    _clear_env: None, okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(okf_vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
-def _plain_env(plain_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _plain_env(
+    _clear_env: None, plain_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(plain_vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 def _structured(result: Any) -> dict[str, Any]:
@@ -529,12 +529,12 @@ class TestOkfValidatePreDeclaration:
 
 
 @pytest.fixture
-def _okf_env_writable(okf_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _okf_env_writable(
+    _clear_env: None, okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A declared OKF bundle, writable (for the migration transforms, #963)."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(okf_vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.mark.usefixtures("_okf_env_writable")
@@ -605,8 +605,6 @@ async def test_alias_annotations_reach_mcp_query(
 ) -> None:
     """MCP hits/exact/context project aliases while preserving literal predicates."""
     target, alias, raw, expected = alias_note
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type")

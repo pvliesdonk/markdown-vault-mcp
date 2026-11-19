@@ -1,18 +1,21 @@
 """Pytest fixtures for tests that need a real git repository.
 
 Provides:
+- :func:`isolated_git`: Git environment isolation for synthetic repositories.
+- :func:`git_repo`: a function-scoped local repository with one initial commit.
 - :class:`GitRepoPair`: a small named tuple bundling the bare-remote and
   local-clone paths produced by :func:`git_repo_pair`.
 - :func:`git_repo_pair`: a function-scoped fixture creating a fresh bare
   "remote" + local clone with one initial commit on ``main``.
 
-Both pieces are intentionally minimal so they can be reused for any future
+These fixtures are intentionally minimal so they can be reused for any future
 git-tool tests (force-pull, force-push, conflict resolution, etc.).  Every
 invocation gets its own ``tmp_path`` so tests do not pollute each other.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -20,6 +23,20 @@ import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep operator Git configuration and identity out of synthetic repos."""
+    # Remove all Git overrides, including repository selectors and config
+    # injection; preserve the caller's ceiling so fixture discovery cannot
+    # escape into the enclosing worktree when the caller sets that ceiling.
+    for key in list(os.environ):
+        if key.startswith("GIT_") and key != "GIT_CEILING_DIRECTORIES":
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
 
 
 class GitRepoPair(NamedTuple):
@@ -61,8 +78,64 @@ def _run_git(cwd: Path, *args: str) -> str:
     return result.stdout
 
 
+def _git_head(repo: Path) -> str:
+    return _run_git(repo, "rev-parse", "HEAD").strip()
+
+
+def _git_clone(pair: GitRepoPair, tmp_path: Path) -> Path:
+    other = tmp_path / "other"
+    _run_git(tmp_path, "clone", "-q", str(pair.remote_path), str(other))
+    _run_git(other, "config", "user.name", "Test")
+    _run_git(other, "config", "user.email", "test@example.com")
+    return other
+
+
+def _git_commit(repo: Path, name: str, content: str, message: str) -> str:
+    (repo / name).write_bytes(content.encode("utf-8"))
+    _run_git(repo, "add", "--", name)
+    _run_git(repo, "commit", "-qm", message)
+    return _git_head(repo)
+
+
 @pytest.fixture
-def git_repo_pair(tmp_path: Path) -> GitRepoPair:
+def git_repo(tmp_path: Path, isolated_git: None) -> Path:  # noqa: ARG001
+    """Create a minimal git repository for testing."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo), "init"],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "Test"],
+        capture_output=True,
+        check=True,
+    )
+    # Create an initial commit so HEAD exists.
+    (repo / "README.md").write_text("# Test\n")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "."],
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "init"],
+        capture_output=True,
+        check=True,
+    )
+    return repo
+
+
+@pytest.fixture
+def git_repo_pair(tmp_path: Path, isolated_git: None) -> GitRepoPair:  # noqa: ARG001
     """Set up a bare 'remote' + local clone with one initial commit on main.
 
     The local clone has ``origin`` pointing at the bare remote and an
@@ -90,6 +163,19 @@ def git_repo_pair(tmp_path: Path) -> GitRepoPair:
     _run_git(local, "push", "-u", "origin", "main")
 
     return GitRepoPair(remote_path=remote, local_path=local)
+
+
+def _make_outer_repository(tmp_path: Path, vault: str) -> tuple[Path, Path]:
+    """Create and stage the common outer fixture before layout-specific commits."""
+    repo = tmp_path / "repo"
+    source = repo / vault
+    source.mkdir(parents=True)
+    _run_git(repo, "init", "-q", "--initial-branch=main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test User")
+    (source / "top.md").write_text("# Top\n")
+    _run_git(repo, "add", ".")
+    return repo, source
 
 
 def make_superproject(
@@ -129,17 +215,35 @@ def make_superproject(
     _run_git(upstream, "add", ".")
     _run_git(upstream, "commit", "-qm", "initial")
 
-    repo = tmp_path / "repo"
-    source = repo / vault if vault else repo
-    source.mkdir(parents=True)
-    _run_git(repo, "init", "-q", "--initial-branch=main")
-    _run_git(repo, "config", "user.email", "test@example.com")
-    _run_git(repo, "config", "user.name", "Test User")
-    (source / "top.md").write_text("# Top\n")
-    _run_git(repo, "add", ".")
+    repo, source = _make_outer_repository(tmp_path, vault)
     add = ["-c", "protocol.file.allow=always", "submodule", "add", "-q"]
     _run_git(repo, *add, str(upstream), f"{vault}/{sub}" if vault else sub)
     if vault:
         _run_git(repo, *add, str(upstream), "other")
     _run_git(repo, "commit", "-qm", "add submodule")
+    return source
+
+
+def make_nested_repository(
+    tmp_path: Path,
+    *,
+    vault: str = "",
+    sub: str = "sub",
+) -> Path:
+    """Build a vault holding a plain repository with no gitlink (#1949).
+
+    Args:
+        tmp_path: A fresh directory to build under.
+        vault: The vault's folder within the enclosing repository.
+        sub: The plain repository's path within the vault.
+
+    Returns:
+        The vault directory, with top.md committed in its enclosing repository.
+    """
+    repo, source = _make_outer_repository(tmp_path, vault)
+    _run_git(repo, "commit", "-qm", "initial")
+    nested = source / sub
+    nested.mkdir(parents=True)
+    _run_git(nested, "init", "-q", "--initial-branch=main")
+    (nested / "note.md").write_text("# Upstream\n")
     return source

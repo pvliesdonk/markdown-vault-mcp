@@ -43,7 +43,6 @@ from markdown_vault_mcp.okf import (
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
-    _CLEAR_VARS,
     _parse_tool_data,
     wait_for_mcp_writer_drain,
     wait_for_writer_drain,
@@ -73,6 +72,32 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 class TestApplyOkfWriteStamp:
+    @pytest.mark.parametrize("existing_stamp", [False, True])
+    def test_preserves_sources_and_other_fields(self, existing_stamp: bool) -> None:
+        stamp = "generated: {by: old, at: old}\n" if existing_stamp else ""
+        text = (
+            "---\nzeta: {zeta: 1, alpha: 2}\ntype: Playbook\n"
+            + stamp
+            + "verified: [{by: 'human:old', at: old}]\n"
+            "sources: [{resource: 'https://example.com/a', id: a}]\n"
+            "x_custom: 1\nalpha: false\n---\n\n# Body\n\nText."
+        )
+        before = fm.loads(text)
+        post = fm.loads(apply_okf_write_stamp(text, actor="human:writer", now=_NOW))
+        expected = (
+            ["zeta", "type", "generated", "sources", "x_custom", "alpha"]
+            if existing_stamp
+            else ["zeta", "type", "sources", "x_custom", "alpha", "generated"]
+        )
+        assert list(post.metadata) == expected
+        assert post.metadata["generated"] == {"by": "human:writer", "at": _ISO}
+        assert list(post.metadata["generated"]) == ["by", "at"]
+        for key in ("zeta", "type", "sources", "x_custom", "alpha"):
+            assert post.metadata[key] == before.metadata[key]
+        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
+        assert list(post.metadata["sources"][0]) == ["resource", "id"]
+        assert post.content == before.content
+
     @pytest.mark.parametrize(
         "slot", [None, "", "metadata: null\n", "metadata: wrong\n", "metadata: []\n"]
     )
@@ -116,23 +141,6 @@ class TestApplyOkfWriteStamp:
                 {"by": "human:peter", "at": _dt.date(2026, 1, 1)}
             ]
 
-    def test_preserves_sources_and_other_fields(self) -> None:
-        text = (
-            "---\n"
-            "type: Playbook\n"
-            "sources:\n"
-            "  - resource: https://example.com/a\n"
-            "    id: a\n"
-            "x_custom: 1\n"
-            "---\n"
-            "# P\n"
-        )
-        meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", now=_NOW)).metadata
-        assert meta["type"] == "Playbook"
-        assert meta["sources"] == [{"resource": "https://example.com/a", "id": "a"}]
-        # A producer-defined key survives the round trip (OKF v0.2 §4.1).
-        assert meta["x_custom"] == 1
-
     def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/instant stamp and no verified,
         # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
@@ -175,6 +183,35 @@ class TestApplyOkfWriteStamp:
 
 
 class TestAppendOkfVerification:
+    @pytest.mark.parametrize("existing_verification", [False, True])
+    def test_preserves_body_and_other_fields(self, existing_verification: bool) -> None:
+        verification = (
+            "verified: [{by: 'human:old', at: old}]\n" if existing_verification else ""
+        )
+        text = (
+            "---\nzeta: {zeta: 1, alpha: 2}\n"
+            + verification
+            + "sources: [{resource: 'https://example.com', id: source}]\n"
+            "title: T\nalpha: false\n---\n\n# T\n\nBody line."
+        )
+        before = fm.loads(text)
+        post = fm.loads(append_okf_verification(text, subject="reviewer", now=_NOW))
+        expected = (
+            ["zeta", "verified", "sources", "title", "alpha"]
+            if existing_verification
+            else ["zeta", "sources", "title", "alpha", "verified"]
+        )
+        assert list(post.metadata) == expected
+        assert post.metadata["verified"] == [
+            *before.metadata.get("verified", []),
+            {"by": "human:reviewer", "at": _ISO},
+        ]
+        for key in ("zeta", "sources", "title", "alpha"):
+            assert post.metadata[key] == before.metadata[key]
+        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
+        assert list(post.metadata["sources"][0]) == ["resource", "id"]
+        assert post.content == before.content
+
     def test_creates_verified_list_when_absent(self) -> None:
         out = append_okf_verification("# N\n", subject="peter", now=_NOW)
         meta = fm.loads(out).metadata
@@ -191,13 +228,6 @@ class TestAppendOkfVerification:
             {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
             {"by": "human:peter", "at": _ISO},
         ]
-
-    def test_preserves_body_and_other_fields(self) -> None:
-        text = "---\ntitle: T\n---\n# T\n\nBody line.\n"
-        out = append_okf_verification(text, subject="peter", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["title"] == "T"
-        assert "Body line." in post.content
 
     @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
     def test_a_bare_mapping_is_kept_as_the_first_entry(self, path: str | None) -> None:
@@ -567,7 +597,9 @@ _PLAIN_NOTE = "# Plain\n\nSee [[playbook]].\n"
 
 
 @pytest.fixture
-def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def enforced_env(
+    _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """Env for a writable, OKF-declared vault with the enforced-write layer on."""
     vault = tmp_path / "vault"
     (vault / "guides").mkdir(parents=True)
@@ -575,8 +607,6 @@ def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (vault / "guides" / "playbook.md").write_text(
         "---\ntitle: Playbook\n---\n# Playbook\n", encoding="utf-8"
     )
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")

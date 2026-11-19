@@ -170,7 +170,7 @@ By function; the design anchor is `docs/design/design.md` § "Write + Git Integr
 - **`_is_ssh_remote` (`_run.py`)** — contrary to GIT URLS: only `git@`/`ssh://` count, so `alice@host:repo.git` or `host:repo.git` passes the token check, and `check_remote_protocol`'s HTTPS rewrite assumes `git@host:path`. ("HTTPS token auth".)
 - **`_normalize_remote` (`_run.py`)** — compares `remote get-url` (already `insteadOf`-rewritten) with `GIT_REPO_URL`; an `insteadOf` rule on the host fails a correct managed-mode configuration.
 - **`_build_askpass_env` (`_run.py`)** — `*sername*` matches git's un-localised prompt, but the same script answers any askpass call git spawns (an SSH passphrase would get the token).
-- **`_find_git_root`, `run_git*` (`_run.py`)** — the `safe.directory` refusal (128) is indistinguishable from "not a repository"; a container uid differing from the volume owner silently gets no-git mode. Unmodelled in the design doc.
+- **`_find_git_root`, `run_git*` (`_run.py`)** — the `safe.directory` refusal (128) is indistinguishable from "not a repository"; a container uid differing from the volume owner silently gets no-git mode. Local CLI readers, including search, clear managed URL/token settings before constructing collaborators, so this discovery refusal does not turn a read into a managed-bootstrap error (#1999). Server and admin paths keep their managed-mode checks.
 - **`PushScheduler.do_push`** — assumes a `non_fast_forward` push succeeds after the pull loop's rebase; true unless the remote moved again, when `fetch first` recurs (#957).
 
 ## Not covered

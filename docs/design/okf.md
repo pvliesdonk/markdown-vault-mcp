@@ -157,12 +157,13 @@ skill fixes them at implementation.
 `okf_version` is read from the root `index.md` frontmatter by a small pure
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
-the clone happens inside the server lifespan). The detection result (mode,
-declared version, active state) is exposed via `stats` and
-`config://vault`; the effective write-side state (`OKF_WRITE` and, once
-they exist, the §6.0 switches) is not reported by either today, which the
-`okf` section of both should fix (#1432). `get_server_info` cannot carry it because that tool is
-template-owned; `stats` is the authoritative reporting surface.
+the clone happens inside the server lifespan). `config://vault` reports the
+mode, declared version and active state, as well as `okf_write_configured`
+and `okf_write_effective`. Active `stats.okf` reports the configured and
+effective write layer as `write_configured` and `write_effective`; it is
+absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
+OKF is active, and the vault is not read-only. Independent services remain
+the subject of #1412.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -486,7 +487,8 @@ bytes, and a default-on stamp would make the declaration do exactly that.
 
 **Where the implementation constraints live.** The configured-versus-
 runnable projections and the two reporting surfaces: #1432. The
-instruction snippet's clause: #1431. The read-only warning: #1434. The
+instruction snippet's clause: #1431. Read-only with `OKF_WRITE` enabled is
+accepted and logs `okf_write_inert` at INFO on startup: #1434. The
 reserved-file guard's admission of the server's own generators: #1419.
 A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
@@ -504,6 +506,13 @@ Tool tags following switches: #1412.
   operator lists in `SERVICE_SUBJECTS`; an unmarked, unlisted service-account
   token still stamps `human:<subject>`. See
   [authenticated subjects](reference/authenticated-subjects.md).
+
+  Content writes and verification preserve surviving frontmatter fields in
+  order, including nested mappings and mappings inside lists. Replacing
+  `generated` or `verified` retains its slot; an absent field appends, and
+  content writes still remove `verified`. Order and values survive, while
+  comments, quoting and whitespace may change. The serializer boundary is
+  recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
   no parser can read leaves nothing to stamp and the write is **refused**
@@ -588,7 +597,11 @@ Tool tags following switches: #1412.
   `rename` or `move_folder` refreshes the listings it made stale, through
   `ConventionMaintainer.refresh_indexes` with the same guards (#1609): the
   deleted note's folder; a renamed note's old folder; after a folder move,
-  every folder of the moved subtree and the old parent. Of those, only
+  every vault-owned folder of the moved subtree and the old parent. The
+  subtree walk omits a root inside a git submodule and prunes submodule
+  directories before descent, using `DocumentManager.in_submodule` (#1950).
+  Ordinary containing folders and non-hidden descendants retain their
+  sorted walk order; no submodule listing refresh is attempted. Of those, only
   folders that already carry an `index.md` are refreshed. The destination
   is reached as a write reaches it: through its indexed anchor (for a move,
   the anchor of the new parent), whose regeneration lists it and indexes
@@ -720,7 +733,69 @@ with `parse_note` about where the block ends, and returning the remainder
 unnormalised. Only the block that *opens* the text comes off: an identical
 block further down is body, because separating "stacked by the defect" from
 "quoted on purpose" needs a rule about body content that this layer does not
-have. Repairing files the defective releases already stacked is #1403.
+have. Repairing files the defective releases already stacked is #1403,
+through the deliberate operation below.
+
+### Deliberate legacy log repair (#1403)
+
+The repair is an operator command, `markdown-vault-mcp admin repair-log`, over
+library methods on `Vault.writer`. It is not an MCP tool: a one-off historical
+repair does not earn permanent tool surface, and the review it needs is a
+person reading the exact bytes, which a CLI run provides directly.
+
+`okf_preview_log_repair(path)` reads one bounded raw UTF-8 snapshot of a
+vault-relative `log.md`. It recognizes an opening YAML mapping delimited by
+`---` and followed by one blank line, then an immediate run of byte-identical
+copies of that whole unit. LF and CRLF units and a leading UTF-8 BOM are
+supported. A differing or interleaved adjacent block, malformed mapping, or
+unsupported shape returns `no_candidate`; no bytes change. The resolved
+target must also be named `log.md`.
+
+Equality establishes only a structural candidate, not generated origin. An
+authored example can have the same bytes. Preview returns `review_required`
+with the exact removal, its half-open byte span, the snapshot etag, the
+proposed output etag and the block count. The proposal is a pure function of
+the path and the snapshot bytes, so the snapshot etag binds the whole removal:
+`okf_apply_log_repair(path, etag=...)` recomputes the proposal under the write
+lock and refuses with `ConcurrentModificationError` unless the current etag is
+the reviewed one, and with `InvalidRequestError` when no candidate remains. The
+command prints the removal and the apply command carrying that etag; running
+the apply is the operator's authorization. The server never infers it from
+equality, frontmatter or a filename.
+
+`DocumentManager` owns application under the shared write lock, with existing
+writability, path, nested-repository and read-limit gates. It recomputes the
+proposal and checks the etag before creating the adjacent
+`log.md.frontmatter-repair.bak`. Creation is exclusive: every existing entry,
+including an equal copy, directory, or dangling symlink, is a collision.
+The copy is restricted to mode `0600` before content is written and its bytes
+are verified against the complete original. Its write notification completes
+before replacement is attempted. The target etag is checked again after
+retention, then the approved span is spliced out through the existing atomic
+byte writer. The opening unit, BOM, all other bytes, and supplied provenance
+claims stay identical. Only the target is marked dirty for indexing.
+
+The recovery artifact remains after success or failure. Failures after a
+retention attempt identify it and whether target replacement was attempted;
+the artifact may be complete, partial, or absent. A notification failure after
+replacement reports possible mutation, never rollback. No automatic retry,
+reuse, cleanup, or reversal occurs.
+
+Preview builds a vault with an in-memory index and Git settings ignored, so it
+runs beside a server without touching its index, state or checkout. Apply
+builds an owning vault, as `admin index` does: a server holding the on-disk
+index's writer lock makes it refuse before anything is written. Nothing
+excludes a server with an in-memory index, external editors or sync tools; the
+write lock serializes only this process's writes. This is not a transaction or
+a power-loss durability guarantee. In a Git-backed vault both the backup and
+the log are committed through the ordinary write callback.
+
+Repair bypasses provenance enrichment and convention maintenance; ordinary
+writes still never clean the body. No parser or index-semantics behavior
+changes: the repair changes file bytes, and the hash-based indexer picks them
+up. `log.md` can retain frontmatter under the recorded role contract
+([OKF v0.2 §9](reference/okf-v0.2.md)); the index-only restriction is not
+applied to logs.
 
 ### Export
 
@@ -777,7 +852,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
-| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
