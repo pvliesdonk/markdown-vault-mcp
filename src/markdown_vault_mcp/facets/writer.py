@@ -324,7 +324,7 @@ class WriterFacet:
     def okf_generate_index(
         self, *, folder: str = "", allow_protected: bool = False
     ) -> OkfIndexResult:
-        """Generate a reserved ``index.md`` listing from inventory (#963).
+        """Generate a reserved ``index.md`` listing of visible notes (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).

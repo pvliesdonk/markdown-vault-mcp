@@ -67,11 +67,8 @@ def test_mutation_waits_for_prior_writes(
             assert started.wait(5)
             vault.writer.write("links/source.md", "See [[target]].\n")
             mutation = pool.submit(_mutate, vault, operation)
-            if operation == "generate":
-                mutation.result(timeout=2)
-            else:
-                with pytest.raises(TimeoutError):
-                    mutation.result(timeout=0.1)
+            with pytest.raises(TimeoutError):
+                mutation.result(timeout=0.1)
             release.set()
             mutation.result(timeout=5)
         finally:
@@ -107,16 +104,13 @@ def test_failed_graph_refresh_aborts_before_mutation(
     with monkeypatch.context() as patch:
         patch.setattr(vault._fts, "resolve_vault_wikilinks", fail_resolution)
         vault._coordinator.writer.mark_dirty(["links/source.md"])
-        if operation == "generate":
+        with pytest.raises(OSError, match="graph refresh failed"):
             _mutate(vault, operation)
-        else:
-            with pytest.raises(OSError, match="graph refresh failed"):
-                _mutate(vault, operation)
-            assert vault.index.get_index_status()["dirty_paths"] == 1
-            assert {
-                p.relative_to(vault.source_dir): p.read_bytes()
-                for p in vault.source_dir.rglob("*.md")
-            } == before
+        assert vault.index.get_index_status()["dirty_paths"] == 1
+        assert {
+            p.relative_to(vault.source_dir): p.read_bytes()
+            for p in vault.source_dir.rglob("*.md")
+        } == before
     # The failed job retains its work, and the next mutation retries it.
     _mutate(vault, operation)
 
@@ -295,11 +289,8 @@ def test_okf_refresh_waits_behind_initial_build(
                     mutation = pool.submit(col.writer.write, "notes/new.md", "# New\n")
                 else:
                     mutation = pool.submit(_mutate, col, operation)
-                if operation in {"generate", "maintain"}:
-                    mutation.result(timeout=2)
-                else:
-                    with pytest.raises(TimeoutError):
-                        mutation.result(timeout=0.1)
+                with pytest.raises(TimeoutError):
+                    mutation.result(timeout=0.1)
                 release.set()
                 build.result(timeout=5)
                 mutation.result(timeout=5)

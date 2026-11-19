@@ -1565,7 +1565,7 @@ classification remain intact.
 
 | Captured build state | Index-dependent mutation policy |
 | --- | --- |
-| No build requested | Refresh known dirty paths; retain disk-only rename/move support. Link conversion still requires a built index; index generation reads live inventory. |
+| No build requested | Refresh known dirty paths; retain disk-only rename/move support. Link conversion still requires a built index; index generation proceeds, listing notes the index lacks by filename. |
 | Pending or running | Wait within the shared build/refresh deadline. |
 | Succeeded, including marker publication | Wait for the queued refresh, then proceed. |
 | Failed during submission, scan, or marker I/O | Raise `IndexUnavailableError(reason="build_failed")` before mutation. |
@@ -1592,7 +1592,8 @@ worker-originated submissions; normal shutdown still permits internal follow-ups
 [Python Future completion and cancellation](reference/python-futures.md) records
 the external ordering this design depends on.
 
-**Index-dependent mutations (#1464).** Link conversion, note rename with `update_links=True`, and folder move refresh
+**Index-dependent mutations (#1464).** Link conversion, reserved-index
+generation, note rename with `update_links=True`, and folder move refresh
 prior queued writes before reading index data. `DocumentManager` receives
 `IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
 migration manager uses the same hook, covering both library and MCP calls.
@@ -1611,7 +1612,9 @@ during graph recovery. Follow-up embeddings need not finish, but earlier
 queued jobs can delay the refresh. The wait happens outside the file-write
 lock. It waits behind an already queued initial build without adding a build
 prerequisite to disk-only rename/move calls. Link conversion checks readiness
-after the refresh; index generation instead reads live inventory without a build.
+after the refresh. Index generation, including convention maintenance, waits
+behind a queued build the same way and refuses after a failed or cancelled one,
+but an index that was never built and has no scheduled build does not stop it.
 Per-path read/validation failures
 refresh the other notes, then fail the job and retain the snapshot; tombstone
 read and stale-row deletion failures also remain retryable. A per-row success
@@ -2165,8 +2168,11 @@ the spec itself says, dated and sourced, in
   substitution is a new rewrite the rename/move engine does not provide,
   computed per occurrence so distinct aliases survive.
   ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
-  from live inventory independently of search admission, excluding index-excluded
-  and dot-path files, creating missing descendant indexes and preserving
+  from the folder's live listing independently of search admission, excluding
+  index-excluded and dot-path files and labelling each note with the search
+  index's title and description, or its filename when the index lacks it.
+  No note is opened, so an unreadable note keeps its link; a visible folder
+  that cannot be listed refuses the call before any write. Creating missing descendant indexes and preserving
   existing descendant indexes. Automatic maintenance instead folds notes
   through undesignated folders up to the next index. Both paths preserve
   existing frontmatter (the root ``okf_version`` declaration

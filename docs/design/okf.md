@@ -435,7 +435,9 @@ The operator controls explicit authoring, review, index and log maintenance inde
   (#1372); around local midnight the two can name different days, which is
   the two rules stating what they each mean, not a defect. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
-  `index.md` content derives from live inventory, independently of search admission.
+  `index.md` membership derives from the folder's live listing, independently of
+  search admission; titles and descriptions come from the search index, falling
+  back to the filename for a note the index has not admitted.
   **Status:** shipped in phase 5b (see §9). Maintenance runs only for
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
@@ -491,8 +493,18 @@ write lock so concurrent writes into one folder cannot lost-update the log;
 the `index.md` refresh is a full idempotent regeneration, safe without extra
 locking.
 
-Generated indexes read live inventory without refreshing or requiring the search
-index. Search-excluded and dot-path files are omitted from the listing.
+Cost note: `generate_index` still waits for a successful queued FTS refresh
+before labelling its listing (#1464), so a just-written note shows its title.
+The refresh queues behind an in-flight initial build, with one 60-second budget
+for the build and refresh. Failed or cancelled attempts prevent regeneration;
+failures leave the existing listing in place and convention maintenance logs a
+warning. The primary note write is not rolled back. A vault whose index was
+never built and has no scheduled build is listed without waiting, by filename.
+Membership comes from one name-only directory walk of the selected subtree: no
+note is opened or parsed, dot and wholly excluded directories are not entered,
+and excluded or dot files are omitted. A visible directory that cannot be
+listed refuses the whole call before any write. The optional maintainer
+preflight hook remains available to existing integrations.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
 write committed separately; since #1264 the dispatcher buffers every write a
@@ -524,7 +536,7 @@ Per-file conformance makes incremental adoption natural. Recommended order —
    machinery:
    - wikilink → bundle-root-absolute markdown-link conversion (the same
      link-rewriting engine behind `rename`/`move_folder`);
-   - `index.md` generation from live inventory;
+   - `index.md` generation from the folder's live listing;
    - `log.md` seeding from git history via `GitQueryManager`, so a
      git-backed vault starts with real change history.
 

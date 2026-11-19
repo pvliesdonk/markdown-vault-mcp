@@ -78,11 +78,8 @@ def test_mutation_waits_for_build_finalization(
                 assert started.wait(5)
                 assert not col.index.is_queryable()
                 mutation = pool.submit(_mutate, col, operation)
-                if operation in {"generate", "maintain"}:
-                    mutation.result(2)
-                else:
-                    with pytest.raises(TimeoutError):
-                        mutation.result(0.1)
+                with pytest.raises(TimeoutError):
+                    mutation.result(0.1)
                 release.set()
                 build.result(5)
                 mutation.result(5)

@@ -103,7 +103,26 @@ def could_be_regular_file(path: Path) -> bool:
         return True
 
 
-def walk_files_strict(root: Path, *, include_dirs: bool = False) -> list[Path]:
+def is_symlink(path: Path) -> bool:
+    """True if *path* itself is a symbolic link; False if nothing is there.
+
+    Raises:
+        OSError: If the ``lstat`` is refused for another reason (#1625).
+    """
+    try:
+        return stat.S_ISLNK(path.lstat().st_mode)
+    except OSError as exc:
+        if exc.errno in _ABSENT_ERRNOS:
+            return False
+        raise
+
+
+def walk_files_strict(
+    root: Path,
+    *,
+    include_dirs: bool = False,
+    prune: Callable[[Path], bool] | None = None,
+) -> list[Path]:
     """Return every file below *root*, sorted, refusing an unreadable directory.
 
     ``Path.rglob()`` skips a directory it cannot enter, so a folder behind a
@@ -111,6 +130,8 @@ def walk_files_strict(root: Path, *, include_dirs: bool = False) -> list[Path]:
     instead: a caller moving or changing every file below *root* must not act
     on part of them (#1625). Symlinked directories are not followed, as with
     ``rglob()``. With *include_dirs*, include directories and directory links.
+    A directory for which *prune* returns true is neither listed nor entered,
+    so an unreadable directory the caller ignores cannot refuse the walk.
 
     Raises:
         OSError: If *root* or a directory below it cannot be listed.
@@ -119,11 +140,13 @@ def walk_files_strict(root: Path, *, include_dirs: bool = False) -> list[Path]:
     def _raise(exc: OSError) -> None:
         raise exc
 
-    return sorted(
-        Path(dirpath) / name
-        for dirpath, dirnames, filenames in os.walk(root, onerror=_raise)
-        for name in (filenames + dirnames if include_dirs else filenames)
-    )
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_raise):
+        if prune is not None:
+            dirnames[:] = [d for d in dirnames if not prune(Path(dirpath) / d)]
+        names = filenames + dirnames if include_dirs else filenames
+        found.extend(Path(dirpath) / name for name in names)
+    return sorted(found)
 
 
 # pathlib's Path.glob / Path.rglob do not recurse into symlinked
