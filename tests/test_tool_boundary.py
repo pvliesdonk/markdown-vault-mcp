@@ -23,7 +23,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import MISSING_REQUIRED_CLIENT_CAPABILITY, TextContent
 from pydantic import BaseModel
 
-from markdown_vault_mcp._pvl_core import wire_middleware_stack
+from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._tool_boundary import (
     FAULT_MESSAGE,
     is_tool_boundary,

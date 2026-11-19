@@ -24,10 +24,9 @@ from fastmcp_pvl_core import (
     get_claims,
     get_current_auth_mode,
     get_subject,
-    wire_middleware_stack,
 )
 from fastmcp_pvl_core import __version__ as CORE_VERSION
-from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
+from fastmcp_pvl_core._log_render import JsonFormatter, bind_record, render_rich
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -35,10 +34,12 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "ServerConfig",
     "domain_env_suffixes",
     "domain_env_surface",
-    # Logging setup and the request-logging middleware (#2276).
-    "RequestLoggingMiddleware",
+    # Logging setup (#2276).
     "configure_logging_from_env",
-    "wire_middleware_stack",
+    # The log renderer (#2342).
+    "JsonFormatter",
+    "bind_record",
+    "render_rich",
     # Authentication and the request subject (#2277).
     "build_auth",
     "build_bearer_auth",
