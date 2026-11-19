@@ -260,6 +260,29 @@ def _check_repair_nodes(node: Any, seen: set[int] | None = None) -> None:
             _check_repair_nodes(value, seen)
 
 
+def _retire_entries(
+    previous: Any, request: dict[str, Any], history: list[Any]
+) -> list[Any]:
+    if isinstance(previous, dict):
+        previous = [previous]
+    indices = request["indices"]
+    if (
+        not isinstance(previous, list)
+        or not isinstance(indices, list)
+        or not indices
+        or any(type(i) is not int or i < 0 or i >= len(previous) for i in indices)
+        or len(set(indices)) != len(indices)
+    ):
+        raise InvalidRequestError("Invalid review indices")
+    if any(not isinstance(previous[i], dict) for i in indices):
+        raise InvalidRequestError("Selected reviews must be mappings")
+    selected = set(indices)
+    history.extend(
+        {"review": previous[i], "reason": request["reason"]} for i in sorted(selected)
+    )
+    return [item for i, item in enumerate(previous) if i not in selected]
+
+
 def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(repair, dict)
@@ -293,29 +316,7 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
             raise InvalidRequestError(f"{history} must be a list")
         entries = list(entries)
         if action == "retire_reviews":
-            if isinstance(previous, dict):
-                previous = [previous]
-            indices = request["indices"]
-            if (
-                not isinstance(previous, list)
-                or not isinstance(indices, list)
-                or not indices
-                or any(
-                    type(i) is not int or i < 0 or i >= len(previous) for i in indices
-                )
-                or len(set(indices)) != len(indices)
-            ):
-                raise InvalidRequestError("Invalid review indices")
-            if any(not isinstance(previous[i], dict) for i in indices):
-                raise InvalidRequestError("Selected reviews must be mappings")
-            selected = set(indices)
-            entries.extend(
-                {"review": previous[i], "reason": request["reason"]}
-                for i in sorted(selected)
-            )
-            changes[key] = [
-                item for i, item in enumerate(previous) if i not in selected
-            ]
+            changes[key] = _retire_entries(previous, request, entries)
         else:
             actor = request["by"]
             if (

@@ -123,3 +123,49 @@ def test_retire_single_mapping_keeps_entire_entry() -> None:
             "reason": "correction",
         }
     ]
+
+
+def test_retirement_changes_trust_tier() -> None:
+    from markdown_vault_mcp.okf import derive_trust_tier
+
+    note = NOTE.replace("at: yesterday", "at: 2026-01-01T00:00:00Z").replace(
+        "at: today", "at: 2026-01-01T00:00:00Z"
+    )
+    before = parse_frontmatter(note).metadata
+    result = author_text(
+        note,
+        {},
+        None,
+        repair={"retire_reviews": {"indices": [0], "reason": "correction"}},
+    )
+    assert derive_trust_tier(before) == "human-reviewed"
+    assert derive_trust_tier(parse_frontmatter(result).metadata) == "machine-confirmed"
+
+
+@pytest.mark.anyio
+async def test_mcp_forwards_repair(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastmcp import Client
+
+    from tests.conftest import _parse_tool_data
+    from tests.server_factory import make_server
+
+    (tmp_path / "note.md").write_text(NOTE)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_AUTHOR", "true")
+    async with Client(make_server()) as client:
+        etag = _parse_tool_data(await client.call_tool("read", {"path": "note.md"}))[
+            "etag"
+        ]
+        await client.call_tool(
+            "okf_author",
+            {
+                "path": "note.md",
+                "if_match": etag,
+                "fields": {},
+                "repair": {"retire_reviews": {"indices": [0], "reason": "correction"}},
+            },
+        )
+    meta = parse_frontmatter((tmp_path / "note.md").read_text()).metadata
+    assert meta["x-mvmcp"]["review_history"][0]["reason"] == "correction"
