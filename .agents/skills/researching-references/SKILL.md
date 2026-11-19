@@ -9,8 +9,6 @@ description: >-
   of re-deriving. Works with any coding agent; parallel research is optional.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Researching references
 
 A reference is a page under `docs/design/reference/` that records how

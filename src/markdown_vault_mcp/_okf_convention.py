@@ -27,12 +27,13 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
-    OKF_RESERVED_FILENAMES,
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
+    is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of
@@ -130,12 +131,12 @@ class ConventionMaintainer:
             # A suppressed write (okf_verify's attestation, a mechanical
             # transform) gets neither provenance stamping nor maintenance.
             return
-        if Path(path).name in OKF_RESERVED_FILENAMES:
+        if is_okf_reserved_file(Path(path).as_posix()):
             return
         if not self._detector.state().active:
             return
         folder = folder_of(path)
-        with okf_write_suppressed():
+        with okf_write_suppressed(), auxiliary_commit_writes():
             self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
@@ -168,12 +169,12 @@ class ConventionMaintainer:
         if not self._maintains_after(trigger_paths):
             return
         wanted = [f for f in folders if self._has_index(f)]
-        with okf_write_suppressed():
+        with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys([*wanted, *create]):
                 self._refresh_index(folder)
 
     def subtree_folders(self, root: str) -> list[str]:
-        """Return *root* and every non-hidden folder below it, vault-relative.
+        """Return vault-owned non-hidden folders under *root*, vault-relative.
 
         After a folder move these are the folders whose ``index.md`` moved
         along, still listing the old paths (#1609).
@@ -182,15 +183,25 @@ class ConventionMaintainer:
             root: Vault-relative folder (``""`` for the vault root).
 
         Returns:
-            *root* first, then its descendants in walk order; only *root*
-            when no vault directory is known.
+            *root* first, then its descendants in walk order, omitting git
+            submodules and their descendants. Empty when *root* is inside a
+            submodule; only *root* when no vault directory is known.
         """
+        if self._doc_mgr.in_submodule(root):
+            return []
         if self._source_dir is None:
             return [root]
         base = self._source_dir / root if root else self._source_dir
         found = [root]
         for dirpath, dirnames, _files in os.walk(base):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not d.startswith(".")
+                and not self._doc_mgr.in_submodule(
+                    Path(dirpath, d).relative_to(self._source_dir).as_posix()
+                )
+            )
             for name in dirnames:
                 found.append(
                     Path(dirpath, name).relative_to(self._source_dir).as_posix()
@@ -220,7 +231,7 @@ class ConventionMaintainer:
         intent = current_okf_intent()
         if intent is not None and intent.suppress:
             return False
-        if all(Path(p).name in OKF_RESERVED_FILENAMES for p in trigger_paths):
+        if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
             return False
         return self._detector.state().active
 

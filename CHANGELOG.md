@@ -22,6 +22,104 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 6.1.4 (2026-11-18)
+
+### Bug Fixes
+
+- report effective write state (#2155)
+- report runtime version at startup (#2146)
+- repair FTS row ownership on writable open (#2184)
+- report store-open failures without a traceback (#2164)
+- recover vector store corruption found by writer jobs (#2194)
+- name folder moves in commit subjects (#2178)
+- keep stderr log fields on one line (#2189)
+- resolve empty optional install fields (#2141)
+- log inert OKF write config on read-only servers (#2174)
+- honor default ACLs for new notes (#2144)
+- detect replacements from hidden temporary files (#2080)
+- preserve frontmatter mapping order (#2075)
+- bound PostgreSQL generation preparation (#2185)
+- a batch embeds when the endpoint omits index 0 (Gemini) (#2220)
+- suppress native Linux read subscriptions (#2066)
+- stage full-build preparation in bounded windows (#2176)
+
+## 6.1.4-rc.0 (2026-11-18)
+
+### Bug Fixes
+
+- report effective write state (#2155)
+- report runtime version at startup (#2146)
+- repair FTS row ownership on writable open (#2184)
+- report store-open failures without a traceback (#2164)
+- recover vector store corruption found by writer jobs (#2194)
+- name folder moves in commit subjects (#2178)
+- keep stderr log fields on one line (#2189)
+- resolve empty optional install fields (#2141)
+- log inert OKF write config on read-only servers (#2174)
+- honor default ACLs for new notes (#2144)
+- detect replacements from hidden temporary files (#2080)
+- preserve frontmatter mapping order (#2075)
+- bound PostgreSQL generation preparation (#2185)
+- a batch embeds when the endpoint omits index 0 (Gemini) (#2220)
+- suppress native Linux read subscriptions (#2066)
+- stage full-build preparation in bounded windows (#2176)
+
+## 6.1.3 (2026-11-17)
+
+### Bug Fixes
+
+- use Bash tests for unary predicates (#2112)
+- release parsed notes during indexing (#2106)
+- retain note paths in rename subjects (#2115)
+- add an admin command to repair stacked log frontmatter (#2130)
+- report uncommitted startup changes (#2099)
+
+## 6.1.3-rc.0 (2026-11-17)
+
+### Bug Fixes
+
+- use Bash tests for unary predicates (#2112)
+- release parsed notes during indexing (#2106)
+- retain note paths in rename subjects (#2115)
+- add an admin command to repair stacked log frontmatter (#2130)
+- report uncommitted startup changes (#2099)
+
+## 6.1.2 (2026-11-15)
+
+### Bug Fixes
+
+- expose installed library annotations (#2026)
+- avoid quadratic retries within delimiter runs (#2084)
+- keep single closing brackets in wikilink targets (#2089)
+- retain note subjects alongside OKF maintenance (#2091)
+- read shared vaults without managed Git bootstrap (#2097)
+- [Submodule work 3/3] skip submodule listings after folder moves (#2104)
+- name vault search accessibly (#2096)
+- quiet routine local read logs (#2100)
+- refuse upload links inside submodules (#2101)
+- refuse writes into plain nested repositories (#2088)
+- report failed model-change rebuilds (#2081)
+- preserve carriage returns in path streams (#2092)
+- refuse destinations before downloading (#2103)
+
+## 6.1.2-rc.0 (2026-11-15)
+
+### Bug Fixes
+
+- expose installed library annotations (#2026)
+- avoid quadratic retries within delimiter runs (#2084)
+- keep single closing brackets in wikilink targets (#2089)
+- retain note subjects alongside OKF maintenance (#2091)
+- read shared vaults without managed Git bootstrap (#2097)
+- [Submodule work 3/3] skip submodule listings after folder moves (#2104)
+- name vault search accessibly (#2096)
+- quiet routine local read logs (#2100)
+- refuse upload links inside submodules (#2101)
+- refuse writes into plain nested repositories (#2088)
+- report failed model-change rebuilds (#2081)
+- preserve carriage returns in path streams (#2092)
+- refuse destinations before downloading (#2103)
+
 ## 6.1.1 (2026-11-08)
 
 ### Bug Fixes

@@ -15,8 +15,8 @@ above it when that segment is ``register`` (``pkg._jobs.register`` ->
 sends, so the two cannot disagree; ``Returns:`` and ``Raises:`` come from
 the raw docstring, which the wire drops.
 
-The script is template-owned and byte-identical in every project: it reads
-``python_module`` and ``project_name`` from ``.copier-answers.yml`` and
+The script reads ``python_module`` and ``project_name`` from
+``project-settings.yml`` and
 imports ``<module>.server.make_server`` and ``<module>.cli.app``.  The server
 is built for the ``http`` transport, the widest surface: a component a
 project registers for HTTP alone, such as the transfer-link tools, is
@@ -852,11 +852,10 @@ def update_nav(mkdocs_text: str, ref: Reference) -> str:
 def _project(root: Path) -> tuple[str, str]:
     """Return ``(python_module, project_name)`` for the project at *root*.
 
-    ``.copier-answers.yml`` is the source while the project tracks the
-    template; a detached project has deleted it, so ``[project.scripts]`` in
+    ``project-settings.yml`` is the source; ``[project.scripts]`` in
     ``pyproject.toml`` (``name = "module.cli:main"``) is the fallback.
     """
-    answers = root / ".copier-answers.yml"
+    answers = root / "project-settings.yml"
     if answers.exists():
         data = yaml.safe_load(answers.read_text(encoding="utf-8")) or {}
         if data.get("python_module") and data.get("project_name"):
@@ -871,7 +870,7 @@ def _project(root: Path) -> tuple[str, str]:
         if module:
             return module, str(name)
     raise BuildError(
-        f"{root}: neither .copier-answers.yml nor [project.scripts] names the package"
+        f"{root}: neither project-settings.yml nor [project.scripts] names the package"
     )
 
 

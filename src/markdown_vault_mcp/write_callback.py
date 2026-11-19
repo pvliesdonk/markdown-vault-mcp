@@ -31,11 +31,16 @@ import queue
 import threading
 from typing import TYPE_CHECKING, cast
 
-from markdown_vault_mcp._commit_scope import current_commit_scope
+from markdown_vault_mcp._commit_scope import (
+    bound_folder_move,
+    current_commit_scope,
+    is_auxiliary_commit_write,
+)
 from markdown_vault_mcp._identity import current_principal
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
+    ACCEPTS_PRIMARY_PATHS_ATTR,
     ACCEPTS_PRINCIPAL_ATTR,
 )
 
@@ -47,6 +52,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.types import (
         BatchAwareWriteCallback,
+        PrimaryAwareBatchWriteCallback,
         PrincipalAwareWriteCallback,
         WriteBatchItem,
         WriteCallback,
@@ -79,7 +85,8 @@ class _DrainMarker:
 class _ScopeEnd:
     """Queue sentinel closing one commit scope, flushing its buffered writes.
 
-    Enqueued by :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware`
+    Enqueued by
+    :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
     when a tool call returns. FIFO ordering guarantees every write that call
     fired precedes this marker, so no wait or handshake is needed.
     """
@@ -120,6 +127,9 @@ class WriteCallbackDispatcher:
         # at a time — grouping is an optimisation the callback opts into, never
         # a contract change third-party callbacks must absorb.
         self._accepts_batch = bool(getattr(on_write, ACCEPTS_BATCH_ATTR, False))
+        self._accepts_primary_paths = bool(
+            getattr(on_write, ACCEPTS_PRIMARY_PATHS_ATTR, False)
+        )
         self._queue: queue.Queue[
             tuple[
                 Path,
@@ -128,6 +138,7 @@ class WriteCallbackDispatcher:
                 Path | None,
                 Principal | None,
                 CommitScope | None,
+                bool,
             ]
             | _DrainMarker
             | _ScopeEnd
@@ -135,7 +146,9 @@ class WriteCallbackDispatcher:
         ] = queue.Queue()
         # Buffered writes per open scope token, drained by _ScopeEnd (or by a
         # _DrainMarker, which must not report success over uncommitted work).
-        self._open_scopes: dict[int, tuple[CommitScope, list[WriteBatchItem]]] = {}
+        self._open_scopes: dict[
+            int, tuple[CommitScope, list[WriteBatchItem], set[Path]]
+        ] = {}
         self._worker: threading.Thread | None = None
         # Guards every read/write of ``_worker`` and ``_closed`` AND the
         # ``_queue.put`` of a real item, so ``fire`` is atomic with respect to
@@ -174,7 +187,9 @@ class WriteCallbackDispatcher:
         contextvar), while the dispatcher's own thread has no request context
         at all — reading identity there is exactly the silent-fallback bug of
         #1218. The snapshot is forwarded only to a callback that opted in via
-        :data:`~markdown_vault_mcp.types.ACCEPTS_PRINCIPAL_ATTR`.
+        :data:`~markdown_vault_mcp.types.ACCEPTS_PRINCIPAL_ATTR`. Secondary-write
+        provenance is snapshotted here for the same reason; it changes only
+        the subject hint sent to a callback that opts into primary paths.
         """
         if self._on_write is None:
             return
@@ -201,7 +216,17 @@ class WriteCallbackDispatcher:
             self._ensure_worker_locked()
             # Enqueue under the lock so close() cannot slip the sentinel in
             # ahead of this item (which would leave it permanently undrained).
-            self._queue.put((abs_path, content, operation, old_path, principal, scope))
+            self._queue.put(
+                (
+                    abs_path,
+                    content,
+                    operation,
+                    old_path,
+                    principal,
+                    scope,
+                    is_auxiliary_commit_write(),
+                )
+            )
 
     def end_scope(self, scope: CommitScope) -> None:
         """Close *scope*, committing everything fired under it as one group.
@@ -233,15 +258,22 @@ class WriteCallbackDispatcher:
         entry = self._open_scopes.pop(token, None)
         if entry is None:
             return
-        scope, items = entry
+        scope, items, primary_paths = entry
         on_write = self._on_write
         if not items or on_write is None:
             return
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
-            batch = cast("BatchAwareWriteCallback", on_write)
-            batch.on_write_batch(items, scope.tool_name)
+            with bound_folder_move(scope.folder_move):
+                if self._accepts_primary_paths:
+                    primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
+                    primary_batch.on_write_batch(
+                        items, scope.tool_name, primary_paths=frozenset(primary_paths)
+                    )
+                else:
+                    batch = cast("BatchAwareWriteCallback", on_write)
+                    batch.on_write_batch(items, scope.tool_name)
         except Exception:
             logger.error(
                 "write_callback_batch_failed tool=%s count=%s",
@@ -327,7 +359,9 @@ class WriteCallbackDispatcher:
                 if isinstance(item, _ScopeEnd):
                     self._flush_scope(item.token)
                     continue
-                abs_path, content, operation, old_path, principal, scope = item
+                abs_path, content, operation, old_path, principal, scope, auxiliary = (
+                    item
+                )
                 if scope is None:
                     # No owning tool call — a background or startup write.
                     # Commits on its own, exactly as before.
@@ -335,7 +369,11 @@ class WriteCallbackDispatcher:
                         abs_path, content, operation, old_path, principal
                     )
                     continue
-                _, items = self._open_scopes.setdefault(scope.token, (scope, []))
+                _, items, primary_paths = self._open_scopes.setdefault(
+                    scope.token, (scope, [], set())
+                )
+                if self._accepts_primary_paths and not auxiliary:
+                    primary_paths.add(abs_path)
                 # Content is deliberately dropped: staging reads the file from
                 # disk, so retaining it would hold every written file's text
                 # for the length of the call with nothing to read it.
