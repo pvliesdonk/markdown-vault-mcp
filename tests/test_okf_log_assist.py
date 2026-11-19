@@ -209,6 +209,13 @@ async def test_mcp_proposal_and_backend_failure(
             await client.call_tool(
                 "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
             )
+    monkeypatch.setattr("markdown_vault_mcp.summarizer.get_summarizer", lambda _: None)
+    async with Client(make_server()) as client:
+        with pytest.raises(ToolError, match=r"backend is unavailable.*operator"):
+            await client.call_tool(
+                "okf_propose_log_entry", {"paths": ["note.md"], "since": before}
+            )
+    assert not is_regular_file(tmp_path / "log.md")
 
 
 def test_root_commit_creation_and_unparseable_frontmatter(tmp_path: Path) -> None:
@@ -399,5 +406,64 @@ def test_timestamp_range_and_selection_limits(tmp_path: Path) -> None:
         with pytest.raises(InvalidRequestError, match="diff is too large"):
             propose_log_entry(vault, config, ["note.md"], "2020-01-02T00:00:00+00:00")
         assert len(fake.calls) == 1
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("later_history", [False, True])
+def test_timestamp_before_history_includes_selected_current_notes(
+    tmp_path: Path, later_history: bool
+) -> None:
+    """An early timestamp includes current selected content across commits."""
+    import os
+
+    from markdown_vault_mcp._okf_log_assist import propose_log_entry
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+    from tests.test_summarize import FakeSummarizer
+
+    def git(*args: str, date: str = "2020-01-01T00:00:00+00:00") -> None:
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            env=dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date),
+        )
+
+    git("init")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
+    (tmp_path / "a.md").write_text("# Initial A\n")
+    (tmp_path / "b.md").write_text("# Initial B\n")
+    (tmp_path / "other.md").write_text("# Private fixture\n")
+    git("add", "a.md", "b.md", "other.md")
+    git("commit", "-m", "initial")
+    if later_history:
+        (tmp_path / "a.md").write_text("# Later A\n")
+        (tmp_path / "b.md").write_text("# Later B\n")
+        git("add", "a.md", "b.md")
+        git("commit", "-m", "later", date="2020-01-02T00:00:00+00:00")
+    fake = FakeSummarizer("Selected changes")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=True),
+        git_strategy=GitWriteStrategy(),
+        summarizer=fake,
+    )
+    try:
+        propose_log_entry(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            ["a.md", "b.md"],
+            "2019-01-01T00:00:00+00:00",
+        )
+        assert len(fake.calls) == 1
+        diff = fake.calls[0][1]
+        expected = "Later" if later_history else "Initial"
+        assert f"+# {expected} A" in diff
+        assert f"+# {expected} B" in diff
+        assert "Private fixture" not in diff
+        assert not is_regular_file(tmp_path / "log.md")
     finally:
         vault.close()

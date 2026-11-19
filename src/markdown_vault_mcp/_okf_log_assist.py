@@ -94,26 +94,34 @@ def _committed_selection(
     return histories
 
 
+def _creation_diff(vault: Vault, path: str, sha: str) -> str:
+    snapshot = vault.reader.read_revision(path, sha).content
+    return "".join(
+        unified_diff(
+            [],
+            snapshot.splitlines(keepends=True),
+            fromfile="/dev/null",
+            tofile=f"b/{path}",
+        )
+    )
+
+
 def _selected_diffs(vault: Vault, selected: list[str], since: str | None) -> str:
     """Collect the selected diffs within the configured input budget."""
     histories = _committed_selection(vault, selected, since)
+    before_history = (
+        since is not None
+        and not re.fullmatch(_SHA_RE, since)
+        and not vault.reader.get_history(until=since, limit=1)
+    )
     diffs: list[str] = []
     for path in selected:
         start = since
+        history = histories[path]
+        if before_history or (start is None and len(history) == 1):
+            diffs.append(_creation_diff(vault, path, history[0].sha))
+            continue
         if start is None:
-            history = histories[path]
-            if len(history) == 1:
-                snapshot = vault.reader.read_revision(path, history[0].sha).content
-                creation = "".join(
-                    unified_diff(
-                        [],
-                        snapshot.splitlines(keepends=True),
-                        fromfile="/dev/null",
-                        tofile=f"b/{path}",
-                    )
-                )
-                diffs.append(creation)
-                continue
             start = history[1].sha
         if re.fullmatch(_SHA_RE, start):
             diff = vault.reader.get_diff(path, since_sha=start)
@@ -156,7 +164,9 @@ def propose_log_entry(
     selected = _selected_paths(vault, paths)
     content = _selected_diffs(vault, selected, since)
     if vault._summarizer is None:
-        raise RuntimeError("The summarization backend is unavailable.")
+        raise ProposalBackendError(
+            "The configured summarization backend is unavailable. Ask the server operator to restore it, then retry or write the explanation yourself."
+        )
     try:
         text = vault._summarizer.summarize(
             "Write a concise factual explanation of the editorial change shown in these diffs. Output only one line, at most 500 characters.",
