@@ -1185,7 +1185,7 @@ def register(mcp: FastMCP) -> None:
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Set selected editorial fields on an existing OKF concept.
+        """Set editorial fields or repair provenance on an existing OKF concept.
 
         Args:
             path: Concept path in the vault.
@@ -1200,9 +1200,10 @@ def register(mcp: FastMCP) -> None:
                 (the new actor) and a reason. Replacing generated changes the
                 concept snapshot. Do not combine producer with replace_generated.
                 Binding claims stay in x-mvmcp.reviews. Shared review identities,
-                aliased or duplicate-key fields being edited, comments inside
-                archived values, and commented flow review lists are refused.
-                Read the note and use its etag.
+                aliased or duplicate-key fields being edited, comments within
+                archived structures, and commented flow review lists are refused.
+                Trailing comments remain as standalone lines. Read the note and
+                use its etag.
             producer: Explicit producer actor: <producer>/<version>, process:<id>
                 or human:<id>, such as codex/6.1 or process:importer; omit to
                 leave generation metadata unchanged.

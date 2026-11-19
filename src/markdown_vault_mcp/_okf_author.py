@@ -10,12 +10,10 @@ import frontmatter
 import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
+from markdown_vault_mcp._okf_receipts import _review_key
+from markdown_vault_mcp._okf_review import _review_nodes
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.okf import (
-    OKF_STATUS_VALUES,
-    _parse_stale_after,
-    okf_timestamp,
-)
+from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
 from markdown_vault_mcp.scanner import parse_frontmatter
 
 _FIELDS = frozenset(
@@ -248,8 +246,6 @@ def _retire_entries(
     ):
         raise InvalidRequestError("Invalid review indices")
     selected = set(indices)
-    from markdown_vault_mcp._okf_receipts import _review_key
-
     identities = [_review_key(item) for item in previous]
     if any(
         identities[i] is not None and identities[i] == identities[j]
@@ -314,12 +310,8 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
     return changes
 
 
-def _raw_flow(source: str, node: Any, seen: set[int] | None = None) -> str:
+def _raw_flow(source: str, node: Any) -> str:
     """Represent a node using its original scalar spellings."""
-    seen = set() if seen is None else seen
-    if id(node) in seen:
-        raise InvalidRequestError("Cannot archive aliased evidence")
-    seen.add(id(node))
     if isinstance(node, ScalarNode):
         if node.style is None and node.tag != "tag:yaml.org,2002:str":
             return source[node.start_mark.index : node.end_mark.index]
@@ -335,33 +327,23 @@ def _raw_flow(source: str, node: Any, seen: set[int] | None = None) -> str:
     )
     if _comments_in_span(source, node.start_mark.index, content_end):
         raise InvalidRequestError("Cannot safely archive evidence containing comments")
-    if isinstance(node, SequenceNode):
-        if any(item.start_mark.index < node.start_mark.index for item in node.value):
-            raise InvalidRequestError("Cannot archive aliased evidence")
-        return (
-            "[" + ", ".join(_raw_flow(source, item, seen) for item in node.value) + "]"
-        )
-    _mapping_nodes(node)
-    if any(value.start_mark.index < key.end_mark.index for key, value in node.value):
+    if any(isinstance(token, yaml.AliasToken) for token in tokens):
         raise InvalidRequestError("Cannot archive aliased evidence")
+    if isinstance(node, SequenceNode):
+        return "[" + ", ".join(_raw_flow(source, item) for item in node.value) + "]"
+    _review_nodes(node)
     return (
         "{"
         + ", ".join(
-            _raw_flow(source, key, seen) + ": " + _raw_flow(source, value, seen)
+            _raw_flow(source, key) + ": " + _raw_flow(source, value)
             for key, value in node.value
         )
         + "}"
     )
 
 
-def _mapping_nodes(node: MappingNode) -> dict[str, Any]:
-    from markdown_vault_mcp._okf_review import _review_nodes
-
-    return _review_nodes(node)
-
-
 def _touched(node: MappingNode, key: str) -> Any:
-    value = _mapping_nodes(node).get(key)
+    value = _review_nodes(node).get(key)
     if value is not None:
         key_node = next(k for k, _ in node.value if k.value == key)
         if value.start_mark.index < key_node.end_mark.index:
@@ -398,15 +380,11 @@ def _append_history(source: str, history: str, items: list[str], newline: str) -
             "{" + history + ": [" + ", ".join(items) + "]}",
             newline,
         )
-    if not isinstance(ext, MappingNode):
-        raise InvalidRequestError("x-mvmcp must be a mapping before repair")
     existing = _touched(ext, history)
     if existing is None:
         return _insert_mapping(
             source, ext, history, "[" + ", ".join(items) + "]", newline
         )
-    if not isinstance(existing, SequenceNode):
-        raise InvalidRequestError(f"{history} must be a list")
     if existing.flow_style:
         start, end, value = _flow_insertion(source, existing, items)
     else:
@@ -418,8 +396,6 @@ def _append_history(source: str, history: str, items: list[str], newline: str) -
 
 
 def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
-    if not isinstance(node, (MappingNode, SequenceNode)):
-        raise InvalidRequestError("Existing verified must be a list or mapping")
     if isinstance(node, MappingNode) or len(selected) == len(node.value):
         comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
         newline = "\r\n" if "\r\n" in source else "\n"
@@ -428,15 +404,9 @@ def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
             if node.flow_style
             else _line_insertion(source, node.end_mark.index)
         )
-        suffix = (
-            (newline + comments if comments else "")
-            if node.flow_style
-            else newline + comments
-        )
+        suffix = newline + comments if comments or not node.flow_style else ""
         return source[: node.start_mark.index] + "[]" + suffix + source[end:]
     if node.flow_style:
-        # Replace only the sequence separators and selected entries; retain the
-        # exact text of every surviving entry.
         kept = [
             source[item.start_mark.index : item.end_mark.index]
             for i, item in enumerate(node.value)
@@ -529,10 +499,6 @@ def author_text(
         The edited note text.
     """
     _validate(fields, producer, repair)
-    if repair is not None and not isinstance(repair, dict):
-        raise InvalidRequestError("Invalid repair request")
-    if repair is not None and producer is not None and "replace_generated" in repair:
-        raise InvalidRequestError("Choose producer or replace_generated, not both")
     changes = dict(fields)
     if producer is not None:
         changes["generated"] = {"by": producer, "at": okf_timestamp(datetime.now(UTC))}
@@ -545,6 +511,8 @@ def author_text(
         repair_changes = (
             _repair_changes(original.metadata, repair) if repair is not None else {}
         )
+        if producer is not None and "generated" in repair_changes:
+            raise InvalidRequestError("Choose producer or replace_generated, not both")
         if span is None:
             prefix = "\ufeff" if text.startswith("\ufeff") else ""
             source = "".join(

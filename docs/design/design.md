@@ -2028,7 +2028,7 @@ Live whole-note OKF reads expose `mvmcp-concept-v1`: SHA-256 of compact ASCII JS
 
 The legacy verifier may rewrite the body or other metadata and change the digest; D3 owns snapshot-preserving review recording. The digest is not a review binding.
 
-Explicit provenance repair is an `okf_author` mode guarded by the same etag. Zero-based review positions and reasons move the selected entries into `x-mvmcp.review_history`; a replacement producer and reason archive the prior `generated` mapping in `x-mvmcp.generated_history`. Binding claims and instance-local receipts are retained. Ambiguous inputs and unsafe frontmatter are refused. The v0.2 trust tier continues to follow the remaining `verified` entries; the v0.3 draft was checked on 2026-11-18 and its different tier rule is not adopted here.
+Explicit provenance repair is an `okf_author` mode guarded by the same etag. Zero-based review positions and reasons move the selected entries into `x-mvmcp.review_history`; a replacement producer and reason archive the prior non-null `generated` value in `x-mvmcp.generated_history`. Binding claims and instance-local receipts are retained. Ambiguous inputs and unsafe frontmatter are refused. The v0.2 trust tier continues to follow the remaining `verified` entries; the v0.3 draft was checked on 2026-11-18 and its different tier rule is not adopted here.
 
 ### OKF Read Semantics (phase 1, #960)
 
