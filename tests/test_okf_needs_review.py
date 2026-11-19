@@ -391,3 +391,26 @@ def test_unavailable_reviewed_and_unreviewed_candidates_across_consumers(
         } == set()
     finally:
         vault.close()
+
+
+def test_reviewed_unexpired_bom_and_crlf_notes(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    text = "---\nstale_after: 2999-01-01\n---\nzebra\n"
+    for name in ("bom.md", "crlf.md"):
+        (tmp_path / name).write_text(text)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        for name in ("bom.md", "crlf.md"):
+            vault.writer.okf_verify(name, "alice", concept_snapshot(text))
+        bom = tmp_path / "bom.md"
+        bom.write_bytes(b"\xef\xbb\xbf" + bom.read_bytes())
+        crlf = tmp_path / "crlf.md"
+        crlf.write_bytes(crlf.read_bytes().replace(b"\n", b"\r\n"))
+        vault.index.build_index()
+        assert {
+            hit.path
+            for hit in vault.reader.list_documents(filters={"needs_review": "false"})
+        } == {"bom.md", "crlf.md"}
+        assert not vault.reader.list_documents(filters={"needs_review": "true"})
+    finally:
+        vault.close()

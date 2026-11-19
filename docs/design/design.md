@@ -2146,6 +2146,7 @@ the spec itself says, dated and sourced, in
   hit reports the conditions from the same per-call assessment used for selection.
   A present but unreadable snapshot reports `snapshot_unavailable` without
   inferring freshness or review matching; a missing file is omitted.
+  CLI search text renders the check and conditions with terminal controls escaped.
   Candidate discovery remains index-based. The
   selector does not change trust tiers or ranking. These two names are reserved
   on active bundles; literal field queries remain available through exact

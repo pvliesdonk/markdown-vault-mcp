@@ -199,6 +199,22 @@ def _search_text(items: list[Any]) -> None:
         review = _recorded_review_text(hit)
         if review:
             typer.echo(f"    {review}")
+        assessment = hit.get("needs_review")
+        if isinstance(assessment, dict):
+            check = assessment.get("required_check")
+            conditions = assessment.get("conditions")
+            if isinstance(check, str) and isinstance(conditions, list):
+                reasons = (
+                    ", ".join(
+                        terminal_text(item)
+                        for item in conditions
+                        if isinstance(item, str)
+                    )
+                    or "none"
+                )
+                typer.echo(
+                    f"    Review check: {terminal_text(check)}; conditions: {reasons}"
+                )
 
 
 def _json_record(value: object) -> str:

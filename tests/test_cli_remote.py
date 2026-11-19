@@ -365,3 +365,47 @@ def test_failure_kind_names_root_cause_without_text() -> None:
     looped.__cause__ = KeyError()
     looped.__cause__.__cause__ = looped
     assert _failure_kind(looped) == "ValueError"
+
+
+def test_remote_triage_text_escapes_conditions_and_check() -> None:
+    from markdown_vault_mcp._cli_remote import RemoteReply
+
+    hits = [
+        {
+            "path": "one.md",
+            "score": 1.0,
+            "needs_review": {
+                "required_check": "x-test\x1b[31m",
+                "conditions": ["freshness_expired", "no_matching_review"],
+            },
+        },
+        {
+            "path": "two.md",
+            "score": 0.5,
+            "needs_review": {
+                "required_check": "human-review",
+                "conditions": ["snapshot_unavailable\nforged"],
+            },
+        },
+    ]
+    with patch(
+        "markdown_vault_mcp._cli_remote.call_read", return_value=RemoteReply(hits)
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "search",
+                "x",
+                "--server",
+                "https://example.com/mcp",
+                "--filter",
+                "needs_review=true",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert (
+        "freshness_expired" in result.stdout and "no_matching_review" in result.stdout
+    )
+    assert r"snapshot_unavailable\nforged" in result.stdout
+    assert r"x-test\x1b[31m" in result.stdout
+    assert "\x1b" not in result.stdout

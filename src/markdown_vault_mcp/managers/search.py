@@ -95,6 +95,7 @@ from markdown_vault_mcp.utils import (
     validate_path,
 )
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, is_regular_file
+from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
     import builtins
@@ -758,7 +759,7 @@ class SearchManager:
             return None
         required_check = filters.get("required_check") or "human-review"
         try:
-            content = (self._source_dir / path).read_text(encoding="utf-8")
+            content = read_text_utf8(self._source_dir / path)
             metadata = dict(parse_frontmatter(content).metadata)
             assessments = assess_reviews(metadata, concept_snapshot(content), None)
         except (FileNotFoundError, NotADirectoryError):
