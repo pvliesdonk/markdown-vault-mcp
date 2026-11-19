@@ -194,20 +194,22 @@ def _build_git_strategy(
             commit_name=config.git.commit_name,
             commit_email=config.git.commit_email,
         )
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git import GitWriteSettings, GitWriteStrategy
 
     git = config.git
     return GitWriteStrategy(
-        token=token,
-        repo_url=repo_url,
-        managed=managed,
-        enable_pull=enable_sync,
-        enable_push=enable_sync,
-        username=git.username,
-        push_delay_s=git.push_delay_s,
-        commit_name=git.commit_name,
-        commit_email=git.commit_email,
-        git_lfs=git.lfs,
+        settings=GitWriteSettings(
+            token=token,
+            repo_url=repo_url,
+            managed=managed,
+            enable_pull=enable_sync,
+            enable_push=enable_sync,
+            username=git.username,
+            push_delay_s=git.push_delay_s,
+            commit_name=git.commit_name,
+            commit_email=git.commit_email,
+            git_lfs=git.lfs,
+        ),
         repo_path=config.source_dir,
     )
 

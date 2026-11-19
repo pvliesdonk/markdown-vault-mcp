@@ -176,10 +176,10 @@ class PushScheduler:
             logger.error("git_push_unexpected_error", exc_info=True)
 
     def do_push(self) -> None:
-        """Execute git push and clear the pending flag on success.
+        """Execute the push and clear the pending flag on success.
 
-        ``_push_pending`` is cleared *after* ``_push()`` returns without
-        raising. On failure the flag stays set so the periodic pull loop
+        ``_push_pending`` is cleared *after* the push (the injected ``push``
+        callable, or the CLI ``_push()``) returns without raising. On failure the flag stays set so the periodic pull loop
         retries the push after its rebase step resolves any non-fast-forward
         divergence (#957); previously the flag was cleared before the push,
         so a failed deferred push left commits local with no retry until the
