@@ -5,7 +5,7 @@
 GitHub API, so a repository's About block states what ``pyproject.toml``
 already says instead of staying empty until someone fills it in by hand:
 
-- description: ``[project] description`` (the copier ``domain_description``);
+- description: ``[project] description``;
 - website: ``[project.urls] Documentation`` (the GitHub Pages docs site);
 - topics: the fixed discovery topics below, then ``[project] keywords`` —
   the template's own terms plus whatever the project added in its

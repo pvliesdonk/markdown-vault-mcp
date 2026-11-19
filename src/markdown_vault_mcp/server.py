@@ -126,10 +126,17 @@ def make_server(
         auth_mode,
     )
 
+    # mask_error_details: an unexpected exception in a resource or prompt
+    # reaches the client as a generic "Error reading resource ..." instead of
+    # its text, which can carry upstream URLs, paths or credentials (#646).
+    # The server log keeps the traceback.  Raise ResourceError/PromptError for
+    # text the client should see.  Tools end through tool_boundary instead.
+    # Prompts still leak until PrefectHQ/fastmcp#6273 is fixed upstream.
     mcp = FastMCP(
         name=server_name,
         lifespan=server_lifespan,
         auth=auth,
+        mask_error_details=True,
     )
 
     # Make the resolved config reachable from the registrars below without
