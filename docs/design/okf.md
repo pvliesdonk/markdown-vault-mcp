@@ -760,10 +760,10 @@ admission of current bytes; `unknown` covers candidates without a decisive index
 state. A candidate absent from both policy lists was last observed searchable.
 Links are never
 followed; dot-path links omitted by policy are counted as hidden. Selected
-symlinks and nonregular entries refuse export. Failure to observe or read a selected file
-aborts export. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
+symlinks and nonregular entries refuse export. Failure to observe or read a selected live file
+aborts export; ordinary committed Git blobs remain available after working-file deletion. Reads use the inspected vault root; relocation preserves other frontmatter values. A fixed zip-entry timestamp makes unchanged vaults
 reproducible. Notes are read uncapped, and export never mutates the vault. This
-audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Git exports use one commit for membership, bytes and link resolution and report uncommitted paths; populated submodules use the child commits recorded by that commit. They refuse Git LFS pointers rather than export them as file content. Other exports digest selected files and recheck them after packing, reporting changed or unreadable paths; their inventory and link graph remain live observations. The report is not embedded.
+audits the final ZIP and reports a `conformant`, `nonconformant` or `incomplete` format verdict. Git exports use one commit for membership, bytes and link resolution and report uncommitted paths; populated submodules use the child commits recorded by that commit. For Git LFS pointers, including in child repositories, they read no-follow working-file bytes only when the pointer’s SHA-256 and size match; missing or mismatched content refuses export. Export does not fetch LFS content. Other exports digest selected files and recheck them after packing, reporting changed or unreadable paths; their inventory and link graph remain live observations. The report is not embedded.
 
 **Design choice — reserved structure.** OKF v0.2 §8 describes index bodies as
 sections of `* [Title](url) - description` entries; §9 describes logs as "a

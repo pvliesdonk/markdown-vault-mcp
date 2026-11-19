@@ -2155,7 +2155,11 @@ the spec itself says, dated and sourced, in
   check cannot run, even if findings are present. Admission, recommended
   metadata and broken links are separate observations and do not affect it.
   Git exports pin one commit for inventory, link resolution and blob bytes,
-  and report policy-visible uncommitted paths. Non-Git exports digest each
+  and report policy-visible uncommitted paths. For an LFS pointer, including
+  in a child repository, no-follow working-file bytes must match its SHA-256
+  and size; missing or mismatched content refuses export without fetching.
+  Ordinary committed blobs remain available after working-file deletion.
+  Non-Git exports digest each
   selected file and recheck it after packing, reporting changed or unreadable
   paths without claiming an atomic live inventory or graph. Descriptor-relative
   no-follow raw reads protect notes and attachments (#1448, #2167).
