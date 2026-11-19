@@ -9,6 +9,7 @@ and :class:`~markdown_vault_mcp.git.push_scheduler.PushScheduler` share.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,8 @@ from markdown_vault_mcp.git._run import (
     git_env,
 )
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
+
+logger = logging.getLogger(__name__)
 
 
 class RepoBootstrap:
@@ -66,6 +69,7 @@ class RepoBootstrap:
         self.git_root: Path | None = None
         #: Whether root discovery has run (so a ``None`` root is not retried).
         self.git_root_checked = False
+        self._version_checked = False
 
     def _git_env(self) -> dict[str, str] | None:
         """Build the GIT_ASKPASS environment for clone-time subprocess calls."""
@@ -237,8 +241,23 @@ class RepoBootstrap:
         )
 
     def validate_startup(self, repo_path: Path) -> None:
-        """Validate startup git settings for token-authenticated workflows."""
+        """Validate startup git settings and report the runtime Git version."""
         git_root = self.ensure_git_root(repo_path)
         if git_root is None:
             return
         self.check_remote_protocol(git_root)
+        if self._version_checked:
+            return
+        self._version_checked = True
+        try:
+            result = subprocess.run(
+                ["git", "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            logger.debug("git_version_unavailable", exc_info=True)
+            return
+        logger.info("git_runtime_version version=%s", result.stdout.strip())
