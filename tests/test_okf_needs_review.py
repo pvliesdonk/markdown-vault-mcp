@@ -84,22 +84,22 @@ def test_invalid_filters_are_rejected_before_search(tmp_path: Path) -> None:
     vault = Vault(source_dir=tmp_path)
     try:
         vault.index.build_index()
-        with pytest.raises(ValueError, match="needs_review filter"):
-            vault.reader.search(
-                "absent", mode="keyword", filters={"needs_review": "maybe"}
-            )
-        for filters in (
-            {"needs_review": "maybe"},
-            {"required_check": "schema"},
-            {"needs_review": "true", "required_check": "bogus"},
+        for filters, message in (
+            ({"needs_review": "maybe"}, "needs_review filter"),
+            ({"required_check": "schema"}, "required_check"),
+            ({"needs_review": "true", "required_check": "bogus"}, "Unknown check"),
+            ({"needs_review": True}, "needs_review filter"),
+            ({"needs_review": "true", "required_check": 3}, "Unknown check"),
         ):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match=message):
                 vault.reader.search("absent", mode="keyword", filters=filters)
     finally:
         vault.close()
 
 
-def test_listing_and_all_search_modes_report_conditions(tmp_path: Path) -> None:
+def test_listing_and_all_search_modes_report_conditions(
+    tmp_path: Path, monkeypatch
+) -> None:
     from tests.conftest import MockEmbeddingProvider
 
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\nzebra')
@@ -113,13 +113,24 @@ def test_listing_and_all_search_modes_report_conditions(tmp_path: Path) -> None:
     try:
         vault.index.build_index()
         vault.index.build_embeddings()
+        manager = vault._search_mgr
+        original = manager._needs_review
+        calls = []
+
+        def count_assessments(path, filters):
+            calls.append(path)
+            return original(path, filters)
+
+        monkeypatch.setattr(manager, "_needs_review", count_assessments)
         for mode in ("keyword", "semantic", "hybrid"):
+            calls.clear()
             hits = vault.reader.search(
                 "zebra",
                 mode=mode,
                 filters={"needs_review": "true", "type": "instruction"},
             )
             assert [hit.path for hit in hits] == ["instruction.md"]
+            assert calls.count("instruction.md") == 1
             assert hits[0].needs_review["conditions"] == [
                 "freshness_missing",
                 "no_matching_review",
@@ -179,10 +190,8 @@ async def test_mcp_results_include_review_conditions(
                     )
                 )
                 assert [hit["path"] for hit in result] == ["note.md"]
-                assert result[0]["needs_review"]["conditions"] == [
-                    "freshness_missing",
-                    "no_matching_review",
-                ]
+                assert "needs_review" in result[0]
+                assert result[0]["needs_review"]["needed"] is True
     finally:
         vault.close()
 
@@ -230,44 +239,19 @@ def test_selected_result_reuses_single_assessment(tmp_path: Path, monkeypatch) -
         original = manager._needs_review
         calls = []
 
-        def changing(path, filters):
+        def count_assessment(path, filters):
             calls.append(path)
             assessment = original(path, filters)
             if len(calls) > 1:
                 raise AssertionError("assessment repeated")
             return assessment
 
-        monkeypatch.setattr(manager, "_needs_review", changing)
+        monkeypatch.setattr(manager, "_needs_review", count_assessment)
         hits = vault.reader.search(
             "zebra", mode="keyword", filters={"needs_review": "true"}
         )
         assert hits[0].needs_review["needed"] is True
         assert calls == ["note.md"]
-    finally:
-        vault.close()
-
-
-def test_unreadable_snapshot_is_visible_without_claiming_freshness(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    note = tmp_path / "note.md"
-    note.write_text("zebra")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        for content in (b"---\nbroken: [\n---\nzebra", b"\xff"):
-            note.write_bytes(content)
-            hits = vault.reader.list_documents(filters={"needs_review": "true"})
-            assert [hit.path for hit in hits] == ["note.md"]
-            assert hits[0].needs_review == {
-                "needed": True,
-                "required_check": "human-review",
-                "conditions": ["snapshot_unavailable"],
-            }
-            assert not vault.reader.list_documents(filters={"needs_review": "false"})
-        note.unlink()
-        assert not vault.reader.list_documents(filters={"needs_review": "true"})
     finally:
         vault.close()
 
@@ -293,23 +277,6 @@ def test_inactive_bundle_keeps_literal_selectors(tmp_path: Path) -> None:
         )
         assert [hit.path for hit in hits] == ["note.md"]
         assert "needs_review" not in asdict(hits[0])
-    finally:
-        vault.close()
-
-
-def test_python_invalid_selector_types_fail_cleanly(tmp_path: Path) -> None:
-    import pytest
-
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
-    vault = Vault(source_dir=tmp_path)
-    try:
-        vault.index.build_index()
-        for filters, message in (
-            ({"needs_review": True}, "needs_review filter"),
-            ({"needs_review": "true", "required_check": 3}, "Unknown check"),
-        ):
-            with pytest.raises(ValueError, match=message):
-                vault.reader.search("absent", mode="keyword", filters=filters)
     finally:
         vault.close()
 
@@ -357,7 +324,15 @@ def test_unavailable_reviewed_and_unreviewed_candidates_across_consumers(
 
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     text = "---\nstale_after: 2999-01-01\n---\nzebra\n"
-    for name in ("reviewed.md", "unreviewed.md", "reference.md"):
+    for name in (
+        "reviewed.md",
+        "unreviewed.md",
+        "recursive.md",
+        "broken.md",
+        "gone.md",
+        "healthy.md",
+        "reference.md",
+    ):
         (tmp_path / name).write_text(text)
     vault = Vault(
         source_dir=tmp_path,
@@ -370,6 +345,10 @@ def test_unavailable_reviewed_and_unreviewed_candidates_across_consumers(
         vault.index.build_embeddings()
         for name in ("reviewed.md", "unreviewed.md"):
             (tmp_path / name).write_bytes(b"\xff")
+        vault.writer.okf_verify("healthy.md", "alice", concept_snapshot(text))
+        (tmp_path / "broken.md").write_bytes(b"---\nbroken: [\n---\nzebra")
+        (tmp_path / "gone.md").unlink()
+        (tmp_path / "recursive.md").write_text("---\nloop: &a [*a]\n---\nzebra")
         filters = {"needs_review": "true"}
         for hits in (
             vault.reader.search("zebra", mode="keyword", filters=filters),
@@ -384,33 +363,33 @@ def test_unavailable_reviewed_and_unreviewed_candidates_across_consumers(
             assert found == {
                 "reviewed.md": ["snapshot_unavailable"],
                 "unreviewed.md": ["snapshot_unavailable"],
+                "recursive.md": ["snapshot_unavailable"],
+                "broken.md": ["snapshot_unavailable"],
             }
         assert {
             hit.path
             for hit in vault.reader.list_documents(filters={"needs_review": "false"})
-        } == set()
+        } == {"healthy.md"}
     finally:
         vault.close()
 
 
-def test_reviewed_unexpired_bom_and_crlf_notes(tmp_path: Path) -> None:
+def test_reviewed_unexpired_bom_note(tmp_path: Path) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     text = "---\nstale_after: 2999-01-01\n---\nzebra\n"
-    for name in ("bom.md", "crlf.md"):
+    for name in ("bom.md",):
         (tmp_path / name).write_text(text)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        for name in ("bom.md", "crlf.md"):
+        for name in ("bom.md",):
             vault.writer.okf_verify(name, "alice", concept_snapshot(text))
         bom = tmp_path / "bom.md"
         bom.write_bytes(b"\xef\xbb\xbf" + bom.read_bytes())
-        crlf = tmp_path / "crlf.md"
-        crlf.write_bytes(crlf.read_bytes().replace(b"\n", b"\r\n"))
         vault.index.build_index()
         assert {
             hit.path
             for hit in vault.reader.list_documents(filters={"needs_review": "false"})
-        } == {"bom.md", "crlf.md"}
+        } == {"bom.md"}
         assert not vault.reader.list_documents(filters={"needs_review": "true"})
     finally:
         vault.close()

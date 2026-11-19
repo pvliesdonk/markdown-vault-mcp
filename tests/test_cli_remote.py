@@ -367,7 +367,8 @@ def test_failure_kind_names_root_cause_without_text() -> None:
     assert _failure_kind(looped) == "ValueError"
 
 
-def test_remote_triage_text_escapes_conditions_and_check() -> None:
+def test_triage_renderer_escapes_untrusted_server_conditions_and_check() -> None:
+    """Escape even unexpected values supplied by an untrusted server."""
     from markdown_vault_mcp._cli_remote import RemoteReply
 
     hits = [
@@ -398,8 +399,6 @@ def test_remote_triage_text_escapes_conditions_and_check() -> None:
                 "x",
                 "--server",
                 "https://example.com/mcp",
-                "--filter",
-                "needs_review=true",
             ],
         )
     assert result.exit_code == 0, result.output

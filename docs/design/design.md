@@ -2144,6 +2144,8 @@ the spec itself says, dated and sourced, in
   Expired, missing or malformed freshness and absence of a matching review of
   `required_check` (default `human-review`) are independent conditions; each
   hit reports the conditions from the same per-call assessment used for selection.
+  `no_matching_review` means no required-check review is established as matching;
+  unsupported or malformed bindings cannot establish a match.
   A present but unreadable snapshot reports `snapshot_unavailable` without
   inferring freshness or review matching; a missing file is omitted.
   CLI search text renders the check and conditions with terminal controls escaped.

@@ -521,7 +521,10 @@ class ReaderFacet:
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of both.
             filters: Dict of ``{frontmatter_key: value}`` pairs (AND semantics).
-                Only works for fields in ``indexed_frontmatter_fields``.
+                Only works for fields in ``indexed_frontmatter_fields``. On
+                active OKF bundles, ``needs_review`` selects ``true`` or
+                ``false`` using live review triage; ``required_check`` selects
+                the check kind and defaults to ``human-review``.
             folder: If provided, restrict results to documents in this folder
                 (and its sub-folders).
             chunks_per_file: Maximum number of sections returned per file.
@@ -727,8 +730,11 @@ class ReaderFacet:
                 (AND semantics). On an active OKF bundle, ``status`` /
                 ``stale`` / ``trust_tier`` / ``freshness`` / ``review`` carry OKF
                 semantics. The last two select evidence rather than literal fields;
-                ``review=malformed`` means no usable review was recorded. Any filter
-                excludes attachments (they carry no frontmatter).
+                ``review=malformed`` means no usable review was recorded.
+                ``needs_review`` selects ``true`` or ``false`` using live review
+                triage; ``required_check`` selects the check kind and defaults
+                to ``human-review``. Any filter excludes attachments (they carry
+                no frontmatter).
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` (and
@@ -837,7 +843,10 @@ class ReaderFacet:
             folder: Optional folder to restrict results to (exact match or
                 sub-folder prefix).
             filters: Optional ``{frontmatter_key: value}`` equality filters,
-                ANDed; applied post-hoc against full frontmatter.
+                ANDed; applied post-hoc against full frontmatter. On active
+                OKF bundles, ``needs_review`` selects ``true`` or ``false``
+                using live review triage; ``required_check`` selects the check
+                kind and defaults to ``human-review``.
 
         Returns:
             List of grouped results.

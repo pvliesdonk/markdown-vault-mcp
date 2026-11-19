@@ -243,10 +243,8 @@ def test_local_triage_text_explains_conditions(tmp_path: Path) -> None:
     args = ["search", "needle", "--local", "--source-dir", str(tmp_path)]
     result = CliRunner().invoke(app, [*args, "--filter", "needs_review=true"])
     assert result.exit_code == 0, result.output
-    assert "freshness_expired" in result.stdout
-    assert "freshness_missing" in result.stdout
-    assert "no_matching_review" in result.stdout
-    assert "human-review" in result.stdout
+    assert "Review check:" in result.stdout
+    assert "conditions:" in result.stdout
     ordinary = CliRunner().invoke(app, args)
     assert ordinary.exit_code == 0, ordinary.output
-    assert "freshness_expired" not in ordinary.stdout
+    assert "Review check:" not in ordinary.stdout

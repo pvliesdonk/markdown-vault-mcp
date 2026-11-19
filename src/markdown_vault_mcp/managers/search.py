@@ -764,7 +764,7 @@ class SearchManager:
             assessments = assess_reviews(metadata, concept_snapshot(content), None)
         except (FileNotFoundError, NotADirectoryError):
             return None
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
+        except (OSError, UnicodeError, ValueError, RecursionError, yaml.YAMLError):
             return {
                 "needed": True,
                 "required_check": required_check,
@@ -1055,6 +1055,9 @@ class SearchManager:
                 ``indexed_frontmatter_fields`` for keyword search. On an
                 active OKF bundle, ``{"type": None}`` selects indexed,
                 non-reserved notes without a non-empty string type.
+                ``needs_review`` selects ``true`` or ``false`` using live review
+                triage; ``required_check`` selects the check kind and defaults
+                to ``human-review``.
             folder: If provided, restrict results to documents in this
                 folder (and its sub-folders).  ``""`` restricts to
                 root-level documents; the value is folded through
@@ -1634,7 +1637,9 @@ class SearchManager:
                 ``trust_tier``, ``freshness``, and ``review`` carry OKF semantics.
                 The latter two select evidence rather than literal fields;
                 ``review=malformed`` means no usable review was recorded.
-                ``{"type": None}``
+                ``needs_review`` selects ``true`` or ``false`` using live review
+                triage; ``required_check`` selects the check kind and defaults
+                to ``human-review``. ``{"type": None}``
                 selects non-reserved notes without a non-empty string type.
                 Attachments carry no frontmatter, so any filter excludes them.
 
@@ -1989,6 +1994,9 @@ class SearchManager:
                 ``trust_tier``, ``freshness`` and ``review`` use derived
                 semantics. The last two names select evidence rather than
                 literal fields and exclude reserved index and log files.
+                ``needs_review`` selects ``true`` or ``false`` using live review
+                triage; ``required_check`` selects the check kind and defaults
+                to ``human-review``.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
