@@ -37,8 +37,8 @@ def _required_with_default(func: str) -> TypeError:
 def _configuration_error(message: str) -> ConfigurationError:
     """Build the config error, importing its class only when one is raised.
 
-    The class is still pvl-core's: core code not yet moved (auth, stores, jobs,
-    transfer) raises it too, and callers here catch one type, so it becomes
+    The class is still pvl-core's: core code not yet moved (``ServerConfig``,
+    auth, transfer) raises it too, and callers here catch one type, so it becomes
     this project's own class only once no core code is left (#2283). Importing
     it here, not at module level, keeps a plain read such as the CLI client's
     profile from loading pvl-core and FastMCP (#2016).
