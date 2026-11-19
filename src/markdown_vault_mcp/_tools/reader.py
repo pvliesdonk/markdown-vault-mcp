@@ -192,9 +192,9 @@ def register(mcp: FastMCP) -> None:
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
             On an active OKF bundle, whole-document reads also carry
             an 'okf' dict (type, status, stale, trust_tier, freshness, review,
-            review_applicability, observation, recorded, snapshot {algo, digest}, and the note's 'sources'
-            list when present). Review applicability reports whether a snapshot binding is
-            available, independently of freshness and recorded claims. Observation reports
+            review_applicability, review_assessments, observation, recorded, snapshot {algo, digest}, and the note's 'sources'
+            list when present). Review assessments report snapshot binding, check and local receipt origin
+            independently of freshness. Observation reports
             the local review comparison or unavailable. Section reads omit
             it because they carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),

@@ -23,7 +23,93 @@ from markdown_vault_mcp.okf import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
+
+
+def _snapshot_pair(value: Any) -> tuple[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    algo, digest = value.get("algo"), value.get("digest")
+    if (
+        not isinstance(algo, str)
+        or not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+    ):
+        return None
+    return algo, digest
+
+
+def assess_reviews(
+    metadata: dict[str, Any],
+    snapshot: dict[str, str],
+    load: Callable[[], list[dict[str, Any]] | None] | None,
+) -> list[dict[str, Any]]:
+    """Assess each recorded review against its next claim and local receipt.
+
+    Args:
+        metadata: Parsed concept frontmatter.
+        snapshot: Current concept digest.
+        load: Deferred path-scoped receipt lookup, if available.
+
+    Returns:
+        Separate binding, check and origin facts in recorded order.
+    """
+    entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
+    extension = metadata.get("x-mvmcp")
+    raw = extension.get("reviews") if isinstance(extension, dict) else None
+    claims = (
+        [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+    )
+    receipts: list[dict[str, Any]] | None = None
+    loaded = False
+    result = []
+    for entry in entries:
+
+        def identity(row: dict[str, Any], reference: dict[str, Any] = entry) -> bool:
+            return row.get("by") == reference["by"] and _parse_stale_after(
+                row.get("at")
+            ) == _parse_stale_after(reference["at"])
+
+        claim = next((row for row in claims if identity(row)), None)
+        item: dict[str, Any] = {
+            "by": entry["by"],
+            "at": entry["at"],
+            "snapshot": "unbound",
+            "check": None,
+            "origin": "supplied",
+            "local_evidence": "unavailable",
+        }
+        if claim is not None:
+            claims.remove(claim)
+            check = claim.get("check")
+            pair = _snapshot_pair(claim.get("snapshot"))
+            if isinstance(check, str):
+                item["check"] = check
+            if pair is not None and pair[0] == snapshot["algo"]:
+                item["snapshot"] = (
+                    "matches" if pair[1] == snapshot["digest"] else "differs"
+                )
+            if not loaded:
+                receipts = load() if load is not None else None
+                loaded = True
+            if receipts is not None and isinstance(check, str) and pair is not None:
+                receipt = next(
+                    (
+                        row
+                        for row in receipts
+                        if identity(row)
+                        and row.get("check") == check
+                        and _snapshot_pair(row.get("snapshot")) == pair
+                    ),
+                    None,
+                )
+                if receipt is not None:
+                    receipts.remove(receipt)
+                    item["origin"] = "local_receipt"
+                    item["local_evidence"] = "available"
+        result.append(item)
+    return result
 
 
 class ReceiptNotRecordedError(Exception):
@@ -145,16 +231,29 @@ class ReceiptStore:
         if len(matching) != len(actors) or {row["by"] for row in matching} != actors:
             return {"state": "unavailable"}
         for row in matching:
-            baseline = row.get("snapshot")
+            baseline = _snapshot_pair(row.get("snapshot"))
             if (
-                not isinstance(baseline, dict)
-                or baseline.get("algo") != snapshot.get("algo")
-                or not isinstance(baseline.get("digest"), str)
-                or re.fullmatch(r"[0-9a-f]{64}", baseline["digest"]) is None
-                or baseline["digest"] == snapshot.get("digest")
+                baseline is None
+                or baseline[0] != snapshot.get("algo")
+                or baseline[1] == snapshot.get("digest")
             ):
                 return {"state": "unavailable"}
         return {"state": "available", "later_change_observed": True}
+
+    def receipts(self, path: str) -> list[dict[str, Any]] | None:
+        """Return path-scoped receipts, or None when they cannot be read."""
+        try:
+            with self._lock:
+                rows = self._load()
+        except (OSError, StoreUnsupportedSchemaError):
+            return None
+        return [row for row in rows if row.get("path") == path]
+
+    def review_assessments(
+        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Assess reviews with this instance's path-scoped receipts."""
+        return assess_reviews(metadata, snapshot, lambda: self.receipts(path))
 
     def append(self, receipt: dict[str, Any]) -> None:
         """Record the receipt of a review already written to its note.

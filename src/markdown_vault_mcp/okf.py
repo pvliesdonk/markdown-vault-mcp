@@ -426,6 +426,7 @@ def derive_annotation(
     *,
     now: _dt.datetime | None = None,
     include_sources: bool = False,
+    assessments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Derive the ``okf`` read-annotation payload for one note.
 
@@ -433,6 +434,7 @@ def derive_annotation(
         metadata: The note's frontmatter dict (may be empty).
         now: The current instant for staleness, timezone-aware; defaults to
             the server's local now.
+        assessments: Per-review assessments when the full concept is available.
         include_sources: When true (``read`` payloads), include the raw
             ``sources`` list; otherwise (search hits) include only
             ``sources_count``, and only when non-zero.
@@ -442,8 +444,8 @@ def derive_annotation(
         ``stale``, and ``trust_tier`` always; ``type`` only when present
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
-        truth or applicability to this revision. ``review_applicability``
-        reports the lack of a snapshot binding separately. Full reads additionally
+        truth. ``review_applicability`` summarizes supplied assessments or
+        reports unknown when the snapshot is unavailable. Full reads additionally
         carry ``recorded`` with supplied expiry/reviews as parsed, including
         malformed values; omitted keys remain absent.
     """
@@ -466,6 +468,24 @@ def derive_annotation(
     annotation["review_applicability"] = _review_applicability(
         entries, annotation["review"]
     )
+    extension = metadata.get("x-mvmcp")
+    if assessments is not None:
+        annotation["review_assessments"] = assessments
+        if any(item["snapshot"] != "unbound" for item in assessments):
+            annotation["review_applicability"] = {
+                "review": "assessed",
+                "basis": "per_review",
+            }
+        elif entries:
+            annotation["review_applicability"] = {
+                "snapshot": "unbound",
+                "basis": "no_snapshot_binding",
+            }
+    elif entries and isinstance(extension, dict) and extension.get("reviews"):
+        annotation["review_applicability"] = {
+            "review": "unknown",
+            "basis": "snapshot_not_available",
+        }
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:

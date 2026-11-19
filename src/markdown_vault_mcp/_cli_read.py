@@ -318,13 +318,22 @@ def read_payload(
     if section is None and (
         active or vault.okf_capability_report(active=False)["verify"]["effective"]
     ):
-        data["okf"] = (
-            derive_annotation(note.frontmatter, include_sources=True) if active else {}
-        )
         try:
-            data["okf"]["snapshot"] = concept_snapshot(note.content)
+            snapshot = concept_snapshot(note.content)
         except (yaml.YAMLError, ValueError) as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
+        data["okf"] = (
+            derive_annotation(
+                note.frontmatter,
+                include_sources=True,
+                assessments=vault.reader.review_assessments(
+                    note.path, note.frontmatter, snapshot
+                ),
+            )
+            if active
+            else {}
+        )
+        data["okf"]["snapshot"] = snapshot
         if active:
             data["okf"]["observation"] = vault.reader.review_observation(
                 note.path, note.frontmatter, data["okf"]["snapshot"]
