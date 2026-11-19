@@ -5627,7 +5627,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
 | `summarize` | LLM summary of a note/set/subtree (references sources by path); dual-mode: native background task, or promotion to a pollable job (#1033) | `True` | `False` | **`False`** |
-| `get_job_result` | Retrieve a background job (a promoted `summarize`, `reindex`, or `build_embeddings`) by `job_id`; pvl-core-owned generic poller (#1033) | `True` | `False` | **`False`** |
+| `get_job_result` | Retrieve a background job (a promoted `summarize`, `reindex`, or `build_embeddings`) by `job_id`; the generic poller from `_job_tools.register_job_tools` (#1033, #2281) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Append semantics (#980)**: `append` adds `content` at the end of an
@@ -5786,7 +5786,7 @@ contain this, both operator-tunable:
   The operator's lever, a higher ``SUMMARIZE_TIMEOUT``, goes in the
   ``summarize_timeout`` WARNING log line, not the model's text (#1608).
 - **Dual-mode execution with background promotion (#1033)** — ``summarize``
-  is registered through ``fastmcp_pvl_core.register_long_running_tool``
+  is registered through ``register_long_running_tool`` (``_job_tools``)
   rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled
   ``SummaryJobStore`` + ``get_summary`` pair (#937). An MCP client that
   speaks background tasks (SEP-2663) runs the call as a protocol-native
@@ -5830,7 +5830,8 @@ contain this, both operator-tunable:
 snippets, each added with a semantic role and the tool names it directs calls
 to. The template-owned scaffold contributes a shaped
 `<server name>: <product description>` identity and the documentation pointer;
-pvl-core's `register_*` helpers contribute job-polling and transfer workflows;
+`register_job_tools` contributes the job-polling workflow and pvl-core's
+transfer helper the transfer workflow;
 the domain contributes vault capabilities, workflows, and deployment mode.
 All contributors add to one builder obtained via `instructions_for(mcp)`.
 `finalize_instructions(mcp, config.server, env_prefix=...)` renders it once,

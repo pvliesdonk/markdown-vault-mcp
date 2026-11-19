@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp._pvl_core import register_long_running_tool
+from markdown_vault_mcp._job_tools import register_long_running_tool
 from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault

@@ -926,7 +926,8 @@ class TestToolAnnotations:
         # DOMAIN-WIRING block (they need the config-built Jobs mechanics,
         # #1033), not register_tools; wire them here the same way so the
         # full-registry sweep keeps asserting their metadata.
-        from markdown_vault_mcp._pvl_core import build_jobs, register_job_tools
+        from markdown_vault_mcp._job_tools import register_job_tools
+        from markdown_vault_mcp._pvl_core import build_jobs
         from markdown_vault_mcp._tools import index as index_tools
         from markdown_vault_mcp._tools import summarize as summarize_tools
 
