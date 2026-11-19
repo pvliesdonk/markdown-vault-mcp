@@ -40,6 +40,37 @@ def _snapshot_pair(value: Any) -> tuple[str, str] | None:
     return algo, digest
 
 
+def _assess_claim(
+    entry: dict[str, Any],
+    claim: dict[str, Any] | None,
+    snapshot: dict[str, str],
+    malformed_container: bool,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "by": entry["by"],
+        "at": entry["at"],
+        "snapshot": "unbound",
+        "check": None,
+        "origin": "supplied",
+        "local_evidence": "unavailable",
+    }
+    if claim is None:
+        if malformed_container:
+            item["snapshot_basis"] = "malformed_binding"
+        return item
+    check = claim.get("check")
+    pair = _snapshot_pair(claim.get("snapshot"))
+    if isinstance(check, str):
+        item["check"] = check
+    if pair is not None and pair[0] == snapshot["algo"]:
+        item["snapshot"] = "matches" if pair[1] == snapshot["digest"] else "differs"
+    elif pair is not None:
+        item["snapshot_basis"] = "unsupported_algorithm"
+    elif "snapshot" in claim:
+        item["snapshot_basis"] = "malformed_binding"
+    return item
+
+
 def assess_reviews(
     metadata: dict[str, Any],
     snapshot: dict[str, str],
@@ -104,30 +135,9 @@ def assess_reviews(
             (row for row in candidates if receipt_for(row) is not None),
             candidates[0] if candidates else None,
         )
-        item: dict[str, Any] = {
-            "by": entry["by"],
-            "at": entry["at"],
-            "snapshot": "unbound",
-            "check": None,
-            "origin": "supplied",
-            "local_evidence": "unavailable",
-        }
-        if claim is None and malformed_container:
-            item["snapshot_basis"] = "malformed_binding"
+        item = _assess_claim(entry, claim, snapshot, malformed_container)
         if claim is not None:
             claims.remove(claim)
-            check = claim.get("check")
-            pair = _snapshot_pair(claim.get("snapshot"))
-            if isinstance(check, str):
-                item["check"] = check
-            if pair is not None and pair[0] == snapshot["algo"]:
-                item["snapshot"] = (
-                    "matches" if pair[1] == snapshot["digest"] else "differs"
-                )
-            elif pair is not None:
-                item["snapshot_basis"] = "unsupported_algorithm"
-            elif "snapshot" in claim:
-                item["snapshot_basis"] = "malformed_binding"
             receipt = receipt_for(claim)
             if receipt is not None and receipts is not None:
                 receipts.remove(receipt)
