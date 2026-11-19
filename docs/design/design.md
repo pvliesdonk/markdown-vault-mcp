@@ -2146,8 +2146,7 @@ the spec itself says, dated and sourced, in
   grammars are copied without an entry. A file may also be `transformed` when
   its bytes change; neither entry identifies which fields relocated.
   Incomplete inventory enumeration refuses export, even under default-omitted
-  hidden paths. Reports and selection options are library-only; the download
-  ref exposes neither. Subtree links in
+  hidden paths. Strict publication refuses a nonconformant or incomplete artifact, outside or ambiguous references, broken links, or an inconsistent snapshot. The CLI and download ref accept selection and strict options. A strict refusal carries the completed report; a collision stops before audit and carries no report. The CLI exits nonzero without writing a ZIP. The transfer sink returns a JSON refusal as HTTP 200 because the core error contract sends no body; the filename and media type distinguish it from a ZIP. Subtree links in
   unindexed notes are handled independently of index admission. The final ZIP
   is audited for parseable YAML and non-empty type on nonreserved Markdown,
   index frontmatter and entry structure, and ISO log date headings. The format

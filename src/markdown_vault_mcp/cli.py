@@ -734,7 +734,9 @@ register_read_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
 from markdown_vault_mcp._cli_export import export as _export  # noqa: E402
 
-app.command("export")(_export)
+app.command(
+    "export", help="Export an OKF ZIP or print a JSON refusal without writing it."
+)(_export)
 
 # DOMAIN-COMMANDS-END
 

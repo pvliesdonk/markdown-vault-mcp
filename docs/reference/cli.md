@@ -325,7 +325,7 @@ Collect note links, neighbors, folder peers and conventions.
 
 ## `markdown-vault-mcp export`
 
-Export an OKF ZIP or print a JSON refusal without writing the destination.
+Export an OKF ZIP or print a JSON refusal without writing it.
 
 | Argument | Description |
 |---|---|

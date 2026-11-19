@@ -110,7 +110,7 @@ src/markdown_vault_mcp/
   okf_bundle.py        -- OKF bundle-zip export from a Git snapshot or digest-checked live inventory, served via an okf-bundle download ref (#963)
   okf_export_paths.py  -- subtree export relocation and shared artifact link observation (#1448)
   okf_export_conformance.py -- final ZIP artifact v0.2 format audit (#1448)
-  okf_export_report.py -- artifact verdict, local policy and omission observations for bundle export (#1448)
+  okf_export_report.py -- artifact verdict, publication refusals and JSON report serialization (#1448)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
@@ -164,6 +164,7 @@ src/markdown_vault_mcp/
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
+  _cli_export.py       -- local OKF export with scratch storage and configured inventory boundaries (#1448)
   _cli_client.py       -- nonsecret client TOML/environment selection and credential/URL/timeout validation
   _cli_remote.py       -- lazy native MCP HTTP read transport, capability checks and read dispatch
   _cli_read.py         -- shared read runner seam, lazy local adapters and native read boundary policies

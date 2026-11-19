@@ -431,6 +431,22 @@ async def test_bundle_options_keep_folder_spelling(
     assert result.media_type == "application/zip"
 
 
+async def test_wikilink_collision_download_is_a_refusal(
+    sink: VaultTransferSink, source_dir: Path, vault: Vault
+) -> None:
+    import json
+
+    (source_dir / "guides/outside").mkdir(parents=True)
+    (source_dir / "outside").mkdir()
+    (source_dir / "guides/a.md").write_text("[[outside/b]]")
+    (source_dir / "guides/outside/b.md").write_text("# selected")
+    (source_dir / "outside/b.md").write_text("# outside")
+    vault.index.build_index()
+    response = await sink.read("okf-bundle:guides")
+    assert response.media_type == "application/json"
+    assert json.loads(response.body)["reason"] == "collision"
+
+
 async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:
     # A folder scope valid at mint time but deleted before the one-time download
     # yields 410 (matching the single-file path), not an empty zip.

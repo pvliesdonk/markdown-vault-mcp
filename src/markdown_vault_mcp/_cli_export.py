@@ -18,7 +18,17 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     ),
     external_base: str | None = typer.Option(None, help="URL for outside references."),
 ) -> None:
-    """Export an OKF ZIP or print a JSON refusal without writing the destination."""
+    """Export an OKF ZIP or print a JSON refusal without writing the destination.
+
+    Args:
+        destination: Path to write after successful publication.
+        source_dir: Optional vault directory override.
+        folder: Vault-relative scope, or empty for the whole vault.
+        strict: Require a self-contained, consistent, conformant artifact.
+        include_hidden: Include eligible hidden paths.
+        include_index_excluded: Include paths excluded from the search index.
+        external_base: HTTP(S) base URL for outside destinations.
+    """
     from markdown_vault_mcp._cli_read import _build_reader_vault
     from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.config import ProjectConfig

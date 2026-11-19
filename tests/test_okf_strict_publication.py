@@ -122,3 +122,105 @@ def test_cli_never_exports_configured_server_state(tmp_path: Path, monkeypatch) 
         assert archive.namelist() == ["note.md"]
     assert (root / "state.json").read_text() == "sensitive state"
     assert (root / "index.sqlite").read_bytes() == b"database"
+
+
+def test_strict_refuses_incomplete_audit(tmp_path: Path) -> None:
+    (tmp_path / "note.md").write_bytes(b"\xff")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(PublicationRefused) as refused:
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), strict=True)
+        assert refused.value.report.verdict == "incomplete"
+        assert "note.md" in refused.value.report.unchecked
+    finally:
+        vault.close()
+
+
+def test_strict_refuses_changed_snapshot(tmp_path: Path, monkeypatch) -> None:
+    from markdown_vault_mcp import okf_bundle
+
+    path = tmp_path / "note.md"
+    path.write_text("---\ntype: Note\n---\noriginal")
+    write = okf_bundle._write
+
+    def write_and_change(archive, name, data):
+        write(archive, name, data)
+        path.write_text("---\ntype: Note\n---\nchanged")
+
+    monkeypatch.setattr(okf_bundle, "_write", write_and_change)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(PublicationRefused) as refused:
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), strict=True)
+        assert refused.value.report.snapshot.inconsistent_paths == ["note.md"]
+    finally:
+        vault.close()
+
+
+def test_cli_exports_subtree_with_metadata_and_links(tmp_path: Path) -> None:
+    import zipfile
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    root = tmp_path / "vault"
+    scope = root / "guides"
+    scope.mkdir(parents=True)
+    (scope / "a.md").write_text(
+        "---\ntype: Note\nsource: supplied\nx-custom: kept\n---\n[other](/guides/b.md)\n"
+    )
+    (scope / "b.md").write_text("---\ntype: Note\n---\nText\n")
+    destination = tmp_path / "bundle.zip"
+    result = CliRunner().invoke(
+        app,
+        [
+            "export",
+            str(destination),
+            "--source-dir",
+            str(root),
+            "--folder",
+            "guides",
+            "--strict",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with zipfile.ZipFile(destination) as archive:
+        assert set(archive.namelist()) == {"a.md", "b.md"}
+        body = archive.read("a.md").decode()
+    assert "source: supplied" in body and "x-custom: kept" in body
+    assert "[other](/b.md)" in body
+
+
+def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) -> None:
+    import zipfile
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    root = tmp_path / "vault"
+    scope = root / "guides"
+    scope.mkdir(parents=True)
+    (scope / "a.md").write_text("[outside](/b.md)")
+    (scope / "b.md").write_text("# B")
+    (scope / ".hidden.md").write_text("# hidden")
+    destination = tmp_path / "bundle.zip"
+    result = CliRunner().invoke(
+        app,
+        [
+            "export",
+            str(destination),
+            "--source-dir",
+            str(root),
+            "--folder",
+            "guides",
+            "--include-hidden",
+            "--external-base",
+            "https://example.org/vault",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with zipfile.ZipFile(destination) as archive:
+        assert ".hidden.md" in archive.namelist()
+        assert b"https://example.org/vault/b.md" in archive.read("a.md")
