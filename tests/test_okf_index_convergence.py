@@ -494,10 +494,7 @@ def test_search_retry_reconciles_label(
         listing = (root / "one/index.md").read_text()
         assert "After" not in listing
         assert ("note.md" if arrival else "Before") in listing
-        if failure == "upsert":
-            monkeypatch.setattr(vault._index_mgr._fts, "upsert_note", original_upsert)
-        else:
-            monkeypatch.setattr(index_module, "parse_note_categorized", original_parse)
+        monkeypatch.undo()
         if restart:
             vault.close()
             vault = designated_vault(root, ("one", "two"), index_path=db)
@@ -638,3 +635,150 @@ def test_excluded_and_dot_arrivals_create_no_index(tmp_path: Path) -> None:
             assert not path_exists(tmp_path / name / "index.md")
     finally:
         vault.close()
+
+
+def test_title_policy_restart_refreshes_only_changed_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "vault"
+    for name, label in (("one", "New label"), ("two", "Old label")):
+        (root / name).mkdir(parents=True)
+        (root / name / "index.md").write_text("# Index\n")
+        (root / name / "note.md").write_text(
+            f"---\ntitle: Old label\nlabel: {label}\n---\n# Body\n"
+        )
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=("one", "two")
+    ).okf_capabilities
+
+    def open_vault(field: str) -> Vault:
+        return Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                read_only=False,
+                okf_mode="on",
+                okf_capabilities=caps,
+                index_path=tmp_path / "index.sqlite",
+                title_field=field,
+            ),
+        )
+
+    vault = open_vault("title")
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+    finally:
+        vault.close()
+    sibling = root / "two/index.md"
+    sibling.write_text("# Hand edited\n")
+    vault = open_vault("label")
+    try:
+        vault.index.build_index()
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
+        vault.index.reindex()
+        assert "New label" in (root / "one/index.md").read_text()
+        assert sibling.read_text() == "# Hand edited\n"
+        assert calls == ["one"]
+        calls.clear()
+        vault.index.reindex()
+        assert calls == []
+    finally:
+        vault.close()
+
+
+def test_cancelled_async_reindex_still_converges(tmp_path: Path) -> None:
+    from threading import Event
+
+    index = tmp_path / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (tmp_path / "before.md").write_text("# Before\n")
+    vault = designated_vault(tmp_path, (".",))
+    reached, release = Event(), Event()
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        callback = vault._index_facet._after_reindex
+        assert callback is not None
+
+        def paused() -> None:
+            callback()
+            reached.set()
+            assert release.wait(5)
+
+        vault._index_facet._after_reindex = paused
+        first = vault.index.reindex_async()
+        assert reached.wait(5)
+        (tmp_path / "arrival.md").write_text("# Arrival\n")
+        second = vault.index.reindex_async()
+        vault._coordinator.prepare_index_read(timeout=5)
+        assert second.cancel()
+        release.set()
+        first.result(timeout=5)
+        vault.close()
+        assert "arrival.md" in index.read_text()
+    finally:
+        release.set()
+        vault.close()
+
+
+def test_exclude_policy_restart_removes_unadmitted_note(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (root / "note.md").write_text("# Note\n")
+    capabilities = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".",)
+    ).okf_capabilities
+
+    def open_vault(exclude: list[str]) -> Vault:
+        return Vault(
+            source_dir=root,
+            settings=VaultSettings(
+                read_only=False,
+                okf_mode="on",
+                okf_capabilities=capabilities,
+                required_frontmatter=["missing"],
+                exclude_patterns=exclude,
+                index_path=tmp_path / "index.sqlite",
+            ),
+        )
+
+    vault = open_vault([])
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        assert "note.md" in index.read_text()
+    finally:
+        vault.close()
+    vault = open_vault(["note.md"])
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        assert "note.md" not in index.read_text()
+    finally:
+        vault.close()
+
+
+def test_reused_state_path_reconciles_different_source(tmp_path: Path) -> None:
+    for name in ("one", "two"):
+        root = tmp_path / name
+        root.mkdir()
+        (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+        (root / "note.md").write_text("# Note\n")
+    for name in ("one", "two"):
+        root = tmp_path / name
+        vault = designated_vault(root, (".",), index_path=tmp_path / "index.sqlite")
+        try:
+            vault.index.build_index()
+            vault.index.reindex()
+            assert "note.md" in (root / "index.md").read_text()
+        finally:
+            vault.close()

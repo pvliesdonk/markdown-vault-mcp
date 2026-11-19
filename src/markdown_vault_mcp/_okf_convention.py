@@ -351,7 +351,7 @@ class ConventionMaintainer:
 
         Args:
             rows: Current locally observed Markdown state.
-            live: Search index content hashes by path.
+            live: Serialized search hashes and rendered label inputs by path.
 
         Returns:
             Whether the attempted refreshes succeeded.

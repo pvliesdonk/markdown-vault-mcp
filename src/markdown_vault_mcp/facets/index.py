@@ -13,13 +13,12 @@ internal surface (``close``, ``writer``, ``require_built``,
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from concurrent.futures import Future
 
     from markdown_vault_mcp.indexing import IndexWriteCoordinator
     from markdown_vault_mcp.managers.index import IndexManager
@@ -230,7 +229,19 @@ class IndexFacet:
                 self._after_reindex()
             return result
 
-        return self._convergence_executor.submit(finish)
+        continuation = self._convergence_executor.submit(finish)
+        result: Future[ReindexResult] = Future()
+
+        def publish(done: Future[ReindexResult]) -> None:
+            if not result.set_running_or_notify_cancel():
+                return
+            try:
+                result.set_result(done.result())
+            except BaseException as exc:
+                result.set_exception(exc)
+
+        continuation.add_done_callback(publish)
+        return result
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.

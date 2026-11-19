@@ -53,11 +53,15 @@ class IndexCheckpoint:
                     backend="okf_index_checkpoint",
                     location=str(self._path),
                 )
-            if version != 1 or not isinstance(data["concepts"], dict):
-                raise ValueError("invalid checkpoint")
             concepts = data["concepts"]
-            if not all(self._valid(path, digest) for path, digest in concepts.items()):
-                raise ValueError("invalid concept")
+            if (
+                version != 1
+                or not isinstance(concepts, dict)
+                or not all(
+                    self._valid(path, digest) for path, digest in concepts.items()
+                )
+            ):
+                raise ValueError("invalid checkpoint")
             scope = data["scope"]
             if not isinstance(scope, str) or not re.fullmatch(r"[0-9a-f]{64}", scope):
                 raise ValueError("invalid scope")
