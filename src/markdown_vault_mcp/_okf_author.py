@@ -8,16 +8,21 @@ from typing import Any
 
 import frontmatter
 import yaml
-from yaml.nodes import MappingNode, SequenceNode
+from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.okf import OKF_STATUS_VALUES, _parse_stale_after, okf_timestamp
+from markdown_vault_mcp.okf import (
+    _ACTOR_RE,
+    OKF_STATUS_VALUES,
+    _parse_stale_after,
+    okf_timestamp,
+)
 from markdown_vault_mcp.scanner import parse_frontmatter
 
 _FIELDS = frozenset(
     {"type", "title", "description", "tags", "status", "stale_after", "sources"}
 )
-_ACTOR = re.compile(r"(?:human:|process:)\S+|[^\s/]+/\S+")
+_ACTOR = _ACTOR_RE
 
 
 def _valid_sources(value: Any) -> bool:
@@ -166,7 +171,6 @@ def _collect_edits(
     source: str,
     root: MappingNode,
     changes: dict[str, Any],
-    replace_generated: bool = False,
 ) -> tuple[list[tuple[int, int, str]], list[str]]:
     nodes = {}
     for key, value in root.value:
@@ -181,19 +185,11 @@ def _collect_edits(
             additions.append(f"{key}: {_render(value)}")
             continue
         key_node, node = entry
-        if (
-            key == "generated"
-            and isinstance(node, MappingNode)
-            and not replace_generated
-        ):
+        if key == "generated" and isinstance(node, MappingNode):
             if node.start_mark.index < key_node.end_mark.index:
                 raise InvalidRequestError("Cannot replace an aliased field")
             edits.extend(_generated_edits(source, node, value))
-        elif (
-            key == "generated"
-            and not replace_generated
-            and node.tag != "tag:yaml.org,2002:null"
-        ):
+        elif key == "generated" and node.tag != "tag:yaml.org,2002:null":
             raise InvalidRequestError("Existing generated field must be a mapping")
         else:
             edits.append(
@@ -218,11 +214,9 @@ def _parse_root(source: str) -> MappingNode:
     return root
 
 
-def _edit_header(
-    source: str, changes: dict[str, Any], newline: str, replace_generated: bool = False
-) -> str:
+def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     root = _parse_root(source)
-    edits, additions = _collect_edits(source, root, changes, replace_generated)
+    edits, additions = _collect_edits(source, root, changes)
     if additions and root.flow_style:
         edits.append(_flow_insertion(source, root, additions))
         additions = []
@@ -277,6 +271,19 @@ def _retire_entries(
     if any(not isinstance(previous[i], dict) for i in indices):
         raise InvalidRequestError("Selected reviews must be mappings")
     selected = set(indices)
+    identities = [
+        (item.get("by"), _parse_stale_after(item.get("at")))
+        if isinstance(item, dict)
+        else None
+        for item in previous
+    ]
+    if any(
+        identities[i] is not None and identities[i] == identities[j]
+        for i in selected
+        for j in range(len(previous))
+        if j not in selected
+    ):
+        raise InvalidRequestError("Cannot retire a review with a shared identity")
     history.extend(
         {"review": previous[i], "reason": request["reason"]} for i in sorted(selected)
     )
@@ -333,6 +340,173 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
     return changes
 
 
+def _raw_flow(source: str, node: Any) -> str:
+    """Represent a node using its original scalar spellings."""
+    if isinstance(node, ScalarNode):
+        raw = source[node.start_mark.index : node.end_mark.index]
+        if node.style in {"|", ">"}:
+            raise InvalidRequestError("Cannot safely archive block scalar evidence")
+        return raw
+    if _comments_in_span(source, node.start_mark.index, node.end_mark.index):
+        raise InvalidRequestError("Cannot safely archive evidence containing comments")
+    if isinstance(node, SequenceNode):
+        return "[" + ", ".join(_raw_flow(source, item) for item in node.value) + "]"
+    return (
+        "{"
+        + ", ".join(
+            _raw_flow(source, key) + ": " + _raw_flow(source, value)
+            for key, value in node.value
+        )
+        + "}"
+    )
+
+
+def _mapping_nodes(node: MappingNode) -> dict[str, Any]:
+    return {key.value: value for key, value in node.value}
+
+
+def _line_insertion(source: str, position: int) -> int:
+    start = source.rfind("\n", 0, position) + 1
+    return start if not source[start:position].strip() else position
+
+
+def _insert_mapping(
+    source: str, node: MappingNode, key: str, raw: str, newline: str
+) -> str:
+    if node.flow_style:
+        start, end, value = _flow_insertion(source, node, [f"{key}: {raw}"])
+    else:
+        start = end = _line_insertion(source, node.end_mark.index)
+        value = " " * node.start_mark.column + f"{key}: {raw}" + newline
+    return source[:start] + value + source[end:]
+
+
+def _append_history(source: str, history: str, items: list[str], newline: str) -> str:
+    root = _parse_root(source)
+    ext = _mapping_nodes(root).get("x-mvmcp")
+    if ext is None:
+        return _insert_mapping(
+            source,
+            root,
+            "x-mvmcp",
+            "{" + history + ": [" + ", ".join(items) + "]}",
+            newline,
+        )
+    if not isinstance(ext, MappingNode):
+        raise InvalidRequestError("x-mvmcp must be a mapping before repair")
+    existing = _mapping_nodes(ext).get(history)
+    if existing is None:
+        return _insert_mapping(
+            source, ext, history, "[" + ", ".join(items) + "]", newline
+        )
+    if not isinstance(existing, SequenceNode):
+        raise InvalidRequestError(f"{history} must be a list")
+    if existing.flow_style:
+        start, end, value = _flow_insertion(source, existing, items)
+    else:
+        start = end = _line_insertion(source, existing.end_mark.index)
+        value = "".join(
+            " " * existing.start_mark.column + "- " + item + newline for item in items
+        )
+    return source[:start] + value + source[end:]
+
+
+def _remove_reviews(source: str, node: Any, selected: set[int]) -> str:
+    if isinstance(node, MappingNode):
+        end = (
+            node.end_mark.index
+            if node.flow_style
+            else _line_insertion(source, node.end_mark.index)
+        )
+        suffix = "" if node.flow_style else ("\r\n" if "\r\n" in source else "\n")
+        return source[: node.start_mark.index] + "[]" + suffix + source[end:]
+    if not isinstance(node, SequenceNode):
+        raise InvalidRequestError("Existing verified must be a list or mapping")
+    if len(selected) == len(node.value):
+        comments = _comments_in_span(source, node.start_mark.index, node.end_mark.index)
+        newline = "\r\n" if "\r\n" in source else "\n"
+        end = (
+            node.end_mark.index
+            if node.flow_style
+            else _line_insertion(source, node.end_mark.index)
+        )
+        suffix = (
+            (newline + comments if comments else "")
+            if node.flow_style
+            else newline + comments
+        )
+        return source[: node.start_mark.index] + "[]" + suffix + source[end:]
+    if node.flow_style:
+        # Replace only the sequence separators and selected entries; retain the
+        # exact text of every surviving entry.
+        kept = [
+            source[item.start_mark.index : item.end_mark.index]
+            for i, item in enumerate(node.value)
+            if i not in selected
+        ]
+        if _comments_in_span(source, node.start_mark.index, node.end_mark.index):
+            raise InvalidRequestError("Cannot safely edit a commented flow review list")
+        return (
+            source[: node.start_mark.index]
+            + "["
+            + ", ".join(kept)
+            + "]"
+            + source[node.end_mark.index :]
+        )
+    for i in sorted(selected, reverse=True):
+        item = node.value[i]
+        start = source.rfind("\n", 0, item.start_mark.index) + 1
+        end = (
+            source.rfind("\n", 0, node.value[i + 1].start_mark.index) + 1
+            if i + 1 < len(node.value)
+            else _line_insertion(source, node.end_mark.index)
+        )
+        comments = _comments_in_span(source, start, end)
+        source = source[:start] + comments + source[end:]
+    return source
+
+
+def _repair_header(
+    source: str, repair: dict[str, Any], changes: dict[str, Any], newline: str
+) -> str:
+    root = _parse_root(source)
+    nodes = _mapping_nodes(root)
+    retire = repair.get("retire_reviews")
+    replace = repair.get("replace_generated")
+    if retire is not None:
+        node = nodes["verified"]
+        members = node.value if isinstance(node, SequenceNode) else [node]
+        items = [
+            "{review: "
+            + _raw_flow(source, members[i])
+            + ", reason: "
+            + _render(retire["reason"])
+            + "}"
+            for i in sorted(retire["indices"])
+        ]
+        source = _remove_reviews(source, node, set(retire["indices"]))
+        source = _append_history(source, "review_history", items, newline)
+    if replace is not None:
+        root = _parse_root(source)
+        node = _mapping_nodes(root)["generated"]
+        item = (
+            "{generated: "
+            + _raw_flow(source, node)
+            + ", reason: "
+            + _render(replace["reason"])
+            + "}"
+        )
+        key = next(key for key, _ in root.value if key.value == "generated")
+        start, end = key.start_mark.index, node.end_mark.index
+        source = (
+            source[:start]
+            + _replacement(source, key, node, changes["generated"])
+            + source[end:]
+        )
+        source = _append_history(source, "generated_history", [item], newline)
+    return source
+
+
 def author_text(
     text: str,
     fields: dict[str, Any],
@@ -352,6 +526,8 @@ def author_text(
         The edited note text.
     """
     _validate(fields, producer, repair)
+    if repair is not None and not isinstance(repair, dict):
+        raise InvalidRequestError("Invalid repair request")
     if repair is not None and producer is not None and "replace_generated" in repair:
         raise InvalidRequestError("Choose producer or replace_generated, not both")
     changes = dict(fields)
@@ -368,8 +544,6 @@ def author_text(
         repair_changes = (
             _repair_changes(original.metadata, repair) if repair is not None else {}
         )
-        changes.update(repair_changes)
-        replacing = "generated" in repair_changes
         if span is None:
             prefix = "\ufeff" if text.startswith("\ufeff") else ""
             source = "".join(
@@ -386,7 +560,9 @@ def author_text(
             )
         else:
             start, end = span
-            source = _edit_header(text[start:end], changes, newline, replacing)
+            source = _edit_header(text[start:end], changes, newline)
+            if repair is not None:
+                source = _repair_header(source, repair, repair_changes, newline)
             result = text[:start] + source + text[end:]
         parsed = parse_frontmatter(result.removeprefix("\ufeff"))
         expected = dict(original.metadata)

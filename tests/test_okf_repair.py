@@ -169,3 +169,100 @@ async def test_mcp_forwards_repair(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
         )
     meta = parse_frontmatter((tmp_path / "note.md").read_text()).metadata
     assert meta["x-mvmcp"]["review_history"][0]["reason"] == "correction"
+
+
+def test_repair_preserves_precision_in_all_evidence() -> None:
+    text = """---
+generated: {by: old/1, weight: 0.1234567890123456789}
+verified:
+  - {by: 'human:one', at: 2026-01-01T00:00:00.123456789Z, value: 0.1234567890123456789}
+  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep
+x-mvmcp:
+  other: 0.1234567890123456789
+  reviews: [{value: 0.1234567890123456789}]
+---
+Body
+"""
+    result = author_text(
+        text,
+        {},
+        None,
+        repair={
+            "retire_reviews": {"indices": [0], "reason": "r"},
+            "replace_generated": {"by": "new/1", "reason": "r"},
+        },
+    )
+    assert result.count("0.1234567890123456789") == 4
+    assert "2026-01-01T00:00:00.123456789Z" in result
+    assert (
+        "  - {by: 'process:two', at: 2026-01-02T00:00:00.123456789Z}  # keep" in result
+    )
+    again = author_text(
+        result, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "again"}}
+    )
+    assert again.count("0.1234567890123456789") == 4
+
+
+def test_refuse_partial_retirement_of_duplicate_identity() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}, {by: 'human:a', at: '2026-01-01T00:00:00Z'}]\n---\nBody\n"
+    with pytest.raises(InvalidRequestError, match="identity"):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
+        )
+
+
+def test_replacement_rejects_invalid_actor_and_repair_type() -> None:
+    with pytest.raises(InvalidRequestError):
+        author_text(
+            NOTE,
+            {},
+            None,
+            repair={"replace_generated": {"by": "tool/version/extra", "reason": "r"}},
+        )
+    with pytest.raises(InvalidRequestError):
+        author_text(NOTE, {}, "tool/1", repair=123)  # type: ignore[arg-type]
+
+
+def test_flow_and_block_histories_keep_raw_precision() -> None:
+    text = """---
+generated:
+  by: old/1
+  amount: 0.1234567890123456789
+verified: [{by: 'human:a', at: '2026-01-01T00:00:00Z', amount: 0.1234567890123456789}, {by: 'process:b', at: '2026-01-02T00:00:00Z'}]
+x-mvmcp:
+  review_history:
+    - {review: {amount: 0.1234567890123456789}, reason: old}
+  generated_history: [{generated: {amount: 0.1234567890123456789}, reason: old}]
+---
+Body
+"""
+    result = author_text(
+        text,
+        {},
+        None,
+        repair={
+            "retire_reviews": {"indices": [0], "reason": "r"},
+            "replace_generated": {"by": "new/1", "reason": "r"},
+        },
+    )
+    assert result.count("0.1234567890123456789") == 4
+    assert "{by: 'process:b', at: '2026-01-02T00:00:00Z'}" in result
+    assert len(parse_frontmatter(result).metadata["x-mvmcp"]["review_history"]) == 2
+
+
+def test_duplicate_identity_with_equivalent_offset_refused() -> None:
+    text = "---\nverified: [{by: 'human:a', at: '2026-01-01T00:00:00Z'}, {by: 'human:a', at: '2025-12-31T16:00:00-08:00'}]\n---\nBody\n"
+    with pytest.raises(InvalidRequestError, match="identity"):
+        author_text(
+            text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
+        )
+
+
+def test_retire_all_block_reviews_before_next_field() -> None:
+    text = "---\nverified:\n  - by: 'human:a'\n    at: '2026-01-01T00:00:00Z'\nother: keep\n---\nBody\n"
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": [0], "reason": "r"}}
+    )
+    meta = parse_frontmatter(result).metadata
+    assert meta["verified"] == []
+    assert meta["other"] == "keep"
