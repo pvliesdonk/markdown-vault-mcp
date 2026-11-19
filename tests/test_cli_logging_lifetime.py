@@ -21,7 +21,7 @@ import logging
 import threading
 
 import pytest
-from markdown_vault_mcp._pvl_core import configure_logging_from_env
+from markdown_vault_mcp._logging_setup import configure_logging_from_env
 from typer.testing import CliRunner
 
 from markdown_vault_mcp import cli

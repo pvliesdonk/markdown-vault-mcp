@@ -9,7 +9,8 @@ import typer
 from markdown_vault_mcp._debug import maybe_start_debugpy
 from markdown_vault_mcp._http_path import normalise_http_path
 from markdown_vault_mcp._kv_store import build_event_store
-from markdown_vault_mcp._pvl_core import ConfigurationError, configure_logging_from_env
+from markdown_vault_mcp._logging_setup import configure_logging_from_env
+from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp._serve import run_http
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
@@ -31,7 +32,7 @@ def _root(
 ) -> None:
     """Root callback — bootstraps logging for every subcommand.
 
-    pvl-core owns the root logger.  ``configure_logging_from_env`` installs
+    ``_logging_setup`` owns the root logger.  ``configure_logging_from_env`` installs
     the one console handler chain every logger in the process renders
     through — ``markdown_vault_mcp.*``, ``fastmcp.*`` and uvicorn alike —
     picks Rich or JSON from ``MARKDOWN_VAULT_MCP_LOG_FORMAT`` (unset: Rich on
@@ -76,7 +77,7 @@ def serve(
     # unless ``MARKDOWN_VAULT_MCP_DEBUG_PORT`` is set; ``debugpy`` is only
     # present when the image was built with ``--build-arg DEBUG=true``
     # (a missing import logs a WARNING and continues).  ``_root`` has
-    # already installed pvl-core's root handler chain by the time ``serve``
+    # already installed the root handler chain by the time ``serve``
     # runs, so the helper's INFO/WARNING logs render through it rather
     # than Python's lastResort.
     maybe_start_debugpy(_ENV_PREFIX)

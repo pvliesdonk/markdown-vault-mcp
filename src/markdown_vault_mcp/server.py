@@ -21,11 +21,8 @@ from markdown_vault_mcp._instructions_builder import (
     finalize_instructions,
     instructions_for,
 )
-from markdown_vault_mcp._pvl_core import (
-    build_auth,
-    configure_logging_from_env,
-    get_current_auth_mode,
-)
+from markdown_vault_mcp._logging_setup import configure_logging_from_env
+from markdown_vault_mcp._pvl_core import build_auth, get_current_auth_mode
 from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import (
@@ -72,7 +69,7 @@ def make_server(
             CLI uses applies, so a direct ``make_server(transport="http")``
             and ``serve --transport http`` publish the routes at the same
             place.
-        configure_logging: Install pvl-core's root logging from the
+        configure_logging: Install the root logging (``_logging_setup``) from the
             environment, as a caller with no logging setup of its own
             needs.  The CLI passes ``False``: its root callback has
             already configured logging and honoured ``-v``, which a
