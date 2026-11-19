@@ -43,6 +43,34 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: uv run --no-sync --no-build python scripts/check_pins.py
 
+      - name: Verify the publisher accepts the built package
+        # The metadata version hatchling emits and the twine that the pinned
+        # gh-action-pypi-publish bundles are one invariant across two files
+        # (#479): hatchling 1.32 began emitting Metadata-Version 2.5 before
+        # the publisher's twine knew it, and the first signal was a failed
+        # release.  `twine check` is offline, so this runs on every PR, and a
+        # Renovate bump of either pin fails here instead of at release time.
+        # The twine version is read out of the pinned publisher, never named
+        # here, so it cannot drift from the pin (#2259).
+        run: |
+          set -euo pipefail
+          SHA=$(grep -oE 'pypa/gh-action-pypi-publish@[0-9a-f]{40}' \
+            .github/workflows/release.yml | head -1 | cut -d@ -f2 || true)
+          [ -n "$SHA" ] \
+            || { echo "::error::no pinned gh-action-pypi-publish SHA in release.yml"; exit 1; }
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            "https://raw.githubusercontent.com/pypa/gh-action-pypi-publish/${SHA}/requirements/runtime.txt" \
+            -o "$RUNNER_TEMP/publisher-runtime.txt"
+          # The file is hash-pinned: keep only the `name==version` token.
+          TWINE=$(grep -oE '^twine==[^[:space:];\\]+' "$RUNNER_TEMP/publisher-runtime.txt" || true)
+          PACKAGING=$(grep -oE '^packaging==[^[:space:];\\]+' "$RUNNER_TEMP/publisher-runtime.txt" || true)
+          [ -n "$TWINE" ] && [ -n "$PACKAGING" ] \
+            || { echo "::error::no twine/packaging pin in the publisher's runtime.txt at $SHA"; exit 1; }
+          echo "publisher $SHA bundles $TWINE / $PACKAGING"
+          uv build --out-dir "$RUNNER_TEMP/publish-check"
+          uv run --no-project --with "$TWINE" --with "$PACKAGING" \
+            twine check "$RUNNER_TEMP"/publish-check/*
+
       - name: Run ruff check
         run: uv run --no-sync --no-build ruff check src/ tests/
 
@@ -67,28 +95,16 @@ jobs:
     runs-on: ubuntu-latest
     # Bound both environment setup and test execution for each interpreter.
     timeout-minutes: 20
-    continue-on-error: ${{ matrix.experimental || false }}
     permissions:
       contents: read
       statuses: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: "3.11"
-            experimental: false
-          - python-version: "3.12"
-            experimental: false
-          - python-version: "3.13"
-            experimental: false
-          - python-version: "3.14"
-            experimental: false
-          # The newest CPython runs ahead of the claimed versions: a red leg
-          # here does not fail `CI Success`, so a dependency still missing
-          # wheels for it blocks nothing.  A template release makes it
-          # required, with its classifier; the Docker image stays on 3.14.
-          - python-version: "3.15"
-            experimental: true
+        # The newest CPython runs in python-next.yml, on a schedule, so a
+        # dependency still missing wheels for it never shows a red check
+        # here (#2250).  The Docker image stays on 3.14.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
