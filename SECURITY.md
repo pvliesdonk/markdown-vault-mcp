@@ -1,9 +1,5 @@
 # Security policy
 
-<!-- ===== TEMPLATE-OWNED SECTIONS BELOW — re-rendered on copier update.
-     Project-specific scope, contacts and response targets live inside the
-     DOMAIN-SECURITY block; everything else is the template's. ===== -->
-
 ## Reporting a vulnerability
 
 Report it privately through GitHub: open **Security → Report a
@@ -60,12 +56,10 @@ in `docs/contribute/release-process.md` for how a patch reaches an open
 
 ## Where a fix lands
 
-This project is generated from
-[fastmcp-server-template](https://github.com/pvliesdonk/fastmcp-server-template)
-on top of the [fastmcp-pvl-core](https://github.com/pvliesdonk/fastmcp-pvl-core)
-library. Report here regardless of where the flaw sits; the maintainers route
-it. A flaw in a template-owned file or in the library is fixed upstream and
-reaches this project through a template update or a dependency bump, and the
+Report here regardless of where the flaw sits; the maintainers route it.
+A flaw in any file of this repository is fixed here. A flaw in the
+[fastmcp-pvl-core](https://github.com/pvliesdonk/fastmcp-pvl-core) library
+is fixed there and reaches this project through a dependency bump, and the
 advisory here links the upstream one.
 
 ## Disclosure and credit
