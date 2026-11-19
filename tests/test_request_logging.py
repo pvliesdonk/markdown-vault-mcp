@@ -13,7 +13,7 @@ import pytest
 from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.server.middleware.middleware import MiddlewareContext
 
-from markdown_vault_mcp._pvl_core import JsonFormatter, bind_record, render_rich
+from markdown_vault_mcp._log_render import JsonFormatter, bind_record, render_rich
 from markdown_vault_mcp._request_logging import RequestLoggingMiddleware
 
 _LOGGER_NAME = "fastmcp.middleware.requests"

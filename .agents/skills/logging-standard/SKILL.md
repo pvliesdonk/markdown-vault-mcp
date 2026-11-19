@@ -39,7 +39,7 @@ do not try to make them conform, silence them, or reformat them:
 - Standard library `logging` throughout. Every module:
   `logger = logging.getLogger(__name__)`.
 - No `print()` for operational output. No third-party logging libraries;
-  there is no structlog here, and the JSON output below is pvl-core's
+  there is no structlog here, and the JSON output below is `_log_render`'s
   formatter over ordinary `LogRecord`s.
 - The request-logging middleware handles tool invocation, timing and error
   logging automatically.
