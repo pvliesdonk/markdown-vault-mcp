@@ -60,8 +60,9 @@ from markdown_vault_mcp._file_watcher import (
 def _make_test_lifespan(config: object, transport: str = "stdio") -> object:
     """A config-driven lifespan wrapping the domain ``Service`` (#902).
 
-    The production ``server_lifespan`` is no-arg (``Service()`` reads env and
-    the staged transport); these integration tests need a specific config, so
+    The production ``server_lifespan`` passes the config ``make_server`` bound
+    and leaves the transport to the staged value; these tests need a specific
+    config and transport without building a server, so
     they drive ``Service(config, transport)`` through an equivalent async
     context manager yielding the same context shape. The transport is passed
     explicitly rather than left to the module-level staged default, so the

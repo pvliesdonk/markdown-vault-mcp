@@ -24,7 +24,7 @@ import re
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -107,6 +107,44 @@ _WORKTREE_STATUS_TIMEOUT_S = 10
 _WORKTREE_RETRY_S = 60.0
 
 
+@dataclass(frozen=True, kw_only=True)
+class GitWriteSettings:
+    """Grouped configuration for a :class:`GitWriteStrategy`.
+
+    Each field mirrors the :class:`GitWriteStrategy` constructor argument of
+    the same name and has the same default. The instance is frozen and its
+    ``repr`` omits ``token``.
+
+    Attributes:
+        token: PAT for HTTPS push via ``GIT_ASKPASS``.  ``None`` uses SSH or
+            pre-configured credentials.
+        username: Username used with token auth (GitHub-compatible default).
+        repo_url: Remote URL expected in managed mode.
+        managed: When ``True``, the strategy clones into an empty
+            ``repo_path`` or validates ``origin`` on an existing repository.
+        enable_pull: Enable fetch + ff-only sync methods.
+        enable_push: Enable deferred push behavior.
+        push_delay_s: Seconds of idle before pushing.  ``0`` disables the
+            timer (push only on close).
+        commit_name: Git committer name; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_NAME`.
+        commit_email: Git committer email; ``None`` or empty falls back to
+            :attr:`GitWriteStrategy.DEFAULT_COMMIT_EMAIL`.
+        git_lfs: Run ``git lfs pull`` during lazy initialisation.
+    """
+
+    token: str | None = field(default=None, repr=False)
+    username: str = "x-access-token"
+    repo_url: str | None = None
+    managed: bool = False
+    enable_pull: bool = True
+    enable_push: bool = True
+    push_delay_s: float = 30.0
+    commit_name: str | None = None
+    commit_email: str | None = None
+    git_lfs: bool = True
+
+
 class GitWriteStrategy:
     """Stateful git strategy: commit per tool call, deferred push.
 
@@ -154,6 +192,18 @@ class GitWriteStrategy:
             reporting uncommitted files without modifying them. When set together with ``token``, startup raises
             :class:`~markdown_vault_mcp.exceptions.ConfigurationError`
             if ``origin`` uses SSH transport instead of HTTPS.
+        settings: Preferred grouped configuration.  When given, it replaces
+            every flat configuration argument above except ``repo_path``,
+            and those flat arguments must stay at their defaults.
+
+    Raises:
+        ValueError: ``settings`` is given together with a flat configuration
+            argument that differs from its default; the message names the
+            arguments, not their values.
+
+    Prefer ``settings`` for configuration. Flat parameters remain for compatibility;
+    future settings are added only to :class:`GitWriteSettings`. Non-default flat
+    parameters cannot be combined with ``settings``.
 
     Author identity arrives per write as a resolved ``principal``. OIDC
     claim-key registration belongs to
@@ -188,19 +238,45 @@ class GitWriteStrategy:
         *,
         git_lfs: bool = True,
         repo_path: Path | None = None,
+        settings: GitWriteSettings | None = None,
     ) -> None:
+        legacy = GitWriteSettings(
+            token=token,
+            username=username,
+            repo_url=repo_url,
+            managed=managed,
+            enable_pull=enable_pull,
+            enable_push=enable_push,
+            push_delay_s=push_delay_s,
+            commit_name=commit_name,
+            commit_email=commit_email,
+            git_lfs=git_lfs,
+        )
+        if settings is not None:
+            defaults = GitWriteSettings()
+            conflicts = [
+                f.name
+                for f in fields(legacy)
+                if getattr(legacy, f.name) != getattr(defaults, f.name)
+            ]
+            if conflicts:
+                raise ValueError(
+                    "settings cannot be combined with non-default arguments: "
+                    + ", ".join(conflicts)
+                )
+        resolved = settings if settings is not None else legacy
         # Token is retained for GIT_ASKPASS credential forwarding in subprocesses.
         # This pattern is intentionally accepted and suppressed in CodeQL config.
-        self._token = token
-        self._username = username
-        self._repo_url = repo_url
-        self._managed = managed
-        self._enable_pull = enable_pull
-        self._enable_push = enable_push
-        self._push_delay_s = push_delay_s
-        self._commit_name = commit_name or self.DEFAULT_COMMIT_NAME
-        self._commit_email = commit_email or self.DEFAULT_COMMIT_EMAIL
-        self._git_lfs = git_lfs
+        self._token = resolved.token
+        self._username = resolved.username
+        self._repo_url = resolved.repo_url
+        self._managed = resolved.managed
+        self._enable_pull = resolved.enable_pull
+        self._enable_push = resolved.enable_push
+        self._push_delay_s = resolved.push_delay_s
+        self._commit_name = resolved.commit_name or self.DEFAULT_COMMIT_NAME
+        self._commit_email = resolved.commit_email or self.DEFAULT_COMMIT_EMAIL
+        self._git_lfs = resolved.git_lfs
         # Retain the configured repo_path so methods invoked after construction
         # (e.g. force_pull / force_push) can reach the working tree without
         # the caller re-passing it.  Distinct from ``_pull_repo_path`` which
@@ -217,9 +293,9 @@ class GitWriteStrategy:
         self._lock = threading.Lock()
         self._bootstrap = RepoBootstrap(
             lock=self._lock,
-            token=token,
-            username=username,
-            repo_url=repo_url,
+            token=resolved.token,
+            username=resolved.username,
+            repo_url=resolved.repo_url,
         )
         # Sync health is tracked outside the strategy-wide lock (#1287): the
         # lock is held across a whole fetch + merge, and the MCP write path
@@ -229,8 +305,8 @@ class GitWriteStrategy:
             lock=self._lock,
             bootstrap=self._bootstrap,
             health=self._health,
-            enable_push=enable_push,
-            push_delay_s=push_delay_s,
+            enable_push=resolved.enable_push,
+            push_delay_s=resolved.push_delay_s,
         )
         self._closed = False
         self._pull_stop = threading.Event()
