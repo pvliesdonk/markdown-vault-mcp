@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the config-surface artifacts from a single source of truth.
 
-Reads a rendered project's ``.copier-answers.yml`` and its
+Reads the project's ``project-settings.yml`` and its
 ``config-presentation.yml``, then merges four provenance sources into one
 declaration-ordered variable list:
 
@@ -117,8 +117,8 @@ def _require_env_prefix(answers: Mapping[str, object]) -> str:
     """
     if "env_prefix" not in answers:
         raise SystemExit(
-            "ERROR: 'env_prefix' missing from .copier-answers.yml — a project "
-            "rendered by this template always answers that question."
+            "ERROR: 'env_prefix' missing from project-settings.yml — the "
+            "generators cannot name a variable without it."
         )
     return str(answers["env_prefix"])
 
@@ -129,16 +129,15 @@ def _require_env_prefix(answers: Mapping[str, object]) -> str:
 
 
 def load_answers(project_root: Path | str) -> dict[str, object]:
-    """Read `.copier-answers.yml` from a rendered project."""
+    """Read the project settings (`project-settings.yml`) at *project_root*."""
     import yaml
 
     project_root = Path(project_root)
-    answers_path = project_root / ".copier-answers.yml"
+    answers_path = project_root / "project-settings.yml"
     if not answers_path.exists():
         raise SystemExit(
-            f"ERROR: {answers_path} not found — this script must be run from "
-            "the root of a project rendered by copier (missing "
-            ".copier-answers.yml)."
+            f"ERROR: {answers_path} not found — run this script from the "
+            "project root, which holds project-settings.yml."
         )
     data = yaml.safe_load(answers_path.read_text(encoding="utf-8"))
     return data or {}
@@ -528,7 +527,7 @@ def _presentation_root(project_root: Path) -> Path:
     *project_root* in a real rendered project. Fall back to the copy
     co-located with this script (the template repo root, when running the
     template's own tests) so callers work against a project_root that only
-    has the parts a caller actually needs — e.g. a bare `.copier-answers.yml`
+    has the parts a caller actually needs — e.g. a bare `project-settings.yml`
     in unit tests.
     """
     project_root = Path(project_root)

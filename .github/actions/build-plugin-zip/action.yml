@@ -37,10 +37,9 @@ runs:
     # release it never opted into.
     #
     # Deliberately a runtime test rather than a render-time conditional: the
-    # detach path (FORKING.md) leaves everything under .github/ in place and
-    # requires it to carry no scaffolding references, so a workflow that is
-    # identical for every project and decides at runtime is the shape that
-    # survives detaching.
+    # step reads the repository as it is, with no template scaffolding to
+    # consult, which is also what let it survive the detach from the
+    # template (#2240).
     - name: Detect the plugin channel
       id: detect
       shell: bash
