@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 from tests.fixtures.designated_index import designated_vault
@@ -291,7 +292,7 @@ def test_refusal_names_the_unreadable_folder_and_the_action(tmp_path: Path) -> N
         assert "'docs/locked[1]'" in str(refused.value)
         assert "restore access" in str(refused.value)
         assert "exclude" not in str(refused.value)
-        assert not (tmp_path / "index.md").exists()
+        assert not path_exists(tmp_path / "index.md")
     finally:
         locked.chmod(0o755)
         vault.close()
@@ -341,5 +342,35 @@ def test_missing_folder_is_listed_empty(tmp_path: Path) -> None:
         result = vault.writer.okf_generate_index(folder="new")
         assert result.entries == 0
         assert (tmp_path / "new/index.md").read_text().startswith("# new")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("designated", [False, True])
+def test_server_state_index_is_not_a_child_boundary(
+    tmp_path: Path, designated: bool
+) -> None:
+    (tmp_path / "child").mkdir()
+    (tmp_path / "child/note.md").write_text("# Note\n")
+    (tmp_path / "index.md").write_text(_ROOT_INDEX)
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    index = tmp_path / "child/index.md"
+    okf: dict[str, object] = {}
+    if designated:
+        okf = {
+            "okf_mode": "on",
+            "okf_capabilities": ContentConfig(
+                okf_mode="on", okf_index=True, okf_folders=(".",)
+            ).okf_capabilities,
+        }
+    vault = _vault(tmp_path, index_path=index, **okf)
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index()
+        body = (tmp_path / "index.md").read_text()
+        assert "/child/index.md" not in body
+        assert "[Note](/child/note.md)" in body
+        assert index.read_bytes().startswith(b"SQLite format 3")
     finally:
         vault.close()

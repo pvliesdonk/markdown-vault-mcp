@@ -506,7 +506,8 @@ and excluded, dot and non-regular files are omitted. Directory links are
 followed where the scanner follows them, but a link that resolves outside the
 vault is omitted, as is anything the inspection policy owner holds as server
 state (index, tracker, vector and state paths, with their aliases and
-hardlinks). A visible directory that cannot be listed refuses the whole call
+hardlinks). An existing subfolder `index.md` is a boundary only when that walk lists
+it, so a server-owned one is not. A visible directory that cannot be listed refuses the whole call
 before any write and is named in the refusal. The optional maintainer
 preflight hook remains available to existing integrations.
 

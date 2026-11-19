@@ -66,7 +66,9 @@ logger = logging.getLogger(__name__)
 
 
 _IndexEntry = tuple[str, str, str | None]
-_IndexTree = dict[str, tuple[list[_IndexEntry], set[str]]]
+# folder -> (its notes, its subfolders); a subfolder maps to whether its own
+# index.md is among the listed paths.
+_IndexTree = dict[str, tuple[list[_IndexEntry], dict[str, bool]]]
 
 
 def _render_fold(heading: str, sections: dict[str, list[_IndexEntry]]) -> str:
@@ -363,14 +365,16 @@ class OkfMigrationManager:
         if folder != top:
             paths.append(f"{folder}/index.md")
         prefix = f"{top}/" if top else ""
-        tree: _IndexTree = {top: ([], set()), folder: ([], set())}
+        tree: _IndexTree = {top: ([], {}), folder: ([], {})}
         for path in paths:
             parts = path[len(prefix) :].split("/")
             parent = top
             for sub in parts[:-1]:
-                tree.setdefault(parent, ([], set()))[1].add(sub)
+                tree.setdefault(parent, ([], {}))[1].setdefault(sub, False)
                 parent = posixpath.join(parent, sub)
-                tree.setdefault(parent, ([], set()))
+                tree.setdefault(parent, ([], {}))
+            if parts[-1] == "index.md" and parent != top:
+                tree[posixpath.dirname(parent)][1][posixpath.basename(parent)] = True
             if not is_okf_reserved_file(parts[-1]):
                 stem = posixpath.splitext(parts[-1])[0]
                 title, desc = labels.get(path, (stem, None))
@@ -392,8 +396,12 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             child = posixpath.join(folder, sub)
-            visible = self._doc_mgr.index_path_visible(f"{child}/index.md")
-            has_index = visible and self._has_index(child)
+            has_index = self._has_index(child)
+            # An index the listing omits (server state, a link out) is no boundary.
+            visible = self._doc_mgr.index_path_visible(f"{child}/index.md") and (
+                subfolders[sub] or not has_index
+            )
+            has_index = has_index and visible
             if self._doc_mgr.in_submodule(child) and not has_index:
                 continue
             if not visible or not (
