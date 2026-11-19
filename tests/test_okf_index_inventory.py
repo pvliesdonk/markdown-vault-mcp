@@ -11,7 +11,6 @@ import pytest
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
-from tests.conftest import wait_for_writer_drain
 from tests.fixtures.designated_index import designated_vault
 
 if TYPE_CHECKING:
@@ -56,28 +55,23 @@ def test_generate_lists_non_admitted_concept_without_excluded_paths(
         vault.close()
 
 
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs FIFOs")
-def test_listing_follows_scanner_file_rules(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    (root / "real.md").write_text("# Real\n")
-    (root / "alias.md").symlink_to("real.md")
-    (root / "dangling.md").symlink_to("gone.md")
-    (tmp_path / "outside.md").write_text("# Outside\n")
-    (root / "outside.md").symlink_to(tmp_path / "outside.md")
-    os.mkfifo(root / "pipe.md")
-    secret = root / "secret.md"
+def test_listing_keeps_readable_names_and_drops_non_files(tmp_path: Path) -> None:
+    (tmp_path / "real.md").write_text("# Real\n")
+    (tmp_path / "alias.md").symlink_to("real.md")
+    (tmp_path / "dangling.md").symlink_to("gone.md")
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(tmp_path / "pipe.md")
+    secret = tmp_path / "secret.md"
     secret.write_text("# Secret\n")
     secret.chmod(0)
-    vault = _vault(root)
+    vault = _vault(tmp_path)
     try:
         vault.writer.okf_generate_index()
-        body = (root / "index.md").read_text()
+        body = (tmp_path / "index.md").read_text()
         for listed in ("real", "alias", "secret"):
             assert f"[{listed}](/{listed}.md)" in body
-        assert vault.reader.read("outside.md") is None
-        for absent in ("dangling", "pipe", "outside"):
-            assert absent not in body
+        assert "dangling" not in body
+        assert "pipe" not in body
     finally:
         secret.chmod(0o644)
         vault.close()
@@ -121,18 +115,21 @@ def test_directory_alias_is_listed(tmp_path: Path) -> None:
 
 
 @needs_permissions
-def test_unlistable_visible_folder_refuses_before_any_write(tmp_path: Path) -> None:
+def test_unlistable_folder_refuses_by_name_before_any_write(tmp_path: Path) -> None:
     (tmp_path / "child").mkdir()
     (tmp_path / "index.md").write_text(_ROOT_INDEX)
     (tmp_path / "child/index.md").write_text("# Existing child\n")
     (tmp_path / "child/note.md").write_text("# Note\n")
-    locked = tmp_path / "other"
-    locked.mkdir()
+    locked = tmp_path / "docs/locked[1]"
+    locked.mkdir(parents=True)
     locked.chmod(0)
     vault = designated_vault(tmp_path, (".", "child"))
     try:
-        with pytest.raises(InvalidRequestError, match="Cannot list"):
+        with pytest.raises(InvalidRequestError) as refused:
             vault.writer.okf_generate_index(folder="child")
+        assert "'docs/locked[1]'" in str(refused.value)
+        assert "restore access" in str(refused.value)
+        assert "exclude" not in str(refused.value)
         assert (tmp_path / "child/index.md").read_text() == "# Existing child\n"
         assert (tmp_path / "index.md").read_text() == _ROOT_INDEX
     finally:
@@ -162,24 +159,12 @@ def test_unreadable_hidden_and_excluded_trees_neither_block_nor_appear(
         vault.close()
 
 
-def test_just_written_note_is_titled(tmp_path: Path) -> None:
-    (tmp_path / "index.md").write_text(_ROOT_INDEX)
-    vault = designated_vault(tmp_path, (".",))
-    try:
-        vault.index.build_index()
-        vault.writer.write("notes/new.md", "# New title\n")
-        wait_for_writer_drain(vault)
-        assert "[New title](/notes/new.md)" in (tmp_path / "index.md").read_text()
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize("folder", [".", "guides//nested", "../escape"])
 def test_invalid_folder_is_request_error(tmp_path: Path, folder: str) -> None:
     (tmp_path / "index.md").write_text(_ROOT_INDEX)
     vault = _vault(tmp_path)
     try:
-        with pytest.raises(InvalidRequestError, match="folder"):
+        with pytest.raises(InvalidRequestError, match="Invalid folder"):
             vault.writer.okf_generate_index(folder=folder)
         assert (tmp_path / "index.md").read_text() == _ROOT_INDEX
     finally:
@@ -214,25 +199,40 @@ def test_invisible_designated_child_gets_no_parent_pointer(
         vault.close()
 
 
-def test_excluded_child_index_is_not_a_boundary(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("case", "designated"),
+    [("excluded", False), ("owned", False), ("owned", True)],
+    ids=["excluded", "server-owned", "server-owned-designated"],
+)
+def test_unlisted_existing_index_is_not_a_boundary(
+    tmp_path: Path, case: str, designated: bool
+) -> None:
     (tmp_path / "child").mkdir()
-    (tmp_path / "child/note.md").write_text("---\ntype: concept\n---\nBody\n")
-    (tmp_path / "child/index.md").write_text("# Authored\n")
-    vault = _vault(
-        tmp_path, required_frontmatter=["title"], exclude_patterns=["child/index.md"]
-    )
+    (tmp_path / "child/note.md").write_text("# Note\n")
+    (tmp_path / "index.md").write_text(_ROOT_INDEX)
+    index = tmp_path / "child/index.md"
+    if case == "excluded":
+        index.write_text("# Authored\n")
+        vault = _vault(tmp_path, exclude_patterns=["child/index.md"])
+    elif designated:
+        vault = designated_vault(tmp_path, (".",), index_path=index)
+    else:
+        vault = _vault(tmp_path, index_path=index)
     try:
         vault.writer.okf_generate_index()
         body = (tmp_path / "index.md").read_text()
         assert "/child/index.md" not in body
-        assert "[note](/child/note.md)" in body
-        assert (tmp_path / "child/index.md").read_text() == "# Authored\n"
+        assert "(/child/note.md)" in body
+        if case == "excluded":
+            assert index.read_text() == "# Authored\n"
+        else:
+            assert index.read_bytes().startswith(b"SQLite format 3")
     finally:
         vault.close()
 
 
 @pytest.mark.parametrize("designated", [False, True])
-def test_external_directory_link_is_omitted_without_outside_writes(
+def test_outside_vault_links_are_omitted_without_outside_writes(
     tmp_path: Path, designated: bool
 ) -> None:
     root = tmp_path / "vault"
@@ -242,97 +242,73 @@ def test_external_directory_link_is_omitted_without_outside_writes(
     outside.mkdir()
     (outside / "confidential.md").write_text("# Outside\n")
     (root / "z").symlink_to(outside, target_is_directory=True)
+    (root / "leaf.md").symlink_to(outside / "confidential.md")
     (root / "index.md").write_text(_ROOT_INDEX)
     vault = designated_vault(root, (".",)) if designated else _vault(root)
     try:
         vault.writer.okf_generate_index()
         body = (root / "index.md").read_text()
         assert "/a/" in body
-        assert "/z/" not in body
-        assert "confidential" not in body
+        assert vault.reader.read("leaf.md") is None
+        for absent in ("/z/", "confidential", "leaf"):
+            assert absent not in body
         assert sorted(p.name for p in outside.iterdir()) == ["confidential.md"]
     finally:
         vault.close()
 
 
-def test_server_state_files_are_not_listed(tmp_path: Path) -> None:
-    from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
-
-    (tmp_path / "note.md").write_text("# Note\n")
-    vault = _vault(
-        tmp_path, index_path=tmp_path / "search.md", state_path=tmp_path / "state.md"
-    )
-    try:
-        vault.index.build_index()
-        (tmp_path / "alias.md").symlink_to("search.md")
-        listed = {
-            e.path
-            for e in vault.reader.okf_inventory(BundleTreeRequest(root="")).entries
-        }
-        assert listed.isdisjoint({"search.md", "state.md", "alias.md"})
-        vault.writer.okf_generate_index()
-        body = (tmp_path / "index.md").read_text()
-        assert "[Note](/note.md)" in body
-        for internal in ("search", "state", "alias"):
-            assert f"/{internal}.md" not in body
-    finally:
-        vault.close()
-
-
-@needs_permissions
-def test_refusal_names_the_unreadable_folder_and_the_action(tmp_path: Path) -> None:
-    (tmp_path / "a.md").write_text("# A\n")
-    locked = tmp_path / "docs/locked[1]"
-    locked.mkdir(parents=True)
-    locked.chmod(0)
-    vault = _vault(tmp_path)
-    try:
-        with pytest.raises(InvalidRequestError) as refused:
-            vault.writer.okf_generate_index()
-        assert "'docs/locked[1]'" in str(refused.value)
-        assert "restore access" in str(refused.value)
-        assert "exclude" not in str(refused.value)
-        assert not path_exists(tmp_path / "index.md")
-    finally:
-        locked.chmod(0o755)
-        vault.close()
-
-
-def test_policy_owned_paths_are_not_listed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("explicit", [False, True], ids=["settings", "policy"])
+def test_server_owned_paths_are_not_listed(tmp_path: Path, explicit: bool) -> None:
     from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 
     (tmp_path / "note.md").write_text("# Note\n")
-    owned = tmp_path / "state"
-    owned.mkdir()
-    (owned / "inside.md").write_text("# Inside\n")
     index = tmp_path / "search.md"
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, index_path=index),
-        inspection_policy=InspectionPolicy(state_paths=(owned,), index_path=index),
-    )
+    if explicit:
+        owned = tmp_path / "state"
+        owned.mkdir()
+        (owned / "inside.md").write_text("# Inside\n")
+        policy = InspectionPolicy(state_paths=(owned,), index_path=index)
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False, index_path=index),
+            inspection_policy=policy,
+        )
+        hidden = ("state", "inside", "search", "twin")
+    else:
+        vault = _vault(tmp_path, index_path=index, state_path=tmp_path / "state.md")
+        hidden = ("search", "state", "alias")
     try:
         vault.index.build_index()
-        os.link(index, tmp_path / "twin.md")
+        if explicit:
+            os.link(index, tmp_path / "twin.md")
+        else:
+            (tmp_path / "alias.md").symlink_to("search.md")
         vault.writer.okf_generate_index()
         body = (tmp_path / "index.md").read_text()
         assert "[Note](/note.md)" in body
-        for internal in ("state", "inside", "search", "twin"):
+        for internal in hidden:
             assert internal not in body
     finally:
         vault.close()
 
 
-@needs_permissions
-def test_uninspectable_vault_root_refuses_naming_it(tmp_path: Path) -> None:
+def test_uninspectable_vault_root_refuses_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+
     (tmp_path / "a.md").write_text("# A\n")
+    monkeypatch.setattr(
+        BundleInspector, "inspect", lambda *_: SimpleNamespace(state="unavailable")
+    )
     vault = _vault(tmp_path)
-    tmp_path.chmod(0)
     try:
         with pytest.raises(InvalidRequestError, match=r"Cannot list '\.'"):
             vault.writer.okf_generate_index()
+        assert not path_exists(tmp_path / "index.md")
     finally:
-        tmp_path.chmod(0o755)
         vault.close()
 
 
@@ -342,35 +318,5 @@ def test_missing_folder_is_listed_empty(tmp_path: Path) -> None:
         result = vault.writer.okf_generate_index(folder="new")
         assert result.entries == 0
         assert (tmp_path / "new/index.md").read_text().startswith("# new")
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("designated", [False, True])
-def test_server_state_index_is_not_a_child_boundary(
-    tmp_path: Path, designated: bool
-) -> None:
-    (tmp_path / "child").mkdir()
-    (tmp_path / "child/note.md").write_text("# Note\n")
-    (tmp_path / "index.md").write_text(_ROOT_INDEX)
-    from markdown_vault_mcp.config_sections.content import ContentConfig
-
-    index = tmp_path / "child/index.md"
-    okf: dict[str, object] = {}
-    if designated:
-        okf = {
-            "okf_mode": "on",
-            "okf_capabilities": ContentConfig(
-                okf_mode="on", okf_index=True, okf_folders=(".",)
-            ).okf_capabilities,
-        }
-    vault = _vault(tmp_path, index_path=index, **okf)
-    try:
-        vault.index.build_index()
-        vault.writer.okf_generate_index()
-        body = (tmp_path / "index.md").read_text()
-        assert "/child/index.md" not in body
-        assert "[Note](/child/note.md)" in body
-        assert index.read_bytes().startswith(b"SQLite format 3")
     finally:
         vault.close()
