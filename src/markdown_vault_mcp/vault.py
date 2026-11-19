@@ -647,7 +647,6 @@ class Vault:
                     if p is not None
                 ),
             )
-        self._inspection_policy = policy
         observations = ObservationLedger(
             observation_path,
             BundleInspector(
@@ -863,31 +862,7 @@ class Vault:
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
             from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 
-            scope = json.dumps(
-                {
-                    "source": str(self._source_dir.resolve()),
-                    "folders": sorted(capabilities.folders),
-                    "exclude": sorted(self._exclude_patterns or []),
-                    "required": sorted(self._required_frontmatter or []),
-                    "title": self._title_field,
-                    "inspection": {
-                        "conventions": self._inspection_policy.conventions_file,
-                        "state_paths": sorted(
-                            str(p.resolve())
-                            for p in self._inspection_policy.state_paths
-                        ),
-                        "embeddings": str(
-                            self._inspection_policy.embeddings_path.resolve()
-                        )
-                        if self._inspection_policy.embeddings_path is not None
-                        else None,
-                        "index": str(self._inspection_policy.index_path.resolve())
-                        if self._inspection_policy.index_path is not None
-                        else None,
-                    },
-                },
-                sort_keys=True,
-            )
+            scope = json.dumps(sorted(capabilities.folders))
 
             self._okf_convention = ConventionMaintainer(
                 doc_mgr=self._doc_mgr,
@@ -1221,7 +1196,10 @@ class Vault:
             return
         try:
             with self._file_write_lock:
-                maintainer.converge_indexes(ledger.rows())
+                live = {
+                    row["path"]: row["content_hash"] for row in self._fts.list_notes()
+                }
+                maintainer.converge_indexes(ledger.rows(), live)
         except Exception:
             logger.warning("okf_index_convergence_failed", exc_info=True)
 
@@ -1348,7 +1326,7 @@ class Vault:
         self.stop()
 
         if hasattr(self, "_index_facet"):
-            self._index_facet.close()
+            self._index_facet._close()
 
         # 1. Close the coordinator: it closes the single-owner IndexWriter,
         # draining pending jobs, and reports whether the worker stopped.

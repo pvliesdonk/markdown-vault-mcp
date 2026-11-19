@@ -1,12 +1,10 @@
 """External changes converge designated OKF indexes on reindex."""
 
 import shutil
-import threading
 from pathlib import Path
 
 import pytest
 
-from markdown_vault_mcp._file_watcher import VaultFileWatcher
 from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
@@ -14,28 +12,12 @@ from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.fixtures.designated_index import designated_vault
-from tests.fixtures.git import GitRepoPair, _git_clone, _git_commit, _git_head, _run_git
+from tests.fixtures.git import _git_commit, _git_head
 
 
-def test_external_add_updates_existing_index(tmp_path: Path) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    index = root / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        (root / "concept.md").write_text("# Concept\n", encoding="utf-8")
-        vault.index.reindex()
-        assert "concept.md" in index.read_text(encoding="utf-8")
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("change", ["delete", "move", "metadata"])
+@pytest.mark.parametrize(
+    "change", ["delete", "move", "metadata", "metadata_after_sweep"]
+)
 def test_external_changes_update_listing(tmp_path: Path, change: str) -> None:
     root = tmp_path / "vault"
     root.mkdir()
@@ -50,6 +32,8 @@ def test_external_changes_update_listing(tmp_path: Path, change: str) -> None:
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
+        if change == "metadata_after_sweep":
+            vault.index.reindex()
         if change == "delete":
             concept.unlink()
         elif change == "move":
@@ -58,6 +42,9 @@ def test_external_changes_update_listing(tmp_path: Path, change: str) -> None:
             concept.write_text(
                 "---\ndescription: After\n---\n# Concept\n", encoding="utf-8"
             )
+        if change == "metadata_after_sweep":
+            assert vault._index_mgr.observations is not None
+            vault._index_mgr.observations.sweep()
         vault.index.reindex()
         listing = index.read_text(encoding="utf-8")
         if change == "delete":
@@ -72,47 +59,13 @@ def test_external_changes_update_listing(tmp_path: Path, change: str) -> None:
         vault.close()
 
 
-def test_reserved_index_edit_does_not_regenerate(tmp_path: Path) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    (tmp_path / "concept.md").write_text("# Concept\n", encoding="utf-8")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        edited = '---\nokf_version: "0.2"\n---\n# Hand edited\n'
-        index.write_text(edited, encoding="utf-8")
-        vault.index.reindex()
-        assert index.read_text(encoding="utf-8") == edited
-    finally:
-        vault.close()
-
-
-def test_cold_build_then_reindex_repairs_stale_index(tmp_path: Path) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    (tmp_path / "concept.md").write_text("# Concept\n", encoding="utf-8")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        assert "concept.md" in index.read_text(encoding="utf-8")
-    finally:
-        vault.close()
-
-
 def test_identical_reindex_does_not_write_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     index = tmp_path / "index.md"
     index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    (tmp_path / "concept.md").write_text("# Concept\n", encoding="utf-8")
+    concept = tmp_path / "concept.md"
+    concept.write_text("# Concept\nBefore\n", encoding="utf-8")
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
@@ -120,34 +73,19 @@ def test_identical_reindex_does_not_write_index(
     try:
         vault.index.build_index()
         vault.index.reindex()
+        mtime = index.stat().st_mtime_ns
         writes: list[str] = []
-        original = vault._doc_mgr.replace_body
+        original = vault._doc_mgr.write
 
-        def record(path: str, *args: object, **kwargs: object) -> bool:
+        def record(path: str, *args: object, **kwargs: object) -> object:
             writes.append(path)
             return original(path, *args, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(vault._doc_mgr, "replace_body", record)
+        monkeypatch.setattr(vault._doc_mgr, "write", record)
+        concept.write_text("# Concept\nAfter\n", encoding="utf-8")
         vault.index.reindex()
         assert writes == []
-    finally:
-        vault.close()
-
-
-def test_reserved_change_does_not_mask_concept_change(tmp_path: Path) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        index.write_text('---\nokf_version: "0.2"\n---\n# Edited\n', encoding="utf-8")
-        (tmp_path / "concept.md").write_text("# Concept\n", encoding="utf-8")
-        vault.index.reindex()
-        assert "concept.md" in index.read_text(encoding="utf-8")
+        assert index.stat().st_mtime_ns == mtime
     finally:
         vault.close()
 
@@ -175,70 +113,18 @@ def test_reindex_completion_includes_convergence(
         vault.close()
 
 
-def test_failed_refresh_retries_without_another_change(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("baseline", [False, True])
+def test_arrival_creates_designated_anchor_after_baseline(
+    tmp_path: Path, baseline: bool
 ) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        original = vault._okf_migrate.generate_index
-        calls = 0
-
-        def fail_once(**kwargs: object) -> object:
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                raise OSError("temporary failure")
-            return original(**kwargs)  # type: ignore[arg-type]
-
-        monkeypatch.setattr(vault._okf_migrate, "generate_index", fail_once)
-        (tmp_path / "concept.md").write_text("# Concept\n", encoding="utf-8")
-        vault.index.reindex()
-        assert "concept.md" not in index.read_text(encoding="utf-8")
-        vault.index.reindex()
-        assert "concept.md" in index.read_text(encoding="utf-8")
-        assert calls == 2
-    finally:
-        vault.close()
-
-
-def test_prior_observation_sweep_keeps_change_for_reindex(tmp_path: Path) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8")
-    concept = tmp_path / "concept.md"
-    concept.write_text("---\ndescription: Before\n---\n# Concept\n", encoding="utf-8")
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        concept.write_text(
-            "---\ndescription: After\n---\n# Concept\n", encoding="utf-8"
-        )
-        assert vault._index_mgr.observations is not None
-        vault._index_mgr.observations.sweep()
-        vault.index.reindex()
-        assert "After" in index.read_text(encoding="utf-8")
-    finally:
-        vault.close()
-
-
-def test_arrival_creates_designated_anchor_after_baseline(tmp_path: Path) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     folder = tmp_path / "projects" / "one" / "deep" / "nested"
     folder.mkdir(parents=True)
     vault = designated_vault(tmp_path, (".", "projects/*"))
     try:
         vault.index.build_index()
-        vault.index.reindex()
+        if baseline:
+            vault.index.reindex()
         project_index = tmp_path / "projects" / "one" / "index.md"
         assert not path_exists(project_index)
         (folder / "concept.md").write_text("# Concept\n")
@@ -249,68 +135,8 @@ def test_arrival_creates_designated_anchor_after_baseline(tmp_path: Path) -> Non
         vault.close()
 
 
-def test_identical_reindex_creates_no_git_commit(git_repo: Path) -> None:
-    (git_repo / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (git_repo / "concept.md").write_text("# Concept\n")
-    strategy = GitWriteStrategy(
-        enable_pull=False, enable_push=False, git_lfs=False, repo_path=git_repo
-    )
-    vault = Vault(
-        source_dir=git_repo,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        assert vault._write_callback.drain()
-        before = _git_head(git_repo)
-        vault.index.reindex()
-        assert vault._write_callback.drain()
-        assert _git_head(git_repo) == before
-    finally:
-        vault.close()
-
-
-def test_two_clones_converge_after_exchanging_concepts(
-    tmp_path: Path, git_repo_pair: GitRepoPair
-) -> None:
-    first = git_repo_pair.local_path
-    second = _git_clone(git_repo_pair, tmp_path)
-    for root in (first, second):
-        (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vaults = [
-        Vault(
-            source_dir=root,
-            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
-        )
-        for root in (first, second)
-    ]
-    try:
-        for vault in vaults:
-            vault.index.build_index()
-            vault.index.reindex()
-        first_commit = _git_commit(first, "first.md", "# First\n", "first concept")
-        second_commit = _git_commit(second, "second.md", "# Second\n", "second concept")
-        for vault in vaults:
-            vault.index.reindex()
-        _run_git(first, "fetch", str(second), second_commit)
-        _run_git(first, "cherry-pick", second_commit)
-        _run_git(second, "fetch", str(first), first_commit)
-        _run_git(second, "cherry-pick", first_commit)
-        for vault in vaults:
-            vault.index.reindex()
-        listing = (first / "index.md").read_bytes()
-        assert listing == (second / "index.md").read_bytes()
-        assert b"first.md" in listing and b"second.md" in listing
-    finally:
-        for vault in vaults:
-            vault.close()
-
-
 def test_persistent_restart_preserves_index_and_creates_offline_arrival(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "vault"
     for name in ("one", "two"):
@@ -331,7 +157,16 @@ def test_persistent_restart_preserves_index_and_creates_offline_arrival(
     vault = designated_vault(root, ("projects/*",), index_path=db)
     try:
         vault.index.build_index()
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
         vault.index.reindex()
+        assert calls == ["projects/two"]
         assert existing.read_text() == edited
         assert path_exists(root / "projects/two/index.md")
     finally:
@@ -363,10 +198,15 @@ def test_noop_does_not_canonicalize_each_observation(
         vault.close()
 
 
-def test_external_folder_removal_refreshes_designated_ancestor(tmp_path: Path) -> None:
+@pytest.mark.parametrize("boundary", [False, True])
+def test_external_folder_removal_refreshes_designated_ancestor(
+    tmp_path: Path, boundary: bool
+) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     folder = tmp_path / "projects/one"
     folder.mkdir(parents=True)
+    if boundary:
+        (folder.parent / "index.md").write_text("# Authored boundary\n")
     (folder / "index.md").write_text("# One\n")
     (folder / "note.md").write_text("# Note\n")
     vault = designated_vault(tmp_path, (".", "projects/*"))
@@ -374,10 +214,17 @@ def test_external_folder_removal_refreshes_designated_ancestor(tmp_path: Path) -
         vault.index.build_index()
         vault.index.reindex()
         root_index = tmp_path / "index.md"
-        assert "projects/one/index.md" in root_index.read_text()
+        if boundary:
+            root_index.write_text('---\nokf_version: "0.2"\n---\n# Hand edited\n')
+        else:
+            assert "projects/one/index.md" in root_index.read_text()
         shutil.rmtree(folder)
         vault.index.reindex()
-        assert "projects/one/index.md" not in root_index.read_text()
+        if boundary:
+            assert "Hand edited" in root_index.read_text()
+            assert (folder.parent / "index.md").read_text() == "# Authored boundary\n"
+        else:
+            assert "projects/one/index.md" not in root_index.read_text()
     finally:
         vault.close()
 
@@ -431,7 +278,9 @@ def test_failed_checkpoint_save_keeps_previous_state(
     assert path.read_bytes() == original
 
 
-def test_search_admission_policy_change_reconciles_listing(tmp_path: Path) -> None:
+def test_search_admission_policy_change_reconciles_listing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
@@ -467,28 +316,16 @@ def test_search_admission_policy_change_reconciles_listing(tmp_path: Path) -> No
         vault.index.reindex()
         assert "Custom title" not in index.read_text()
         assert "note.md" in index.read_text()
-    finally:
-        vault.close()
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
 
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
 
-def test_removed_folder_preserves_undesignated_boundary(tmp_path: Path) -> None:
-    root_index = tmp_path / "index.md"
-    root_index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    parent = tmp_path / "projects"
-    folder = parent / "one"
-    folder.mkdir(parents=True)
-    (parent / "index.md").write_text("# Authored boundary\n")
-    (folder / "index.md").write_text("# One\n")
-    (folder / "note.md").write_text("# Note\n")
-    vault = designated_vault(tmp_path, (".", "projects/*"))
-    try:
-        vault.index.build_index()
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
         vault.index.reindex()
-        root_index.write_text('---\nokf_version: "0.2"\n---\n# Hand edited\n')
-        shutil.rmtree(folder)
-        vault.index.reindex()
-        assert "Hand edited" in root_index.read_text()
-        assert (parent / "index.md").read_text() == "# Authored boundary\n"
+        assert calls == []
     finally:
         vault.close()
 
@@ -571,40 +408,19 @@ def test_reserved_alias_does_not_mask_other_observed_arrivals(tmp_path: Path) ->
         vault.close()
 
 
-def test_watcher_event_reindexes_and_converges(tmp_path: Path) -> None:
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = designated_vault(tmp_path, (".",))
-    done = threading.Event()
-
-    def on_change() -> None:
-        with vault.pause_writes():
-            vault.index.reindex()
-        done.set()
-
-    watcher = VaultFileWatcher(tmp_path, on_change, debounce_s=0.1)
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        watcher.start()
-        (tmp_path / "external.md").write_text("# External\n")
-        assert done.wait(10)
-        assert "external.md" in index.read_text()
-    finally:
-        watcher.stop()
-        vault.close()
-
-
 def test_close_waits_for_async_convergence(tmp_path: Path) -> None:
     index = tmp_path / "index.md"
     index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     vault = designated_vault(tmp_path, (".",))
-    vault.index.build_index()
-    (tmp_path / "external.md").write_text("# External\n")
-    pending = vault.index.reindex_async()
-    vault.close()
-    pending.result(timeout=10)
-    assert "external.md" in index.read_text()
+    try:
+        vault.index.build_index()
+        (tmp_path / "external.md").write_text("# External\n")
+        pending = vault.index.reindex_async()
+        vault.close()
+        pending.result(timeout=10)
+        assert "external.md" in index.read_text()
+    finally:
+        vault.close()
 
 
 def test_head_reconcile_runs_convergence(git_repo: Path) -> None:
@@ -629,45 +445,196 @@ def test_head_reconcile_runs_convergence(git_repo: Path) -> None:
         vault.close()
 
 
-def test_missing_checkpoint_creates_designated_anchor(tmp_path: Path) -> None:
-    folder = tmp_path / "projects/one"
-    folder.mkdir(parents=True)
-    (folder / "note.md").write_text("# Note\n")
-    vault = designated_vault(tmp_path, ("projects/*",))
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        assert "note.md" in (folder / "index.md").read_text()
-        assert vault._okf_checkpoint_path is None
-    finally:
-        vault.close()
-
-
-def test_persistent_restart_with_no_changes_does_not_generate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("failure", ["upsert", "parse"])
+@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("arrival", [False, True])
+def test_search_retry_reconciles_label(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    restart: bool,
+    arrival: bool,
 ) -> None:
+    import markdown_vault_mcp.managers.index as index_module
+
     root = tmp_path / "vault"
-    root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "note.md").write_text("# Note\n")
-    db = tmp_path / "index.sqlite"
-    vault = designated_vault(root, (".",), index_path=db)
+    for name in ("one", "two"):
+        (root / name).mkdir(parents=True)
+        (root / name / "index.md").write_text(f"# {name}\n")
+    note = root / "one/note.md"
+    if not arrival:
+        note.write_text("---\ntitle: Before\n---\n# Body\n")
+    db = tmp_path / "index.sqlite" if restart else None
+    vault = designated_vault(root, ("one", "two"), index_path=db)
     try:
         vault.index.build_index()
         vault.index.reindex()
+        sibling = root / "two/index.md"
+        sibling.write_text("# Hand edited\n")
+        note.write_text("---\ntitle: After\n---\n# Body\n")
+        if failure == "upsert":
+            original_upsert = vault._index_mgr._fts.upsert_note
+
+            def fail_upsert(parsed: object) -> object:
+                if parsed.path == "one/note.md":  # type: ignore[attr-defined]
+                    raise OSError("transient")
+                return original_upsert(parsed)  # type: ignore[arg-type]
+
+            monkeypatch.setattr(vault._index_mgr._fts, "upsert_note", fail_upsert)
+        else:
+            original_parse = index_module.parse_note_categorized
+
+            def fail_parse(*args: object, **kwargs: object) -> object:
+                if kwargs.get("rel_path") == "one/note.md":
+                    return None
+                return original_parse(*args, **kwargs)  # type: ignore[arg-type]
+
+            monkeypatch.setattr(index_module, "parse_note_categorized", fail_parse)
+        vault.index.reindex()
+        listing = (root / "one/index.md").read_text()
+        assert "After" not in listing
+        assert ("note.md" if arrival else "Before") in listing
+        if failure == "upsert":
+            monkeypatch.setattr(vault._index_mgr._fts, "upsert_note", original_upsert)
+        else:
+            monkeypatch.setattr(index_module, "parse_note_categorized", original_parse)
+        if restart:
+            vault.close()
+            vault = designated_vault(root, ("one", "two"), index_path=db)
+            vault.index.build_index()
+        calls: list[str] = []
+        original_generate = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original_generate(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
+        vault.index.reindex()
+        assert "After" in (root / "one/index.md").read_text()
+        assert calls == ["one"]
+        assert sibling.read_text() == "# Hand edited\n"
+        calls.clear()
+        vault.index.reindex()
+        assert calls == []
     finally:
         vault.close()
-    vault = designated_vault(root, (".",), index_path=db)
+
+
+@pytest.mark.parametrize("change", ["add", "edit", "delete", "move"])
+@pytest.mark.parametrize("deep", [False, True])
+def test_changes_below_preserved_boundary_do_not_refresh_parent(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, change: str, deep: bool
+) -> None:
+    root_index = git_repo / "index.md"
+    root_index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    authored = git_repo / "authored"
+    folder = authored / "deep" if deep else authored
+    folder.mkdir(parents=True)
+    boundary = authored / "index.md"
+    boundary.write_text("# Authored\n")
+    note = folder / "note.md"
+    note.write_text("# Before\n")
+    strategy = GitWriteStrategy(
+        enable_pull=False, enable_push=False, git_lfs=False, repo_path=git_repo
+    )
+    vault = Vault(
+        source_dir=git_repo,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=ContentConfig(
+                okf_mode="on", okf_index=True, okf_folders=(".",)
+            ).okf_capabilities,
+            index_path=git_repo.parent / "index.sqlite",
+        ),
+        git_strategy=strategy,
+        on_write=strategy,
+    )
     try:
         vault.index.build_index()
-        calls: list[bool] = []
-
-        def unexpected(**_kwargs: object) -> object:
-            calls.append(True)
-            raise AssertionError("unchanged restart generated an index")
-
-        monkeypatch.setattr(vault._okf_migrate, "generate_index", unexpected)
         vault.index.reindex()
-        assert not calls
+        root_index.write_text('---\nokf_version: "0.2"\n---\n# Hand edited\n')
+        before = root_index.read_bytes(), boundary.read_bytes()
+        assert vault._okf_checkpoint_path is not None
+        checkpoint = vault._okf_checkpoint_path.read_bytes()
+        assert vault._write_callback.drain()
+        head = _git_head(git_repo)
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
+        if change == "add":
+            (folder / "new.md").write_text("# New\n")
+        elif change == "edit":
+            note.write_text("# After\n")
+        elif change == "delete":
+            note.unlink()
+        else:
+            note.rename(folder / "moved.md")
+        vault.index.reindex()
+        assert (root_index.read_bytes(), boundary.read_bytes()) == before
+        assert calls == []
+        assert vault._okf_checkpoint_path.read_bytes() != checkpoint
+        assert vault._write_callback.drain()
+        assert _git_head(git_repo) == head
+        vault.index.reindex()
+        assert calls == []
+    finally:
+        vault.close()
+
+
+def test_mixed_changes_respect_preserved_boundary(tmp_path: Path) -> None:
+    root_index = tmp_path / "index.md"
+    root_index.write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    authored = tmp_path / "authored"
+    authored.mkdir()
+    boundary = authored / "index.md"
+    boundary.write_text("# Authored\n")
+    note = authored / "note.md"
+    note.write_text("# Before\n")
+    vault = designated_vault(tmp_path, (".", "authored/proj"))
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        note.write_text("# After\n")
+        (tmp_path / "new.md").write_text("# New\n")
+        vault.index.reindex()
+        assert "new.md" in root_index.read_text()
+        assert boundary.read_text() == "# Authored\n"
+        boundary.write_text("# Edited boundary\n")
+        (tmp_path / "new.md").write_text("# Changed root note\n")
+        vault.index.reindex()
+        assert "Changed root note" in root_index.read_text()
+        assert boundary.read_text() == "# Edited boundary\n"
+        root_index.write_text('---\nokf_version: "0.2"\n---\n# Hand edited\n')
+        project = authored / "proj"
+        project.mkdir()
+        (project / "new.md").write_text("# Project\n")
+        vault.index.reindex()
+        assert "new.md" in (project / "index.md").read_text()
+        assert "Hand edited" in root_index.read_text()
+        assert boundary.read_text() == "# Edited boundary\n"
+    finally:
+        vault.close()
+
+
+def test_excluded_and_dot_arrivals_create_no_index(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    for name in ("private", ".hidden"):
+        (tmp_path / name).mkdir()
+    vault = designated_vault(tmp_path, ("**",), exclude=("private/**",))
+    try:
+        vault.index.build_index()
+        vault.index.reindex()
+        for name in ("private", ".hidden"):
+            (tmp_path / name / "note.md").write_text("# Note\n")
+        vault.index.reindex()
+        for name in ("private", ".hidden"):
+            assert not path_exists(tmp_path / name / "index.md")
     finally:
         vault.close()

@@ -20,6 +20,7 @@ provenance-stamped or verification-cleared.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from contextlib import nullcontext
@@ -343,11 +344,14 @@ class ConventionMaintainer:
                 success = self._refresh_index(self._canonical(folder)) and success
             return success
 
-    def converge_indexes(self, rows: Mapping[str, Observation]) -> bool:
+    def converge_indexes(
+        self, rows: Mapping[str, Observation], live: Mapping[str, str]
+    ) -> bool:
         """Refresh existing designated indexes affected by observed notes.
 
         Args:
             rows: Current locally observed Markdown state.
+            live: Search index content hashes by path.
 
         Returns:
             Whether the attempted refreshes succeeded.
@@ -357,7 +361,9 @@ class ConventionMaintainer:
             if intent is not None and intent.suppress:
                 return False
             current = {
-                p: row.content_digest
+                p: hashlib.sha256(
+                    f"{row.content_digest}:{live.get(p, '')}".encode()
+                ).hexdigest()
                 for p, row in rows.items()
                 if row.role == "concept_candidate" and row.presence == "present"
             }
@@ -371,18 +377,31 @@ class ConventionMaintainer:
             arrivals = changed & (current.keys() - old.keys())
             removed = changed & (old.keys() - current.keys())
             boundaries = (self._removed_index_boundary(folder_of(p)) for p in removed)
-            folders = [folder_of(p) for p in changed]
+            owners = {p: self._owner(folder_of(p)) for p in changed - removed}
+            folders = [folder for folder in owners.values() if folder is not None]
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
             success = self.refresh_indexes(
                 folders,
                 trigger_paths=changed,
-                create={self.indexed_anchor(folder_of(p)) for p in arrivals},
+                create={
+                    self.indexed_anchor(owner)
+                    for p in arrivals
+                    if (owner := owners[p]) is not None
+                },
             )
             if success and previous != current:
                 self._checkpoint.save(current)
             return success
+
+    def _owner(self, folder: str) -> str | None:
+        """Find a designated owner without crossing a preserved index."""
+        while not self._designated(folder):
+            if self._has_index(folder) or not folder:
+                return None
+            folder = folder_of(folder)
+        return folder
 
     def _removed_index_boundary(self, folder: str) -> str | None:
         """Find the nearest existing boundary above a removed concept's folder."""

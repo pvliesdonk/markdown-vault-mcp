@@ -58,7 +58,7 @@ class IndexFacet:
             else None
         )
 
-    def close(self) -> None:
+    def _close(self) -> None:
         """Wait for asynchronous reindex continuations before closing the writer."""
         if self._convergence_executor is not None:
             self._convergence_executor.shutdown(wait=True)
