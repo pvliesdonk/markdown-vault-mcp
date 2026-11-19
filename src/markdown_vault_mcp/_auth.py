@@ -1,8 +1,8 @@
 """Auth mode resolution and builders.
 
-Ported from ``fastmcp_pvl_core._auth`` 10.2.0 (#2277). The auth mode is
-recorded through the shim's ``set_current_auth_mode`` until #2350 moves the
-request subject here, so the setter and the readers share one context variable.
+Ported from ``fastmcp_pvl_core._auth`` 10.2.0 (#2277). ``build_auth`` records
+the resolved mode with ``_subject.set_current_auth_mode``, the context variable
+``get_subject`` and ``get_current_auth_mode`` read.
 
 Inspect :class:`ServerConfig` to determine which auth flavor is
 configured, then dispatch to the right FastMCP auth provider.
@@ -16,7 +16,7 @@ import logging
 import tomllib
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeGuard, assert_never, cast
 
-from markdown_vault_mcp._pvl_core import ServerConfig, set_current_auth_mode
+from markdown_vault_mcp._subject import set_current_auth_mode
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_regular_file
 
@@ -29,6 +29,8 @@ if TYPE_CHECKING:
         StaticTokenVerifier,
     )
     from fastmcp.server.auth.oidc_proxy import OIDCProxy
+
+    from markdown_vault_mcp._pvl_core import ServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -886,7 +888,7 @@ def build_auth(config: ServerConfig) -> Any:
     :func:`_resolve_advertised_scopes`.
 
     Records the resolved mode for
-    :func:`get_current_auth_mode` (the shim's, until #2350) and announces it to
+    :func:`markdown_vault_mcp._subject.get_current_auth_mode` and announces it to
     the operator log (see :func:`_announce_auth_mode`), both as startup
     side effects. Nothing dedupes either: a caller composing two servers
     calls this twice and the second call wins the recorded mode.

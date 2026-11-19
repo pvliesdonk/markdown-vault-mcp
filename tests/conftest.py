@@ -67,7 +67,7 @@ def _reset_auth_mode() -> Iterator[None]:
     variable's value crosses test boundaries within one run. Ported from
     fastmcp-pvl-core's ``tests/conftest.py`` at v10.2.0.
     """
-    from markdown_vault_mcp._pvl_core import set_current_auth_mode
+    from markdown_vault_mcp._subject import set_current_auth_mode
 
     set_current_auth_mode(None)
     yield

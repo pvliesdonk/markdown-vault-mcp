@@ -242,9 +242,9 @@ class TestActorResolution:
     def test_resolve_human_subject_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         assert resolve_human_subject() == "peter"
 
@@ -252,7 +252,7 @@ class TestActorResolution:
     def test_resolve_human_subject_unattributable(
         self, monkeypatch: pytest.MonkeyPatch, value: str | None
     ) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: value)
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: value)
         assert resolve_human_subject() is None
 
 
@@ -636,9 +636,9 @@ class TestWriteToolThreadsActor:
     async def test_write_stamps_human_actor_when_authed(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -707,9 +707,9 @@ class TestFetchThreadsActor:
 
         # fetch writes .md notes through DocumentManager.write, so the enricher
         # fires; the provenance actor must be the authenticated caller (#964).
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         # The download is incidental here — only the actor threading on the
         # write path is under test — so fetch_url (a black-box library
@@ -750,9 +750,9 @@ class TestOkfVerifyTrustAuth:
     async def test_appends_verification_when_authed(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -773,9 +773,9 @@ class TestOkfVerifyTrustAuth:
         _assert_recent_utc_stamp(entry["at"])
 
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -789,9 +789,9 @@ class TestOkfVerifyTrustAuth:
         # concurrent write landing in that window by mutating the file from
         # inside the transform (which runs after the read); the etag no longer
         # matches, so the write is refused rather than clobbering the change.
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         import markdown_vault_mcp._tools.writer as writer_mod
 
@@ -814,9 +814,9 @@ class TestOkfVerifyTrustAuth:
     ) -> None:
         # verified_count is the list length after the append; a bare-mapping
         # verified is one entry, not zero (#1357).
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         (trust_auth_env / "guides" / "playbook.md").write_text(
             "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# P\n",
@@ -851,9 +851,9 @@ class TestOkfVerifyElicit:
     ) -> None:
         # An affirmative elicitation reply attributes to the authenticated
         # subject and records the verification.
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
@@ -882,9 +882,9 @@ class TestOkfVerifyElicit:
     async def test_declined_elicitation_writes_nothing(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server(), elicitation_handler=_decline_review) as client:
             await wait_for_mcp_writer_drain(client)
@@ -897,9 +897,9 @@ class TestOkfVerifyElicit:
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Accepting the form but answering 'no' is not an affirmation.
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(
             make_server(), elicitation_handler=_accept_negative
@@ -915,9 +915,9 @@ class TestOkfVerifyElicit:
     ) -> None:
         # On the modern protocol the client drives the returned input request;
         # with no handler it refuses before issuing a continuation call.
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_claims", lambda: {"sub": "peter"}
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
         )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)

@@ -151,6 +151,7 @@ src/markdown_vault_mcp/
   _jobs.py             -- Jobs / build_jobs: soft-deadline promotion of long-running calls to pollable jobs, yielding to native tasks (#2307)
   _job_store.py        -- JobStore and the job records: subject-scoped, TTL-pinned job records over the jobs KV namespace, with the per-subject cap (#2307)
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)
+  _subject.py          -- get_subject / get_claims / get/set_current_auth_mode: the request subject across auth modes and the auth-mode context variable build_auth sets (#2350)
   _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
   _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)
   _instructions.py     -- contribute_instructions: domain snippets added to the instructions builder from server.py's DOMAIN-WIRING (#901)

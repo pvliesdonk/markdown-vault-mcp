@@ -47,8 +47,8 @@ def _patch_context(
     subject: str | None,
     claims: dict[str, Any] | None,
 ) -> None:
-    monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: subject)
-    monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_claims", lambda: claims)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: subject)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_claims", lambda: claims)
 
 
 class TestPrincipalOkfActor:
@@ -206,7 +206,7 @@ class TestOkfResolversPreferBoundPrincipal:
     ) -> None:
         from markdown_vault_mcp._okf_write import resolve_human_subject
 
-        monkeypatch.setattr("markdown_vault_mcp._pvl_core.get_subject", lambda: "other")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "other")
         p = Principal(subject="peter", display_name=None, email=None, kind="human")
         with bound_principal(p):
             assert resolve_human_subject() == "peter"
@@ -353,7 +353,8 @@ class TestServicePrincipals:
         from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
         from markdown_vault_mcp._auth import build_bearer_auth
-        from markdown_vault_mcp._pvl_core import ServerConfig, get_claims, get_subject
+        from markdown_vault_mcp._pvl_core import ServerConfig
+        from markdown_vault_mcp._subject import get_claims, get_subject
 
         verifier = build_bearer_auth(
             ServerConfig(bearer_token="test-only-1463", bearer_default_subject=subject)
