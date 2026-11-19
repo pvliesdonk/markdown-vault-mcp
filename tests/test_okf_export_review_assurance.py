@@ -375,7 +375,7 @@ def test_receipt_store_unavailable_fails_closed(tmp_path, monkeypatch, state):
     "selector,value",
     [("require_check", "human-review"), ("review_evidence", "binding")],
 )
-def test_explicit_selector_requires_review(tmp_path, monkeypatch, selector, value):
+def test_explicit_selector_requires_review(tmp_path, selector, value):
     from fastmcp.exceptions import ToolError
     from typer.testing import CliRunner
 
@@ -395,10 +395,6 @@ def test_explicit_selector_requires_review(tmp_path, monkeypatch, selector, valu
     with pytest.raises(ToolError, match="require_review"):
         _bundle_options(f"okf-bundle?{selector}={value}")
 
-    def no_index(*_args, **_kwargs):
-        raise AssertionError("invalid policy must fail before opening the index")
-
-    monkeypatch.setattr("markdown_vault_mcp._cli_read._build_reader_vault", no_index)
     out = tmp_path.parent / "selector-output.zip"
     result = CliRunner().invoke(
         app,

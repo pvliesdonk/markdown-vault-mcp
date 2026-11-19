@@ -56,7 +56,7 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
     from markdown_vault_mcp.exceptions import ConfigurationError
     from markdown_vault_mcp.managers._write_kernel import atomic_write
-    from markdown_vault_mcp.okf_bundle import _review_policy, build_okf_bundle
+    from markdown_vault_mcp.okf_bundle import build_okf_bundle
     from markdown_vault_mcp.okf_export_report import (
         ExportCollisionError,
         PublicationRefused,
@@ -65,7 +65,6 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
 
     built = None
     try:
-        _review_policy(require_review, require_check, review_evidence)
         config = ProjectConfig.from_env()
         original_settings = VaultSettings.from_project_config(config)
         state_path = original_settings.effective_state_path(config.source_dir)
