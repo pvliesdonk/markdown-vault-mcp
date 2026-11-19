@@ -448,8 +448,8 @@ jobs:
         #
         # The build backend's metadata version and the publisher's twine are
         # one invariant across two files; `pyproject.toml` bounds hatchling so
-        # this side cannot be outrun again, and template-ci's
-        # publish-metadata gate proves the pair still agree.
+        # this side cannot be outrun again, and the Lint job in ci.yml
+        # proves the pair still agree on every pull request (#2259).
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/
@@ -932,7 +932,7 @@ jobs:
           # README is generated from these descriptions, and this project —
           # not the catalog — is where its own one-line description lives.
           # A hand-edited blurb on this entry is therefore replaced on every
-          # release, deliberately; curate it here, in `domain_description`.
+          # release, deliberately; curate it in PLUGIN_DESC above.
           jq --arg name "markdown-vault-mcp" \
              --arg v    "$VERSION" \
              --arg ref  "v$VERSION" \
