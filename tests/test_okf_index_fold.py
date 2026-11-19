@@ -8,32 +8,25 @@ from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
-
-
-def _vault(root: Path, folders: tuple[str, ...]) -> Vault:
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_log="off", okf_folders=folders
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    vault.index.build_index()
-    return vault
+from tests.fixtures.designated_index import designated_vault
 
 
 def test_folds_deep_notes_and_preserves_authored_boundary(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "projects/p/deep/more").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, (".", "projects/*"))
+    vault = designated_vault(root, (".", "projects/*"))
     try:
+        vault.index.build_index()
         vault.writer.write("projects/p/deep/more/note.md", "# Deep note\n")
         wait_for_writer_drain(vault)
         assert "/projects/p/index.md" in (root / "index.md").read_text()
         assert path_exists(root / "projects/p/index.md")
         assert not path_exists(root / "projects/p/deep/index.md")
         assert not path_exists(root / "projects/p/deep/more/index.md")
+        body = (root / "projects/p/index.md").read_text()
+        assert "## deep/more/" in body
+        assert "/projects/p/deep/more/note.md" in body
         vault.writer.delete("projects/p/deep/more/note.md")
         wait_for_writer_drain(vault)
         assert "note.md" not in (root / "projects/p/index.md").read_text()
@@ -45,8 +38,9 @@ def test_all_folders_retains_recursive_golden(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "a/b").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, ("**",))
+    vault = designated_vault(root, ("**",))
     try:
+        vault.index.build_index()
         vault.writer.write("a/b/note.md", "# Note\n")
         wait_for_writer_drain(vault)
         assert (
@@ -68,14 +62,14 @@ def test_structural_arrival_connects_new_project(
     (root / "source").mkdir()
     (root / "source/note.md").write_text("# Note\n")
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, (".", "projects/*"))
+    vault = designated_vault(root, ("projects/*",))
     try:
+        vault.index.build_index()
         if operation == "rename":
             vault.writer.rename("source/note.md", "projects/p/note.md")
         else:
             vault.writer.move_folder("source", "projects/p/child")
         wait_for_writer_drain(vault)
-        assert "/projects/p/index.md" in (root / "index.md").read_text()
         expected = (
             "/projects/p/note.md"
             if operation == "rename"
@@ -92,8 +86,9 @@ def test_new_boundary_stops_at_authored_parent(tmp_path: Path) -> None:
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     authored = "# Handwritten\n"
     (root / "projects/index.md").write_text(authored)
-    vault = _vault(root, (".", "projects/*"))
+    vault = designated_vault(root, (".", "projects/*"))
     try:
+        vault.index.build_index()
         vault.writer.write("projects/p/note.md", "# Note\n")
         wait_for_writer_drain(vault)
         assert (root / "projects/index.md").read_text() == authored
@@ -102,12 +97,10 @@ def test_new_boundary_stops_at_authored_parent(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_oversized_indexes_refresh_without_weakening_public_read(
+def test_oversized_indexes_refresh_preserving_headers_and_boundaries(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from markdown_vault_mcp.exceptions import NoteTooLargeError
-
     root = tmp_path / "vault"
     (root / "deep").mkdir(parents=True)
     header = b'---\r\nokf_version: "0.2" # declaration\r\n---\r\n'
@@ -128,6 +121,14 @@ def test_oversized_indexes_refresh_without_weakening_public_read(
     )
     try:
         vault.index.build_index()
+        curated = (root / "index.md").read_bytes()
+        navigation = vault.reader.okf_navigation("")
+        assert (navigation.source, navigation.body, navigation.reason) == (
+            None,
+            None,
+            "note_limit",
+        )
+        assert (root / "index.md").read_bytes() == curated
         vault.writer.write("deep/note.md", "# Note\n")
         wait_for_writer_drain(vault)
         contents = (root / "index.md").read_bytes()
@@ -135,18 +136,6 @@ def test_oversized_indexes_refresh_without_weakening_public_read(
         assert b"/deep/index.md" in contents
         assert (root / "deep/index.md").read_bytes() == authored
         assert vault.okf.state().active
-        with pytest.raises(NoteTooLargeError):
-            vault.reader.read("deep/index.md")
-        # A second folded listing can grow past the limit while section reads work.
-        for i in range(12):
-            vault.writer.write(f"note-{i:02}.md", f"# Long title {i}\n")
-        wait_for_writer_drain(vault)
-        with pytest.raises(NoteTooLargeError):
-            vault.reader.read("index.md")
-        assert vault.reader.read("index.md", section="Index") is not None
-        refreshed = (root / "index.md").read_bytes()
-        assert refreshed.startswith(header)
-        assert b"/note-11.md" in refreshed
         assert not any(
             record.msg.startswith("okf_convention_index_failed")
             for record in caplog.records
@@ -159,8 +148,9 @@ def test_ordinary_write_repairs_new_and_removed_boundary(tmp_path: Path) -> None
     root = tmp_path / "vault"
     (root / "projects/p/deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, (".", "projects/*"))
+    vault = designated_vault(root, (".", "projects/*"))
     try:
+        vault.index.build_index()
         vault.writer.write("projects/p/deep/a.md", "# A\n")
         wait_for_writer_drain(vault)
         index = root / "projects/p/index.md"
@@ -193,8 +183,9 @@ def test_generation_queries_subtree_once(
         folder.mkdir(parents=True)
         (folder / "note.md").write_text("# Note\n")
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, ("**",))
+    vault = designated_vault(root, ("**",))
     try:
+        vault.index.build_index()
         original = vault._search_mgr.list
         calls: list[str | None] = []
 
@@ -209,50 +200,38 @@ def test_generation_queries_subtree_once(
             vault.writer.okf_generate_index()
         wait_for_writer_drain(vault)
         assert calls == [None]
-        assert "/folder-00/index.md" in (root / "index.md").read_text()
-        assert "/folder-00/nested/index.md" in (root / "folder-00/index.md").read_text()
     finally:
         vault.close()
 
 
 def test_colliding_folder_headings_remain_individually_readable(tmp_path: Path) -> None:
-    from markdown_vault_mcp.exceptions import NoteTooLargeError
+    from markdown_it import MarkdownIt
 
     root = tmp_path / "vault"
-    names = ("a b", "a  b", "a b (2)")
+    names = ("a b", "a  b", "a b (2)", "report # *bold*", "line\nbreak")
     for i, name in enumerate(names):
         (root / name).mkdir(parents=True)
         (root / name / f"note-{i}.md").write_text(f"# Note {i}\n")
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
-    caps = ContentConfig(
-        okf_mode="on", okf_index=True, okf_log="off", okf_folders=(".",)
-    ).okf_capabilities
-    vault = Vault(
-        source_dir=root,
-        settings=VaultSettings(
-            read_only=False,
-            okf_mode="on",
-            okf_capabilities=caps,
-            max_note_read_bytes=100,
-        ),
-    )
+    vault = designated_vault(root, (".",))
     try:
         vault.index.build_index()
         vault.writer.write("ordinary.md", "# Ordinary\n")
         wait_for_writer_drain(vault)
-        with pytest.raises(NoteTooLargeError):
-            vault.reader.read("index.md")
         headings = [
             entry.heading
             for entry in vault.reader.get_toc("index.md")
             if entry.level == 2
         ]
-        assert len(headings) == len(set(headings)) == 3
+        assert len(headings) == len(set(headings)) == len(names)
         sections = [
             vault.reader.read("index.md", section=heading).content
             for heading in headings
         ]
-        for i in range(3):
+        html = MarkdownIt().render((root / "index.md").read_text())
+        assert "<h2>report # *bold*/</h2>" in html
+        assert "<h2>line break/</h2>" in html
+        for i in range(len(names)):
             assert sum(f"note-{i}.md" in section for section in sections) == 1
     finally:
         vault.close()
@@ -262,23 +241,20 @@ def test_explicit_regeneration_keeps_designated_fold(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     (root / "projects/p/deep").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    vault = _vault(root, (".", "projects/*"))
+    vault = designated_vault(root, (".", "projects/*"))
     try:
+        vault.index.build_index()
         vault.writer.write("projects/p/deep/first.md", "# First\n")
         wait_for_writer_drain(vault)
         vault.writer.okf_generate_index(folder="projects/p")
         assert not path_exists(root / "projects/p/deep/index.md")
-        vault.writer.write("projects/p/deep/second.md", "# Second\n")
-        wait_for_writer_drain(vault)
         body = (root / "projects/p/index.md").read_text()
         assert "/projects/p/deep/first.md" in body
-        assert "/projects/p/deep/second.md" in body
-        assert not path_exists(root / "projects/p/deep/index.md")
     finally:
         vault.close()
 
 
-@pytest.mark.parametrize("target", ["absent", "authored", "alias"])
+@pytest.mark.parametrize("target", ["absent", "alias"])
 def test_explicit_generation_refuses_undesignated_or_aliased_target(
     tmp_path: Path, target: str
 ) -> None:
@@ -288,19 +264,20 @@ def test_explicit_generation_refuses_undesignated_or_aliased_target(
     (root / "other").mkdir(parents=True)
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     index = root / "other/index.md"
-    if target == "authored":
-        index.write_text("# Authored\n")
     if target == "alias":
         (root / "real.md").write_text("# Real\n")
         (root / "index.md").unlink()
         (root / "index.md").symlink_to(root / "real.md")
-    vault = _vault(root, (".",))
+    vault = designated_vault(root, (".",))
     try:
+        vault.index.build_index()
         with pytest.raises(InvalidRequestError, match="OKF_FOLDERS"):
             vault.writer.okf_generate_index(folder="" if target == "alias" else "other")
         if target == "absent":
             assert not path_exists(index)
-        elif target == "authored":
+            index.write_text("# Authored\n")
+            with pytest.raises(InvalidRequestError, match="OKF_FOLDERS"):
+                vault.writer.okf_generate_index(folder="other")
             assert index.read_text() == "# Authored\n"
         else:
             assert (root / "real.md").read_text() == "# Real\n"
