@@ -471,7 +471,15 @@ def derive_annotation(
     extension = metadata.get("x-mvmcp")
     if assessments is not None:
         annotation["review_assessments"] = assessments
-        if any(item["snapshot"] != "unbound" for item in assessments):
+        if any(
+            item.get("snapshot_basis") == "unsupported_algorithm"
+            for item in assessments
+        ):
+            annotation["review_applicability"] = {
+                "review": "unknown",
+                "basis": "unsupported_algorithm",
+            }
+        elif any(item["snapshot"] != "unbound" for item in assessments):
             annotation["review_applicability"] = {
                 "review": "assessed",
                 "basis": "per_review",

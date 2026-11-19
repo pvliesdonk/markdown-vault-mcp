@@ -114,7 +114,10 @@ On an active OKF bundle, whole-document reads also carry
 an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
 `review_applicability`, `review_assessments`, observation, recorded, snapshot {algo, digest}, and the note's 'sources'
 list when present). Review assessments report snapshot binding, check and local receipt origin
-independently of freshness. Observation reports
+independently of freshness. Each assessment carries by, at, snapshot,
+check, origin and `local_evidence` (available or unavailable). An
+unsupported algorithm has `snapshot_basis`=`unsupported_algorithm`.
+Observation reports
 the local review comparison or unavailable. Section reads omit
 it because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),

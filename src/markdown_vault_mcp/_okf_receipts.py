@@ -45,7 +45,7 @@ def assess_reviews(
     snapshot: dict[str, str],
     load: Callable[[], list[dict[str, Any]] | None] | None,
 ) -> list[dict[str, Any]]:
-    """Assess each recorded review against its next claim and local receipt.
+    """Assess each recorded review against a claim and local receipt.
 
     Args:
         metadata: Parsed concept frontmatter.
@@ -71,7 +71,32 @@ def assess_reviews(
                 row.get("at")
             ) == _parse_stale_after(reference["at"])
 
-        claim = next((row for row in claims if identity(row)), None)
+        candidates = [row for row in claims if identity(row)]
+        if candidates and not loaded:
+            receipts = load() if load is not None else None
+            loaded = True
+
+        def receipt_for(
+            claim: dict[str, Any], rows: list[dict[str, Any]] | None = receipts
+        ) -> dict[str, Any] | None:
+            check, pair = claim.get("check"), _snapshot_pair(claim.get("snapshot"))
+            if rows is None or not isinstance(check, str) or pair is None:
+                return None
+            return next(
+                (
+                    row
+                    for row in rows
+                    if identity(row)
+                    and row.get("check") == check
+                    and _snapshot_pair(row.get("snapshot")) == pair
+                ),
+                None,
+            )
+
+        claim = next(
+            (row for row in candidates if receipt_for(row) is not None),
+            candidates[0] if candidates else None,
+        )
         item: dict[str, Any] = {
             "by": entry["by"],
             "at": entry["at"],
@@ -90,24 +115,13 @@ def assess_reviews(
                 item["snapshot"] = (
                     "matches" if pair[1] == snapshot["digest"] else "differs"
                 )
-            if not loaded:
-                receipts = load() if load is not None else None
-                loaded = True
-            if receipts is not None and isinstance(check, str) and pair is not None:
-                receipt = next(
-                    (
-                        row
-                        for row in receipts
-                        if identity(row)
-                        and row.get("check") == check
-                        and _snapshot_pair(row.get("snapshot")) == pair
-                    ),
-                    None,
-                )
-                if receipt is not None:
-                    receipts.remove(receipt)
-                    item["origin"] = "local_receipt"
-                    item["local_evidence"] = "available"
+            elif pair is not None:
+                item["snapshot_basis"] = "unsupported_algorithm"
+            receipt = receipt_for(claim)
+            if receipt is not None and receipts is not None:
+                receipts.remove(receipt)
+                item["origin"] = "local_receipt"
+                item["local_evidence"] = "available"
         result.append(item)
     return result
 

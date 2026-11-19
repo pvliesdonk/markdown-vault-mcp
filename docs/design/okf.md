@@ -204,7 +204,10 @@ frontmatter blob; not persisted):
   as one malformed entry. No source fetching or reviewer authentication occurs.
 - `review_applicability` summarizes whole-read per-review snapshot assessments.
   Compact results report unknown when a binding claim exists but the concept
-  bytes are unavailable. Freshness and local receipt origin remain separate.
+  bytes are unavailable. Each assessment carries `by`, `at`, `snapshot`,
+  `check`, `origin`, and `local_evidence` (`available` or `unavailable`).
+  Unsupported algorithms use `snapshot_basis: unsupported_algorithm` and make
+  the aggregate unknown. Freshness and local receipt origin remain separate.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a

@@ -190,3 +190,36 @@ def test_malformed_binding_and_absent_store() -> None:
             None,
             "supplied",
         )
+
+
+def test_receipt_backed_claim_is_not_shadowed() -> None:
+    from markdown_vault_mcp._okf_receipts import assess_reviews
+
+    current = concept_snapshot("Body")
+    entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
+    orphan = {**entry, "check": "links", "snapshot": concept_snapshot("Old")}
+    actual = {**entry, "check": "human-review", "snapshot": current}
+    metadata = {"verified": entry, "x-mvmcp": {"reviews": [orphan, actual]}}
+    item = assess_reviews(metadata, current, lambda: [actual])[0]
+    assert (item["snapshot"], item["check"], item["origin"]) == (
+        "matches",
+        "human-review",
+        "local_receipt",
+    )
+
+
+def test_unsupported_binding_is_not_absent() -> None:
+    from markdown_vault_mcp._okf_receipts import assess_reviews
+    from markdown_vault_mcp.okf import derive_annotation
+
+    current = concept_snapshot("Body")
+    entry = {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}
+    claim = {**entry, "check": "links", "snapshot": {**current, "algo": "future"}}
+    metadata = {"verified": entry, "x-mvmcp": {"reviews": [claim]}}
+    items = assess_reviews(metadata, current, lambda: [claim])
+    assert items[0]["origin"] == "local_receipt"
+    assert items[0]["snapshot_basis"] == "unsupported_algorithm"
+    assert derive_annotation(metadata, assessments=items)["review_applicability"] == {
+        "review": "unknown",
+        "basis": "unsupported_algorithm",
+    }
