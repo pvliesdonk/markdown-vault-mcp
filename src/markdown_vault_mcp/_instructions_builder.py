@@ -13,9 +13,6 @@ semantic role, applies the env contract, and sets ``FastMCP.instructions``.
 
 Design, as written in pvl-core:
 https://github.com/pvliesdonk/fastmcp-pvl-core/blob/ea6741640fdd2ace32072f71766b39476f2a2201/docs/superpowers/specs/2026-08-31-instruction-roles-budget-design.md
-
-The tool-visibility helpers still come from pvl-core through the shim, until
-#2278 moves them.
 """
 
 from __future__ import annotations
@@ -27,7 +24,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._env import env
-from markdown_vault_mcp._pvl_core import effective_tool_names, registered_tool_names
+from markdown_vault_mcp._tool_visibility import (
+    effective_tool_names,
+    registered_tool_names,
+)
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:

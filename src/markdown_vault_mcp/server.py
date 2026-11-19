@@ -21,7 +21,6 @@ from markdown_vault_mcp._instructions_builder import (
 )
 from markdown_vault_mcp._pvl_core import (
     HealthCheck,
-    apply_tool_visibility,
     build_auth,
     configure_logging_from_env,
     get_current_auth_mode,
@@ -36,6 +35,7 @@ from markdown_vault_mcp._server_deps import (
     server_lifespan,
 )
 from markdown_vault_mcp._tasks import configure_task_backend
+from markdown_vault_mcp._tool_visibility import apply_tool_visibility
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.prompts import register_prompts
 from markdown_vault_mcp.resources import register_resources
