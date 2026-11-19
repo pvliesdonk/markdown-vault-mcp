@@ -435,13 +435,13 @@ the apply invocation. The preview also names every index that apply will create 
 Apply writes those indexes first, then removes the matching indexes. Removing indexes may break links to them; use
 `markdown-vault-mcp links broken` to find broken links. The root index is never removed; if designated, its body can be
 refreshed and its frontmatter is preserved. An index with a different body is
-kept as authored, as are indexes below a surviving boundary outside designated folders or
+kept as authored. Index aliases are kept as boundaries, as are indexes below a surviving boundary outside designated folders or
 without a designated parent. Comparison ignores frontmatter, so applying also
 removes the frontmatter of any deleted index. `OKF_FOLDERS` determines which
 folders are designated; `projects/*` does not designate the root.
 
-If apply is interrupted, a new run makes a plan from the files on disk. If the
-interruption follows removals, use the library's
+If apply is interrupted, a new run makes a plan from the files on disk. After
+an interruption, use the library's
 `vault.writer.okf_generate_index(folder="path/to/parent")` to regenerate each
 affected designated parent. Use `folder=""` for the root. A new collapse run
 only refreshes parents of indexes it removes in that run.

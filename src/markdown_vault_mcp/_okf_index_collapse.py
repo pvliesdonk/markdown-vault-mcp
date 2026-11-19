@@ -148,6 +148,9 @@ def plan_collapse(
         try:
             note = doc.read(path)
             if reason is None and note is not None:
+                if note.path != path:
+                    kept.append((path, "alias"))
+                    continue
                 if strip_frontmatter_block(
                     note.content, preserve_body=True
                 ) != migrate.index_body(top):
@@ -216,7 +219,13 @@ def apply_collapse(
                     kept.append((path, "below a kept index"))
                     continue
                 try:
-                    doc.delete(path, if_match=etag, allow_protected=allow_protected)
+                    with doc.write_scope():
+                        note = doc.read(path)
+                        if note is not None and note.path != path:
+                            kept.append((path, "changed since preview"))
+                            blocked.append(posixpath.dirname(path))
+                            continue
+                        doc.delete(path, if_match=etag, allow_protected=allow_protected)
                     removed.append((path, etag, owner))
                 except ConcurrentModificationError:
                     kept.append((path, "changed since preview"))

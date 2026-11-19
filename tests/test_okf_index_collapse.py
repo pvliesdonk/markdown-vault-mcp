@@ -764,3 +764,53 @@ def test_cli_reports_inactive_designation(
     assert result.exit_code == 1
     assert "MARKDOWN_VAULT_MCP_OKF_FOLDERS" in result.output
     assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize("directory_alias", [False, True])
+def test_symlink_index_kept_as_boundary(tmp_path: Path, directory_alias: bool) -> None:
+    root = tmp_path / "vault"
+    (root / "a").mkdir(parents=True)
+    (root / "index.md").write_text("# Root\n")
+    (root / "a/index.md").write_text("# b\n\n- [Note](/b/note.md)\n")
+    if directory_alias:
+        (root / "b").symlink_to("a", target_is_directory=True)
+    else:
+        (root / "b").mkdir()
+        (root / "b/index.md").symlink_to("../a/index.md")
+    (root / "b/note.md").write_text("# Note\n")
+    vault = designated_vault(root, (".",))
+    try:
+        vault.index.build_index()
+        plan = vault.writer.okf_collapse_indexes()
+        assert ("b/index.md", "alias") in plan.kept
+        vault.writer.okf_collapse_indexes(apply=True)
+        assert path_exists(root / "a/index.md")
+        assert path_exists(root / "b/index.md")
+    finally:
+        vault.close()
+
+
+def test_retargeted_index_kept_and_reconciled(tmp_path: Path) -> None:
+    from markdown_vault_mcp._okf_index_collapse import apply_collapse, plan_collapse
+
+    root = tmp_path / "vault"
+    for folder in ("a", "b"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "index.md").write_text(
+            f"# {folder}\n\n- [Note](/{folder}/note.md)\n"
+        )
+        (root / folder / "note.md").write_text("# Note\n")
+    (root / "index.md").write_text("# Root\n")
+    vault = designated_vault(root, (".", "a"))
+    try:
+        vault.index.build_index()
+        plan = plan_collapse(vault._doc_mgr, vault._okf_migrate)
+        (root / "b/index.md").unlink()
+        (root / "b/index.md").symlink_to("../a/index.md")
+        result = apply_collapse(vault._doc_mgr, vault._okf_migrate, plan)
+        assert ("b/index.md", "changed since preview") in result.kept
+        assert path_exists(root / "a/index.md")
+        assert path_exists(root / "b/index.md")
+        assert "/b/index.md" in (root / "index.md").read_text()
+    finally:
+        vault.close()
