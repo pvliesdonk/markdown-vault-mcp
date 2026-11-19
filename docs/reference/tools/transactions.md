@@ -59,9 +59,11 @@ A later `git_sync` waits only while the commit is still pending.
 **Returns**
 
 Dict with status (committed, `no_changes` or failed), `sha` (str or null),
-and files (number of committed paths; zero if unknown). Without Git
-commit support, a group with writes reports failed; the files remain
-written. An empty group reports `no_changes`.
+files (number of committed paths; zero if unknown), and `history_failed`
+(whether an editorial history entry could not be recorded). With no
+write callback, a group reports `no_changes`; a callback that cannot
+report its grouped commit can report failed. Files remain written.
+An empty group reports `no_changes`.
 
 <!-- DOMAIN-EXAMPLE-end_transaction-START -->
 After those writes, call `end_transaction({"handle": "<handle>"})`. A result such

@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+_GROUP_COMMIT_WAIT_TIMEOUT = 30.0
 _deferred_group_write: ContextVar[list[bool] | None] = ContextVar(
     "deferred_group_write", default=None
 )
@@ -124,9 +125,9 @@ class _ScopeEnd:
 class WriteCallbackDispatcher:
     """Run write callbacks on a single background thread, in FIFO order.
 
-    The worker starts lazily on the first :meth:`fire` (only when a callback
-    is configured) and is joined by :meth:`close`. A ``None`` callback makes
-    :meth:`fire` a no-op. A callback that raises is logged and skipped; the
+    The worker starts lazily on the first callback or grouped history write
+    and is joined by :meth:`close`. Without a callback, grouped history still
+    records touched paths. A callback that raises is logged and skipped; the
     worker keeps processing subsequent items.
     """
 
@@ -150,8 +151,10 @@ class WriteCallbackDispatcher:
             group_max_age_s: Maximum group age in seconds.
         """
         self._on_write = on_write
-        self.group_event: Callable[[CommitGroup, date], list[Path]] | None = None
+        self.group_event: Callable[[CommitGroup, date], None] | None = None
         self.group_write_scope: Callable[[], AbstractContextManager[None]] = nullcontext
+        self.group_event_enabled: Callable[[], bool] = lambda: False
+        self.hold_group_commit = False
         self._groups: dict[str, CommitGroup] = {}
         self._group_lock = threading.RLock()
         self._group_pull_gate = threading.Lock()
@@ -214,7 +217,8 @@ class WriteCallbackDispatcher:
     ) -> None:
         """Queue a callback invocation, starting the worker if needed.
 
-        No-op when no callback is configured. After :meth:`close`, this is a
+        Without a callback, only grouped history paths are tracked. After
+        :meth:`close`, this is a
         logged no-op — it does not resurrect a worker or enqueue an item that
         would never be drained.
 
@@ -440,9 +444,12 @@ class WriteCallbackDispatcher:
         day: date,
     ) -> None:
         """Write group history before its end marker, outside the group lock."""
-        with self.group_write_scope():
+        record_history = bool(
+            self.group_event is not None and group.paths and self.group_event_enabled()
+        )
+        with self.group_write_scope() if record_history else nullcontext():
             try:
-                if self.group_event is not None and group.paths:
+                if record_history and self.group_event is not None:
                     identity = (
                         bound_principal(group.principal)
                         if group.principal
@@ -456,10 +463,19 @@ class WriteCallbackDispatcher:
                         self.group_event(group, day)
             except Exception:
                 with self._group_lock:
-                    group.record(GroupCommitResult(None, 0, "failed"))
+                    group.record(
+                        GroupCommitResult(None, 0, "no_changes", history_failed=True)
+                    )
             with self._group_lock:
                 done = self._enqueue_scope_end(group.scope, group)
                 group.closed = True
+            if record_history and self.hold_group_commit and done is not None:
+                try:
+                    done.result(timeout=_GROUP_COMMIT_WAIT_TIMEOUT)
+                except TimeoutError:
+                    logger.warning(
+                        "group_commit_wait_timeout action=release_write_lock"
+                    )
 
         def finish(_done: Future[None] | None = None) -> None:
             with self._group_lock:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import unicodedata
@@ -22,6 +23,7 @@ from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import append_okf_log_entry, is_okf_reserved_file
 from markdown_vault_mcp.scanner import _unfenced_lines
 from markdown_vault_mcp.utils import folder_of
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 
 if TYPE_CHECKING:
@@ -29,6 +31,8 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp.managers.document import DocumentManager
+
+logger = logging.getLogger(__name__)
 
 _UNSAFE_LAYOUT = "Log layout cannot take an event safely (check `log.md` for an unclosed code fence or raw HTML block); unchanged."
 
@@ -140,7 +144,7 @@ def _insert_preserving(body: str, updated: str, bullet: str, event_date: str) ->
         and t.map[0] == bullet_index
         and t.content == bullet[2:]
         and t.children
-        and any(c.type == "link_open" for c in t.children)
+        and any(c.type in {"link_open", "code_inline"} for c in t.children)
         for t in tokens
     )
     headings = [
@@ -191,7 +195,7 @@ def _validate_input(
         )
     if not paths:
         raise InvalidRequestError("Supply at least one concept path.")
-    if any(_unsafe(path) for path in paths):
+    if not grouped and any(_unsafe(path) for path in paths):
         raise InvalidRequestError("Concept paths must be single-line text.")
 
 
@@ -244,6 +248,27 @@ def _canonical_paths(doc_mgr: DocumentManager, paths: list[str]) -> list[str]:
     return canonical
 
 
+def _event_path(path: str, root: Path, *, grouped: bool) -> str:
+    """Render existing notes as links and removed notes as literal history."""
+    label = "".join(
+        char.encode("unicode_escape").decode("ascii") if _unsafe(char) else char
+        for char in path
+    )
+    if grouped and not is_regular_file(root / path):
+        fence = "`" * (
+            max((len(m.group()) for m in re.finditer(r"`+", label)), default=0) + 1
+        )
+        return f"{fence} {label} {fence}" if "`" in label else f"{fence}{label}{fence}"
+    return f"[{_label(label)}](/{build_plain_destination(quote(path, safe='/'))})"
+
+
+def _existing_folder(root: Path, folder: str) -> str:
+    """Find the nearest surviving folder for a historical path."""
+    while folder and not is_directory(root / folder):
+        folder = folder_of(folder)
+    return folder
+
+
 def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for events
     doc_mgr: DocumentManager,
     paths: list[str],
@@ -253,6 +278,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     *,
     today: date | None = None,
     grouped: bool = False,
+    log_folder: str | None = None,
 ) -> str:
     """Append one event and return its vault-relative log path.
 
@@ -264,6 +290,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         proposed_by: Optional proposal attribution.
         today: Optional event date.
         grouped: Accept group descriptions and already validated touched paths.
+        log_folder: Optional preselected folder for a grouped event.
 
     Returns:
         Path of the log receiving the event.
@@ -288,7 +315,11 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
             else _canonical_paths(doc_mgr, paths)
         )
         common = os.path.commonpath([folder_of(p) for p in canonical])
-        folder = log_anchor(common, folders, doc_mgr._source_dir)
+        folder = (
+            log_folder
+            if log_folder is not None
+            else log_anchor(common, folders, doc_mgr._source_dir)
+        )
         if destination_home(folder, "log.md", doc_mgr._source_dir) is None:
             raise InvalidRequestError(
                 "The selected log is an alias; choose a safe log destination."
@@ -296,8 +327,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         log_path = f"{folder}/log.md" if folder else "log.md"
         # Filesystem names are URL path data, not Markdown escapes or fragments.
         links = ", ".join(
-            f"[{_label(p)}](/{build_plain_destination(quote(p, safe='/'))})"
-            for p in canonical
+            _event_path(p, doc_mgr._source_dir, grouped=grouped) for p in canonical
         )
         summary = f"{_description(description.strip())} — {links}"
         if proposed_by is not None:
@@ -319,7 +349,7 @@ def record_group_events(
     description: str,
     policy: tuple[tuple[str, ...], Callable[[], dict[str, Any]]],
     today: date,
-) -> list[Path]:
+) -> None:
     """Record one group event per selected log, including removed note paths.
 
     Args:
@@ -329,24 +359,38 @@ def record_group_events(
         policy: Designated folders and effective logging callback.
         today: Date captured when the group closed.
 
-    Returns:
-        Absolute paths of the logs written.
     """
     folders, report = policy
     if not report()["effective"]:
-        return []
+        return
     root = doc_mgr._source_dir.resolve()
     grouped: dict[str, list[str]] = {}
     for path in sorted(paths):
         relative = path.relative_to(root).as_posix()
         if not relative.endswith(".md") or is_okf_reserved_file(relative):
             continue
-        folder = log_anchor(folder_of(relative), folders, doc_mgr._source_dir)
+        parent = _existing_folder(root, folder_of(relative))
+        folder = log_anchor(parent, folders, doc_mgr._source_dir)
         grouped.setdefault(folder, []).append(relative)
-    logs = []
-    for paths_for_log in grouped.values():
-        log = record_event(
-            doc_mgr, paths_for_log, description, policy, today=today, grouped=True
-        )
+    logs: list[Path] = []
+    for folder, paths_for_log in grouped.items():
+        try:
+            log = record_event(
+                doc_mgr,
+                paths_for_log,
+                description,
+                policy,
+                today=today,
+                grouped=True,
+                log_folder=folder,
+            )
+        except Exception:
+            failed = f"{folder}/log.md" if folder else "log.md"
+            logger.error(
+                "okf_group_event_failed path=%s completed=%s",
+                failed,
+                [str(p.relative_to(root)) for p in logs],
+                exc_info=True,
+            )
+            raise
         logs.append(root / log)
-    return logs

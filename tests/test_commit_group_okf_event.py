@@ -15,8 +15,10 @@ from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from datetime import date
     from pathlib import Path
 
+    from markdown_vault_mcp._commit_groups import CommitGroup
     from markdown_vault_mcp.types import WriteOperation
 
 
@@ -190,10 +192,8 @@ def test_log_failure_makes_group_result_failed(
     group = vault._write_callback.open_group("Unsafe log", None)
     with vault._write_callback.bind_group(group.handle, None):
         vault.writer.write("a.md", "# A\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "failed"
-    )
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
+    assert result.status == "committed" and result.history_failed
     assert "unclosed" in (git_repo / "log.md").read_text()
 
 
@@ -342,3 +342,341 @@ def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(
     log = (git_repo / "log.md").read_text()
     assert log.count("\n- ") == 1
     assert "One event" in log
+
+
+def test_move_does_not_recreate_removed_source(
+    git_repo: Path, make_vault: Callable[..., Vault]
+) -> None:
+    """A closing event does not recreate a directory the group moved."""
+    from markdown_vault_mcp.utils.fs import is_directory
+
+    old = git_repo / "old"
+    old.mkdir()
+    (old / "a.md").write_text("# A\n")
+    (old / "b.md").write_text("# B\n")
+    vault = make_vault("writes", ("old", "new"))
+    group = vault._write_callback.open_group("Move notes", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.move_folder("old", "new")
+    assert (
+        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
+        == "committed"
+    )
+    assert not is_directory(old)
+
+
+def test_group_accepts_newline_in_note_path(
+    git_repo: Path, make_vault: Callable[..., Vault]
+) -> None:
+    """An accepted newline path is represented safely in the log."""
+    vault = make_vault("events")
+    group = vault._write_callback.open_group("Change", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("line\nbreak.md", "# Note\n")
+    assert (
+        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
+        == "committed"
+    )
+    log = (git_repo / "log.md").read_text()
+    assert "line%0Abreak.md" in log
+    assert r"line\\nbreak.md" in log
+
+
+def test_removed_paths_are_not_broken_links(
+    git_repo: Path, make_vault: Callable[..., Vault]
+) -> None:
+    """Removed paths remain readable history without becoming broken links."""
+    vault = make_vault("events")
+    vault.writer.write("old.md", "# Old\n")
+    assert vault._write_callback.drain(timeout=10)
+    group = vault._write_callback.open_group("Remove", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.delete("old.md")
+    assert (
+        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
+        == "committed"
+    )
+    log = (git_repo / "log.md").read_text()
+    assert "`old.md`" in log
+    assert "](/old.md)" not in log
+
+
+def test_partial_history_failure_reports_location_and_git_succeeds(
+    git_repo: Path, make_vault: Callable[..., Vault], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failed second log reports its destination and earlier successes."""
+    for folder in ("a", "b"):
+        (git_repo / folder).mkdir()
+    (git_repo / "b/log.md").write_text("# Log\n\n```\nunclosed\n")
+    vault = make_vault("events", ("a", "b"))
+    group = vault._write_callback.open_group("Two folders", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("a/one.md", "# One\n")
+        vault.writer.write("b/two.md", "# Two\n")
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
+    assert result.status == "committed" and result.history_failed
+    assert "Two folders" in (git_repo / "a/log.md").read_text()
+    assert "b/log.md" in caplog.text and "a/log.md" in caplog.text
+    assert "unclosed" in caplog.text
+
+
+def test_ungrouped_write_waits_for_group_history_commit(
+    git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later ungrouped bullet cannot enter the earlier group commit."""
+    import threading
+
+    vault = make_vault("writes")
+    strategy = vault._write_callback._on_write
+    assert isinstance(strategy, GitWriteStrategy)
+    original = strategy.on_write_batch
+    entered, release, wrote = threading.Event(), threading.Event(), threading.Event()
+
+    def paused(*args: object, **kwargs: object) -> object:
+        if kwargs.get("group_subject") == "First":
+            entered.set()
+            assert release.wait(5)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(strategy, "on_write_batch", paused)
+    group = vault._write_callback.open_group("First", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("first.md", "# First\n")
+    result = vault._write_callback.close_group(group.handle, None)
+    assert entered.wait(5)
+
+    def write() -> None:
+        vault.writer.write("later.md", "# Later\n")
+        wrote.set()
+
+    thread = threading.Thread(target=write)
+    thread.start()
+    try:
+        assert not wrote.wait(0.1)
+    finally:
+        release.set()
+        thread.join(5)
+    first = result.result(timeout=10)
+    assert first.sha is not None
+    assert "later.md" not in _run_git(git_repo, "show", f"{first.sha}:log.md")
+    assert wrote.is_set()
+
+
+def test_disabled_log_group_closes_while_writes_paused(
+    make_vault: Callable[..., Vault],
+) -> None:
+    """Closing a group without history does not wait for the file lock."""
+    vault = make_vault("off")
+    group = vault._write_callback.open_group("No history", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("a.md", "# A\n")
+    with vault.pause_writes():
+        assert (
+            vault._write_callback.close_group(group.handle, None)
+            .result(timeout=2)
+            .status
+            == "committed"
+        )
+
+
+def test_overlapping_groups_commit_only_their_own_events(
+    git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent closing groups do not stage each other's history."""
+    import threading
+
+    vault = make_vault("events")
+    strategy = vault._write_callback._on_write
+    assert isinstance(strategy, GitWriteStrategy)
+    original = strategy.on_write_batch
+    entered, release = threading.Event(), threading.Event()
+
+    def paused(*args: object, **kwargs: object) -> object:
+        if kwargs.get("group_subject") == "First change":
+            entered.set()
+            assert release.wait(5)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(strategy, "on_write_batch", paused)
+    alice = Principal("alice", "Alice", "alice@example.com", "human")
+    bob = Principal("bob", "Bob", "bob@example.com", "human")
+    first = vault._write_callback.open_group("First change", alice)
+    second = vault._write_callback.open_group("Second change", bob)
+    with bound_principal(alice), vault._write_callback.bind_group(first.handle, alice):
+        vault.writer.write("first.md", "# First\n")
+    with bound_principal(bob), vault._write_callback.bind_group(second.handle, bob):
+        vault.writer.write("second.md", "# Second\n")
+    first_done = vault._write_callback.close_group(first.handle, alice)
+    try:
+        assert entered.wait(5)
+        second_done = vault._write_callback.close_group(second.handle, bob)
+        assert not second_done.done()
+    finally:
+        release.set()
+    first_result = first_done.result(timeout=10)
+    second_result = second_done.result(timeout=10)
+    assert second_result.status == "committed" and second_result.sha is not None
+    assert first_result.sha is not None
+    first_log = _run_git(git_repo, "show", f"{first_result.sha}:log.md")
+    assert "First change" in first_log and "Second change" not in first_log
+    assert (
+        _run_git(git_repo, "show", "-s", "--format=%ae", first_result.sha).strip()
+        == "alice@example.com"
+    )
+    assert (
+        _run_git(git_repo, "show", "-s", "--format=%ae", second_result.sha).strip()
+        == "bob@example.com"
+    )
+
+
+def test_custom_strategy_followup_write_does_not_deadlock(git_repo: Path) -> None:
+    """A custom callback can perform a follow-up vault write during commit."""
+    from typing import Any
+
+    class FollowupStrategy(GitWriteStrategy):
+        def on_write_batch(self, *args: Any, **kwargs: Any) -> Any:
+            """Commit, then issue a follow-up write."""
+            result = super().on_write_batch(*args, **kwargs)
+            vault.writer.write("followup.md", "# Followup\n")
+            return result
+
+    (git_repo / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    strategy = FollowupStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=git_repo,
+    )
+    vault = Vault(
+        source_dir=git_repo,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=ContentConfig(okf_log="events").okf_capabilities,
+        ),
+        on_write=strategy,
+    )
+    try:
+        group = vault._write_callback.open_group("Custom", None)
+        with vault._write_callback.bind_group(group.handle, None):
+            vault.writer.write("a.md", "# A\n")
+        assert (
+            vault._write_callback.close_group(group.handle, None)
+            .result(timeout=5)
+            .status
+            == "committed"
+        )
+        assert vault._write_callback.drain(timeout=5)
+        assert is_regular_file(git_repo / "followup.md")
+    finally:
+        vault.close()
+        strategy.close()
+
+
+def test_history_failure_does_not_block_sync(
+    git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A committed group with a history failure can proceed to Git sync."""
+    import asyncio
+
+    from markdown_vault_mcp._tools.transactions import settle_transactions
+
+    vault = make_vault("events")
+    (git_repo / "log.md").write_text("# Log\n\n```\nunclosed\n")
+    group = vault._write_callback.open_group("Unsafe", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("a.md", "# A\n")
+    monkeypatch.setattr(
+        "markdown_vault_mcp._tools.transactions.resolve_mcp_principal", lambda: None
+    )
+    asyncio.run(settle_transactions(vault, group.handle))
+    assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == "Unsafe"
+
+
+def test_shutdown_timeout_defers_teardown_until_retry(
+    make_vault: Callable[..., Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A slow finalizer keeps its resources and a later close completes cleanup."""
+    import threading
+
+    vault = make_vault("events")
+    dispatcher = vault._write_callback
+    record = dispatcher.group_event
+    assert record is not None
+    entered, release = threading.Event(), threading.Event()
+
+    def slow(group: CommitGroup, day: date) -> None:
+        entered.set()
+        assert release.wait(5)
+        record(group, day)
+
+    original_close = dispatcher.close_groups
+    monkeypatch.setattr(dispatcher, "group_event", slow)
+    monkeypatch.setattr(
+        dispatcher,
+        "close_groups",
+        lambda timeout=30: original_close(timeout=min(timeout, 0.1)),
+    )
+    group = dispatcher.open_group("Slow", None)
+    with dispatcher.bind_group(group.handle, None):
+        vault.writer.write("a.md", "# A\n")
+    pending = dispatcher.close_group(group.handle, None)
+    try:
+        assert entered.wait(5)
+        vault.close()
+        assert "group_finalize_timeout" in caplog.text
+        assert not pending.done()
+    finally:
+        release.set()
+    assert pending.result(timeout=5).status == "committed"
+    vault.close()
+
+
+def test_commit_wait_timeout_releases_lock_but_keeps_result_pending(
+    make_vault: Callable[..., Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A slow Git callback releases the file lock without reporting completion."""
+    import threading
+
+    import markdown_vault_mcp.write_callback as dispatcher_module
+
+    vault = make_vault("writes")
+    strategy = vault._write_callback._on_write
+    assert isinstance(strategy, GitWriteStrategy)
+    original = strategy.on_write_batch
+    entered, release, wrote = threading.Event(), threading.Event(), threading.Event()
+
+    def paused(*args: object, **kwargs: object) -> object:
+        if kwargs.get("group_subject") == "Slow":
+            entered.set()
+            assert release.wait(5)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(strategy, "on_write_batch", paused)
+    monkeypatch.setattr(dispatcher_module, "_GROUP_COMMIT_WAIT_TIMEOUT", 0.1)
+    group = vault._write_callback.open_group("Slow", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        vault.writer.write("first.md", "# First\n")
+    result = vault._write_callback.close_group(group.handle, None)
+    assert entered.wait(5)
+
+    def write() -> None:
+        vault.writer.write("later.md", "# Later\n")
+        wrote.set()
+
+    thread = threading.Thread(target=write)
+    thread.start()
+    try:
+        assert wrote.wait(5)
+        assert not result.done()
+        assert "group_commit_wait_timeout" in caplog.text
+    finally:
+        release.set()
+        thread.join(5)
+    assert result.result(timeout=10).status == "committed"

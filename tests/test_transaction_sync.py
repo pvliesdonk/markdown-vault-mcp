@@ -135,19 +135,28 @@ def test_owner_settlement_preflights_and_selects_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from concurrent.futures import Future
+    from threading import Condition
 
-    from markdown_vault_mcp._commit_groups import CommitGroupError
+    from markdown_vault_mcp._commit_groups import CommitGroup, CommitGroupError
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
     alice = Principal("alice", None, None, "human")
     bob = Principal("bob", None, None, "human")
     dispatcher = WriteCallbackDispatcher(None)
-    completions: list[Future[None]] = []
+    completions: dict[str, Future[None]] = {}
+    condition = Condition()
 
-    def enqueue(_scope: object) -> Future[None]:
+    def enqueue(_scope: object, group: CommitGroup) -> Future[None]:
         future: Future[None] = Future()
-        completions.append(future)
+        with condition:
+            completions[group.handle] = future
+            condition.notify_all()
         return future
+
+    def complete(handle: str) -> None:
+        with condition:
+            assert condition.wait_for(lambda: handle in completions, timeout=5)
+            completions[handle].set_result(None)
 
     monkeypatch.setattr(dispatcher, "_enqueue_scope_end", enqueue)
     try:
@@ -173,21 +182,21 @@ def test_owner_settlement_preflights_and_selects_closes(
         assert len(results) == 3
         assert {manual_result, auto_result} < set(results)
         assert dispatcher.close_group(manual.handle, alice) is manual_result
-        completions[0].set_result(None)
-        completions[1].set_result(None)
-        completions[3].set_result(None)
+        complete(manual.handle)
+        complete(automatic.handle)
+        complete(active.handle)
         assert dispatcher.close_owner_groups(alice) == []
-        dispatcher.open_group("Later", alice)
+        later = dispatcher.open_group("Later", alice)
         results = dispatcher.close_owner_groups(alice, automatic.handle)
         assert len(results) == 2 and auto_result in results
-        completions[4].set_result(None)
+        complete(later.handle)
         assert dispatcher.close_group(automatic.handle, alice) is auto_result
         assert dispatcher.close_owner_groups(alice, automatic.handle) == [auto_result]
         assert dispatcher.close_owner_groups(bob) == [other_result]
-        completions[2].set_result(None)
+        complete(other.handle)
         assert other_result.result().status == "no_changes"
     finally:
-        for future in completions:
+        for future in list(completions.values()):
             if not future.done():
                 future.set_result(None)
         dispatcher.close()
@@ -226,7 +235,7 @@ async def test_sync_explicit_closed_and_auto_closed_handles(
 
 
 @pytest.mark.usefixtures("_mcp_env")
-async def test_no_git_result_reports_failed_commit(
+async def test_no_git_result_reports_no_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
@@ -238,7 +247,12 @@ async def test_no_git_result_reports_failed_commit(
             "write", {"path": "new.md", "content": "text", "transaction": handle}
         )
         result = await client.call_tool("end_transaction", {"handle": handle})
-        assert result.data == {"status": "failed", "sha": None, "files": 0}
+        assert result.data == {
+            "status": "no_changes",
+            "sha": None,
+            "files": 0,
+            "history_failed": False,
+        }
         assert (await client.call_tool("read", {"path": "new.md"})).data[
             "content"
         ] == "text"

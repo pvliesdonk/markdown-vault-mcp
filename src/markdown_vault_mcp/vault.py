@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp._commit_groups import CommitGroupError
 from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
@@ -891,7 +892,15 @@ class Vault:
             self._git_strategy.set_generated_index_policy(self._is_generated_index)
         from markdown_vault_mcp._okf_log_event import record_group_events
 
+        self._write_callback.hold_group_commit = (
+            type(self._on_write) is GitWriteStrategy
+        )
         self._write_callback.group_write_scope = self._doc_mgr.write_scope
+        self._write_callback.group_event_enabled = lambda: bool(
+            self.okf_capability_report(active=self._okf.state().active)["log"][
+                "effective"
+            ]
+        )
         self._write_callback.group_event = lambda group, day: record_group_events(
             self._doc_mgr,
             group.paths,
@@ -1464,7 +1473,13 @@ class Vault:
         self.stop()
 
         if hasattr(self, "_write_callback"):
-            self._write_callback.close_groups(timeout=30.0)
+            try:
+                self._write_callback.close_groups(timeout=30.0)
+            except (TimeoutError, CommitGroupError):
+                logger.warning(
+                    "group_finalize_timeout action=defer_cleanup", exc_info=True
+                )
+                return
 
         if hasattr(self, "_index_facet"):
             self._index_facet._close()

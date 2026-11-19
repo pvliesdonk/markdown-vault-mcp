@@ -25,11 +25,13 @@ class GroupCommitResult:
     ``committed`` means a commit was made; ``no_changes`` means none was
     needed; ``failed`` means staging, commit, or reporting failed. Failure is
     sticky across flushes. An unknown path count is reported as zero.
+    ``history_failed`` records a separate editorial history failure.
     """
 
     sha: str | None
     files: int
     status: Literal["committed", "no_changes", "failed"]
+    history_failed: bool = False
 
 
 class CommitGroupError(ValueError):
@@ -64,7 +66,10 @@ class CommitGroup:
             key=("no_changes", "committed", "failed").index,
         )
         self.result = GroupCommitResult(
-            result.sha or previous.sha, previous.files + result.files, status
+            result.sha or previous.sha,
+            previous.files + result.files,
+            status,
+            previous.history_failed or result.history_failed,
         )
 
 

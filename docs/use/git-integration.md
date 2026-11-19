@@ -92,7 +92,7 @@ A later `git_sync` waits only while the commit is still pending. A
 `git_sync` dry run leaves groups open; omit the transaction handle for a preview.
 Completed automatic-close results are available to their owner by handle until
 the server restarts; an implicit sync does not inspect earlier results.
-On an OKF vault with event or write logging enabled, closing a group records its description once per touched log; see [OKF logging](okf.md#keeping-logmd-and-indexmd-current). A history write failure reports `failed`.
+On an OKF vault with event or write logging enabled, closing a group records its description once per touched log; see [OKF logging](okf.md#keeping-logmd-and-indexmd-current). A history write failure sets `history_failed` separately from the Git status and appears in the server log.
 Unauthenticated clients share the local principal and its transaction groups.
 An interactive `git_sync` pull by another principal can flush an open group,
 splitting its writes across commits.
