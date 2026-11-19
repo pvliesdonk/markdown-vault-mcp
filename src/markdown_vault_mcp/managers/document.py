@@ -1246,7 +1246,6 @@ class DocumentManager:
         allow_overwrite: bool = False,
         allow_protected: bool = False,
         allow_designated: bool = False,
-        create_only: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -1270,7 +1269,6 @@ class DocumentManager:
             allow_overwrite: Exempts this call from ``write_protect_existing``.
                 Reserved for the server's own read-modify-write maintenance of
                 generated files; not reachable from the ``write`` tool.
-            create_only: Atomically refuse an existing destination.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -1305,9 +1303,7 @@ class DocumentManager:
             else:
                 file_content = content
 
-            self._finalize_content_write(
-                abs_path, path, file_content, "write", create_only=create_only
-            )
+            self._finalize_content_write(abs_path, path, file_content, "write")
             result = WriteResult(path=path, created=created)
 
         return result
@@ -1355,8 +1351,6 @@ class DocumentManager:
         path: str,
         content: str,
         operation: WriteOperation,
-        *,
-        create_only: bool = False,
     ) -> None:
         """Run the shared tail of every content write.
 
@@ -1369,12 +1363,11 @@ class DocumentManager:
             path: Vault-relative path of the target file.
             content: Full file content to persist.
             operation: The write operation reported to the write callback.
-            create_only: Publish only if the destination is absent.
 
         """
         observed_path = self._vault_relative(abs_path)
         staged = self._staged(content)
-        atomic_write(abs_path, staged, create_only=create_only)
+        atomic_write(abs_path, staged)
         if self._observations is not None:
             data = (
                 staged

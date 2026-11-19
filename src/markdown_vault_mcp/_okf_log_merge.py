@@ -299,11 +299,15 @@ def _parse_migration_target(text: str) -> tuple[_Log | None, str]:
 
 def _merge_migration(
     left: _Log | None, right: _Log, source: str, target: str | None
-) -> tuple[str | None, int, str, _Log | None]:
+) -> tuple[str | None, int, str]:
     if left is None:
         text = source[len(right.prefix) :]
         checked, reason = _parse(text)
-        return text, sum(len(s.entries) for s in right.sections), reason, checked
+        return (
+            (text if checked is not None else None),
+            sum(len(s.entries) for s in right.sections),
+            reason,
+        )
     eol_match = re.search(r"\r\n|\r|\n", target or "")
     eol = eol_match.group() if eol_match else "\n"
     insertions, _, count = _insertions(left, right, eol, dedupe=False)
@@ -322,8 +326,8 @@ def _merge_migration(
         or sum(len(s.entries) for s in checked.sections)
         != sum(len(s.entries) for s in left.sections) + count
     ):
-        return None, 0, "self-check: " + reason, None
-    return merged, count, "", checked
+        return None, 0, "self-check: " + reason
+    return merged, count, ""
 
 
 def migrate_logs(
@@ -374,7 +378,7 @@ def migrate_logs(
 
 
 class _LogMigrationRunner:
-    """Execute one migration with shared preview state."""
+    """Execute one migration."""
 
     def __init__(
         self, doc: Any, designation: Any, apply: bool, allow_protected: bool
@@ -387,7 +391,6 @@ class _LogMigrationRunner:
         self.kept: list[tuple[str, str]] = []
         self.headers: set[str] = set()
         self.source_headers: set[str] = set()
-        self.simulated: dict[str, tuple[str, _Log]] = {}
 
     def result(self) -> LogMigration:
         return LogMigration(
@@ -414,13 +417,12 @@ class _LogMigrationRunner:
     def _move(self, source: str, target: str, folder: str, parent: str) -> None:
         self._validate_move(source, target, folder, parent)
         doc = self.doc
-        cached = self.simulated.get(target) if not self.apply else None
         src = doc._read_note(source, capped=False)
         if src is None or src.path != source:
             raise InvalidRequestError("missing or aliased log")
         if strip_frontmatter_block(src.content) != src.content:
             self.source_headers.add(source)
-        self._merge_source(target, src, cached)
+        self._merge_source(target, src)
 
     def _validate_move(
         self, source: str, target: str, folder: str, parent: str
@@ -436,40 +438,25 @@ class _LogMigrationRunner:
             doc._refuse_submodule(doc._validate_path(path), "path", path)
             doc.refuse_protected(path, allow_protected=self.allow_protected)
 
-    def _merge_source(
-        self,
-        target: str,
-        src: Any,
-        cached: tuple[str, _Log] | None,
-    ) -> None:
+    def _merge_source(self, target: str, src: Any) -> None:
         source = src.path
-        raw_target, target_etag = (None, None) if cached else self._raw_target(target)
-        previous = cached[0] if cached else raw_target
+        raw_target, target_etag = self._raw_target(target)
+        previous = raw_target
         right, reason = _parse(src.content)
         if right is None:
             raise InvalidRequestError(reason)
         left, reason = (
-            (cached[1], "")
-            if cached
-            else (
-                _parse_migration_target(previous)
-                if previous is not None
-                else (None, "")
-            )
+            _parse_migration_target(previous) if previous is not None else (None, "")
         )
         if previous is not None and left is None:
             raise InvalidRequestError("target: " + reason)
         if left is not None and left.prefix.lstrip("\ufeff"):
             self.headers.add(target)
-        text, count, reason, parsed = _merge_migration(
-            left, right, src.content, previous
-        )
-        if text is None or parsed is None:
+        text, count, reason = _merge_migration(left, right, src.content, previous)
+        if text is None:
             raise InvalidRequestError(reason)
         if self.apply:
             self._write(source, target, text, src.etag, (target_etag, raw_target))
-        else:
-            self.simulated[target] = (text, parsed)
         self.merged.append(LogMove(source, target, count))
 
     def _raw_target(self, target: str) -> tuple[str | None, str | None]:
@@ -500,7 +487,6 @@ class _LogMigrationRunner:
                     text,
                     if_match=target_etag,
                     allow_overwrite=True,
-                    create_only=target_etag is None,
                     allow_protected=self.allow_protected,
                 )
         except (MarkdownMCPError, OSError) as exc:

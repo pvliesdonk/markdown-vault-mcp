@@ -229,9 +229,9 @@ Run `markdown-vault-mcp okf merge-logs` to preview descendant logs outside desig
 
 Entries remain under date headings in newest-first order, including repeated entries. Entry text and distinct source introductions are kept as written; line endings may follow the target. The command reports source frontmatter and omits it from the target; it preserves existing target frontmatter bytes.
 
-Relative Markdown links, reference links, wiki links, images and HTML URLs may point somewhere different after the move. The command leaves those links as written and warns that their meaning can change. When reference definitions conflict, source links use the target definition.
+Relative Markdown links, reference links, wiki links, images and HTML URLs may point somewhere different after the move. The command leaves those links as written and warns that their meaning can change. When reference definitions conflict, the first definition in the merged file wins.
 
-Logs the parser cannot handle, including reference definitions after entries, are kept and reported. Protected paths remain protected.
+Logs the parser cannot handle, including reference definitions after entries, are kept and reported. Protected paths remain protected. Preview checks the current target for each source. Avoid concurrent edits by external editors or sync tools during apply; the checks and writes are not a cross-process transaction.
 
 If source removal fails, the command restores the target when both files still match; otherwise it reports an uncertain result. A hard interruption between writing and deleting can leave both files. Inspect both before retrying, to avoid duplicate entries.
 

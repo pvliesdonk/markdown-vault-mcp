@@ -266,29 +266,6 @@ def test_cli_preview_and_apply(tmp_path: Path, monkeypatch) -> None:
     assert not path_exists(root / "deep/log.md")
 
 
-def test_migration_requests_exclusive_creation(tmp_path: Path, monkeypatch) -> None:
-    from markdown_vault_mcp.managers.document import DocumentManager
-
-    root = tmp_path / "vault"
-    (root / "deep").mkdir(parents=True)
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (root / "deep/log.md").write_text("# Log\n\n## 2025-01-01\n\n- source\n")
-    vault = designated_vault(root, (".",))
-    write = DocumentManager.write
-    options = []
-
-    def record_write(self, path, content, **kwargs):
-        options.append(kwargs.get("create_only"))
-        return write(self, path, content, **kwargs)
-
-    monkeypatch.setattr(DocumentManager, "write", record_write)
-    try:
-        assert len(vault.writer.okf_merge_logs(apply=True).merged) == 1
-        assert options == [True]
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"])
 def test_target_frontmatter_bytes_survive(tmp_path: Path, bom: bytes) -> None:
     root = tmp_path / "vault"
