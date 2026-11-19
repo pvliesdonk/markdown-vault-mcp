@@ -735,37 +735,33 @@ class SearchManager:
             return False
         if "needs_review" not in filters:
             return True
-        assessment = self._needs_review(path, filters)
-        return assessment is not None and assessment["needed"] is parse_stale_filter(
-            cast("str", filters["needs_review"])
-        )
+        return self._needs_review(path, filters) is not None
 
     def _needs_review(
         self, path: str, filters: Mapping[str, str | None]
     ) -> dict[str, Any] | None:
-        """Assess a live note, or omit a note that can no longer be read."""
+        """Assess a live note; return it only if it matches the selector."""
         from markdown_vault_mcp._okf_receipts import assess_reviews
         from markdown_vault_mcp._okf_review import concept_snapshot
         from markdown_vault_mcp.scanner import parse_frontmatter
 
-        try:
-            self._validate_path(path)
-        except ValueError:
-            return None
         required_check = filters.get("required_check") or "human-review"
         try:
+            self._validate_path(path)
             content = read_text_utf8(self._source_dir / path)
             metadata = dict(parse_frontmatter(content).metadata)
             assessments = assess_reviews(metadata, concept_snapshot(content), None)
-        except (FileNotFoundError, NotADirectoryError):
+            found = assess_needs_review(metadata, assessments, required_check)
+        except (FileNotFoundError, NotADirectoryError, InvalidRequestError):
             return None
         except (OSError, UnicodeError, ValueError, RecursionError, yaml.YAMLError):
-            return {
+            found = {
                 "needed": True,
                 "required_check": required_check,
                 "conditions": ["snapshot_unavailable"],
             }
-        return assess_needs_review(metadata, assessments, required_check)
+        wanted = parse_stale_filter(cast("str", filters["needs_review"]))
+        return found if found["needed"] is wanted else None
 
     def _filter_rows_okf(
         self, rows: builtins.list[FTSResult], okf_filters: dict[str, str | None]

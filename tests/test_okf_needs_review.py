@@ -1,6 +1,10 @@
 """Review selectors use freshness and bindings independently."""
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from markdown_vault_mcp._okf_review import concept_snapshot
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -429,7 +433,7 @@ def consume(reader: ReaderFacet, manager: SearchManager) -> None:
 
 
 def test_search_omits_note_that_disappears_after_selection(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A vanished filtered hit has no display decision and is omitted."""
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
@@ -442,7 +446,9 @@ def test_search_omits_note_that_disappears_after_selection(
         original = manager._needs_review
         gone_calls = 0
 
-        def disappear_on_display(path, filters):
+        def disappear_on_display(
+            path: str, filters: Mapping[str, str | None]
+        ) -> dict[str, Any] | None:
             nonlocal gone_calls
             if path == "gone.md":
                 gone_calls += 1
@@ -459,5 +465,64 @@ def test_search_omits_note_that_disappears_after_selection(
         assert hits[0].needs_review["needed"] is True
         ordinary = vault.reader.search("zebra", mode="keyword")
         assert ordinary and all(not hasattr(hit, "needs_review") for hit in ordinary)
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("surface", ["search", "list", "similar"])
+@pytest.mark.parametrize(
+    "transition", ["true_to_false", "false_to_true", "false_to_unreadable"]
+)
+def test_changed_note_never_returns_an_opposite_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, surface: str, transition: str
+) -> None:
+    """A note edited between selection and display is never mislabelled."""
+    from markdown_vault_mcp.managers import search as search_module
+    from tests.conftest import MockEmbeddingProvider
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    original = "---\ntype: instruction\nstale_after: 2999-01-01\n---\nneedle\n"
+    note = tmp_path / "a.md"
+    note.write_text(original)
+    (tmp_path / "reference.md").write_text("needle reference\n")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, embeddings_path=tmp_path / "vectors"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        vault.writer.okf_verify("a.md", "alice", concept_snapshot(original))
+        reviewed = note.read_bytes()
+        changed = reviewed + b"modified\n"
+        requested = "true" if transition == "true_to_false" else "false"
+        note.write_bytes(changed if requested == "true" else reviewed)
+        replacement = reviewed if requested == "true" else changed
+        if transition == "false_to_unreadable":
+            replacement = b"\xff"
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        real_read = search_module.read_text_utf8
+        edited = False
+
+        def edit_after_first_read(path: Path, *, limit: int | None = None) -> str:
+            nonlocal edited
+            content = real_read(path, limit=limit)
+            if path == note and not edited:
+                edited = True
+                note.write_bytes(replacement)
+            return content
+
+        monkeypatch.setattr(search_module, "read_text_utf8", edit_after_first_read)
+        filters = {"needs_review": requested, "type": "instruction"}
+        if surface == "search":
+            hits = vault.reader.search("needle", mode="keyword", filters=filters)
+        elif surface == "list":
+            hits = vault.reader.list_documents(filters=filters)
+        else:
+            hits = vault.reader.get_similar("reference.md", filters=filters)
+        assert edited
+        assert all(
+            hit.needs_review["needed"] is (requested == "true") for hit in hits
+        ), [(hit.path, hit.needs_review) for hit in hits]
     finally:
         vault.close()

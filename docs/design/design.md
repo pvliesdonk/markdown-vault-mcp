@@ -2144,7 +2144,9 @@ the spec itself says, dated and sourced, in
   Expired, missing or malformed freshness and absence of a matching review of
   `required_check` (default `human-review`) are independent conditions; each
   hit reports its conditions from a best-effort live assessment. Selection and
-  display can read the note separately and may differ if it changes during a call.
+  display can read the note separately; an emitted `needed` always equals the
+  requested value; a note whose later assessment no longer matches is omitted,
+  so a call can return fewer than `limit` hits.
   `no_matching_review` means no required-check review is established as matching;
   unsupported or malformed bindings cannot establish a match.
   A present but unreadable snapshot reports `snapshot_unavailable` without
