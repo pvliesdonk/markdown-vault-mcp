@@ -203,8 +203,10 @@ frontmatter blob; not persisted):
   the current revision has been established. A malformed outer value counts
   as one malformed entry. No source fetching or reviewer authentication occurs.
 - `review_applicability` summarizes whole-read per-review snapshot assessments.
-  Compact results report unknown when a binding claim exists but the concept
-  bytes are unavailable. Each assessment carries `by`, `at`, `snapshot`,
+  With an assessed binding and no unknown item it reports `review: assessed`,
+  `basis: per_review`. Unsupported or malformed bindings take precedence with
+  `review: unknown` and their respective basis. Compact results with a claim
+  but no concept bytes report `review: unknown`, `basis: snapshot_not_available`. Each assessment carries `by`, `at`, `snapshot`,
   `check`, `origin`, and `local_evidence` (`available` or `unavailable`).
   Unsupported algorithms use `snapshot_basis: unsupported_algorithm` and make
   the aggregate unknown; malformed bindings or review containers use
