@@ -4,8 +4,6 @@ description: >-
   Use when writing or changing a tool, parameter, resource or prompt description, a tool title or annotation, or a server-instructions snippet, and when reviewing such text: it decides which sentences the model can act on and where every other fact goes instead.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Writing model-facing text
 
 Every docstring and `description=` a FastMCP server registers is sent to
@@ -227,7 +225,7 @@ async with Client(mcp) as c:
         print(t.name, utf16_code_units(t.description or ""), t.description)
 ```
 
-`tests/test_model_facing_text.py` (template-owned) fails on a leaked
+`tests/test_model_facing_text.py` fails on a leaked
 docstring section in any description, a tool with no description, a `str`
 prompt argument carrying the JSON-schema sentence, and a tool description
 or the instructions over 2,048 units. Those per-item limits are the only ones
