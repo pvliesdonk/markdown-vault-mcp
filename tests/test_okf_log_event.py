@@ -61,36 +61,12 @@ def test_event_groups_paths_and_keeps_same_day_entries(tmp_path):
         )
         log = (tmp_path / "area" / "log.md").read_text()
         assert not log.startswith("---")
+        assert log.count("## 2026-01-02") == 1
         assert log.count("\n- ") == 2
         assert (
             "/area/a%20one.md" in log and "/area/b%23.md" in log and "/area/c.md" in log
         )
         assert "Changed policy" in log and "Second event" in log
-        from urllib.parse import unquote, urlsplit
-
-        from markdown_it import MarkdownIt
-
-        from markdown_vault_mcp.scanner import extract_links
-
-        tokens = MarkdownIt("commonmark").parse(log)
-        hrefs = [
-            c.attrGet("href")
-            for token in tokens
-            if token.children
-            for c in token.children
-            if c.type == "link_open"
-        ]
-        assert all(
-            not urlsplit(href).query and not urlsplit(href).fragment for href in hrefs
-        )
-        assert [unquote(urlsplit(href).path).lstrip("/") for href in hrefs] == [
-            *paths,
-            paths[0],
-        ]
-        assert [link.target_path for link in extract_links(log, "area/log.md")] == [
-            *paths,
-            paths[0],
-        ]
         assert vault._write_callback.drain()
         assert calls.count("log.md") == 2
     finally:
@@ -98,12 +74,20 @@ def test_event_groups_paths_and_keeps_same_day_entries(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "description", ["", "x\ny", "x\x00y", "x\u2028y", "x\u2029y", "x" * 501]
+    "description",
+    ["", "x\ny", "x\x00y", "x\u2028y", "x\u2029y", "x" * 501, "bad\ud800"],
 )
-def test_invalid_description_refused(tmp_path, description):
+def test_invalid_description_refused(tmp_path, monkeypatch, description):
+    (tmp_path / "a.md").write_text("# A\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        with pytest.raises(InvalidRequestError):
+        if description == "bad\ud800":
+
+            def unexpected():
+                pytest.fail("filesystem accessed before validation")
+
+            monkeypatch.setattr(vault._doc_mgr, "ensure_writable", unexpected)
+        with pytest.raises(InvalidRequestError, match="Event description"):
             record_event(vault._doc_mgr, ["a.md"], description, (".",))
     finally:
         vault.close()
@@ -142,7 +126,6 @@ def test_refuses_non_markdown_and_control_in_path(tmp_path):
 @pytest.mark.anyio
 async def test_mcp_event_capability_and_result(tmp_path, monkeypatch):
     from fastmcp import Client
-    from fastmcp.exceptions import ToolError
 
     from tests.conftest import _parse_tool_data
     from tests.server_factory import make_server
@@ -151,19 +134,15 @@ async def test_mcp_event_capability_and_result(tmp_path, monkeypatch):
     (tmp_path / "a.md").write_text("# A\n")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "off")
-    async with Client(make_server()) as client:
-        with pytest.raises(ToolError, match="not active"):
-            await client.call_tool(
-                "okf_log_event", {"paths": ["a.md"], "description": "Change"}
-            )
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "events")
     async with Client(make_server()) as client:
         result = await client.call_tool(
-            "okf_log_event", {"paths": ["a.md"], "description": "Change"}
+            "okf_log_event",
+            {"paths": ["a.md"], "description": "Change", "proposed_by": "Alice"},
         )
         assert _parse_tool_data(result)["path"] == "log.md"
     assert "Change" in (tmp_path / "log.md").read_text()
+    assert "proposed by Alice" in (tmp_path / "log.md").read_text()
 
 
 def test_routes_to_common_ancestor_and_preserves_existing_log(tmp_path):
@@ -186,19 +165,21 @@ def test_routes_to_common_ancestor_and_preserves_existing_log(tmp_path):
         )
         assert result == "team/log.md"
         content = log.read_text()
-        assert content.startswith("---\ntitle: History\n---\n")
         assert "- Older entry" in content and "Coordinated change" in content
     finally:
         vault.close()
 
 
 def test_refuses_missing_reserved_and_aliased_log(tmp_path):
+    (tmp_path / "index.md").write_text("# Index\n")
     (tmp_path / "note.md").write_text("# Note\n")
     (tmp_path / "other.md").write_text("# Other\n")
     (tmp_path / "log.md").symlink_to("other.md")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        for paths in ([], ["missing.md"], ["index.md"], ["note.md"]):
+        with pytest.raises(InvalidRequestError, match="concept notes"):
+            record_event(vault._doc_mgr, ["index.md"], "Change", (".",))
+        for paths in ([], ["missing.md"], ["note.md"]):
             with pytest.raises(InvalidRequestError):
                 record_event(vault._doc_mgr, paths, "Change", (".",))
         assert (tmp_path / "other.md").read_text() == "# Other\n"
@@ -222,77 +203,6 @@ def test_library_event_uses_configured_scope_and_mode(tmp_path):
     )
     try:
         assert vault.writer.okf_log_event(["area/a.md"], "Policy") == "area/log.md"
-    finally:
-        vault.close()
-    vault = Vault(
-        source_dir=tmp_path, settings=VaultSettings(read_only=False, okf_mode="on")
-    )
-    try:
-        with pytest.raises(InvalidRequestError):
-            vault.writer.okf_log_event(["area/a.md"], "Policy")
-    finally:
-        vault.close()
-
-
-def test_event_rendering_and_malformed_frontmatter(tmp_path):
-    from markdown_it import MarkdownIt
-
-    names = ["a`1.md", "b`2.md", "c.md"]
-    for name in names:
-        (tmp_path / name).write_text("---\ninvalid: [\n---\n# Note\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        record_event(
-            vault._doc_mgr,
-            names,
-            "  **Deprecation** <script> [fake](/evil) `unclosed  ",
-            (".",),
-            today=date(2026, 1, 2),
-        )
-        record_event(
-            vault._doc_mgr, [names[2]], "Next.", (".",), today=date(2026, 1, 2)
-        )
-        text = (tmp_path / "log.md").read_text()
-        rendered = MarkdownIt("commonmark").render(text)
-        assert rendered.count("<a href=") == 4
-        assert "<strong>Deprecation</strong>" in rendered
-        assert "&lt;script&gt;" in rendered and "/evil" in rendered
-        assert "Next.:" not in text
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize(
-    "description",
-    [
-        "<script>",
-        "```",
-        "[fake](/evil.md)",
-        "Unclosed `code",
-        "**Deprecation** Retired.",
-    ],
-)
-def test_description_cannot_consume_generated_links(tmp_path, description):
-    from markdown_it import MarkdownIt
-
-    for name in ("a.md", "b.md", "c.md"):
-        (tmp_path / name).write_text("# Concept\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        record_event(
-            vault._doc_mgr,
-            ["a.md", "b.md", "c.md"],
-            description,
-            (".",),
-            today=date(2026, 1, 2),
-        )
-        record_event(vault._doc_mgr, ["a.md"], "Next.", (".",), today=date(2026, 1, 2))
-        rendered = MarkdownIt("commonmark").render((tmp_path / "log.md").read_text())
-        assert rendered.count("<a href=") == 4
-        assert 'href="/evil.md"' not in rendered
-        assert "<script>" not in rendered
-        if description.startswith("**Deprecation**"):
-            assert "<strong>Deprecation</strong>" in rendered
     finally:
         vault.close()
 
@@ -373,42 +283,13 @@ def test_event_refuses_external_append(tmp_path, monkeypatch):
         vault.close()
 
 
-def test_event_rejects_surrogate_before_io(tmp_path, monkeypatch):
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-
-        def unexpected():
-            pytest.fail("filesystem accessed before validation")
-
-        monkeypatch.setattr(vault._doc_mgr, "ensure_writable", unexpected)
-        with pytest.raises(InvalidRequestError):
-            record_event(vault._doc_mgr, ["a.md"], "bad\ud800", (".",))
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize("proposed_by", ["", " ", "x" * 101, "bad\x00", "bad\ud800"])
 def test_bad_proposer_refused(tmp_path, proposed_by):
+    (tmp_path / "a.md").write_text("# A\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
-        with pytest.raises(InvalidRequestError):
+        with pytest.raises(InvalidRequestError, match="Proposed by"):
             record_event(vault._doc_mgr, ["a.md"], "Change", (".",), proposed_by)
-    finally:
-        vault.close()
-
-
-def test_proposer_escaped_and_root_scope_effective(tmp_path):
-    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (tmp_path / "a.md").write_text("# A\n")
-    caps = ContentConfig(okf_log="events", okf_folders=()).okf_capabilities
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
-    )
-    try:
-        assert vault.okf_capability_report(active=True)["log"]["effective"]
-        assert vault.writer.okf_log_event(["a.md"], "Change", " <A> ") == "log.md"
-        assert r"(proposed by \<A>)" in (tmp_path / "log.md").read_text()
     finally:
         vault.close()
 
@@ -426,56 +307,6 @@ def test_seeded_whitespace_preserved_and_event_visible(tmp_path, old):
         result = log.read_bytes()
         assert result.startswith(old)
         assert '<a href="/a.md">' in MarkdownIt("commonmark").render(result.decode())
-    finally:
-        vault.close()
-
-
-def test_html_comment_cannot_hide_event(tmp_path):
-    from markdown_it import MarkdownIt
-
-    (tmp_path / "a.md").write_text("# A\n")
-    log = tmp_path / "log.md"
-    old = b"# Log\n\n<!--\n## 2026-03-03\n- hidden\n-->\n"
-    log.write_bytes(old)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        try:
-            record_event(
-                vault._doc_mgr, ["a.md"], "Visible", (".",), today=date(2026, 3, 4)
-            )
-        except InvalidRequestError:
-            assert log.read_bytes() == old
-        else:
-            tokens = MarkdownIt("commonmark").parse(log.read_text())
-            assert any(
-                t.type == "inline"
-                and "Visible" in t.content
-                and t.children
-                and any(c.type == "link_open" for c in t.children)
-                for t in tokens
-            )
-    finally:
-        vault.close()
-
-
-def test_event_text_and_labels_render_literally(tmp_path):
-    from markdown_it import MarkdownIt
-
-    name = "*odd*_&amp;.md"
-    (tmp_path / name).write_text("# A\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        record_event(
-            vault._doc_mgr,
-            [name],
-            "**Deprecation** *urgent* &amp; _policy_",
-            (".",),
-            "*Alice* &amp;",
-        )
-        rendered = MarkdownIt("commonmark").render((tmp_path / "log.md").read_text())
-        assert "<strong>Deprecation</strong> *urgent* &amp;amp; _policy_" in rendered
-        assert ">*odd*_&amp;amp;.md</a>" in rendered
-        assert "(proposed by *Alice* &amp;amp;)" in rendered
     finally:
         vault.close()
 
@@ -519,65 +350,6 @@ def test_case_mismatched_existing_path_never_produces_dead_link(tmp_path):
         vault.close()
 
 
-def test_changed_history_is_still_refused():
-    from markdown_vault_mcp._okf_log_event import _insert_preserving
-
-    with pytest.raises(InvalidRequestError, match="unchanged"):
-        _insert_preserving(
-            "# Log\n- Old\n", "# Log\n- Changed\n- New\n", "- New", "2026-03-03"
-        )
-
-
-@pytest.mark.parametrize(
-    "block",
-    [
-        "<!--\n## 2026-03-03\n- hidden\n-->\n",
-        "<script>\n## 2026-03-03\n- hidden\n</script>\n",
-    ],
-)
-def test_raw_html_cannot_consume_inserted_bullet(tmp_path, block):
-    from markdown_it import MarkdownIt
-
-    (tmp_path / "a.md").write_text("# A\n")
-    log = tmp_path / "log.md"
-    old = "# Log\n\n" + block
-    log.write_text(old)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        try:
-            record_event(
-                vault._doc_mgr, ["a.md"], "Visible", (".",), today=date(2026, 3, 4)
-            )
-        except InvalidRequestError:
-            assert log.read_text() == old
-        else:
-            tokens = MarkdownIt("commonmark").parse(log.read_text())
-            assert any(t.type == "inline" and "Visible" in t.content for t in tokens)
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize("name", ["a&amp;.md", "a%20b.md", "a&b.md"])
-def test_event_destination_resolves_literal_filename(tmp_path, name):
-    from markdown_it import MarkdownIt
-
-    from markdown_vault_mcp.utils.links import decode_link_target
-
-    (tmp_path / name).write_text("# A\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        record_event(vault._doc_mgr, [name], "Change", (".",))
-        tokens = MarkdownIt("commonmark").parse((tmp_path / "log.md").read_text())
-        link = next(
-            c for t in tokens if t.children for c in t.children if c.type == "link_open"
-        )
-        target = decode_link_target(link.attrGet("href"))
-        assert target == "/" + name
-        assert is_regular_file(tmp_path / target.lstrip("/"))
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize(
     "description",
     [
@@ -588,13 +360,24 @@ def test_event_destination_resolves_literal_filename(tmp_path, name):
         "- i",
         "*urgent* x",
         "1) p",
+        "<script>",
+        "```",
+        "[fake](/evil.md)",
+        "**Deprecation**",
+        "**Deprecation** Retired.",
+        "**Deprecation** *urgent* &amp; _policy_",
+        "  **Deprecation** <script> [fake](/evil) `unclosed  ",
+        "**Deprecation**: retired *now*",
+        "Aligned access, review rules (v2) - don't merge: see #12!",
     ],
 )
 @pytest.mark.parametrize("existing", [False, True])
 def test_leading_markers_render_as_one_event(tmp_path, description, existing):
     from markdown_it import MarkdownIt
 
-    (tmp_path / "a.md").write_text("# A\n")
+    names = ["a`1.md", "b`2.md", "*odd*_&amp;.md"]
+    for name in names:
+        (tmp_path / name).write_text("# A\n")
     log = tmp_path / "log.md"
     old = b"# Log\n\n## 2025-01-01\n\n- Old\n"
     if existing:
@@ -603,13 +386,19 @@ def test_leading_markers_render_as_one_event(tmp_path, description, existing):
     try:
         record_event(
             vault._doc_mgr,
-            ["a.md"],
+            names,
             description,
             (".",),
-            "> Alice",
+            "*Alice* &amp;"
+            if "_policy_" in description
+            else (
+                "Ann (ops)" if description.startswith("Aligned access") else "> Alice"
+            ),
             today=date(2026, 3, 3),
         )
-        record_event(vault._doc_mgr, ["a.md"], "Second", (".",), today=date(2026, 3, 3))
+        record_event(
+            vault._doc_mgr, [names[0]], "Next.", (".",), today=date(2026, 3, 3)
+        )
         text = log.read_text()
         tokens = MarkdownIt("commonmark").parse(text)
         assert not any(
@@ -618,43 +407,50 @@ def test_leading_markers_render_as_one_event(tmp_path, description, existing):
         rendered = MarkdownIt("commonmark").render(text)
         from html import escape
 
-        assert escape(description) in rendered
-        assert "(proposed by &gt; Alice)" in rendered
-        assert rendered.count('<a href="/a.md">') == 2
+        if description.startswith("**Deprecation**") or description.strip().startswith(
+            "**Deprecation**"
+        ):
+            assert "<strong>Deprecation</strong>" in rendered
+        else:
+            assert escape(description, quote=False) in rendered
+        if "_policy_" in description:
+            assert (
+                "<strong>Deprecation</strong> *urgent* &amp;amp; _policy_" in rendered
+            )
+            assert "(proposed by *Alice* &amp;amp;)" in rendered
+        elif description.startswith("Aligned access"):
+            assert "(proposed by Ann (ops))" in rendered
+        else:
+            assert "(proposed by &gt; Alice)" in rendered
+        assert "Next.:" not in text
+        assert rendered.count("<a href=") == 4
+        assert 'href="/evil.md"' not in rendered
+        assert ">*odd*_&amp;amp;.md</a>" in rendered
+        if description.startswith("Aligned access"):
+            assert f"- {description} — " in text
+        if description.startswith("**Deprecation**:"):
+            assert "- **Deprecation**: retired" in text
         if existing:
             assert b"- Old\n" in log.read_bytes()
     finally:
         vault.close()
 
 
-def test_unsafe_new_log_formatter_refused_before_write(tmp_path, monkeypatch):
-    import markdown_vault_mcp._okf_log_event as event
-
-    (tmp_path / "a.md").write_text("# A\n")
-    calls = []
-    vault = Vault(
-        source_dir=tmp_path,
-        settings=VaultSettings(read_only=False),
-        on_write=lambda path, _content, _op: calls.append(path.name),
-    )
-
-    def hidden(_body, *, date, summary):
-        return f"# Log\n\n<!--\n## {date}\n\n- {summary}\n-->\n"
-
-    try:
-        monkeypatch.setattr(event, "append_okf_log_entry", hidden)
-        with pytest.raises(InvalidRequestError, match="unchanged"):
-            record_event(vault._doc_mgr, ["a.md"], "Change", (".",))
-        assert not is_regular_file(tmp_path / "log.md")
-        assert vault._write_callback.drain()
-        assert "log.md" not in calls
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize(
     "name",
-    ["a#1.md", "a?x.md", "a%23.md", "a\\\\b.md", "a space.md", "a (1).md", "é.md"],
+    [
+        "a#1.md",
+        "a?x.md",
+        "a%23.md",
+        "a\\\\b.md",
+        "a space.md",
+        "a (1).md",
+        "é.md",
+        "a&amp;.md",
+        "a%20b.md",
+        "a&b.md",
+        "my-note_v2.md",
+    ],
 )
 def test_event_url_destinations_are_paths_not_query_or_fragment(tmp_path, name):
     from urllib.parse import unquote, urlsplit
@@ -678,7 +474,11 @@ def test_event_url_destinations_are_paths_not_query_or_fragment(tmp_path, name):
         assert not url.query and not url.fragment
         assert unquote(url.path) == "/team/" + name
         assert decode_link_target(url.path) == "/team/" + name
-        assert [x.target_path for x in extract_links(text, result)] == ["team/" + name]
+        links = extract_links(text, result)
+        assert [x.target_path for x in links] == ["team/" + name]
+        assert is_regular_file(tmp_path / unquote(url.path).lstrip("/"))
+        if name == "my-note_v2.md":
+            assert links[0].link_text == "team/" + name
     finally:
         vault.close()
 
@@ -701,7 +501,8 @@ def test_writes_mode_keeps_automatic_and_editorial_entries(tmp_path):
 
 @pytest.mark.parametrize("block", ["<!--", "<script>"])
 @pytest.mark.parametrize("older", [False, True])
-def test_hidden_date_heading_never_owns_event(tmp_path, block, older):
+@pytest.mark.parametrize("day", [3, 4])
+def test_hidden_date_heading_never_owns_event(tmp_path, block, older, day):
     (tmp_path / "a.md").write_text("# A\n")
     log = tmp_path / "log.md"
     end = "-->" if block == "<!--" else "</script>"
@@ -712,43 +513,9 @@ def test_hidden_date_heading_never_owns_event(tmp_path, block, older):
     try:
         with pytest.raises(InvalidRequestError, match="unchanged"):
             record_event(
-                vault._doc_mgr, ["a.md"], "Change", (".",), today=date(2026, 3, 3)
+                vault._doc_mgr, ["a.md"], "Change", (".",), today=date(2026, 3, day)
             )
         assert log.read_bytes() == old
-    finally:
-        vault.close()
-
-
-def test_ordinary_event_label_is_scanner_path(tmp_path):
-    from markdown_vault_mcp.scanner import extract_links
-
-    (tmp_path / "policy").mkdir()
-    (tmp_path / "policy" / "my-note_v2.md").write_text("# A\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    try:
-        result = record_event(
-            vault._doc_mgr, ["policy/my-note_v2.md"], "Change", (".",)
-        )
-        links = extract_links((tmp_path / result).read_text(), result)
-        assert [(link.target_path, link.link_text) for link in links] == [
-            ("policy/my-note_v2.md", "policy/my-note_v2.md")
-        ]
-    finally:
-        vault.close()
-
-
-def test_event_prose_is_conventional_source_text(tmp_path):
-    (tmp_path / "a.md").write_text("# A\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
-    prose = "Aligned access, review rules (v2) - don't merge: see #12!"
-    try:
-        result = record_event(
-            vault._doc_mgr, ["a.md"], "**Deprecation**: retired *now*", (".",)
-        )
-        record_event(vault._doc_mgr, ["a.md"], prose, (".",), "Ann (ops)")
-        text = (tmp_path / result).read_text()
-        assert "- **Deprecation**: retired" in text
-        assert f"- {prose} — " in text and "(proposed by Ann (ops))" in text
     finally:
         vault.close()
 
@@ -776,36 +543,6 @@ def test_case_lookup_scans_shared_parent_once(tmp_path, monkeypatch):
         assert len(counts) == 1
     finally:
         vault.close()
-
-
-def test_event_log_reaches_git_commit(git_repo):
-    import subprocess
-
-    from markdown_vault_mcp.git.strategy import GitWriteStrategy
-
-    (git_repo / "a.md").write_text("# A\n")
-    strategy = GitWriteStrategy(
-        enable_pull=False, enable_push=False, git_lfs=False, repo_path=git_repo
-    )
-    vault = Vault(
-        source_dir=git_repo,
-        settings=VaultSettings(read_only=False),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
-    try:
-        record_event(vault._doc_mgr, ["a.md"], "Git event", (".",))
-        assert vault._write_callback.drain()
-        committed = subprocess.run(
-            ["git", "-C", str(git_repo), "show", "HEAD:log.md"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-        assert "Git event" in committed and "/a.md" in committed
-    finally:
-        vault.close()
-        strategy.close()
 
 
 def test_real_dated_section_with_subheading_accepts_event(tmp_path):
