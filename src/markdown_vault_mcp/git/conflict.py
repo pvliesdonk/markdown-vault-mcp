@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import literal_pathspec, redact, run_git_capturing
+from markdown_vault_mcp.git._run import literal_pathspec, run_git_capturing
+from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
@@ -212,7 +213,7 @@ def resolve_conflicts_safely(
         if abort_proc.returncode != 0:
             logger.warning(
                 "git_conflict_defensive_abort_failed stderr=%s",
-                redact((abort_proc.stderr or "").strip(), token),
+                log_git_stderr(abort_proc.stderr or "", token),
             )
         return None, PullResult.head_unchanged_failure(
             from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
@@ -258,7 +259,7 @@ def rebase_in_progress(
         logger.error(
             "git_conflict_git_dir_lookup_failed "
             "action=assume_rebase_in_progress stderr=%s",
-            redact((git_dir_proc.stderr or "").strip(), token),
+            log_git_stderr(git_dir_proc.stderr or "", token),
         )
         return True
 
@@ -305,7 +306,7 @@ def abort_in_progress_rebase(
     if abort_proc.returncode != 0:
         logger.error(
             "git_conflict_abort_failed stderr=%s",
-            redact((abort_proc.stderr or "").strip(), token),
+            log_git_stderr(abort_proc.stderr or "", token),
         )
         return False
     return True
@@ -362,7 +363,7 @@ def restore_upstream_paths(
                 "git_conflict_upstream_restore_failed "
                 "path=%r action=drop_sibling stderr=%s",
                 rel_path,
-                redact((checkout_proc.stderr or "").strip(), token),
+                log_git_stderr(checkout_proc.stderr or "", token),
             )
             continue
         restored.append((rel_path, mcp_content))
@@ -430,7 +431,9 @@ def write_conflict_files(
 
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
-        conflict_abs.write_text(frontmatter.dumps(post), encoding="utf-8")
+        conflict_abs.write_text(
+            frontmatter.dumps(post, sort_keys=False), encoding="utf-8"
+        )
 
         # --- Update original file with conflict_with frontmatter ---
         original_abs = git_root / rel_path
@@ -462,7 +465,9 @@ def write_conflict_files(
                     orig_post = frontmatter.Post(content)
                 orig_post.metadata["conflict_with"] = conflict_rel
                 orig_post.metadata["conflict_date"] = conflict_date
-                original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
+                original_abs.write_text(
+                    frontmatter.dumps(orig_post, sort_keys=False), encoding="utf-8"
+                )
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):
                 # OSError: removed/inaccessible after the existence check (TOCTOU), permission,
@@ -531,8 +536,8 @@ def write_conflict_files(
         logger.debug(
             "git_conflict_commit_failed rc=%d stderr=%s",
             commit_result.returncode,
-            redact(
-                (commit_result.stderr or commit_result.stdout or "").strip(),
+            log_git_stderr(
+                commit_result.stderr or commit_result.stdout or "",
                 token,
             ),
         )

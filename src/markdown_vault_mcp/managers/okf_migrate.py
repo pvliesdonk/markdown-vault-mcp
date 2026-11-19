@@ -41,7 +41,6 @@ from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
-    OKF_RESERVED_FILENAMES,
     OKF_ROOT_INDEX_TITLE,
     OkfConvertResult,
     OkfIndexResult,
@@ -50,6 +49,7 @@ from markdown_vault_mcp.okf import (
     build_index_markdown,
     build_log_markdown,
     convert_wikilinks_to_markdown,
+    is_okf_reserved_file,
 )
 from markdown_vault_mcp.utils import normalize_folder
 
@@ -221,7 +221,7 @@ class OkfMigrationManager:
                 # A deeper note: record its immediate subfolder, don't list it.
                 subfolders.add(rel.split("/", 1)[0])
                 continue
-            if rel in OKF_RESERVED_FILENAMES:
+            if is_okf_reserved_file(rel):
                 continue
             raw_desc = note.frontmatter.get("description")
             description = (

@@ -5,8 +5,6 @@ description: >-
   page under docs/releases/ before opening a normal review pull request.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Writing release notes
 
 The pages under `docs/releases/` are the canonical human-facing narrative of
@@ -245,7 +243,7 @@ there and "none" is an answer they need too:
   or trusts (an auth default, a new unauthenticated route, a write tool on
   by default), or "none".
 
-`docs/upgrade/index.md` (template-owned) tells readers to expect exactly
+`docs/upgrade/index.md` tells readers to expect exactly
 these three lines; keep the labels verbatim.
 
 Do **not** trust `!` markers or `BREAKING CHANGE:` footers — trials found
@@ -324,9 +322,7 @@ Never claim an untagged target has shipped. Do not edit `mkdocs.yml` or
   Distinguish the two hit classes: real prose findings get rewritten;
   domain vocabulary the spell-checker does not know goes into
   `.vale/styles/config/vocabularies/Base/accept.txt` (add it in the same
-  change) — never contort prose around a vocabulary hit. (In the template
-  repository itself, a term that template-rendered prose needs belongs in
-  `vocabularies/Template/accept.txt.jinja`, the re-rendered layer.)
+  change) — never contort prose around a vocabulary hit.
 - **Strict docs build**: `uv run mkdocs build --strict` must pass.
 
 ## Output
