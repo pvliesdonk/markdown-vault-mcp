@@ -129,9 +129,12 @@ def test_future_ledger_refusal_leaves_index_untouched(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("bad", [b"\xff", b"---\ntitle: [broken\n---\n"])
+@pytest.mark.parametrize("bad", [b"\xff", b"---\ntitle: [broken\n---\n", None])
 def test_unreadable_index_does_not_block_other_folders_and_retries(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, bad: bytes
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    bad: bytes | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "vault"
     for folder in ("a", "b"):
@@ -144,14 +147,26 @@ def test_unreadable_index_does_not_block_other_folders_and_retries(
         vault.writer.okf_generate_index(folder="b")
         vault.index.reindex()
         index_b = root / "b/index.md"
-        index_b.write_bytes(bad)
+        before = index_b.read_bytes()
+        if bad is not None:
+            index_b.write_bytes(bad)
+        else:
+            original_read = Path.read_bytes
+
+            def refuse_raw(path: Path) -> bytes:
+                if path == index_b:
+                    raise PermissionError("temporary read failure")
+                return original_read(path)
+
+            monkeypatch.setattr(Path, "read_bytes", refuse_raw)
         for folder in ("a", "b"):
             (root / folder / "note.md").write_text("---\ntitle: After\n---\n# Note\n")
         with caplog.at_level(logging.WARNING):
             vault.index.reindex()
         assert "After" in (root / "a/index.md").read_text()
-        assert index_b.read_bytes() == bad
         assert any("path=b/index.md" in record.message for record in caplog.records)
+        monkeypatch.undo()
+        assert index_b.read_bytes() == (bad if bad is not None else before)
         index_b.write_text("# Repaired manually\n")
         vault.index.reindex()
         assert "After" in index_b.read_text()
@@ -223,11 +238,14 @@ def test_bare_cr_header_and_leading_newline_body_stay_stable(
         vault.close()
 
 
-def test_header_only_edit_is_preserved_without_divergence(tmp_path: Path) -> None:
+@pytest.mark.parametrize("initial_newline", [b"", b"\n# Root\n"])
+def test_header_only_edit_is_preserved_without_divergence(
+    tmp_path: Path, initial_newline: bytes
+) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
-    index.write_bytes(b'---\nokf_version: "0.2"\n---\n# Root\n')
+    index.write_bytes(b'---\nokf_version: "0.2"\n---' + initial_newline)
     vault = designated_vault(root, (".",), index_path=tmp_path / "db")
     try:
         vault.index.build_index()

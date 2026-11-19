@@ -526,18 +526,18 @@ class ObservationLedger:
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             return dict(generated)
 
-    def observe_navigation(self, path: str, old: bytes | None, new: bytes) -> None:
+    def observe_navigation(self, path: str, old: bytes, new: bytes) -> None:
         """Report an unexpected body before replacing a designated index."""
         with self._lock:
             rows, _, state = self._load_full()
             generated, reported = state["generated"], state["reported"]
             assert isinstance(generated, dict) and isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             desired = compute_etag(new)
-            observed = compute_etag(old) if old is not None else None
+            observed = compute_etag(old)
             seen = reported.get(path, [])
             if (
                 path in generated
-                and observed not in (None, generated[path], desired)
+                and observed not in (generated[path], desired)
                 and observed not in seen
             ):
                 reported.setdefault(path, []).append(observed)

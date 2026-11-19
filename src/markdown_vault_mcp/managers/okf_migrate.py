@@ -332,23 +332,12 @@ class OkfMigrationManager:
             else:
                 with okf_write_suppressed():
                     existing = self._doc_mgr._read_note(index_path, capped=False)
-                    old_body = (
-                        stored_index_body(self._doc_mgr, index_path)
-                        if existing is not None
-                        else None
-                    )
-                    ledger = (
-                        self._doc_mgr._observations
-                        if self._doc_mgr.index_designation(folder) is True
-                        else None
-                    )
-                    if ledger is not None:
-                        desired = (
-                            stored_index_body(self._doc_mgr, index_path, body)
-                            if existing is not None
-                            else body.encode("utf-8")
-                        )
-                        ledger.observe_navigation(index_path, old_body, desired)
+                    ledger = self._doc_mgr._observations
+                    if not self._index_designated(folder):
+                        ledger = None
+                    if ledger is not None and existing is not None:
+                        old = stored_index_body(self._doc_mgr, index_path)
+                        ledger.observe_navigation(index_path, old, body.encode("utf-8"))
                     preserved = self._doc_mgr.replace_body(
                         index_path,
                         existing.content if existing is not None else None,

@@ -37,7 +37,7 @@ from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppress
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.managers.document import _EOL, _head_end, _keep_head, _read_view
+from markdown_vault_mcp.managers.document import _head_end, _keep_head, _read_view
 from markdown_vault_mcp.okf import (
     append_okf_log_entry,
     is_okf_reserved_file,
@@ -176,15 +176,12 @@ def destination_home(folder: str, name: str, source_dir: Path | None) -> str | N
         return None
 
 
-def stored_index_body(
-    doc_mgr: DocumentManager, path: str, replacement: str | None = None
-) -> bytes:
-    """Read a stored index body using the replacement writer's header boundary.
+def stored_index_body(doc_mgr: DocumentManager, path: str) -> bytes:
+    """Return a stored index body using the replacement writer's header boundary.
 
     Args:
         doc_mgr: Document manager whose path guard resolves the index.
         path: Vault-relative index path.
-        replacement: Optional desired body, rendered with the writer's header rules.
 
     Returns:
         Exact UTF-8 body bytes, excluding the preserved header.
@@ -197,24 +194,8 @@ def stored_index_body(
     except (OSError, UnicodeDecodeError) as exc:
         raise DocumentUnreadableError(path, str(exc)) from exc
     view = _read_view(raw)
-    end = _head_end(view)
-    if replacement is not None:
-        head = view[:end]
-        separator = "\n" if head and not head.endswith("\n") else ""
-        updated = head + separator + replacement
-        raw = _keep_head(raw, view, updated) if head else updated
-        view = _read_view(raw)
-        end = _head_end(view)
-    if not end:
-        return raw.encode("utf-8")
-    if not view[:end].endswith("\n"):
-        return b""
-    lines = view.count("\n", 0, end)
-    for match in _EOL.finditer(raw):
-        lines -= 1
-        if not lines:
-            return raw[match.end() :].encode("utf-8")
-    return b""
+    head = _keep_head(raw, view, view[: _head_end(view)])
+    return raw[len(head) :].encode("utf-8")
 
 
 class ConventionMaintainer:
@@ -489,59 +470,37 @@ class ConventionMaintainer:
             )
             anchors = {p: self._anchor_of(p) for p in safe}
             folders = [folder for folder in anchors.values() if folder is not None]
-            diverged, failed = self._changed_index_folders(rows)
-            folders.extend(diverged)
+            folders.extend(self._changed_index_folders(rows))
             folders.extend(folder for folder in boundaries if folder is not None)
             if previous is None:
                 folders.extend(self.subtree_folders(""))
             success = self.refresh_indexes(
-                (folder for folder in folders if folder not in failed),
+                folders,
                 trigger_paths=safe,
-                create={
-                    a
-                    for p in arrivals
-                    if (a := anchors[p]) is not None and a not in failed
-                },
+                create={a for p in arrivals if (a := anchors[p]) is not None},
                 designated=None if arrivals else self._has_designated_index,
             )
-            if success and not failed and previous != current:
+            if success and previous != current:
                 self._checkpoint.save(current)
-            return success and not failed
+            return success
 
-    def _changed_index_folders(
-        self, rows: Mapping[str, Observation]
-    ) -> tuple[list[str], set[str]]:
-        """Find changed generated bodies while isolating unreadable indexes."""
-        folders: list[str] = []
-        failed: set[str] = set()
+    def _changed_index_folders(self, rows: Mapping[str, Observation]) -> list[str]:
+        """Find designated indexes whose stored body left the generated one."""
         ledger = self._doc_mgr._observations
-        if ledger is None:
-            return folders, failed
-        generated = ledger.generated_navigation()
-        for path, row in rows.items():
-            if (
-                row.presence != "present"
-                or Path(path).name != "index.md"
-                or path not in generated
-            ):
-                continue
+        generated = {} if ledger is None else ledger.generated_navigation()
+        folders: list[str] = []
+        for path, digest in generated.items():
+            row = rows.get(path)
             folder = folder_of(path)
-            if not self._may_index(folder):
+            if row is None or row.presence != "present" or not self._may_index(folder):
                 continue
             try:
-                note = self._doc_mgr._read_note(path, capped=False)
-                body = (
-                    stored_index_body(self._doc_mgr, path) if note is not None else None
-                )
-            except DocumentUnreadableError as exc:
-                logger.warning(
-                    "okf_index_observation_failed path=%s reason=%s", path, exc
-                )
-                failed.add(folder)
-                continue
-            if body is not None and compute_etag(body) != generated[path]:
+                body = stored_index_body(self._doc_mgr, path)
+            except DocumentUnreadableError:
+                body = None  # The per-folder refresh reports the unreadable index.
+            if body is None or compute_etag(body) != digest:
                 folders.append(folder)
-        return folders, failed
+        return folders
 
     def _has_designated_index(self, folder: str) -> bool:
         """Whether *folder* already has a designated index, so a listing may keep it.
