@@ -238,7 +238,8 @@ class RankedSearchResult(GroupedResult):
     """A search result with the effective OKF retrieval policy.
 
     Attributes:
-        retrieval_policy: Purpose and effective OKF ranking multipliers.
+        retrieval_policy: Purpose and OKF multipliers for positive scores; zero and
+            negative scores remain unchanged.
     """
 
     retrieval_policy: dict[str, Any]

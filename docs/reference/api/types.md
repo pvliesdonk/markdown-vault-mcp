@@ -34,6 +34,8 @@ from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, Not
 
 ::: markdown_vault_mcp.types.GroupedResult
 
+::: markdown_vault_mcp.types.RankedSearchResult
+
 ::: markdown_vault_mcp.types.FTSResult
 
 ::: markdown_vault_mcp.types.BacklinkInfo

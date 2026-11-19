@@ -451,3 +451,24 @@ def test_blank_semantic_search_returns_no_hits(
     declared_vault: Vault, mode: str
 ) -> None:
     assert declared_vault.reader.search(" ", mode=mode, purpose="review") == []
+
+
+@pytest.mark.parametrize("score", [-0.4, 0.0, 1.0])
+def test_okf_weights_apply_only_to_positive_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, score: float
+) -> None:
+    from markdown_vault_mcp.okf import retrieval_policy
+
+    manager = _search_manager(tmp_path, mode="on")
+    monkeypatch.setattr(
+        manager, "_get_frontmatter", lambda _path: {"status": "deprecated"}
+    )
+    row = [_Row("deprecated.md", score)]
+    current = manager._rank_okf(
+        row, weights=retrieval_policy("current", active=True)["weights"]
+    )
+    review = manager._rank_okf(
+        row, weights=retrieval_policy("review", active=True)["weights"]
+    )
+    assert review[0].score == score
+    assert current[0].score == pytest.approx(score * 0.5 if score > 0 else score)

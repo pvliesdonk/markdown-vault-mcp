@@ -511,7 +511,7 @@ def derive_annotation(
 
 
 def retrieval_policy(purpose: str, *, active: bool) -> dict[str, Any]:
-    """Return the OKF score multipliers applied for a search purpose.
+    """Return the OKF multipliers for positive scores for a search purpose.
 
     Args:
         purpose: Current, historical, or review retrieval.
@@ -537,7 +537,7 @@ def retrieval_policy(purpose: str, *, active: bool) -> dict[str, Any]:
 
 
 def okf_downweight_factor(
-    annotation: dict[str, Any], path: str, *, purpose: str = "current"
+    annotation: dict[str, Any], path: str, *, weights: dict[str, float] | None = None
 ) -> float:
     """Return the multiplicative ranking factor for one OKF hit (design §5).
 
@@ -550,19 +550,13 @@ def okf_downweight_factor(
         annotation: The note's :func:`derive_annotation` result (reads
             ``status`` and ``stale``).
         path: The note's vault-relative path (reserved-file check, no I/O).
-        purpose: Retrieval purpose selecting the applied weights.
+        weights: Multipliers to use; omitted uses the current policy.
 
     Returns:
         A factor in ``(0, 1]``.
     """
-    weights = retrieval_policy(purpose, active=True)["weights"]
-    return _okf_factor(annotation, path, weights)
-
-
-def _okf_factor(
-    annotation: dict[str, Any], path: str, weights: dict[str, float]
-) -> float:
-    """Apply precomputed OKF weights to a note."""
+    if weights is None:
+        weights = retrieval_policy("current", active=True)["weights"]
     factor = 1.0
     if annotation.get("status") == "deprecated":
         factor *= weights["deprecated"]

@@ -57,10 +57,10 @@ from markdown_vault_mcp.managers._ranking import (
 )
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
-    _okf_factor,
     derive_annotation,
     is_okf_reserved_file,
     matches_okf_filters,
+    okf_downweight_factor,
     parse_stale_filter,
     retrieval_policy,
 )
@@ -718,7 +718,7 @@ class SearchManager:
             cached = factors.get(path)
             if cached is None:
                 annotation = derive_annotation(self._get_frontmatter(path))
-                cached = _okf_factor(annotation, path, weights)
+                cached = okf_downweight_factor(annotation, path, weights=weights)
                 factors[path] = cached
             return cached
 

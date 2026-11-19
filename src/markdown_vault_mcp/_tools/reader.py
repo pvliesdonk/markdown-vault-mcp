@@ -78,8 +78,9 @@ def register(mcp: FastMCP) -> None:
             snippet_words: Snippet width in words; omit for the server default, 0 for
                 whole sections. read with section set to a result's heading returns that
                 whole section.
-            purpose: Use current ranking, historical to retain deprecated and stale notes,
-                or review to remove OKF penalties.
+            purpose: Current uses all OKF ranking penalties; historical removes
+                deprecated and stale penalties but keeps the reserved-file penalty;
+                review removes all OKF ranking penalties.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -110,7 +111,8 @@ def register(mcp: FastMCP) -> None:
               (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
               `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
               `review_applicability`, and `sources_count` (when the note cites sources).
-            - retrieval_policy (dict): Purpose and effective OKF score multipliers.
+            - retrieval_policy (dict): Purpose and OKF multipliers for positive scores.
+              Zero and negative scores remain unchanged.
             - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 

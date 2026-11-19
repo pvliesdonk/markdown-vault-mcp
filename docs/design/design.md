@@ -439,7 +439,8 @@ Search accepts a retrieval purpose. `current` preserves the existing OKF
 ranking: deprecated, stale and reserved notes receive multipliers of 0.5,
 0.75 and 0.5 respectively. `historical` keeps only the reserved multiplier;
 `review` removes all three. Each result reports the effective multipliers in
-`retrieval_policy`, including unity weights when OKF is inactive. These are
+`retrieval_policy`, including unity weights when OKF is inactive. Multipliers
+apply to positive scores; zero and negative scores remain unchanged. These are
 OKF-specific multipliers; length and folder ranking remain in effect. The
 terminal search uses the default current purpose.
 

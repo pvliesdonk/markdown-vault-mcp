@@ -423,6 +423,6 @@ Inventory includes locally observed removed concept paths as `presence: removed`
 MCP `search` and the Python reader's `search` accept `purpose`: `current`
 (default) demotes deprecated, stale and reserved notes; `historical` retains
 the reserved note penalty only; `review` removes these OKF penalties. Each
-result reports the effective multipliers in `retrieval_policy`. Other ranking
-controls, including length and folder weights, still apply. Terminal search
+result reports the multipliers in `retrieval_policy`. The multipliers affect positive scores only. Zero and negative scores are
+unchanged. Length and folder weights also affect ranking. Terminal search
 uses the default purpose.
