@@ -795,3 +795,18 @@ async def test_search_reports_retrieval_policy() -> None:
             "purpose": "review",
             "weights": {"deprecated": 1.0, "stale": 1.0, "reserved": 1.0},
         }
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_search_default_policy_and_invalid_purpose() -> None:
+    async with Client(make_server()) as client:
+        hits = await _search(client)
+        assert hits[0]["retrieval_policy"] == {
+            "purpose": "current",
+            "weights": {"deprecated": 0.5, "stale": 0.75, "reserved": 0.5},
+        }
+        result = await client.call_tool_mcp(
+            "search", {"query": "zebra", "purpose": "bad"}
+        )
+        assert result.is_error
+        assert "purpose" in str(result.content)

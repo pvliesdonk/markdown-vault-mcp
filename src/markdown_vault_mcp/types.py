@@ -217,7 +217,6 @@ class GroupedResult:
         score: File-level score = ``max(section.score for section in sections)``.
         search_type: ``"keyword"``, ``"semantic"``, or ``"hybrid"``.
         frontmatter: Parsed YAML frontmatter.
-        retrieval_policy: Effective OKF ranking weights for search results.
         sections: Up to the per-file cap best-matching sections, sorted by
             ``(score DESC, start_line ASC, section_id ASC)`` so ties surface
             in document order — the ``section_id`` key gives a fully
@@ -232,7 +231,17 @@ class GroupedResult:
     search_type: Literal["keyword", "semantic", "hybrid"]
     frontmatter: dict[str, Any]
     sections: list[SectionHit]
-    retrieval_policy: dict[str, Any] | None = None
+
+
+@dataclass
+class RankedSearchResult(GroupedResult):
+    """A search result with the effective OKF retrieval policy.
+
+    Attributes:
+        retrieval_policy: Purpose and effective OKF ranking multipliers.
+    """
+
+    retrieval_policy: dict[str, Any]
 
 
 @dataclass

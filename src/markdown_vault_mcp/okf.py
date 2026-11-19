@@ -520,7 +520,7 @@ def retrieval_policy(purpose: str, *, active: bool) -> dict[str, Any]:
     Returns:
         The purpose and effective OKF multipliers.
     """
-    if purpose not in {"current", "historical", "review"}:
+    if purpose not in ("current", "historical", "review"):
         raise InvalidRequestError(
             f"Unknown search purpose {purpose!r}; use current, historical, or review."
         )
@@ -556,6 +556,13 @@ def okf_downweight_factor(
         A factor in ``(0, 1]``.
     """
     weights = retrieval_policy(purpose, active=True)["weights"]
+    return _okf_factor(annotation, path, weights)
+
+
+def _okf_factor(
+    annotation: dict[str, Any], path: str, weights: dict[str, float]
+) -> float:
+    """Apply precomputed OKF weights to a note."""
     factor = 1.0
     if annotation.get("status") == "deprecated":
         factor *= weights["deprecated"]

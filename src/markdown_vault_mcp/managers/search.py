@@ -57,10 +57,10 @@ from markdown_vault_mcp.managers._ranking import (
 )
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
+    _okf_factor,
     derive_annotation,
     is_okf_reserved_file,
     matches_okf_filters,
-    okf_downweight_factor,
     parse_stale_filter,
     retrieval_policy,
 )
@@ -73,6 +73,7 @@ from markdown_vault_mcp.types import (
     NoteContext,
     NoteInfo,
     OutlinkInfo,
+    RankedSearchResult,
     SectionHit,
     VaultStats,
 )
@@ -689,24 +690,27 @@ class SearchManager:
         return kept
 
     def _rank_okf(
-        self, rows: builtins.list[_RankT], *, purpose: str = "current"
+        self, rows: builtins.list[_RankT], *, weights: dict[str, float] | None = None
     ) -> builtins.list[_RankT]:
         """Apply the OKF ranking downweight (design §5, #965) on active bundles.
 
-        A no-op — the rows are returned unchanged, so ranking stays
-        byte-identical — unless an OKF detector is wired and the vault is
-        active. When active, ``deprecated`` / stale / reserved-file hits are
-        demoted via :func:`~markdown_vault_mcp.managers._ranking.apply_okf_downweight`.
+        Neutral weights leave rows unchanged. Otherwise, deprecated, stale and
+        reserved-file hits are demoted via :func:`~markdown_vault_mcp.managers._ranking.apply_okf_downweight`.
         The per-path OKF factor is memoised (one ``get_note`` frontmatter
         lookup per distinct path, mirroring :meth:`_filter_rows_okf`).
 
         Args:
             rows: Candidate rows carrying ``path`` and ``score``.
+            weights: Effective multipliers, or the active current policy if omitted.
 
         Returns:
-            The rows, downweighted and re-sorted when active, else unchanged.
+            The rows, downweighted and re-sorted when applicable.
         """
-        if self._okf is None or not self._okf.state().active:
+        if weights is None:
+            if self._okf is None or not self._okf.state().active:
+                return rows
+            weights = retrieval_policy("current", active=True)["weights"]
+        if all(weight == 1.0 for weight in weights.values()):
             return rows
         factors: dict[str, float] = {}
 
@@ -714,7 +718,7 @@ class SearchManager:
             cached = factors.get(path)
             if cached is None:
                 annotation = derive_annotation(self._get_frontmatter(path))
-                cached = okf_downweight_factor(annotation, path, purpose=purpose)
+                cached = _okf_factor(annotation, path, weights)
                 factors[path] = cached
             return cached
 
@@ -930,12 +934,11 @@ class SearchManager:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         purpose: Literal["current", "historical", "review"] = "current",
-    ) -> list[GroupedResult]:
+    ) -> list[RankedSearchResult]:
         """Search the vault.
 
         Args:
             query: Search string.
-            purpose: Select OKF ranking weights for current, historical or review retrieval.
             limit: Maximum number of files (not chunks) to return.
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of
@@ -955,9 +958,10 @@ class SearchManager:
             snippet_words: Width of the FTS5 snippet window in words.
                 ``0`` returns full chunk content.  ``None`` uses the instance
                 default (``self._snippet_words``).
+            purpose: Select OKF ranking weights for current, historical or review retrieval.
 
         Returns:
-            List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
+            List of :class:`~markdown_vault_mcp.types.RankedSearchResult` ordered
             by descending file score (max of section scores).
 
         Raises:
@@ -988,16 +992,13 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
-                purpose=purpose,
+                weights=policy["weights"],
             )
-            for result in results:
-                result.retrieval_policy = policy
-            return results
-
-        if mode == "semantic":
+        elif mode == "semantic":
             self._require_vectors()
             if not is_embeddable(query):
-                return self._no_embeddable_query(mode)
+                self._no_embeddable_query(mode)
+                return []
             results = self._semantic_search(
                 query,
                 limit=limit,
@@ -1006,29 +1007,33 @@ class SearchManager:
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
                 okf_filters=okf_filters,
-                purpose=purpose,
+                weights=policy["weights"],
             )
-            for result in results:
-                result.retrieval_policy = policy
-            return results
-
-        # hybrid
-        self._require_vectors()
-        if not is_embeddable(query):
-            return self._no_embeddable_query(mode)
-        results = self._hybrid_search(
-            query,
-            limit=limit,
-            filters=plain_filters,
-            folder=folder,
-            chunks_per_file=eff_cap,
-            snippet_words=eff_snip,
-            okf_filters=okf_filters,
-            purpose=purpose,
-        )
-        for result in results:
-            result.retrieval_policy = policy
-        return results
+        else:
+            self._require_vectors()
+            if not is_embeddable(query):
+                self._no_embeddable_query(mode)
+                return []
+            results = self._hybrid_search(
+                query,
+                limit=limit,
+                filters=plain_filters,
+                folder=folder,
+                chunks_per_file=eff_cap,
+                snippet_words=eff_snip,
+                okf_filters=okf_filters,
+                weights=policy["weights"],
+            )
+        return [
+            RankedSearchResult(
+                **vars(result),
+                retrieval_policy={
+                    "purpose": policy["purpose"],
+                    "weights": dict(policy["weights"]),
+                },
+            )
+            for result in results
+        ]
 
     @staticmethod
     def _no_embeddable_query(mode: str) -> builtins.list[GroupedResult]:
@@ -1162,7 +1167,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
-        purpose: str = "current",
+        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1183,7 +1188,7 @@ class SearchManager:
             raw, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted, purpose=purpose)
+        downweighted = self._rank_okf(downweighted, weights=weights)
         groupable: list[_GroupableFTS] = [
             _GroupableFTS(
                 path=r.path,
@@ -1283,7 +1288,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
-        purpose: str = "current",
+        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         candidate_limit = self._widen_for_post_filter(
@@ -1308,7 +1313,7 @@ class SearchManager:
             rows, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
-        downweighted = self._rank_okf(downweighted, purpose=purpose)
+        downweighted = self._rank_okf(downweighted, weights=weights)
         groups = _group_by_path(
             downweighted, chunks_per_file=chunks_per_file, file_limit=limit
         )
@@ -1330,7 +1335,7 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
         okf_filters: dict[str, str | None] | None = None,
-        purpose: str = "current",
+        weights: dict[str, float] | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
         okf_filters = okf_filters or {}
@@ -1423,7 +1428,7 @@ class SearchManager:
         groupable_rows = _apply_folder_boost(
             groupable_rows, weights=self._folder_weights
         )
-        groupable_rows = self._rank_okf(groupable_rows, purpose=purpose)
+        groupable_rows = self._rank_okf(groupable_rows, weights=weights)
         groups = _group_by_path(
             groupable_rows, chunks_per_file=chunks_per_file, file_limit=limit
         )

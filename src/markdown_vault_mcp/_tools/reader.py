@@ -59,8 +59,6 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             query: Words to match or a natural-language question.
-            purpose: Use current ranking, historical to retain deprecated and stale notes,
-                or review to remove OKF penalties.
             limit: Maximum notes to return (default 10).
             mode: Omit for the best mode this vault serves. `"keyword"` suits exact terms,
                 operators and filenames; `"semantic"` matches meaning only; `"hybrid"`
@@ -80,6 +78,8 @@ def register(mcp: FastMCP) -> None:
             snippet_words: Snippet width in words; omit for the server default, 0 for
                 whole sections. read with section set to a result's heading returns that
                 whole section.
+            purpose: Use current ranking, historical to retain deprecated and stale notes,
+                or review to remove OKF penalties.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

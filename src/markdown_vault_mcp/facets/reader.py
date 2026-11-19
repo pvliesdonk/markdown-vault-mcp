@@ -83,6 +83,7 @@ if TYPE_CHECKING:
         NoteContent,
         NoteContext,
         NoteInfo,
+        RankedSearchResult,
         RevisionContent,
         SubtreeToc,
         TocEntry,
@@ -511,12 +512,11 @@ class ReaderFacet:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
         purpose: Literal["current", "historical", "review"] = "current",
-    ) -> list[GroupedResult]:
+    ) -> list[RankedSearchResult]:
         """Search the vault.
 
         Args:
             query: Search string.
-            purpose: Select OKF ranking weights for current, historical or review retrieval.
             limit: Maximum number of files (not chunks) to return.
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of both.
@@ -528,9 +528,10 @@ class ReaderFacet:
                 ``None`` uses the server default configured at startup.
             snippet_words: Width of the snippet window in words.  ``0`` returns
                 the full chunk.  ``None`` uses the server default.
+            purpose: Select OKF ranking weights for current, historical or review retrieval.
 
         Returns:
-            List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
+            List of :class:`~markdown_vault_mcp.types.RankedSearchResult` ordered
             by descending file score (max of section scores).  Each result
             wraps one document with up to ``chunks_per_file`` sections.
 

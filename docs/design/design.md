@@ -2568,6 +2568,11 @@ class GroupedResult:
                                       # section_id ASC)
 
 @dataclass
+class RankedSearchResult(GroupedResult):
+    """Search-only result with its effective OKF ranking policy."""
+    retrieval_policy: dict[str, Any]
+
+@dataclass
 class SearchResult:
     """Legacy single-chunk shape.  Retained for backward API compatibility
     (importable from ``markdown_vault_mcp.types``); new code returns GroupedResult.  Not

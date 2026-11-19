@@ -312,8 +312,19 @@ def test_purpose_removes_lifecycle_penalties(
 def test_purpose_reserved_weight(tmp_path: Path) -> None:
     mgr = _search_manager(tmp_path, mode="on")
     rows = [_Row("index.md", 1.0)]
-    assert mgr._rank_okf(rows, purpose="historical")[0].score == OKF_RESERVED_WEIGHT
-    assert mgr._rank_okf(rows, purpose="review")[0].score == 1.0
+    assert (
+        mgr._rank_okf(
+            rows,
+            weights={"deprecated": 1.0, "stale": 1.0, "reserved": OKF_RESERVED_WEIGHT},
+        )[0].score
+        == OKF_RESERVED_WEIGHT
+    )
+    assert (
+        mgr._rank_okf(rows, weights={"deprecated": 1.0, "stale": 1.0, "reserved": 1.0})[
+            0
+        ].score
+        == 1.0
+    )
 
 
 @pytest.mark.parametrize("mode", _LIVE_MODES)
@@ -354,3 +365,89 @@ def test_inactive_policy_and_invalid_purpose(tmp_path: Path) -> None:
     }
     with pytest.raises(InvalidRequestError, match="purpose"):
         _search_manager(tmp_path, mode=None).search("zebra", purpose="invalid")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("initially_active", [False, True])
+def test_policy_matches_ranking_when_declaration_changes_mid_search(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initially_active: bool
+) -> None:
+    root = tmp_path / "vault"
+    _build_ranking_vault(root, declared=initially_active)
+    vault = _vault_with_embeddings(root)
+    try:
+        manager = vault.reader._search_mgr
+        retrieve = manager._retrieve_candidates
+
+        def flip(*args: object, **kwargs: object) -> object:
+            result = retrieve(*args, **kwargs)
+            (root / "index.md").write_text(
+                "# Root\n"
+                if initially_active
+                else '---\nokf_version: "0.2"\n---\n# Root\n',
+                encoding="utf-8",
+            )
+            return result
+
+        monkeypatch.setattr(manager, "_retrieve_candidates", flip)
+        results = vault.reader.search("zebra", mode="keyword", limit=10)
+        scores = {r.path: r.score for r in results}
+        policy = results[0].retrieval_policy
+        assert policy["weights"]["deprecated"] == (0.5 if initially_active else 1.0)
+        assert scores["deprecated.md"] == pytest.approx(
+            scores["normal.md"] * (0.5 if initially_active else 1.0)
+        )
+    finally:
+        vault.close()
+
+
+def test_semantic_purposes_rank_and_report_policy(declared_vault: Vault) -> None:
+    from markdown_vault_mcp.types import ANY_TOKEN
+    from tests.fixtures.vector_store_contract import doc
+
+    declared_vault.index.build_embeddings()
+    store = declared_vault._vectors
+    provider = declared_vault._index_mgr._embeddings.embedding_provider
+    assert store is not None and provider is not None
+    query = "zebra migration"
+    vector = list(provider.embed_query([query])[0])
+    for path in ("normal.md", "deprecated.md"):
+        store.replace_document(
+            doc(path, [vector], token="fixture"), expected_token=ANY_TOKEN
+        )
+    for purpose, expected in (("current", 0.5), ("historical", 1.0), ("review", 1.0)):
+        results = declared_vault.reader.search(
+            query, mode="semantic", limit=10, purpose=purpose
+        )  # type: ignore[arg-type]
+        hits = {r.path: r for r in results}
+        assert hits["deprecated.md"].score == pytest.approx(
+            hits["normal.md"].score * expected
+        )
+        assert (
+            hits["deprecated.md"].retrieval_policy["weights"]["deprecated"] == expected
+        )
+
+
+@pytest.mark.parametrize("purpose", [[], {}])
+def test_unhashable_purpose_is_invalid(tmp_path: Path, purpose: object) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    with pytest.raises(InvalidRequestError, match="purpose"):
+        _search_manager(tmp_path, mode=None).search("zebra", purpose=purpose)  # type: ignore[arg-type]
+
+
+def test_similar_and_context_do_not_carry_search_policy(declared_vault: Vault) -> None:
+    from dataclasses import asdict
+
+    declared_vault.index.build_embeddings()
+    similar = declared_vault.reader.get_similar("normal.md", limit=10)
+    context = declared_vault.reader.get_context("normal.md")
+    assert similar
+    assert all("retrieval_policy" not in asdict(result) for result in similar)
+    assert all("retrieval_policy" not in asdict(result) for result in context.similar)
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_blank_semantic_search_returns_no_hits(
+    declared_vault: Vault, mode: str
+) -> None:
+    assert declared_vault.reader.search(" ", mode=mode, purpose="review") == []
