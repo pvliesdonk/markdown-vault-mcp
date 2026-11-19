@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
+from markdown_vault_mcp.git._run import redact
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
@@ -94,6 +95,19 @@ def one_line(text: str) -> str:
         none.
     """
     return " ".join(text.split())
+
+
+def log_git_stderr(text: str, token: str | None = None) -> str:
+    """Redact and flatten Git output for a single log field.
+
+    Args:
+        text: Git output, possibly containing a credential and whitespace.
+        token: Credential to redact, if configured.
+
+    Returns:
+        Redacted output collapsed onto one line.
+    """
+    return one_line(redact(text, token))
 
 
 def push_failure_reason(stderr: str) -> str:

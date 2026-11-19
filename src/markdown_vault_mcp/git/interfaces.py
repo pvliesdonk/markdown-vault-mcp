@@ -337,7 +337,9 @@ class Versioner(Protocol):
     write-callback dispatcher already types against — the two are
     interchangeable, since protocols match by shape.  Restated here rather
     than subclassed so this module needs no runtime import, keeping the seam
-    depending on nothing but ``typing``.
+    depending on nothing but ``typing``. To opt into batching, implement
+    :class:`~markdown_vault_mcp.types.BatchAwareWriteCallback` and set
+    ``accepts_batch`` true. Per-write dispatch remains required.
     """
 
     accepts_principal: bool
