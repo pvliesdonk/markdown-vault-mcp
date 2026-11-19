@@ -2169,7 +2169,8 @@ the spec itself says, dated and sourced, in
   computed per occurrence so distinct aliases survive.
   ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
   from the folder's live listing independently of search admission, excluding
-  index-excluded and dot-path files and labelling each note with the search
+  index-excluded, dot-path and outside-vault files and the server's own state
+  files (by the inspection policy), and labelling each note with the search
   index's title and description, or its filename when the index lacks it.
   No note is opened, so an unreadable note keeps its link; a visible folder
   that cannot be listed refuses the call before any write. Creating missing descendant indexes and preserving

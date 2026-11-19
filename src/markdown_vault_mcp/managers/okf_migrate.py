@@ -222,7 +222,7 @@ class OkfMigrationManager:
         Under an active designation policy, eligible indexes fold descendants
         until an existing index boundary and outside targets are refused. Existing frontmatter is preserved, including
         the root ``okf_version`` declaration. Submodules are never written.
-        Dot and excluded paths are omitted; a note the search index has not
+        Dot, excluded, outside-vault and server-owned paths are omitted; a note the search index has not
         admitted is listed by filename. The folder and any connected parent
         are listed before the first write, so a refusal writes nothing.
 
@@ -312,9 +312,6 @@ class OkfMigrationManager:
         tree: _IndexTree,
     ) -> OkfIndexResult:
         """Generate eligible indexes and collect protected paths."""
-        self._doc_mgr.ensure_writable()
-        folder = normalize_folder(folder) or ""
-        self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         sections, created = self._fold_index(
             folder, tree, skipped, allow_protected, designated
         )

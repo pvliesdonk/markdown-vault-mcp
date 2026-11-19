@@ -69,6 +69,7 @@ from markdown_vault_mcp.managers._write_notifier import (
     WriteNotifier,
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
+from markdown_vault_mcp.managers.index_listing import IndexListing
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
@@ -96,10 +97,8 @@ from markdown_vault_mcp.utils import (
     validate_path,
 )
 from markdown_vault_mcp.utils.fs import (
-    could_be_regular_file,
     is_directory,
     is_regular_file,
-    is_subtree_excluded,
     path_exists,
     walk_files_strict,
 )
@@ -322,6 +321,16 @@ class DocumentManager:
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
 
+    def _inspector(self) -> BundleInspector:
+        """Build the inspection policy owner from this manager's settings."""
+        return BundleInspector(
+            self._source_dir,
+            self._exclude_patterns or (),
+            self._artifacts.extensions(),
+            self._max_note_read_bytes,
+            self._inspection_policy,
+        )
+
     def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
         """Inspect a selected directory and report available index state.
 
@@ -331,13 +340,7 @@ class DocumentManager:
         Returns:
             Current policy-visible observations, without content or write authority.
         """
-        inspection = BundleInspector(
-            self._source_dir,
-            self._exclude_patterns or (),
-            self._artifacts.extensions(),
-            self._max_note_read_bytes,
-            self._inspection_policy,
-        ).inspect(request)
+        inspection = self._inspector().inspect(request)
 
         if (
             self._inventory_ready is not None
@@ -549,6 +552,12 @@ class DocumentManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
+    def _index_listing(self) -> IndexListing:
+        """Build the membership walk for generated indexes."""
+        return IndexListing(
+            self._source_dir, self._exclude_patterns or (), self._inspector()
+        )
+
     def index_path_visible(self, path: str) -> bool:
         """Whether a generated index may list or link *path*.
 
@@ -559,15 +568,14 @@ class DocumentManager:
             ``False`` for a path with a dot component or matching an exclude
             pattern; ``True`` otherwise.
         """
-        hidden = any(part.startswith(".") for part in path.split("/"))
-        return not hidden and not self._is_path_excluded(path)
+        return self._index_listing().visible(path)
 
     def index_note_paths(self, folder: str) -> list[str]:
         """List every note a generated index under *folder* may show.
 
-        Discovery follows the scanner's rules for directory links and file
-        types, but dot and wholly excluded directories are not entered. No
-        note is opened, so an unreadable note keeps its place.
+        See :class:`~markdown_vault_mcp.managers.index_listing.IndexListing`
+        for what the listing leaves out. No note is opened, so an unreadable
+        note keeps its place.
 
         Args:
             folder: Normalized vault-relative folder (``""`` for the root).
@@ -576,35 +584,10 @@ class DocumentManager:
             Sorted vault-relative note paths; empty for a missing folder.
 
         Raises:
-            InvalidRequestError: If *folder* or a visible directory below it
-                cannot be listed.
+            InvalidRequestError: If *folder* or a directory below it cannot be
+                listed; the message names that directory.
         """
-
-        def rel(path: Path) -> str:
-            return path.relative_to(self._source_dir).as_posix()
-
-        def prune(path: Path) -> bool:
-            return path.name.startswith(".") or is_subtree_excluded(
-                rel(path), self._exclude_patterns or ()
-            )
-
-        root = self._source_dir / folder
-        try:
-            if not is_directory(root):
-                return []
-            return [
-                rel(path)
-                for path in walk_files_strict(root, prune=prune, follow_links=True)
-                if is_note(path.name)
-                and could_be_regular_file(path)
-                and self.index_path_visible(rel(path))
-            ]
-        except OSError as exc:
-            raise InvalidRequestError(
-                f"Cannot list all of folder {folder!r}; no index was written. "
-                "Ask the user to restore access to it or exclude it, then call "
-                "okf_generate_index again."
-            ) from exc
+        return self._index_listing().note_paths(folder)
 
     def _vault_relative(self, path: Path) -> str:
         return path.relative_to(self._source_dir.resolve()).as_posix()

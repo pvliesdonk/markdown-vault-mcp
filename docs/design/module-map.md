@@ -42,6 +42,7 @@ src/markdown_vault_mcp/
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
+    index_listing.py   -- IndexListing: the name-only walk behind generated indexes; leaves out dot, excluded, outside-vault and inspection-policy-owned paths, and refuses naming a directory it cannot list (#1442); internal collaborator, not re-exported
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (explicit recursive or designated folded listings, #1611), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/

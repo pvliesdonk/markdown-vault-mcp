@@ -503,8 +503,11 @@ never built and has no scheduled build is listed without waiting, by filename.
 Membership comes from one name-only directory walk of the selected subtree: no
 note is opened or parsed, dot and wholly excluded directories are not entered,
 and excluded, dot and non-regular files are omitted. Directory links are
-followed where the scanner follows them. A visible directory that cannot be
-listed refuses the whole call before any write. The optional maintainer
+followed where the scanner follows them, but a link that resolves outside the
+vault is omitted, as is anything the inspection policy owner holds as server
+state (index, tracker, vector and state paths, with their aliases and
+hardlinks). A visible directory that cannot be listed refuses the whole call
+before any write and is named in the refusal. The optional maintainer
 preflight hook remains available to existing integrations.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
