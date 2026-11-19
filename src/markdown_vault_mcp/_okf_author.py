@@ -61,7 +61,7 @@ def _validate(
             "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
         )
     if not fields and producer is None and repair is None:
-        raise InvalidRequestError("At least one field or producer is required")
+        raise InvalidRequestError("At least one field, producer, or repair is required")
     for key, value in fields.items():
         if not _valid_field(key, value):
             raise InvalidRequestError(f"Invalid value for {key}")
@@ -245,21 +245,15 @@ def _retire_entries(
     previous = verified_entries({"verified": previous})
     indices = request["indices"]
     if (
-        not isinstance(previous, list)
-        or not isinstance(indices, list)
+        not isinstance(indices, list)
         or not indices
         or any(type(i) is not int or i < 0 or i >= len(previous) for i in indices)
         or len(set(indices)) != len(indices)
     ):
         raise InvalidRequestError("Invalid review indices")
     selected = set(indices)
-    identities = [_review_key(item) for item in previous]
-    if any(
-        identities[i] is not None and identities[i] == identities[j]
-        for i in selected
-        for j in range(len(previous))
-        if j not in selected
-    ):
+    keys = {_review_key(previous[i]) for i in selected} - {None}
+    if {i for i, item in enumerate(previous) if _review_key(item) in keys} - selected:
         raise InvalidRequestError("Cannot retire a review with a shared identity")
     history.extend(
         {"review": previous[i], "reason": request["reason"]} for i in sorted(selected)
@@ -356,25 +350,14 @@ def _raw_flow(source: str, node: Any, tokens: list[Any], positions: list[int]) -
         raise InvalidRequestError("Cannot safely archive evidence containing comments")
     if any(isinstance(token, yaml.AliasToken) for token in relevant):
         raise InvalidRequestError("Cannot archive aliased evidence")
+
+    def raw(child: Any) -> str:
+        return _raw_flow(source, child, tokens, positions)
+
     if isinstance(node, SequenceNode):
-        return (
-            "["
-            + ", ".join(
-                _raw_flow(source, item, tokens, positions) for item in node.value
-            )
-            + "]"
-        )
+        return "[" + ", ".join(map(raw, node.value)) + "]"
     _review_nodes(node)
-    return (
-        "{"
-        + ", ".join(
-            _raw_flow(source, key, tokens, positions)
-            + ": "
-            + _raw_flow(source, value, tokens, positions)
-            for key, value in node.value
-        )
-        + "}"
-    )
+    return "{" + ", ".join(f"{raw(k)}: {raw(v)}" for k, v in node.value) + "}"
 
 
 def _reject_merge(node: MappingNode) -> None:
@@ -399,75 +382,50 @@ def _line_insertion(source: str, position: int) -> int:
     return start if not source[start:position].strip() else position
 
 
-def _insert_mapping(
-    source: str, node: MappingNode, key: str, raw: str, newline: str
-) -> str:
+def _append(source: str, node: Any, items: list[str], dash: str, newline: str) -> str:
     if node.flow_style:
-        start, end, value = _flow_insertion(source, node, [f"{key}: {raw}"])
+        start, end, value = _flow_insertion(source, node, items)
     else:
         start = end = _line_insertion(source, node.end_mark.index)
-        value = " " * node.start_mark.column + f"{key}: {raw}" + newline
+        indent = " " * node.start_mark.column + dash
+        value = "".join(indent + item + newline for item in items)
     return source[:start] + value + source[end:]
 
 
 def _append_history(source: str, history: str, items: list[str], newline: str) -> str:
+    raw = "[" + ", ".join(items) + "]"
     root = _parse_root(source)
     ext = _touched(root, "x-mvmcp")
     if ext is None:
-        return _insert_mapping(
-            source,
-            root,
-            "x-mvmcp",
-            "{" + history + ": [" + ", ".join(items) + "]}",
-            newline,
-        )
+        return _append(source, root, [f"x-mvmcp: {{{history}: {raw}}}"], "", newline)
     existing = _touched(ext, history)
     if existing is None:
-        return _insert_mapping(
-            source, ext, history, "[" + ", ".join(items) + "]", newline
-        )
-    if existing.flow_style:
-        start, end, value = _flow_insertion(source, existing, items)
-    else:
-        start = end = _line_insertion(source, existing.end_mark.index)
-        value = "".join(
-            " " * existing.start_mark.column + "- " + item + newline for item in items
-        )
-    return source[:start] + value + source[end:]
+        return _append(source, ext, [f"{history}: {raw}"], "", newline)
+    return _append(source, existing, items, "- ", newline)
 
 
 def _remove_reviews(
-    source: str, node: Any, selected: set[int], tokens: list[Any]
+    source: str, node: Any, selected: set[int], tokens: list[Any], key_column: int
 ) -> str:
+    start, end = node.start_mark.index, node.end_mark.index
+    comments = _comments_in_span(source, start, end, tokens)
     if isinstance(node, MappingNode) or len(selected) == len(node.value):
-        comments = _comments_in_span(
-            source, node.start_mark.index, node.end_mark.index, tokens
-        )
         newline = "\r\n" if "\r\n" in source else "\n"
-        end = (
-            node.end_mark.index
-            if node.flow_style
-            else _line_insertion(source, node.end_mark.index)
-        )
+        tail = end if node.flow_style else _line_insertion(source, end)
         suffix = newline + comments if comments or not node.flow_style else ""
-        return source[: node.start_mark.index] + "[]" + suffix + source[end:]
+        indent = (
+            "  " if not node.flow_style and node.start_mark.column == key_column else ""
+        )
+        return source[:start] + indent + "[]" + suffix + source[tail:]
     if node.flow_style:
+        if comments:
+            raise InvalidRequestError("Cannot safely edit a commented flow review list")
         kept = [
             source[item.start_mark.index : item.end_mark.index]
             for i, item in enumerate(node.value)
             if i not in selected
         ]
-        if _comments_in_span(
-            source, node.start_mark.index, node.end_mark.index, tokens
-        ):
-            raise InvalidRequestError("Cannot safely edit a commented flow review list")
-        return (
-            source[: node.start_mark.index]
-            + "["
-            + ", ".join(kept)
-            + "]"
-            + source[node.end_mark.index :]
-        )
+        return source[:start] + "[" + ", ".join(kept) + "]" + source[end:]
     for i in sorted(selected, reverse=True):
         item = node.value[i]
         start = source.rfind("\n", 0, item.start_mark.index) + 1
@@ -505,38 +463,40 @@ def _repair_header(
         _reject_merge(ext)
     tokens = list(yaml.scan(source))
     positions = [token.start_mark.index for token in tokens]
+
+    def archive(label: str, node: Any, reason: str) -> str:
+        raw = _raw_flow(source, node, tokens, positions)
+        return f"{{{label}: {raw}, reason: {_render(reason)}}}"
+
     retire = repair.get("retire_reviews")
     replace = repair.get("replace_generated")
     if retire is not None:
         node = _touched(root, "verified")
         members = _selected_nodes(node, retire["indices"])
+        reason = retire["reason"]
         items = [
-            "{review: "
-            + _raw_flow(source, members[i], tokens, positions)
-            + ", reason: "
-            + _render(retire["reason"])
-            + "}"
-            for i in sorted(retire["indices"])
+            archive("review", members[i], reason) for i in sorted(retire["indices"])
         ]
         matched = _claim_indices(metadata, retire["indices"])
         if matched:
             claims_node = _touched(ext, "reviews")
             claim_members = _selected_nodes(claims_node, matched)
-            items.extend(
-                "{binding: "
-                + _raw_flow(source, claim_members[i], tokens, positions)
-                + ", reason: "
-                + _render(retire["reason"])
-                + "}"
-                for i in matched
-            )
-        source = _remove_reviews(source, node, set(retire["indices"]), tokens)
+            items.extend(archive("binding", claim_members[i], reason) for i in matched)
+        key_column = next(
+            k.start_mark.column for k, _ in root.value if k.value == "verified"
+        )
+        source = _remove_reviews(
+            source, node, set(retire["indices"]), tokens, key_column
+        )
         if matched:
             root = _parse_root(source)
             ext = _touched(root, "x-mvmcp")
             claims_node = _touched(ext, "reviews")
+            key_column = next(
+                k.start_mark.column for k, _ in ext.value if k.value == "reviews"
+            )
             source = _remove_reviews(
-                source, claims_node, set(matched), list(yaml.scan(source))
+                source, claims_node, set(matched), list(yaml.scan(source)), key_column
             )
         source = _append_history(source, "review_history", items, newline)
     if replace is not None:
@@ -544,20 +504,11 @@ def _repair_header(
         node = _touched(root, "generated")
         tokens = list(yaml.scan(source))
         positions = [token.start_mark.index for token in tokens]
-        item = (
-            "{generated: "
-            + _raw_flow(source, node, tokens, positions)
-            + ", reason: "
-            + _render(replace["reason"])
-            + "}"
-        )
+        item = archive("generated", node, replace["reason"])
         key = next(key for key, _ in root.value if key.value == "generated")
         start, end = key.start_mark.index, node.end_mark.index
-        source = (
-            source[:start]
-            + _replacement(source, key, node, changes["generated"])
-            + source[end:]
-        )
+        replacement = _replacement(source, key, node, changes["generated"])
+        source = source[:start] + replacement + source[end:]
         source = _append_history(source, "generated_history", [item], newline)
     return source
 

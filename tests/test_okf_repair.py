@@ -388,3 +388,70 @@ def test_merge_key_in_extension_is_refused(action: str) -> None:
     )
     with pytest.raises(InvalidRequestError, match="merge"):
         author_text(text, {}, None, repair={action: request})
+
+
+@pytest.mark.parametrize("layout", ["flow", "indented", "flat"])
+@pytest.mark.parametrize("indices", [[0], [0, 1]])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_review_and_binding_sequence_layouts(
+    layout: str, indices: list[int], newline: str
+) -> None:
+    from markdown_vault_mcp.okf import derive_trust_tier
+
+    review_a = "{by: 'human:a', at: '2026-01-01T00:00:00Z'}"
+    review_b = "{by: 'process:b', at: '2026-01-02T00:00:00Z'}"
+
+    def render(key: str, rows: list[str], column: int) -> str:
+        prefix = " " * column
+        if layout == "flow":
+            return prefix + key + ": [" + ", ".join(rows) + "]\n"
+        indent = prefix + ("  " if layout == "indented" else "")
+        return (
+            prefix + key + ":\n" + "".join(indent + "- " + row + "\n" for row in rows)
+        )
+
+    review = render("verified", [review_a, review_b], 0)
+    claims = render("reviews", [review_a, review_b], 2)
+    text = ("---\n" + review + "x-mvmcp:\n" + claims + "---\nBody\n").replace(
+        "\n", newline
+    )
+    result = author_text(
+        text, {}, None, repair={"retire_reviews": {"indices": indices, "reason": "fix"}}
+    )
+    meta = parse_frontmatter(result).metadata
+    assert len(meta["verified"]) == 2 - len(indices)
+    assert len(meta["x-mvmcp"]["reviews"]) == 2 - len(indices)
+    assert len(meta["x-mvmcp"]["review_history"]) == 2 * len(indices)
+    assert derive_trust_tier(meta) == (
+        "unverified" if len(indices) == 2 else "machine-confirmed"
+    )
+    if newline == "\r\n":
+        assert "\n" not in result.replace("\r\n", "")
+
+
+def test_library_write_then_retire_all_reviews(tmp_path) -> None:
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        vault.writer.write(
+            "note.md",
+            "Body\n",
+            frontmatter={"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},
+        )
+        note = vault.reader.read("note.md")
+        assert note is not None
+        vault.writer.okf_author(
+            "note.md",
+            if_match=note.etag,
+            fields={},
+            repair={"retire_reviews": {"indices": [0], "reason": "fix"}},
+        )
+        updated = vault.reader.read("note.md")
+        assert updated is not None
+        assert (
+            parse_frontmatter((tmp_path / "note.md").read_text()).metadata["verified"]
+            == []
+        )
+    finally:
+        vault.close()
