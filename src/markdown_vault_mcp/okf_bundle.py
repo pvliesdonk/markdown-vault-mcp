@@ -36,7 +36,7 @@ from markdown_vault_mcp.utils.fs import open_directory_nofollow
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
@@ -188,10 +188,12 @@ class _SnapshotLinks:
     aliases: dict[str, list[str]]
 
 
-def _snapshot_link_index(notes: dict[str, bytes]) -> _SnapshotLinks:
+def _snapshot_link_index(notes: Iterable[tuple[str, bytes]]) -> _SnapshotLinks:
     aliases: dict[str, list[str]] = {}
     names: dict[str, list[str]] = {}
-    for path, raw in notes.items():
+    members: set[str] = set()
+    for path, raw in notes:
+        members.add(path)
         names.setdefault(path.rpartition("/")[2], []).append(path)
         try:
             metadata = parse_frontmatter(decode_utf8(raw)).metadata
@@ -208,7 +210,7 @@ def _snapshot_link_index(notes: dict[str, bytes]) -> _SnapshotLinks:
         for alias in values:
             if isinstance(alias, (str, int, float)) and str(alias).strip():
                 aliases.setdefault(str(alias).strip().lower(), []).append(path)
-    return _SnapshotLinks(set(notes), names, aliases)
+    return _SnapshotLinks(members, names, aliases)
 
 
 def _snapshot_outlinks(
@@ -408,14 +410,14 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             if snapshot_index is None:
                 if snapshot is None:
                     raise ValueError("Snapshot links require a Git snapshot")
-                snapshot_notes = {
-                    entry.path: raw
+                snapshot_notes = (
+                    (entry.path, raw)
                     for entry in root_inventory()
                     if entry.path.endswith(".md") and entry.visibility == "visible"
                     if entry.parse_state == "valid" or entry.reason == "note_limit"
                     for raw in (snapshot.read(entry.path),)
                     if _snapshot_searchable(entry, raw)
-                }
+                )
                 snapshot_index = _snapshot_link_index(snapshot_notes)
             return _snapshot_outlinks(body, source, snapshot_index, extensions)
 
@@ -456,9 +458,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 )
                 notes += 1
     if snapshot is not None:
-        changed, flagged, staged = git_snapshot_changes(
-            vault.source_dir, snapshot.commit
-        )
+        changed, flagged = git_snapshot_changes(vault.source_dir, snapshot.commit)
         for prefix, (child, commit) in snapshot.children.items():
             if folder and not (
                 prefix == folder
@@ -470,19 +470,16 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 with open_directory_nofollow(
                     vault.source_dir, tuple(prefix.split("/"))
                 ):
-                    child_changed, child_flagged, child_staged = git_snapshot_changes(
-                        child, commit
-                    )
+                    child_changed, child_flagged = git_snapshot_changes(child, commit)
             except (OSError, ValueError) as exc:
                 raise GitSnapshotUnavailableError(
                     f"Git submodule {prefix} is unavailable; run git submodule update --init and retry."
                 ) from exc
             changed.update(prefix + "/" + path for path in child_changed)
-            staged.update(prefix + "/" + path for path in child_staged)
             flagged.update(
                 {prefix + "/" + path: absent for path, absent in child_flagged.items()}
             )
-        changed.update(path + "/" for path in staged if path in snapshot.children)
+        changed.update({path + "/" for path in changed if path in snapshot.children})
         page = vault.reader.inspect_bundle_tree(
             BundleTreeRequest(
                 root=folder,

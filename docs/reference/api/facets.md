@@ -91,7 +91,8 @@ backslashes and empty or dot components are rejected with `ValueError`.
 The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 `state`, `enumeration`, `interpretation="caller_selected"`, and
 `search_state="not_evaluated"`. This legacy scope-level field is unchanged;
-each entry carries its own search state. Scope states distinguish `inspected`, `missing`
+each entry carries its own search state. A commit-backed tree page also includes
+`uncommitted`, the policy-visible changed paths within its selected scope. Scope states distinguish `inspected`, `missing`
 and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
 
@@ -189,22 +190,26 @@ while pending:
 # Investigate unavailable outcomes before treating the observation as complete.
 ```
 
-Tree pages are ordered by path components, with directories before their
-children. The limit counts returned rows. The cursor is the last returned path,
+Live tree pages are ordered by path components, with directories before their
+children. Commit-backed pages enumerate committed entries in path order. The limit counts returned rows. The cursor is the last returned path,
 strictly below the selected directory. A full final page requires one empty
-call to establish completion. The walk is live: additions after the cursor can
-appear, while additions at or before it require a new walk. Enumeration marked
-`unavailable` is incomplete and must be retained across pages. Each selection
+call to establish completion. By default the walk is live: additions after the
+cursor can appear, while additions at or before it require a new walk. An
+optional `BundleTreeRequest.snapshot` supplies a Git commit-backed tree and
+bytes instead, subject to current policy and access checks. Its `uncommitted`
+projection reports policy-visible changed paths in the selected scope.
+Enumeration marked
+`unavailable` is incomplete and must be retained across pages. Each live selection
 walks 32 levels below its selected directory. A directory at the limit has
 `state="unavailable"` and reason `depth_limit`; its contents are not read.
 Select it using its path relative to `root` and start a new walk to reach
 deeper levels. Repeat for each boundary row, and do not treat unresolved rows
 as complete. The page also stops before exceeding its 1 MiB read budget;
 symlinks are unavailable rows; their targets are not returned. The limit counts
-rows, not work: every visited directory lists and sorts all of its names on each
-page, even when most names are omitted. Resume skips policy checks for names
-before the cursor. A current non-directory at the cursor is treated as a leaf;
-an inaccessible cursor ancestor makes enumeration incomplete.
+rows, not work. On live walks, every visited directory sorts all of its names
+on each page, even when most names are omitted. Live resume skips
+policy checks for names before the cursor. A current non-directory at the cursor
+is treated as a leaf; an inaccessible cursor ancestor makes enumeration incomplete.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

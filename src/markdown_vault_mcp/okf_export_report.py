@@ -41,6 +41,7 @@ class ExportSnapshot:
     """Snapshot identity and paths whose working state needs attention.
 
     Paths are relative to the vault root. A commit identifies a Git snapshot;
+    uncommitted paths differ from that commit, including later commits;
     inconsistent paths identify files changed or unreadable after capture.
     """
 

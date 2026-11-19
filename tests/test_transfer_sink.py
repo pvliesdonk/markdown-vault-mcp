@@ -517,3 +517,24 @@ async def test_snapshot_unavailable_is_retryable(
     monkeypatch.setattr("markdown_vault_mcp._transfer_sink.build_okf_bundle", collision)
     with pytest.raises(ValueError, match="collision"):
         await sink.read("okf-bundle")
+
+
+async def test_dubious_git_ownership_is_retryable(
+    sink: VaultTransferSink, source_dir: Path, monkeypatch
+) -> None:
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(source_dir), *args], check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (source_dir / "note.md").write_text("note")
+    git("add", "note.md")
+    git("commit", "-qm", "initial")
+    monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+    with pytest.raises(TransferUnavailableError, match="dubious ownership"):
+        await sink.read("okf-bundle")

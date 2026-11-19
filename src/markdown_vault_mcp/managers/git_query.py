@@ -72,7 +72,6 @@ class GitExportSnapshot:
     flagged: dict[str, bool] = field(default_factory=dict)
     children: dict[str, tuple[Path, str]] = field(default_factory=dict)
     repos: dict[str, Path] = field(default_factory=dict)
-    _cache: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
     _process: dict[Path, subprocess.Popen[bytes]] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -80,20 +79,15 @@ class GitExportSnapshot:
     def read(self, path: str) -> bytes:
         """Read a selected tree blob without interpreting its path as a revision."""
         oid = self.entries[path][1]
-        raw = self._cache.get(oid)
-        if raw is None:
-            root = self.repos.get(path, self.root)
-            try:
-                raw = self._read_blob(oid, root)
-            except (OSError, ValueError) as exc:
-                if root != self.root:
-                    raise GitSnapshotUnavailableError(
-                        "Git submodule object is unavailable; run git submodule update --init and retry."
-                    ) from exc
-                raise
-            if len(raw) <= 1024 * 1024:
-                self._cache[oid] = raw
-        return raw
+        root = self.repos.get(path, self.root)
+        try:
+            return self._read_blob(oid, root)
+        except (OSError, ValueError) as exc:
+            if root != self.root:
+                raise GitSnapshotUnavailableError(
+                    "Git submodule object is unavailable; run git submodule update --init and retry."
+                ) from exc
+            raise
 
     def _read_blob(self, oid: str, root: Path) -> bytes:
         if root not in self._process:
@@ -184,6 +178,10 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
         if b"not a git repository" in probe.stderr:
             return None
         reason = probe.stderr.decode("utf-8", errors="replace").strip()
+        if "detected dubious ownership in repository" in reason:
+            raise GitSnapshotUnavailableError(
+                f"Cannot locate Git worktree for export: {reason}"
+            )
         raise ValueError(f"Cannot locate Git worktree for export: {reason}")
     root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
     prefix = source.resolve().relative_to(root.resolve()).as_posix()
@@ -246,13 +244,13 @@ def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
                 pending.append(entry_path)
 
 
-def git_snapshot_changes(
-    source: Path, commit: str
-) -> tuple[set[str], dict[str, bool], set[str]]:
+def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
     """Observe changed and index-flagged names against a pinned commit."""
     try:
         options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
-        diff = _export_git(source, "diff", *options, commit, "--", ".").stdout
+        diff = _export_git(
+            source, "diff", "--ignore-submodules=dirty", *options, commit, "--", "."
+        ).stdout
         staged = _export_git(
             source, "diff", "--cached", *options, commit, "--", "."
         ).stdout
@@ -268,8 +266,7 @@ def git_snapshot_changes(
             for row in flagged_raw.split(b"\0")
             if row[:1] in {b"h", b"S", b"s"}
         }
-        staged_names = {os.fsdecode(name) for name in staged.split(b"\0") if name}
-        return changed, flagged, staged_names
+        return changed, flagged
     except subprocess.SubprocessError as exc:
         raise ValueError("Cannot read Git snapshot for export") from exc
 
