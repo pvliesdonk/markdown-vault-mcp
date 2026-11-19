@@ -272,7 +272,17 @@ class OkfMigrationManager:
         result = self._generate_index(
             folder, skipped, allow_protected, designated, tree
         )
-        if designated is not None and result.path not in skipped and parent is not None:
+        if (
+            designated is not None
+            and result.path not in skipped
+            and parent_tree is not None
+            and parent is not None
+        ):
+            prefix = f"{parent}/" if parent else ""
+            if not self._doc_mgr._is_path_excluded(result.path) and not any(
+                part.startswith(".") for part in result.path.split("/")
+            ):
+                self._add_inventory_entry(parent_tree, parent, prefix, result.path)
             self._generate_index(
                 parent, skipped, allow_protected, designated, parent_tree
             )

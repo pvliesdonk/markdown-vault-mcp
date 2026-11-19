@@ -162,3 +162,16 @@ def test_unavailable_parent_is_checked_before_child_write(
         assert (tmp_path / "child/index.md").read_text() == "# Existing child\n"
     finally:
         vault.close()
+
+
+def test_empty_new_designated_child_connects_to_parent(tmp_path: Path) -> None:
+    from tests.fixtures.designated_index import designated_vault
+
+    (tmp_path / "child").mkdir()
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    vault = designated_vault(tmp_path, (".", "child"))
+    try:
+        vault.writer.okf_generate_index(folder="child")
+        assert "/child/index.md" in (tmp_path / "index.md").read_text()
+    finally:
+        vault.close()
