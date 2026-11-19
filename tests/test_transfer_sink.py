@@ -417,6 +417,31 @@ async def test_review_bundle_refusal_log_matches_document(
     )
 
 
+async def test_complex_metadata_review_download_is_refused(
+    sink: VaultTransferSink, source_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    import markdown_vault_mcp._okf_review as review
+
+    text = (
+        "---\na0: &a0 [x, x]\n"
+        + "".join(f"a{i + 1}: &a{i + 1} [*a{i}, *a{i}]\n" for i in range(8))
+        + "---\nBody\n"
+    )
+    (source_dir / "note.md").write_text(text)
+
+    def unexpected_snapshot(_content: str) -> dict[str, str]:
+        raise AssertionError("complex metadata must not reach canonical snapshot")
+
+    monkeypatch.setattr(review, "concept_snapshot", unexpected_snapshot)
+    result = await sink.read("okf-bundle?require_review")
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert payload["report"]["uninspected"]["note.md"] == "metadata_complexity"
+    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
+
+
 async def test_bundle_collision_returns_actionable_refusal(
     sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

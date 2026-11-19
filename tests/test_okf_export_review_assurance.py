@@ -238,6 +238,41 @@ def test_malformed_frontmatter_is_withheld(tmp_path):
         vault.close()
 
 
+@pytest.mark.parametrize("changed_after_inventory", [False, True])
+def test_complex_final_metadata_is_withheld_without_snapshot(
+    tmp_path, monkeypatch, changed_after_inventory
+):
+    import markdown_vault_mcp._okf_review as review
+    import markdown_vault_mcp.okf_bundle as bundle
+
+    text = (
+        "---\ntype: concept\na0: &a0 [x, x]\n"
+        + "".join(f"a{i + 1}: &a{i + 1} [*a{i}, *a{i}]\n" for i in range(8))
+        + "---\nBody\n"
+    )
+    (tmp_path / "note.md").write_text("Body\n" if changed_after_inventory else text)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    if changed_after_inventory:
+        monkeypatch.setattr(bundle, "_note_bytes", lambda *_args: text.encode())
+
+    def unexpected_snapshot(_content):
+        raise AssertionError("complex metadata must not reach canonical snapshot")
+
+    monkeypatch.setattr(review, "concept_snapshot", unexpected_snapshot)
+    try:
+        ordinary = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+        with zipfile.ZipFile(io.BytesIO(ordinary.data)) as archive:
+            assert archive.read("note.md") == text.encode()
+        with pytest.raises(PublicationRefused) as exc:
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), require_review=True
+            )
+        assert exc.value.report.uninspected["note.md"] == "metadata_complexity"
+        assert exc.value.report.review_assurance.failures[0]["path"] == "note.md"
+    finally:
+        vault.close()
+
+
 @pytest.mark.parametrize(
     "ref, expected",
     [

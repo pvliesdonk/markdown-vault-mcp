@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _metadata_too_complex
 from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
 from markdown_vault_mcp.git.query import (
     git_export_snapshot,
@@ -601,6 +601,9 @@ def _assess_export_review(
     assessments = []
     try:
         content = decode_utf8(raw)
+        if _metadata_too_complex(content):
+            report.uninspected[source] = "metadata_complexity"
+            raise ValueError("metadata complexity limit exceeded")
         metadata = parse_frontmatter(content).metadata
         assessments = assess_reviews(
             metadata,
