@@ -382,8 +382,8 @@ class VaultTransferSink:
     async def _read_bundle(self, scope: str) -> TransferReadResult:
         """Generate and serve an OKF bundle zip for a bundle-ref download.
 
-        The bundle is built from live vault state (never mutating it); a large
-        vault runs off the event loop via :func:`asyncio.to_thread`.
+        The bundle is built from a Git commit or the vault (never mutating
+        it); a large vault runs off the event loop via :func:`asyncio.to_thread`.
 
         Args:
             scope: ``""`` for the whole vault, else a folder subtree.

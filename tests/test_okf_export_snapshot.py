@@ -1,5 +1,6 @@
 """Snapshot membership, bytes and consistency observations for OKF exports."""
 
+import hashlib
 import io
 import subprocess
 import zipfile
@@ -621,14 +622,13 @@ def test_git_flagged_crlf_uses_git_normalization(
 
 
 @pytest.mark.parametrize("name", ["note.md", "image.png"])
-def test_git_lfs_pointer_is_refused(tmp_path: Path, name: str) -> None:
+@pytest.mark.parametrize("version", ["git-lfs.github.com", "hawser.github.com"])
+def test_git_lfs_pointer_is_refused(tmp_path: Path, name: str, version: str) -> None:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Fixture")
     _git(tmp_path, "config", "user.email", "fixture@example.invalid")
     (tmp_path / name).write_text(
-        "version https://git-lfs.github.com/spec/v1\noid sha256:"
-        + "a" * 64
-        + "\nsize 3\n"
+        f"version https://{version}/spec/v1\noid sha256:" + "a" * 64 + "\nsize 3\n"
     )
     _git(tmp_path, "add", name)
     _git(tmp_path, "commit", "-qm", "initial")
@@ -988,3 +988,211 @@ def test_gitlink_depth_is_bounded_before_discovery(tmp_path: Path, monkeypatch) 
     git_query._expand_gitlinks(tmp_path, snapshot)
     assert snapshot.entries[path][0] == "160000"
     assert not snapshot.children
+
+
+def test_git_snapshot_resolves_against_admitted_commit_notes(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "target.md").write_text("[[index]]\n")
+    (tmp_path / "docs" / "target.md").write_text("---\ntitle: Target\n---\nBody\n")
+    (tmp_path / "index.md").write_text("---\nokf_version: '0.2'\n---\n# Index\n")
+    (tmp_path / "log.md").write_text("[[target]] and [[index]]\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "initial")
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode="on", required_frontmatter=["title"]),
+    )
+    try:
+        vault.index.build_index()
+        assert vault.graph.get_outlinks("log.md")[0].target_path == "docs/target.md"
+        result = okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert (
+            archive.read("log.md")
+            == b"[target](/docs/target.md) and [index](/index.md)\n"
+        )
+        assert archive.read("target.md") == b"[[index]]\n"
+
+
+def test_git_flagged_required_clean_filter_failure_refuses_export(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / ".gitattributes").write_text("note.md filter=broken\n")
+    note = tmp_path / "note.md"
+    note.write_text("before\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "initial")
+    _git(tmp_path, "update-index", "--assume-unchanged", "note.md")
+    _git(tmp_path, "config", "filter.broken.clean", "false")
+    _git(tmp_path, "config", "filter.broken.required", "true")
+    note.write_text("after\n")
+    assert _git(tmp_path, "diff", "--name-only", "HEAD") == ""
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(ValueError, match="normalize"):
+            okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+
+
+def test_git_snapshot_ignores_foreign_git_dir(tmp_path: Path, monkeypatch) -> None:
+    vault_root = tmp_path / "vault"
+    foreign = tmp_path / "foreign"
+    vault_root.mkdir()
+    foreign.mkdir()
+    for root, content in ((vault_root, "vault bytes\n"), (foreign, "foreign bytes\n")):
+        _git(root, "init", "-q")
+        _git(root, "config", "user.name", "Fixture")
+        _git(root, "config", "user.email", "fixture@example.invalid")
+        (root / "note.md").write_text(content)
+        _git(root, "add", "note.md")
+        _git(root, "commit", "-qm", "fixture")
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.delenv("GIT_WORK_TREE", raising=False)
+    vault = Vault(source_dir=vault_root, settings=VaultSettings())
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=vault_root)
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("note.md") == b"vault bytes\n"
+
+
+def test_git_snapshot_tree_enumeration_is_scoped_to_vault(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from markdown_vault_mcp.git import query as git_query
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    vault_root = tmp_path / "vault"
+    vault_root.mkdir()
+    (vault_root / "inside.md").write_text("inside\n")
+    (tmp_path / "outside.md").write_text("outside\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    tree_names = []
+    original = git_query._export_git
+
+    def observe_tree(root, *args, **kwargs):
+        result = original(root, *args, **kwargs)
+        if args and args[0] == "ls-tree":
+            tree_names.extend(
+                record.split(b"\t", 1)[1]
+                for record in result.stdout.split(b"\0")
+                if record
+            )
+        return result
+
+    monkeypatch.setattr(git_query, "_export_git", observe_tree)
+    snapshot = git_query.git_export_snapshot(vault_root)
+    assert snapshot is not None
+    try:
+        assert set(snapshot.entries) == {"inside.md"}
+        assert tree_names == [b"vault/inside.md"]
+    finally:
+        snapshot.close()
+
+
+@pytest.mark.parametrize("kind", ["note", "large_note", "attachment"])
+@pytest.mark.parametrize("live_state", ["matching", "mismatching", "unavailable"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_git_lfs_pointer_uses_only_verified_live_bytes(
+    tmp_path: Path, kind: str, live_state: str, nested: bool
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    vault_root = tmp_path / "vault" if nested else tmp_path
+    vault_root.mkdir(exist_ok=True)
+    name = "target.md" if kind != "attachment" else "image.png"
+    content = (
+        b"---\ntitle: Target\naliases: [Alias]\n---\n"
+        + (b"large body\n" * 7000 if kind == "large_note" else b"Target body\n")
+        if kind != "attachment"
+        else b"\x89PNG\r\nverified image bytes"
+    )
+    pointer = (
+        "version https://git-lfs.github.com/spec/v1\n"
+        f"oid sha256:{hashlib.sha256(content).hexdigest()}\n"
+        f"size {len(content)}\n"
+    )
+    path = vault_root / name
+    path.write_text(pointer)
+    if kind != "attachment":
+        (vault_root / "source.md").write_text("---\ntitle: Source\n---\n[[Alias]]\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "pointer")
+    if live_state == "matching":
+        path.write_bytes(content)
+    elif live_state == "mismatching":
+        path.write_bytes(b"wrong bytes")
+    else:
+        path.unlink()
+    vault = Vault(
+        source_dir=vault_root, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        if live_state != "matching":
+            with pytest.raises(ValueError, match="LFS"):
+                okf_bundle.build_okf_bundle(vault, ProjectConfig(source_dir=vault_root))
+            return
+        result = okf_bundle.build_okf_bundle(
+            vault, ProjectConfig(source_dir=vault_root)
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read(name) == content
+        if kind != "attachment":
+            assert archive.read("source.md") == (
+                b"---\ntitle: Source\n---\n[Alias](/target.md)\n"
+            )
+
+
+def test_git_lfs_alias_outside_selected_folder_uses_verified_note(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    content = b"---\ntitle: Target\naliases: [Alias]\n---\n" + b"large body\n" * 7000
+    target = tmp_path / "target.md"
+    target.write_text(
+        "version https://git-lfs.github.com/spec/v1\n"
+        f"oid sha256:{hashlib.sha256(content).hexdigest()}\n"
+        f"size {len(content)}\n"
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "source.md").write_text("---\ntitle: Source\n---\n[[Alias]]\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "pointer")
+    target.write_bytes(content)
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        result = okf_bundle.build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="docs",
+            external_base="https://example.org/vault",
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert "target.md" not in archive.namelist()
+        assert archive.read("source.md") == (
+            b"---\ntitle: Source\n---\n[Alias](https://example.org/vault/target.md)\n"
+        )

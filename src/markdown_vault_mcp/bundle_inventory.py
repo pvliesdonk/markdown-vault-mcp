@@ -161,7 +161,8 @@ class BundleInspection:
         request: Explicit selected root and relative directory.
         state: Selected directory availability under current policy.
         enumeration: Completeness of policy-visible enumeration.
-        entries: Bounded observations; tree pages follow component order.
+        entries: Bounded observations; live tree pages follow component order,
+            snapshot pages follow sorted full-path string order.
         search_state: Legacy scope field, always ``not_evaluated``; per-entry
             search results appear on each entry.
         interpretation: Selection by the caller, without global OKF mode detection.
@@ -564,11 +565,27 @@ class BundleInspector:
             return BundleEntry(path, "supporting", reason="supporting"), 0
         role = _role(parts[-1], self._policy.conventions_file)
         limit = min(self._note_limit + 1, remaining)
-        size = snapshot.sizes[path]
+        size = snapshot.size(path)
         if size > self._note_limit:
             return BundleEntry(path, role, reason="note_limit"), min(size, limit)
         raw = snapshot.read(path)
         return _parsed(path, role, raw), len(raw)
+
+    def _flagged_clean(
+        self, snapshot: GitExportSnapshot, path: str, raw: bytes | None
+    ) -> bool:
+        """Whether an index-flagged path matches its committed blob.
+
+        Raises:
+            ValueError: If Git cannot normalize the working bytes; the path is
+                then neither clean nor changed, so the export refuses.
+        """
+        from markdown_vault_mcp.git.query import _git_snapshot_hash
+
+        if raw is None:
+            return snapshot.flagged[path]
+        digest = _git_snapshot_hash(snapshot, self._absolute_source, path, raw)
+        return digest == snapshot.entries[path][1]
 
     # Scope, policy, and no-follow checks apply to files and reported directories.
     def _snapshot_dirty(  # noqa: C901, RUF100
@@ -583,6 +600,9 @@ class BundleInspector:
                 continue
             try:
                 parts = _components(path.rstrip("/"))
+            except ValueError:
+                continue
+            try:
                 if (not path.endswith("/") and not self._visible_file(path)) or any(
                     self._internal("/".join(parts[:i]))
                     for i in range(1, len(parts) + 1)
@@ -596,24 +616,14 @@ class BundleInspector:
                 elif path in snapshot.changed:
                     self._check_snapshot_access(self._absolute_source, parts)
                 elif path in snapshot.entries:
-                    from markdown_vault_mcp.git.query import _git_snapshot_hash
-
                     raw = self._check_snapshot_access(
                         self._absolute_source, parts, sys.maxsize
                     )
-                    if raw is None and snapshot.flagged[path]:
-                        continue
-                    if (
-                        raw is not None
-                        and _git_snapshot_hash(
-                            snapshot, self._absolute_source, path, raw
-                        )
-                        == snapshot.entries[path][1]
-                    ):
+                    if self._flagged_clean(snapshot, path, raw):
                         continue
                 else:
                     continue
-            except (OSError, ValueError):
+            except OSError:
                 continue
             visible.append(
                 scope + "/" if path.endswith("/") and scope.startswith(path) else path

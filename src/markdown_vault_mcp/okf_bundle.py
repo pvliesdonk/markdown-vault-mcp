@@ -16,11 +16,10 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest, _parsed
 from markdown_vault_mcp.fts_index import normalized_aliases, resolve_wikilink_target
 from markdown_vault_mcp.git.query import (
-    _LFS_POINTER_PREFIX,
     git_export_snapshot,
     git_snapshot_changes,
 )
-from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+from markdown_vault_mcp.okf import convert_wikilinks_to_markdown, is_okf_reserved_file
 from markdown_vault_mcp.okf_export_conformance import audit_export
 from markdown_vault_mcp.okf_export_paths import ExportPaths, convert_body_wikilinks
 from markdown_vault_mcp.okf_export_report import OkfExportReport
@@ -246,6 +245,21 @@ def _snapshot_searchable(entry: BundleEntry, raw: bytes) -> bool:
     return entry.parse_state == "valid"
 
 
+def _snapshot_admitted(vault: Vault, entry: BundleEntry, raw: bytes) -> bool:
+    """Whether the index would admit this committed note, from its bytes alone.
+
+    Adds the vault's own required-frontmatter gate, read from the private
+    setting the index is built from, and its OKF reserved-file exception to
+    the visibility and parse eligibility of :func:`_snapshot_searchable`.
+    """
+    if not _snapshot_searchable(entry, raw):
+        return False
+    required = vault._required_frontmatter
+    if not required or (is_okf_reserved_file(entry.path) and vault.okf.state().active):
+        return True
+    return all(key in parse_frontmatter(decode_utf8(raw)).metadata for key in required)
+
+
 # The public API keeps its established explicit options.
 def build_okf_bundle(  # noqa: PLR0913, RUF100
     vault: Vault,
@@ -402,7 +416,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     if entry.path.endswith(".md") and entry.visibility == "visible"
                     if entry.parse_state == "valid" or entry.reason == "note_limit"
                     for raw in (snapshot.read(entry.path),)
-                    if _snapshot_searchable(entry, raw)
+                    if _snapshot_admitted(vault, entry, raw)
                 )
                 snapshot_index = _snapshot_link_index(snapshot_notes)
             return _snapshot_outlinks(body, source, snapshot_index, extensions)
@@ -419,10 +433,6 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             )
             if snapshot is None:
                 digests[item.path] = hashlib.sha256(raw).digest()
-            elif raw.startswith(_LFS_POINTER_PREFIX.encode()):
-                raise ValueError(
-                    "Git LFS pointer cannot be exported; use a commit containing the file bytes."
-                )
             name = item.path[len(folder) + 1 :] if folder else item.path
             if item.role == "supporting":
                 _write(zf, name, raw)
@@ -430,7 +440,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             else:
                 _observe_export(item, report)
                 searchable = (
-                    _snapshot_searchable(item, raw)
+                    _snapshot_admitted(vault, item, raw)
                     if snapshot is not None
                     else item.search_state == "searchable"
                 )

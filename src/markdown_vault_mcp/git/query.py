@@ -18,12 +18,20 @@ indistinguishable from a note that was empty at that revision and its caller is
 about to write the result back; :func:`committed_revision` returns ``None``,
 which is what it returns for every other unanswerable case.  Internal helpers
 (:func:`resolve_path_at_ref` among them) require a resolved ``git_root``.
+
+The OKF export snapshot (:func:`git_export_snapshot` and its helpers) is the
+exception to both rules: it discovers the repository from the vault path, and
+it runs Git with its own environment, which drops the variables that route Git
+to another repository, and with a ``cat-file --batch`` process that it closes
+when the export ends.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,7 +45,11 @@ from markdown_vault_mcp.git._run import (
     run_git_capturing,
 )
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
-from markdown_vault_mcp.utils.fs import open_directory_nofollow, path_exists
+from markdown_vault_mcp.utils.fs import (
+    open_directory_nofollow,
+    path_exists,
+    read_regular_nofollow,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -101,11 +113,47 @@ class GitExportSnapshot:
     flagged: dict[str, bool] = field(default_factory=dict)
     children: dict[str, tuple[Path, str]] = field(default_factory=dict)
     repos: dict[str, Path] = field(default_factory=dict)
+    source: Path | None = None
     _process: dict[Path, subprocess.Popen[bytes]] = field(
         default_factory=dict, repr=False, compare=False
     )
 
     def read(self, path: str) -> bytes:
+        """Read a selected blob; an LFS pointer yields the live bytes it pins."""
+        blob = self._read_object(path)
+        return self._lfs_content(path, blob) if is_lfs_pointer(blob) else blob
+
+    def size(self, path: str) -> int:
+        """Content size; an LFS pointer is sized by the object it pins."""
+        size = self.sizes[path]
+        if size >= _LFS_POINTER_LIMIT:
+            return size
+        pinned = _lfs_object(self._read_object(path))
+        return pinned[1] if pinned else size
+
+    def _lfs_content(self, path: str, pointer: bytes) -> bytes:
+        """Return the live file only if it is the object the pointer names."""
+        pinned = _lfs_object(pointer)
+        live = b""
+        if pinned and self.source is not None:
+            parts = path.split("/")
+            try:
+                with open_directory_nofollow(self.source, parts[:-1]) as parent:
+                    live = read_regular_nofollow(parent, parts[-1], pinned[1] + 1)
+            except OSError:
+                live = b""
+        if (
+            pinned
+            and len(live) == pinned[1]
+            and hashlib.sha256(live).hexdigest() == pinned[0]
+        ):
+            return live
+        raise ValueError(
+            f"Git LFS object for {path} is not available as its committed pointer "
+            "names it; fetch it with git lfs pull, restore the file, and retry."
+        )
+
+    def _read_object(self, path: str) -> bytes:
         """Read a selected tree blob without interpreting its path as a revision."""
         oid = self.entries[path][1]
         root = self.repos.get(path, self.root)
@@ -126,7 +174,7 @@ class GitExportSnapshot:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
+                env=_export_env(),
             )
         process = self._process[root]
         if process.stdin is None or process.stdout is None:
@@ -153,6 +201,29 @@ class GitExportSnapshot:
             process.wait()
 
 
+# Variables that route Git to another repository, index or object store. An
+# export finds its repository from the vault path, so these never apply to it.
+_REPOSITORY_ROUTING = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+)
+
+
+def _export_env() -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in _REPOSITORY_ROUTING}
+    return {
+        **env,
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_LAZY_FETCH": "1",
+        "LC_ALL": "C",
+    }
+
+
 def _export_git(
     root: Path, *args: str, check: bool = True, input_data: bytes | None = None
 ) -> subprocess.CompletedProcess[bytes]:
@@ -162,17 +233,12 @@ def _export_git(
         capture_output=True,
         check=check,
         input=input_data,
-        env={
-            **os.environ,
-            "GIT_OPTIONAL_LOCKS": "0",
-            "GIT_NO_LAZY_FETCH": "1",
-            "LC_ALL": "C",
-        },
+        env=_export_env(),
     )
 
 
 def _tree_entries(root: Path, commit: str) -> Iterator[tuple[str, str, str, int]]:
-    tree = _export_git(root, "ls-tree", "--full-tree", "-r", "-l", "-z", commit).stdout
+    tree = _export_git(root, "ls-tree", "--full-name", "-r", "-l", "-z", commit).stdout
     for record in tree.split(b"\0"):
         if record:
             info, name = record.split(b"\t", 1)
@@ -226,11 +292,11 @@ def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901
         commit = head.stdout.decode("ascii").strip()
         entries: dict[str, tuple[str, str]] = {}
         sizes: dict[str, int] = {}
-        for path, mode, oid, size in _tree_entries(root, commit):
+        for path, mode, oid, size in _tree_entries(source, commit):
             if path.startswith(prefix):
                 entries[path[len(prefix) :]] = (mode, oid)
                 sizes[path[len(prefix) :]] = size
-        snapshot = GitExportSnapshot(commit, entries, set(), root, sizes)
+        snapshot = GitExportSnapshot(commit, entries, set(), root, sizes, source=source)
         _expand_gitlinks(source, snapshot)
         return snapshot
     except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
@@ -1972,10 +2038,33 @@ def _per_commit_diffs(
 # Revision reads (#1137)
 # ---------------------------------------------------------------------------
 
-# First line of a Git LFS pointer file.  An LFS-tracked note's blob holds this
-# stand-in, not the note; the working tree gets the real bytes only because the
-# smudge filter ran at checkout, which a revision read does not go through.
-_LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
+# First line of a Git LFS pointer file, in the current and the pre-release
+# spelling.  An LFS-tracked note's blob holds this stand-in, not the note; the
+# working tree gets the real bytes only because the smudge filter ran at
+# checkout, which a revision read does not go through.
+_LFS_POINTER_PREFIXES = (
+    "version https://git-lfs.github.com/spec/v1",
+    "version https://hawser.github.com/spec/v1",
+)
+
+
+# A pointer file is under 1024 bytes, so no larger blob needs reading to size it.
+_LFS_POINTER_LIMIT = 1024
+
+
+def is_lfs_pointer(blob: bytes) -> bool:
+    """Whether *blob* is a Git LFS pointer in either supported spelling."""
+    return blob.startswith(tuple(p.encode() for p in _LFS_POINTER_PREFIXES))
+
+
+def _lfs_object(blob: bytes) -> tuple[str, int] | None:
+    """Return the SHA-256 and size a pointer names, or None if it names none."""
+    oid = re.search(rb"^oid sha256:([0-9a-f]{64})$", blob, re.MULTILINE)
+    size = re.search(rb"^size (\d+)$", blob, re.MULTILINE)
+    if not is_lfs_pointer(blob) or not oid or not size:
+        return None
+    return oid[1].decode("ascii"), int(size[1])
+
 
 # Git's file mode for a symlink.  The blob behind one holds the link *target*
 # as text, not the linked note's content, so a revision read refuses rather
@@ -2307,7 +2396,7 @@ def _note_text(blob: bytes, path: str, where: str) -> str:
         raise DocumentUnreadableError(
             path, f"its content as {where} is not valid UTF-8"
         ) from exc
-    if text.startswith(_LFS_POINTER_PREFIX):
+    if text.startswith(_LFS_POINTER_PREFIXES):
         raise DocumentUnreadableError(
             path,
             f"{where} is stored in Git LFS, so git holds a pointer "
