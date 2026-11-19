@@ -60,7 +60,7 @@ def wire_domain(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
 
 def _register_scope_and_prompts(mcp: FastMCP, config: ProjectConfig) -> None:
     """Add the commit-scope middleware and the config-dependent prompts."""
-    from markdown_vault_mcp._commit_scope import CommitScopeMiddleware
+    from markdown_vault_mcp._server_commit_scope import CommitScopeMiddleware
     from markdown_vault_mcp.prompts import register_domain_prompts
 
     # Group each tool call's writes into one commit (#1264). Registered even on
