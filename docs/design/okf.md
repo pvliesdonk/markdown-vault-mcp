@@ -429,7 +429,7 @@ The operator controls explicit authoring, review, index and log maintenance inde
 - **Convention maintenance** (gated independently by `OKF_INDEX`, `OKF_LOG`,
   and `OKF_FOLDERS`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
-  refresh the affected folder's `index.md` listing. The section heading is
+  refresh the affected generated `index.md` listing. The section heading is
   the server's *local* calendar day, as §9 has it and as a reader of the
   log expects, while the same write's `generated.at` is a UTC instant
   (#1372); around local midnight the two can name different days, which is
@@ -445,15 +445,13 @@ The operator controls explicit authoring, review, index and log maintenance inde
   so the exemption is the transform's own and does not depend on which entry
   point called it (#1401); it had been entered in the MCP tool handlers alone,
   which left a library caller's bundle stamped by its own migration. The
-  affected folder is the one directly containing the written note; the
-  `index.md` refresh reuses the migration `generate_index`, draining the
-  single-writer index first so a just-created note is listed. When that
-  folder has no `index.md`, the listing regenerated is the nearest indexed
-  ancestor's (`ConventionMaintainer.indexed_anchor`): `generate_index`
-  creates an `index.md` in every subfolder it points at that lacks one, down
-  to the deepest level, so a generated listing never points at a missing
-  file and every level is navigable (#1647). A subfolder that already has
-  an `index.md` is pointed at and not regenerated. A `delete`,
+  affected index is selected from the written folder and its ancestors. The
+  index refresh drains the single-writer index first. A designated listing
+  folds undesignated descendants into folder sections up to the next existing
+  index, which is linked and preserved. Missing indexes are created only in
+  designated folders; with `**`, recursive generation retains the original
+  per-folder output. Root frontmatter, including `okf_version`, is preserved.
+  A `delete`,
   `rename` or `move_folder` refreshes the listings it made stale, through
   `ConventionMaintainer.refresh_indexes` with the same guards (#1609): the
   deleted note's folder; a renamed note's old folder; after a folder move,
@@ -462,10 +460,8 @@ The operator controls explicit authoring, review, index and log maintenance inde
   directories before descent, using `DocumentManager.in_submodule` (#1950).
   Ordinary containing folders and non-hidden descendants retain their
   sorted walk order; no submodule listing refresh is attempted. Of those, only
-  folders that already carry an `index.md` are refreshed. The destination
-  is reached as a write reaches it: through its indexed anchor (for a move,
-  the anchor of the new parent), whose regeneration lists it and indexes
-  every missing level in between. No `log.md` entry is written for these operations, which is
+  affected existing index anchors are refreshed. The destination
+  is reached as a write reaches it, through its selected index anchor. No `log.md` entry is written for these operations, which is
   left to the log design. A rename to or from a reserved name triggers
   nothing, both because a reserved-file change never triggers itself (#1414)
   and because regenerating would overwrite the note just renamed onto it.

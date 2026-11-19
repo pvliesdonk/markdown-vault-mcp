@@ -1033,12 +1033,16 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
 
 
 def build_index_markdown(
-    heading: str, entries: list[tuple[str, str, str | None]]
+    heading: str,
+    entries: list[tuple[str, str, str | None]],
+    *,
+    sections: dict[str, list[tuple[str, str, str | None]]] | None = None,
 ) -> str:
     """Build an OKF ``index.md`` progressive-disclosure listing.
 
     Args:
         heading: The H1 heading (bundle or folder name).
+        sections: Descendant folder names and their entries, in display order.
         entries: ``(title, root_absolute_path, description)`` per note,
             already ordered. Both the title and the path are *names*, not
             markdown: the path becomes a destination through
@@ -1053,11 +1057,15 @@ def build_index_markdown(
         The markdown body (no frontmatter).
     """
     lines = [f"# {heading}", ""]
-    for title, path, description in entries:
-        line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
-        if description:
-            line += f" - {description}"
-        lines.append(line)
+    groups = [("", entries), *(sections or {}).items()]
+    for section, group in groups:
+        if section and group:
+            lines.extend(["", f"## {section}", ""])
+        for title, path, description in group:
+            line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
+            if description:
+                line += f" - {description}"
+            lines.append(line)
     return "\n".join(lines) + "\n"
 
 

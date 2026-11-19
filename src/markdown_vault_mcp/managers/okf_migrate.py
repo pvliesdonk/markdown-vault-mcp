@@ -30,6 +30,7 @@ same rewrite the tool does (#1401).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
@@ -47,7 +48,7 @@ from markdown_vault_mcp.okf import (
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -55,6 +56,19 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.search import SearchManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _IndexTraversal:
+    """Shared state for one generated listing's folded subtree."""
+
+    root: str
+    notes: Sequence[object]
+    skipped: dict[str, str]
+    allow_protected: bool
+    designated: Callable[[str], bool] | None
+    sections: dict[str, list[tuple[str, str, str | None]]] = field(default_factory=dict)
+    created: list[str] = field(default_factory=list)
 
 
 class OkfMigrationManager:
@@ -185,18 +199,11 @@ class OkfMigrationManager:
     ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing for *folder* from the TOC.
 
-        Progressive disclosure (OKF spec): the listing carries only the
-        folder's *immediate* notes plus a pointer to each immediate
-        subfolder's own ``index.md`` — it does not flatten the whole
-        subtree, so each level defers depth to the level below. A subfolder
-        without an ``index.md`` gets one generated the same way, down to the
-        deepest level, so no pointer names a missing file (#1647); an
-        existing subfolder index is pointed at and left as it is. Existing
-        frontmatter is preserved (the root ``index.md``'s ``okf_version``
-        declaration must survive regeneration). No fields are added. A
-        subfolder inside a git submodule is never given an index, since a
-        write there would never be committed (#1564); it gets a pointer only
-        when it ships its own ``index.md``.
+        The default migration creates missing indexes recursively and leaves
+        existing descendant indexes untouched. With a designation predicate,
+        undesignated folders without indexes are folded into sections; existing
+        indexes remain boundaries. Existing frontmatter is preserved, including
+        the root ``okf_version`` declaration. Submodules are never written.
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -242,64 +249,24 @@ class OkfMigrationManager:
         self._doc_mgr.ensure_writable()
         self._doc_mgr.ensure_index_current()
         self._require_built()
-        from markdown_vault_mcp.types import NoteInfo
-
         folder = normalize_folder(folder) or ""
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
-        prefix = f"{folder}/" if folder else ""
-        note_entries: list[tuple[str, str, str | None]] = []
-        subfolders: set[str] = set()
-        for note in self._search_mgr.list(folder=folder or None):
-            if not isinstance(note, NoteInfo):  # pragma: no cover - mypy narrowing
-                continue
-            rel = note.path[len(prefix) :]
-            if "/" in rel:
-                # A deeper note: record its immediate subfolder, don't list it.
-                subfolders.add(rel.split("/", 1)[0])
-                continue
-            if is_okf_reserved_file(rel):
-                continue
-            raw_desc = note.frontmatter.get("description")
-            description = (
-                raw_desc.strip()
-                if isinstance(raw_desc, str) and raw_desc.strip()
-                else None
-            )
-            note_entries.append((note.title, f"/{note.path}", description))
-
-        subfolders = {
-            sub
-            for sub in subfolders
-            if not self._doc_mgr.in_submodule(prefix + sub)
-            or self._has_index(prefix + sub)
-        }
-        if designated is not None:
-            subfolders = {
-                sub
-                for sub in subfolders
-                if designated(prefix + sub) or self._has_index(prefix + sub)
-            }
-        created: list[str] = []
-        for sub in sorted(subfolders):
-            child_folder = f"{prefix}{sub}"
-            if not self._has_index(child_folder):
-                child = self._generate_index(
-                    child_folder, skipped, allow_protected, designated
-                )
-                created += ([child.path] if child.path not in skipped else []) + list(
-                    child.created
-                )
-        entries = note_entries + [
-            (f"{sub}/", f"/{prefix}{sub}/index.md", None)
-            for sub in sorted(subfolders)
-            if f"{prefix}{sub}/index.md" not in skipped
-        ]
+        traversal = _IndexTraversal(
+            folder,
+            self._search_mgr.list(folder=folder or None),
+            skipped,
+            allow_protected,
+            designated,
+        )
+        self._collect_index_entries(folder, traversal)
+        sections = traversal.sections
+        entries = sections.pop("", [])
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         with self._doc_mgr.write_scope():
             existing = self._doc_mgr.read(index_path)
             heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
-            body = build_index_markdown(heading, entries)
+            body = build_index_markdown(heading, entries, sections=sections)
             reason = self._doc_mgr.protection_reason(
                 index_path, allow_protected=allow_protected, allow_designated=True
             )
@@ -317,10 +284,53 @@ class OkfMigrationManager:
                     )
         return OkfIndexResult(
             path=index_path,
-            entries=len(entries),
+            entries=len(entries) + sum(len(items) for items in sections.values()),
             frontmatter_preserved=preserved,
-            created=tuple(created),
+            created=tuple(traversal.created),
         )
+
+    def _collect_index_entries(self, folder: str, state: _IndexTraversal) -> None:
+        """Collect a folder and fold unindexed descendants into sections."""
+        from markdown_vault_mcp.types import NoteInfo
+
+        prefix = f"{folder}/" if folder else ""
+        section = (
+            folder[len(state.root) + 1 :]
+            if state.root and folder != state.root
+            else folder
+            if not state.root
+            else ""
+        )
+        entries = state.sections.setdefault(section, [])
+        subfolders: set[str] = set()
+        for note in state.notes:
+            if not isinstance(note, NoteInfo) or not note.path.startswith(prefix):
+                continue
+            rel = note.path[len(prefix) :]
+            if "/" in rel:
+                subfolders.add(rel.split("/", 1)[0])
+            elif not is_okf_reserved_file(rel):
+                raw = note.frontmatter.get("description")
+                desc = raw.strip() if isinstance(raw, str) and raw.strip() else None
+                entries.append((note.title, f"/{note.path}", desc))
+        for sub in sorted(subfolders):
+            child = prefix + sub
+            has_index = self._has_index(child)
+            if self._doc_mgr.in_submodule(child) and not has_index:
+                continue
+            if has_index or state.designated is None or state.designated(child):
+                if not has_index:
+                    result = self._generate_index(
+                        child, state.skipped, state.allow_protected, state.designated
+                    )
+                    state.created.extend(
+                        ([result.path] if result.path not in state.skipped else [])
+                        + list(result.created)
+                    )
+                if f"{child}/index.md" not in state.skipped:
+                    entries.append((f"{sub}/", f"/{child}/index.md", None))
+            else:
+                self._collect_index_entries(child, state)
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* has an ``index.md``; an unreadable one counts.

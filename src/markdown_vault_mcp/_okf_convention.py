@@ -219,9 +219,9 @@ class ConventionMaintainer:
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
 
-        For a designated folder, the listing refreshed is its ``index.md``, or, when the
-        folder has none, the nearest indexed ancestor's, which creates an
-        ``index.md`` at each missing level down to the note (#1647).
+        Index maintenance reaches a designated ancestor through folders that
+        have no index. An undesignated existing index stops that traversal.
+        Log maintenance remains limited to the written folder's designation.
 
         A no-op unless *operation* is a content write (``write`` / ``edit``)
         on an OKF-active vault, and never for a write whose target is itself a
@@ -245,10 +245,8 @@ class ConventionMaintainer:
         if not self._detector.state().active:
             return
         folder = folder_of(path := self._canonical(path))
-        if not self._designated(folder):
-            return
         with okf_write_suppressed(), auxiliary_commit_writes():
-            if self._may_log(folder):
+            if self._designated(folder) and self._may_log(folder):
                 self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
             # indexed level, which indexes every missing level below (#1647).
@@ -264,8 +262,8 @@ class ConventionMaintainer:
     ) -> None:
         """Refresh folder ``index.md`` files after a delete, rename or move.
 
-        A designated folder in *folders* is refreshed only if it already has an
-        ``index.md``: the change can only have made that listing stale. A
+        The index anchor for a folder in *folders* is refreshed only if it
+        already has an ``index.md``. A
         folder in *create* is refreshed regardless, as a folder a note was
         written into is (#1609). The same guards as :meth:`maintain` apply:
         nothing on an inactive vault or under a suppressed intent, and nothing
@@ -281,7 +279,8 @@ class ConventionMaintainer:
         """
         if not self._capabilities.index or not self._maintains_after(trigger_paths):
             return
-        wanted = [f for f in folders if self._may_index(f) and self._has_index(f)]
+        anchors = (self.indexed_anchor(f) for f in folders)
+        wanted = [f for f in anchors if self._may_index(f) and self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys(
                 [*wanted, *(f for f in create if self._may_index(f))]
@@ -324,11 +323,11 @@ class ConventionMaintainer:
         return found
 
     def indexed_anchor(self, folder: str) -> str:
-        """Return the nearest folder at or above *folder* with an ``index.md``.
+        """Choose the listing that owns a folder's generated navigation.
 
-        Regenerating that listing reaches *folder*: ``generate_index`` creates
-        each missing subfolder index below it (#1647), so a note or folder
-        arriving under unindexed levels is listed at every level (#1609).
+        An existing undesignated index is a boundary. Otherwise start at the
+        nearest designated folder, then walk contiguous designated parents to
+        an existing index, preserving recursive generation for that chain.
 
         Args:
             folder: Vault-relative folder (``""`` for the vault root).
@@ -337,7 +336,11 @@ class ConventionMaintainer:
             The anchor folder, or ``""`` when no level has an index.
         """
         current = self._canonical(folder)
-        while current != "" and not self._has_index(current):
+        while not self._designated(current) and not self._has_index(current):
+            if not current:
+                return current
+            current = folder_of(current)
+        while current and self._designated(current) and not self._has_index(current):
             parent = folder_of(current)
             if not self._designated(parent):
                 break
