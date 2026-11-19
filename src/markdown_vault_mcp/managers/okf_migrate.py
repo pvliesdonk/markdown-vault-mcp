@@ -257,8 +257,11 @@ class OkfMigrationManager:
                 )
             if verdict:
                 designated = self._index_designated
+        existed = self._has_index(folder)
         skipped: dict[str, str] = {}
         result = self._generate_index(folder, skipped, allow_protected, designated)
+        if designated is not None and not existed and result.path not in skipped:
+            self._connect_parent(folder, skipped, allow_protected, designated)
         written = [p for p in (result.path, *result.created) if p not in skipped]
         if skipped:
             raise InvalidRequestError(
@@ -266,6 +269,21 @@ class OkfMigrationManager:
                 "Ask the operator to generate them or change the setting."
             )
         return result
+
+    def _connect_parent(
+        self,
+        folder: str,
+        skipped: dict[str, str],
+        allow_protected: bool,
+        designated: Callable[[str], bool],
+    ) -> None:
+        """Link a new boundary from its nearest existing designated ancestor."""
+        while folder:
+            folder = posixpath.dirname(folder)
+            if self._has_index(folder):
+                if designated(folder):
+                    self._generate_index(folder, skipped, allow_protected, designated)
+                return
 
     def _index_designated(self, folder: str) -> bool:
         """Return whether an index may be generated under the active policy."""
@@ -383,7 +401,8 @@ class OkfMigrationManager:
         point at, and one ``generate_index`` must not overwrite (#1608).
         """
         try:
-            return self._doc_mgr.read(f"{folder}/index.md") is not None
+            path = f"{folder}/index.md" if folder else "index.md"
+            return self._doc_mgr.read(path) is not None
         except (DocumentUnreadableError, NoteTooLargeError):
             return True
 

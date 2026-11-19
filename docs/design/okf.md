@@ -452,7 +452,11 @@ The operator controls explicit authoring, review, index and log maintenance inde
   become stale; active index maintenance leaves it untouched. A later ordinary write below a
   newly authored or removed boundary refreshes the designated parent; an
   index edit alone does not trigger it. Creating a new index also refreshes its nearest existing
-  designated ancestor unless an authored index intervenes. Missing indexes
+  designated ancestor unless an authored index intervenes, for both automatic
+  and explicit generation. Explicit generation refuses a target outside active
+  designation or with an aliased index destination. A protected parent is
+  reported after the child write and the child remains; regenerating the parent
+  after resolving protection repairs the listing. Missing indexes
   are created only in designated folders; with `**`, recursive generation retains the original
   per-folder output. Root frontmatter, including `okf_version`, is preserved.
   A `delete`,

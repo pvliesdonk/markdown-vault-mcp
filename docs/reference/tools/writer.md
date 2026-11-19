@@ -435,8 +435,9 @@ See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
 
 Generate a folder's Open Knowledge Format index.md, preserving frontmatter.
 
-Designated folders fold descendants up to existing indexes; without
-index maintenance, missing subfolder indexes are generated recursively.
+Designated folders fold descendants up to existing indexes and link a
+new index from its generated parent. Without index maintenance, missing
+subfolder indexes are generated recursively.
 
 **Parameters**
 
@@ -461,7 +462,7 @@ Dict with:
 
 **Outcomes and errors**
 
-- InvalidRequestError: If a path is protected; eligible bulk writes remain.
+- InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused.
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 - DocumentUnreadableError: If the folder's index.md exists but cannot be read; it is left untouched.

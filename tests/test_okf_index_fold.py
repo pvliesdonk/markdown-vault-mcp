@@ -306,3 +306,99 @@ def test_inactive_okf_keeps_recursive_onboarding_with_index_capability(
         assert "/child/note.md" in (root / "child/index.md").read_text()
     finally:
         vault.close()
+
+
+def test_explicit_creation_reconnects_parent(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p/deep").mkdir(parents=True)
+    (root / "projects/p/deep/note.md").write_text("# Note\n")
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Index\n')
+    first = designated_vault(root, (".",))
+    try:
+        first.index.build_index()
+        first.writer.okf_generate_index()
+        assert "/projects/p/deep/note.md" in (root / "index.md").read_text()
+    finally:
+        first.close()
+    second = designated_vault(root, (".", "projects/*"))
+    try:
+        second.index.build_index()
+        second.writer.okf_generate_index(folder="projects/p")
+        assert "/projects/p/deep/note.md" in (root / "projects/p/index.md").read_text()
+        body = (root / "index.md").read_text()
+        assert "/projects/p/index.md" in body
+        assert "/projects/p/deep/note.md" not in body
+    finally:
+        second.close()
+
+
+def test_explicit_creation_stops_at_authored_boundary(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "docs/p").mkdir(parents=True)
+    (root / "docs/p/note.md").write_text("# Note\n")
+    root_body = '---\nokf_version: "0.2"\n---\n# Root\n'
+    authored = "# Authored boundary\n"
+    (root / "index.md").write_text(root_body)
+    (root / "docs/index.md").write_text(authored)
+    vault = designated_vault(root, (".", "docs/*"))
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="docs/p")
+        assert "/docs/p/note.md" in (root / "docs/p/index.md").read_text()
+        assert (root / "docs/index.md").read_text() == authored
+        assert (root / "index.md").read_text() == root_body
+    finally:
+        vault.close()
+
+
+def test_explicit_creation_reports_protected_parent_after_child_write(
+    tmp_path: Path,
+) -> None:
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    root = tmp_path / "vault"
+    (root / "projects/p").mkdir(parents=True)
+    (root / "projects/p/note.md").write_text("# Note\n")
+    root_body = '---\nokf_version: "0.2"\n---\n# Root\n'
+    (root / "index.md").write_text(root_body)
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_folders=(".", "projects/*")
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            okf_capabilities=caps,
+            protected_paths=["index.md"],
+        ),
+    )
+    try:
+        vault.index.build_index()
+        with pytest.raises(InvalidRequestError) as exc:
+            vault.writer.okf_generate_index(folder="projects/p")
+        assert "projects/p/index.md" in str(exc.value)
+        assert "did not write {'index.md':" in str(exc.value)
+        assert "/projects/p/note.md" in (root / "projects/p/index.md").read_text()
+        assert (root / "index.md").read_text() == root_body
+    finally:
+        vault.close()
+
+
+def test_explicit_regeneration_of_existing_child_leaves_parent_unchanged(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "vault"
+    (root / "projects/p").mkdir(parents=True)
+    (root / "projects/p/note.md").write_text("# Note\n")
+    (root / "projects/p/index.md").write_text("# Previous child\n")
+    root_body = '---\nokf_version: "0.2"\n---\n# Parent\n'
+    (root / "index.md").write_text(root_body)
+    vault = designated_vault(root, (".", "projects/*"))
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="projects/p")
+        assert "/projects/p/note.md" in (root / "projects/p/index.md").read_text()
+        assert (root / "index.md").read_text() == root_body
+    finally:
+        vault.close()

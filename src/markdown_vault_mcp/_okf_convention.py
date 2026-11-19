@@ -429,25 +429,13 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
-    def _refresh_index_parent(self, folder: str) -> None:
-        """Connect a new boundary to its nearest existing generated ancestor."""
-        while folder:
-            folder = folder_of(folder)
-            if self._has_index(folder):
-                if self._may_index(folder):
-                    self._refresh_index(folder)
-                return
-
     def _refresh_index(self, folder: str) -> None:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
-            existed = self._has_index(folder)
             if self._sync_index is not None:
                 self._sync_index()
             self._okf_migrate.generate_index(folder=folder, designated=self._may_index)
-            if not existed and self._has_index(folder):
-                self._refresh_index_parent(folder)
         except Exception:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
