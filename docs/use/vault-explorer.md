@@ -18,6 +18,7 @@ The explorer has four tabs, and each note you click opens in one of them.
 - its tags, the other notes in its folder, and when it last changed.
 
 Click a linked note to open its card.
+The heading reads "Context" while the first note loads, then shows the note's title.
 
 **Graph.** The link graph around a note, or the vault's most-linked notes:
 
@@ -27,6 +28,7 @@ Click a linked note to open its card.
 - Far-out notes show as dots until you hover or zoom in. A chip in the corner counts the notes on screen, and a legend explains the styles.
 
 **Browser.** The vault's folder tree, with a search box that runs the vault's own search. Click a note to preview it.
+The search box keeps the accessible name "Search vault" after you type a query.
 
 **Note.** The rendered note, its frontmatter shown once, collapsed. You can:
 

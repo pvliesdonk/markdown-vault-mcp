@@ -4,11 +4,15 @@ Stateless helpers -- no shared mutable state and no locks (they do touch the
 filesystem and spawn subprocesses). All subprocess calls are module-qualified
 (``subprocess.run``) so the test suite's global ``subprocess.run`` monkeypatch
 still intercepts them.
+
+Path-stream decoding follows ``docs/design/reference/git-history-queries.md``:
+binary capture avoids Python's universal-newline translation of filenames.
 """
 
 from __future__ import annotations
 
 import contextlib
+import locale
 import logging
 import os
 import stat
@@ -276,7 +280,11 @@ def resolve_tracking_ref(
 
 
 def run_git_capturing(
-    git_root: Path, *args: str, env: dict[str, str] | None = None
+    git_root: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+    preserve_newlines: bool = False,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a git command and return the completed process without raising.
 
@@ -292,16 +300,40 @@ def run_git_capturing(
         env: Optional environment, typically from :func:`git_env` for
             token-bearing operations.  ``None`` inherits the parent process
             environment.
+        preserve_newlines: Capture stdout without translating CR or CRLF.
+            Use for NUL-framed path streams; ordinary text stays normalized.
+            Both modes use Python's default text encoding and strict errors.
+        input: Optional stdin text, encoded with the same policy as stdout.
+            Path streams preserve its newline characters as well as NULs.
 
     Returns:
         :class:`subprocess.CompletedProcess` with ``returncode``, ``stdout``,
         and ``stderr`` populated.  Stderr will need to be passed through
         :func:`redact` before logging or surfacing to callers.
     """
+    cmd = ["git", "-C", str(git_root), *args]
+    if preserve_newlines:
+        # Match subprocess's default text codec, including Python UTF-8 mode,
+        # without its universal-newline translation of path identities (#1290).
+        encoding = locale.getpreferredencoding(False)
+        raw = subprocess.run(
+            cmd,
+            capture_output=True,
+            input=None if input is None else input.encode(encoding),
+            env=env,
+            check=False,
+        )
+        return subprocess.CompletedProcess(
+            raw.args,
+            raw.returncode,
+            raw.stdout.decode(encoding),
+            raw.stderr.decode(encoding).replace("\r\n", "\n").replace("\r", "\n"),
+        )
     return subprocess.run(
-        ["git", "-C", str(git_root), *args],
+        cmd,
         capture_output=True,
         text=True,
+        input=input,
         env=env,
         check=False,  # explicit — caller inspects returncode
     )

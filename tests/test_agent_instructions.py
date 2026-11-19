@@ -10,11 +10,8 @@ Every template-owned skill gets a `.claude/skills/<name>` symlink
 into `.agents/skills/<name>`; every other entry under `.claude/skills/` is
 project-owned and left alone, except that a symlink there must still resolve
 inside `.agents/skills/` (a stray symlink pointing outside the skills tree
-would silently defeat the copier-update guard). `TEMPLATE_SKILLS` below must
-stay identical to the tuple of the same name in
-`scripts/migrate_agent_instructions.py`; `scripts/tests/test_shared_skill_paths.py`
-reads this file's tuple back out and asserts the two agree, so a fourth copy
-of the skill-name list cannot drift.
+would silently defeat the guard). `TEMPLATE_SKILLS` below lists the skills
+that must have such a symlink.
 """
 
 from __future__ import annotations
@@ -27,10 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENTS_LIMIT = 40_000
 STUB = (
     "@AGENTS.md\n\nProject instructions live in `AGENTS.md` (domain content between its "
-    "`DOMAIN-START` / `DOMAIN-END` markers). This file is template-owned; do not add content here.\n"
+    "`DOMAIN-START` / `DOMAIN-END` markers). This file is only the import; put content in `AGENTS.md`.\n"
 )
 TEMPLATE_SKILLS: tuple[str, ...] = (
-    "applying-template-updates",
     "authoring-issues-prs",
     "config-contract",
     "designing-tool-outcomes",
@@ -59,7 +55,7 @@ def test_agents_md_within_always_loaded_budget() -> None:
 
 def test_claude_md_is_the_stub() -> None:
     assert (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8") == STUB, (
-        "CLAUDE.md is template-owned and must stay the @AGENTS.md stub; put content in AGENTS.md"
+        "CLAUDE.md must stay the @AGENTS.md stub; put content in AGENTS.md"
     )
 
 
