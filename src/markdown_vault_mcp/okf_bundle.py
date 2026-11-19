@@ -411,13 +411,12 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 
         @cache
         def snapshot_index() -> _LinkIndex:
-            assert snapshot is not None
+            if snapshot is None:
+                raise ValueError("Snapshot links require a Git snapshot")
             notes = _admitted_notes(vault, snapshot, root_inventory(), active)
             return _snapshot_link_index(notes)
 
         def snapshot_links(body: str, source: str) -> list[OutlinkInfo]:
-            if snapshot is None:
-                raise ValueError("Snapshot links require a Git snapshot")
             result = []
             for link in extract_links(body, source, attachment_extensions=extensions):
                 if link.link_type != "wikilink":

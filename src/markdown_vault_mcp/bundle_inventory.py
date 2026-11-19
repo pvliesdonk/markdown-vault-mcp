@@ -293,8 +293,12 @@ def _parsed(path: str, role: Role, raw: bytes) -> BundleEntry:
 
 
 def _snapshot_note(
-    snapshot: GitExportSnapshot, path: str, role: Role
+    snapshot: GitExportSnapshot, path: str, role: Role, note_limit: int, remaining: int
 ) -> tuple[BundleEntry, int]:
+    size = snapshot.size(path)
+    if size > note_limit:
+        consumed = min(size, note_limit + 1, remaining)
+        return BundleEntry(path, role, reason="note_limit"), consumed
     try:
         raw = snapshot.read(path)
         return _parsed(path, role, raw), len(raw)
@@ -585,11 +589,7 @@ class BundleInspector:
         if not is_note(path):
             return BundleEntry(path, "supporting", reason="supporting"), 0
         role = _role(parts[-1], self._policy.conventions_file)
-        limit = min(self._note_limit + 1, remaining)
-        size = snapshot.size(path)
-        if size > self._note_limit:
-            return BundleEntry(path, role, reason="note_limit"), min(size, limit)
-        return _snapshot_note(snapshot, path, role)
+        return _snapshot_note(snapshot, path, role, self._note_limit, remaining)
 
     def _flagged_clean(
         self, snapshot: GitExportSnapshot, path: str, raw: bytes | None
