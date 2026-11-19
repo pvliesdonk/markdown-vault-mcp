@@ -35,7 +35,6 @@ from fastmcp_pvl_core import (
     build_bearer_auth,
     build_jobs,
     configure_logging_from_env,
-    configure_task_backend,
     domain_env_suffixes,
     domain_env_surface,
     fetch_url,
@@ -85,8 +84,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "register_health_routes",
     "register_server_info_tool",
     "run_http",
-    # Background-task backend (#2292).
-    "configure_task_backend",
     # Tool boundary and the server-instructions builder (#2280).
     "CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16",
     "GENERATED_INSTRUCTIONS_TARGET_UTF16",

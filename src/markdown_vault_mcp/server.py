@@ -20,7 +20,6 @@ from markdown_vault_mcp._pvl_core import (
     apply_tool_visibility,
     build_auth,
     configure_logging_from_env,
-    configure_task_backend,
     finalize_instructions,
     get_current_auth_mode,
     instructions_for,
@@ -34,6 +33,7 @@ from markdown_vault_mcp._server_deps import (
     bind_config,
     server_lifespan,
 )
+from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.prompts import register_prompts
 from markdown_vault_mcp.resources import register_resources
@@ -146,9 +146,9 @@ def make_server(
 
     wire_middleware_stack(mcp)
 
-    # Background-task backend (SEP-2663 / Docket).  Unconditional and
-    # template-owned: fastmcp-tasks (and pydocket with it) ships in
-    # fastmcp-pvl-core's base dependencies, so the backend is always
+    # Background-task backend (SEP-2663 / Docket).  Unconditional:
+    # fastmcp-tasks (and pydocket with it) ships with ``fastmcp[tasks]``,
+    # a base dependency, so the backend is always
     # configurable, and whether this server actually uses tasks is decided
     # by registering ``task=True`` tools — not by packaging or by an opt-in
     # switch here.  The helper registers the SEP-2663 tasks extension on
