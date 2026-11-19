@@ -734,11 +734,11 @@ class ExportPaths:
             finally:
                 loader.dispose()
         except (_MetadataComplexity, RecursionError):
-            report.uninspected.setdefault(source, "metadata_complexity")
+            report.uninspected[source] = "metadata_complexity"
         except ExportCollisionError:
             raise
         except (ValueError, yaml.YAMLError):
-            report.uninspected.setdefault(source, "metadata_encoding")
+            report.uninspected[source] = "metadata_encoding"
         else:
             return prefix[:offset] + header + prefix[end:]
         return prefix

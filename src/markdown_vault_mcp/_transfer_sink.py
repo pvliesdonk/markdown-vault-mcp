@@ -171,7 +171,12 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
         if key == "external_base":
             if not equals or not value or re.search(r"%(?![0-9a-fA-F]{2})", value):
                 raise _reject("Pass external_base as a percent-encoded HTTP(S) URL.")
-            values[key] = unquote(value)
+            try:
+                values[key] = unquote(value, errors="strict")
+            except UnicodeDecodeError:
+                raise _reject(
+                    "Pass external_base as a percent-encoded HTTP(S) URL."
+                ) from None
             try:
                 ExportPaths("", set(), values[key])
             except ValueError as exc:

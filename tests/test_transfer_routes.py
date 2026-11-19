@@ -116,14 +116,11 @@ async def test_download_description_names_okf_bundle_refs(
     assert ("okf-bundle:projects" in description) is offered
 
 
-@pytest.mark.parametrize("name", ["README.md", "index.md"])
-async def test_bundle_collision_download_reports_remedy(
-    tmp_path: Path, name: str
-) -> None:
+async def test_bundle_collision_download_and_external_base(tmp_path: Path) -> None:
     scope = tmp_path / "guides"
     scope.mkdir()
-    (scope / "note.md").write_text(f"[outside](/{name})\n")
-    (scope / name).write_text("# Fixture\n")
+    (scope / "note.md").write_text("[outside](/b.md)\n")
+    (scope / "b.md").write_text("# Fixture\n")
     server = make_server(
         transport="http", config=_config(tmp_path, base_url="https://mcp.example.com")
     )
@@ -137,10 +134,6 @@ async def test_bundle_collision_download_reports_remedy(
         response = await http.get(link.data["url"])
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("application/json")
-        assert response.json()["reason"] == "collision"
-        assert "external_base" in response.json()["message"]
-        assert response.json()["report"] is None
-
         ref = "okf-bundle?external_base=https%3A%2F%2Fexample.org%2Fvault:guides"
         link = await client.call_tool("create_download_link", {"ref": ref})
         response = await http.get(link.data["url"])

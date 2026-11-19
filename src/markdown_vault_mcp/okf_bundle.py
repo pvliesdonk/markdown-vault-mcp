@@ -175,7 +175,7 @@ def _note_bytes(
     """Convert graph links and relocate body and frontmatter paths."""
     item, name = selection
     if paths.scope and (b"\x00" in raw or raw.startswith((b"\xff\xfe", b"\xfe\xff"))):
-        report.uninspected.setdefault(item.path, "body_encoding")
+        report.uninspected[item.path] = "body_encoding"
         return raw
     try:
         content = raw.decode("utf-8", "surrogateescape" if paths.scope else "strict")

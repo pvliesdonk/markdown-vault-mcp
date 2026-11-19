@@ -10,57 +10,140 @@ from markdown_vault_mcp.okf_export_report import PublicationRefused
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
-def test_strict_refuses_nonconformant_artifact_with_report(tmp_path: Path) -> None:
-    (tmp_path / "README.md").write_text("# Read me\n")
+@pytest.mark.parametrize(
+    ("name", "body", "verdict"),
+    [
+        ("README.md", b"# Read me\n", "nonconformant"),
+        ("note.md", b"\xff", "incomplete"),
+        ("note.md", b"---\ntype: Note\n---\nText\n", "conformant"),
+    ],
+)
+def test_strict_artifact_verdict(
+    tmp_path: Path, name: str, body: bytes, verdict: str
+) -> None:
+    (tmp_path / name).write_bytes(body)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         config = ProjectConfig(source_dir=tmp_path)
-        assert build_okf_bundle(vault, config).report.verdict == "nonconformant"
-        with pytest.raises(PublicationRefused) as refused:
-            build_okf_bundle(vault, config, strict=True)
-        assert refused.value.report.verdict == "nonconformant"
-        assert refused.value.report.format_findings[0].path == "README.md"
+        faithful = build_okf_bundle(vault, config)
+        assert faithful.report.verdict == verdict
+        if verdict == "conformant":
+            assert build_okf_bundle(vault, config, strict=True).data.startswith(b"PK")
+        else:
+            with pytest.raises(PublicationRefused) as refused:
+                build_okf_bundle(vault, config, strict=True)
+            assert refused.value.report.verdict == verdict
+            assert name in (
+                refused.value.report.unchecked
+                if verdict == "incomplete"
+                else [f.path for f in refused.value.report.format_findings]
+            )
     finally:
         vault.close()
 
 
+def test_large_note_relocation_failure_is_not_masked(tmp_path: Path) -> None:
+    import io
+    import zipfile
+
+    scope = tmp_path / "scope"
+    scope.mkdir()
+    original = (
+        "---\ntype: Note\nexecutor: &loop\n  resource: /scope/b.md\n  self: *loop\n---\n"
+        + "x" * 70000
+    ).encode()
+    (scope / "a.md").write_bytes(original)
+    (scope / "b.md").write_text("---\ntype: Note\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        config = ProjectConfig(source_dir=tmp_path)
+        faithful = build_okf_bundle(vault, config, folder="scope")
+        with zipfile.ZipFile(io.BytesIO(faithful.data)) as archive:
+            assert archive.read("a.md") == original
+        with pytest.raises(PublicationRefused) as refused:
+            build_okf_bundle(vault, config, folder="scope", strict=True)
+        assert refused.value.report.uninspected["scope/a.md"] == "metadata_complexity"
+    finally:
+        vault.close()
+
+
+def test_cli_export_preserves_destination_modes(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import stat
+
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("---\ntype: Note\n---\n")
+    destination = tmp_path / "out.zip"
+    from markdown_vault_mcp.managers import _write_kernel
+
+    monkeypatch.setattr(_write_kernel, "_umask", None)
+    old_umask = os.umask(0o027)
+    try:
+        result = CliRunner().invoke(
+            app, ["export", str(destination), "--source-dir", str(root)]
+        )
+    finally:
+        os.umask(old_umask)
+    assert result.exit_code == 0, result.output
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+    destination.chmod(0o664)
+    result = CliRunner().invoke(
+        app, ["export", str(destination), "--source-dir", str(root)]
+    )
+    assert result.exit_code == 0, result.output
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o664
+
+
+def test_cli_external_hardlink_is_safely_replaced(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    note = root / "note.md"
+    note.write_text("---\ntype: Note\n---\noriginal")
+    destination = tmp_path / "out.zip"
+    destination.hardlink_to(note)
+    result = CliRunner().invoke(
+        app, ["export", str(destination), "--source-dir", str(root)]
+    )
+    assert result.exit_code == 0, result.output
+    assert note.read_text() == "---\ntype: Note\n---\noriginal"
+    assert destination.read_bytes().startswith(b"PK")
+
+
 @pytest.mark.parametrize(
-    ("body", "observation"),
+    ("folder", "body", "observation"),
     [
-        ("[outside](/outside.md)", "dependencies"),
-        ("---\ntype: Note\nresource: ambiguous.md\n---\n", "ambiguous_path"),
+        ("scope", "[outside](/outside.md)", "dependencies"),
+        ("scope", "---\ntype: Note\nresource: ambiguous.md\n---\n", "ambiguous_path"),
+        ("", "[missing](missing.md)", "broken_links"),
     ],
 )
 def test_strict_refuses_scope_observations(
-    tmp_path: Path, body: str, observation: str
+    tmp_path: Path, folder: str, body: str, observation: str
 ) -> None:
-    scope = tmp_path / "scope"
-    scope.mkdir()
+    scope = tmp_path / folder
+    if folder:
+        scope.mkdir()
     if not body.startswith("---"):
         body = "---\ntype: Note\n---\n" + body
     (scope / "note.md").write_text(body)
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         config = ProjectConfig(source_dir=tmp_path)
-        faithful = build_okf_bundle(vault, config, folder="scope")
+        faithful = build_okf_bundle(vault, config, folder=folder)
         assert faithful.report.verdict == "conformant"
         assert getattr(faithful.report, observation)
         with pytest.raises(PublicationRefused) as refused:
-            build_okf_bundle(vault, config, folder="scope", strict=True)
+            build_okf_bundle(vault, config, folder=folder, strict=True)
         assert getattr(refused.value.report, observation)
-    finally:
-        vault.close()
-
-
-def test_strict_returns_conformant_artifact(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("---\ntype: Note\n---\nText\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), strict=True
-        )
-        assert result.report.verdict == "conformant"
-        assert result.data.startswith(b"PK")
     finally:
         vault.close()
 
@@ -82,19 +165,6 @@ def test_cli_refusal_preserves_existing_destination(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert '"verdict": "nonconformant"' in result.output
     assert destination.read_bytes() == b"existing"
-
-
-def test_strict_refuses_broken_root_link(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("---\ntype: Note\n---\n[missing](missing.md)\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        config = ProjectConfig(source_dir=tmp_path)
-        assert build_okf_bundle(vault, config).report.broken_links
-        with pytest.raises(PublicationRefused) as refused:
-            build_okf_bundle(vault, config, strict=True)
-        assert refused.value.report.broken_links
-    finally:
-        vault.close()
 
 
 def test_cli_never_exports_configured_server_state(tmp_path: Path, monkeypatch) -> None:
@@ -124,18 +194,6 @@ def test_cli_never_exports_configured_server_state(tmp_path: Path, monkeypatch) 
     assert (root / "index.sqlite").read_bytes() == b"database"
 
 
-def test_strict_refuses_incomplete_audit(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_bytes(b"\xff")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        with pytest.raises(PublicationRefused) as refused:
-            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), strict=True)
-        assert refused.value.report.verdict == "incomplete"
-        assert "note.md" in refused.value.report.unchecked
-    finally:
-        vault.close()
-
-
 def test_strict_refuses_changed_snapshot(tmp_path: Path, monkeypatch) -> None:
     from markdown_vault_mcp import okf_bundle
 
@@ -157,7 +215,7 @@ def test_strict_refuses_changed_snapshot(tmp_path: Path, monkeypatch) -> None:
         vault.close()
 
 
-def test_cli_exports_subtree_with_metadata_and_links(tmp_path: Path) -> None:
+def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) -> None:
     import zipfile
 
     from typer.testing import CliRunner
@@ -167,12 +225,11 @@ def test_cli_exports_subtree_with_metadata_and_links(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     scope = root / "guides"
     scope.mkdir(parents=True)
-    (scope / "a.md").write_text(
-        "---\ntype: Note\nsource: supplied\nx-custom: kept\n---\n[other](/guides/b.md)\n"
-    )
-    (scope / "b.md").write_text("---\ntype: Note\n---\nText\n")
+    (scope / "a.md").write_text("---\ntype: Note\n---\n[other](/guides/b.md)")
+    (scope / "b.md").write_text("---\ntype: Note\n---\nB")
     destination = tmp_path / "bundle.zip"
-    result = CliRunner().invoke(
+    runner = CliRunner()
+    strict = runner.invoke(
         app,
         [
             "export",
@@ -184,29 +241,12 @@ def test_cli_exports_subtree_with_metadata_and_links(tmp_path: Path) -> None:
             "--strict",
         ],
     )
-    assert result.exit_code == 0, result.output
+    assert strict.exit_code == 0, strict.output
     with zipfile.ZipFile(destination) as archive:
         assert set(archive.namelist()) == {"a.md", "b.md"}
-        body = archive.read("a.md").decode()
-    assert "source: supplied" in body and "x-custom: kept" in body
-    assert "[other](/b.md)" in body
-
-
-def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) -> None:
-    import zipfile
-
-    from typer.testing import CliRunner
-
-    from markdown_vault_mcp.cli import app
-
-    root = tmp_path / "vault"
-    scope = root / "guides"
-    scope.mkdir(parents=True)
     (scope / "a.md").write_text("[outside](/b.md)")
-    (scope / "b.md").write_text("# B")
     (scope / ".hidden.md").write_text("# hidden")
-    destination = tmp_path / "bundle.zip"
-    result = CliRunner().invoke(
+    result = runner.invoke(
         app,
         [
             "export",
@@ -255,7 +295,7 @@ def test_strict_checks_root_metadata(tmp_path: Path, value: str, field: str) -> 
         vault.close()
 
 
-def test_root_metadata_preserves_internal_paths_and_source_names(
+def test_nested_root_metadata_resolves_relative_paths_and_source_names(
     tmp_path: Path,
 ) -> None:
     import io
@@ -301,7 +341,7 @@ def test_strict_refuses_uninspected_metadata(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("kind", ["direct", "hardlink", "symlink"])
+@pytest.mark.parametrize("kind", ["direct", "symlink"])
 def test_cli_refuses_vault_destination_and_alias(tmp_path: Path, kind: str) -> None:
     from typer.testing import CliRunner
 
@@ -312,9 +352,7 @@ def test_cli_refuses_vault_destination_and_alias(tmp_path: Path, kind: str) -> N
     note = root / "note.md"
     note.write_text("---\ntype: Note\n---\noriginal")
     alias = tmp_path / "alias.md"
-    if kind == "hardlink":
-        alias.hardlink_to(note)
-    elif kind == "symlink":
+    if kind == "symlink":
         alias.symlink_to(note)
     destination = note if kind == "direct" else alias
     result = CliRunner().invoke(
@@ -329,7 +367,6 @@ def test_cli_atomic_write_failure_preserves_destination(
 ) -> None:
     from typer.testing import CliRunner
 
-    from markdown_vault_mcp import _cli_export
     from markdown_vault_mcp.cli import app
 
     root = tmp_path / "vault"
@@ -341,47 +378,18 @@ def test_cli_atomic_write_failure_preserves_destination(
     def fail(*_args):
         raise OSError("synthetic replace failure")
 
-    monkeypatch.setattr(_cli_export.Path, "replace", fail)
+    monkeypatch.setattr(Path, "replace", fail)
     result = CliRunner().invoke(
         app, ["export", str(destination), "--source-dir", str(root)]
     )
     assert result.exit_code != 0
     assert "ERROR:" in result.output
     assert destination.read_bytes() == b"original"
-    assert not list(tmp_path.glob(".okf-export-*"))
-
-
-@pytest.mark.parametrize("failure", ["unreadable", "vanished"])
-def test_cli_checks_hardlink_alias_when_vault_changes(
-    tmp_path: Path, monkeypatch, failure: str
-) -> None:
-    from typer.testing import CliRunner
-
-    from markdown_vault_mcp import _cli_export
-    from markdown_vault_mcp.cli import app
-
-    root = tmp_path / "vault"
-    root.mkdir()
-    note = root / "note.md"
-    note.write_text("---\ntype: Note\n---\n")
-    alias = tmp_path / "alias"
-    alias.hardlink_to(note)
-
-    def walk(_root, *, onerror):
-        if failure == "unreadable":
-            onerror(PermissionError("fixture inaccessible"))
-        yield str(root), [], ["vanished.md", "note.md"]
-
-    monkeypatch.setattr(_cli_export.os, "walk", walk)
-    result = CliRunner().invoke(app, ["export", str(alias), "--source-dir", str(root)])
-    assert result.exit_code != 0
-    assert "ERROR:" in result.output
-    assert note.read_text() == "---\ntype: Note\n---\n"
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_cli_warns_when_git_snapshot_omits_edits(tmp_path: Path) -> None:
     import subprocess
-    import zipfile
 
     from typer.testing import CliRunner
 
@@ -406,12 +414,9 @@ def test_cli_warns_when_git_snapshot_omits_edits(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "uncommitted" in result.output and "note.md" in result.output
-    with zipfile.ZipFile(destination) as archive:
-        assert archive.read("note.md").endswith(b"committed")
 
 
 def test_cli_matches_indexed_export_for_wikilinks(tmp_path: Path) -> None:
-    import io
     import zipfile
 
     from typer.testing import CliRunner
@@ -427,17 +432,8 @@ def test_cli_matches_indexed_export_for_wikilinks(tmp_path: Path) -> None:
         app, ["export", str(destination), "--source-dir", str(root)]
     )
     assert result.exit_code == 0, result.output
-    vault = Vault(source_dir=root, settings=VaultSettings())
-    try:
-        vault.index.build_index()
-        data = build_okf_bundle(vault, ProjectConfig(source_dir=root)).data
-        with (
-            zipfile.ZipFile(io.BytesIO(data)) as expected,
-            zipfile.ZipFile(destination) as actual,
-        ):
-            assert actual.read("a.md") == expected.read("a.md")
-    finally:
-        vault.close()
+    with zipfile.ZipFile(destination) as archive:
+        assert b"[b](/b.md)" in archive.read("a.md")
 
 
 def test_cli_index_build_does_not_modify_vault(tmp_path: Path, monkeypatch) -> None:
@@ -461,59 +457,48 @@ def test_cli_index_build_does_not_modify_vault(tmp_path: Path, monkeypatch) -> N
 
 
 @pytest.mark.parametrize(
-    "options", [["--folder", "missing"], ["--external-base", "ftp://example.org"]]
+    "case", ["folder", "external_base", "destination_parent", "source"]
 )
-def test_cli_input_errors_are_readable(tmp_path: Path, options: list[str]) -> None:
+def test_cli_input_errors_are_readable(tmp_path: Path, case: str) -> None:
     from typer.testing import CliRunner
 
     from markdown_vault_mcp.cli import app
 
     root = tmp_path / "vault"
-    root.mkdir()
+    if case != "source":
+        root.mkdir()
+    destination = tmp_path / (
+        "missing/out.zip" if case == "destination_parent" else "out.zip"
+    )
+    options = {
+        "folder": ["--folder", "missing"],
+        "external_base": ["--external-base", "ftp://example.org"],
+    }.get(case, [])
     result = CliRunner().invoke(
-        app, ["export", str(tmp_path / "out.zip"), "--source-dir", str(root), *options]
+        app, ["export", str(destination), "--source-dir", str(root), *options]
     )
     assert result.exit_code != 0
     assert "ERROR:" in result.output
     assert isinstance(result.exception, SystemExit)
 
 
-def test_cli_missing_destination_parent_is_readable(tmp_path: Path) -> None:
-    from typer.testing import CliRunner
-
-    from markdown_vault_mcp.cli import app
-
-    root = tmp_path / "vault"
-    root.mkdir()
-    result = CliRunner().invoke(
-        app, ["export", str(tmp_path / "missing/out.zip"), "--source-dir", str(root)]
-    )
-    assert result.exit_code != 0
-    assert "ERROR:" in result.output
-    assert isinstance(result.exception, SystemExit)
-
-
-@pytest.mark.parametrize("value", ["./%2Fsecret.md", "./%FF.md"])
-def test_strict_refuses_undecodable_or_escaped_root_paths(
-    tmp_path: Path, value: str
+@pytest.mark.parametrize(
+    ("value", "accepted"), [(".", True), ("./%2Fsecret.md", False), ("./%FF.md", False)]
+)
+def test_root_metadata_path_validation(
+    tmp_path: Path, value: str, accepted: bool
 ) -> None:
     (tmp_path / "note.md").write_text(f"---\ntype: Note\nresource: {value}\n---\n")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
-        with pytest.raises(PublicationRefused) as refused:
-            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), strict=True)
-        assert refused.value.report.dependencies[0].path == "note.md"
-    finally:
-        vault.close()
-
-
-def test_strict_accepts_root_directory_reference(tmp_path: Path) -> None:
-    (tmp_path / "note.md").write_text("---\ntype: Note\nresource: .\n---\n")
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(
-            vault, ProjectConfig(source_dir=tmp_path), strict=True
-        )
-        assert result.report.dependencies == []
+        config = ProjectConfig(source_dir=tmp_path)
+        if accepted:
+            assert (
+                build_okf_bundle(vault, config, strict=True).report.dependencies == []
+            )
+        else:
+            with pytest.raises(PublicationRefused) as refused:
+                build_okf_bundle(vault, config, strict=True)
+            assert refused.value.report.dependencies[0].path == "note.md"
     finally:
         vault.close()

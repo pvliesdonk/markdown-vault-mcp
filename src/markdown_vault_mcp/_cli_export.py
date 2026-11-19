@@ -1,9 +1,6 @@
 """Local OKF publication command."""
 
 import json
-import os
-import tempfile
-from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -12,42 +9,10 @@ import typer
 
 
 def _check_destination(destination: Path, root: Path) -> None:
-    """Refuse vault paths and existing hard links to vault files."""
+    """Refuse destinations inside the vault, including symlink aliases."""
     resolved = destination.resolve()
     if resolved.is_relative_to(root.resolve()):
         raise ValueError("Export destination must be outside the vault")
-    try:
-        target = resolved.stat()
-    except FileNotFoundError:
-        return
-    if target.st_nlink < 2:
-        return
-
-    def fail(error: OSError) -> None:
-        raise error
-
-    for directory, _, files in os.walk(root, onerror=fail):
-        for name in files:
-            try:
-                item = (Path(directory) / name).stat(follow_symlinks=False)
-            except FileNotFoundError:
-                continue
-            if (item.st_dev, item.st_ino) == (target.st_dev, target.st_ino):
-                raise ValueError("Export destination aliases a vault file")
-
-
-def _write_destination(destination: Path, root: Path, data: bytes) -> None:
-    """Atomically replace an external destination with the completed archive."""
-    _check_destination(destination, root)
-    fd, temporary = tempfile.mkstemp(prefix=".okf-export-", dir=destination.parent)
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-        _check_destination(destination, root)
-        Path(temporary).replace(destination)
-    finally:
-        with suppress(FileNotFoundError):
-            Path(temporary).unlink()
 
 
 def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
@@ -76,6 +41,8 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
     from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+    from markdown_vault_mcp.exceptions import ConfigurationError
+    from markdown_vault_mcp.managers._write_kernel import atomic_write
     from markdown_vault_mcp.okf_bundle import build_okf_bundle
     from markdown_vault_mcp.okf_export_report import (
         ExportCollisionError,
@@ -83,20 +50,21 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         refusal_document,
     )
 
-    config = ProjectConfig.from_env()
-    original_settings = VaultSettings.from_project_config(config)
-    config = replace(
-        config,
-        embedding_provider=None,
-        embeddings_path=None,
-        index_path=None,
-        state_path=None,
-        summarize_provider=None,
-        read_only=True,
-        okf_write=False,
-    )
-    built = _build_reader_vault(config, source_dir, True)
+    built = None
     try:
+        config = ProjectConfig.from_env()
+        original_settings = VaultSettings.from_project_config(config)
+        config = replace(
+            config,
+            embedding_provider=None,
+            embeddings_path=None,
+            index_path=None,
+            state_path=None,
+            summarize_provider=None,
+            read_only=True,
+            okf_write=False,
+        )
+        built = _build_reader_vault(config, source_dir, True)
         config = replace(config, source_dir=built.vault.source_dir)
         state_path = original_settings.effective_state_path(config.source_dir)
         # Keep the configured inventory boundary even though the reader opens no stores.
@@ -121,7 +89,7 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         except (ExportCollisionError, PublicationRefused) as exc:
             typer.echo(refusal_document(exc).decode("utf-8"))
             raise typer.Exit(1) from exc
-        _write_destination(destination, config.source_dir, result.data)
+        atomic_write(destination, result.data)
         if result.report.snapshot.uncommitted_paths:
             typer.echo(
                 "WARNING: uncommitted paths were not included in the Git snapshot: "
@@ -130,8 +98,9 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
                 ),
                 err=True,
             )
-    except (ValueError, OSError) as exc:
+    except (ConfigurationError, ValueError, OSError) as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
-        built.close()
+        if built is not None:
+            built.close()

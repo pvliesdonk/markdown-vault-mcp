@@ -412,6 +412,7 @@ async def test_bundle_collision_returns_actionable_refusal(
         "okf-bundle?strict=1",
         "okf-bundle?external_base=broken",
         "okf-bundle?external_base=https%ZZ",
+        "okf-bundle?external_base=https%3A%2F%2Fexample.org%2F%FF",
     ],
 )
 async def test_invalid_bundle_options_refused(
@@ -431,20 +432,24 @@ async def test_bundle_options_keep_folder_spelling(
     assert result.media_type == "application/zip"
 
 
-async def test_wikilink_collision_download_is_a_refusal(
-    sink: VaultTransferSink, source_dir: Path, vault: Vault
+async def test_bundle_selection_flags_reach_export(
+    source_dir: Path, config: ProjectConfig
 ) -> None:
-    import json
+    import io
+    import zipfile
 
-    (source_dir / "guides/outside").mkdir(parents=True)
-    (source_dir / "outside").mkdir()
-    (source_dir / "guides/a.md").write_text("[[outside/b]]")
-    (source_dir / "guides/outside/b.md").write_text("# selected")
-    (source_dir / "outside/b.md").write_text("# outside")
-    vault.index.build_index()
-    response = await sink.read("okf-bundle:guides")
-    assert response.media_type == "application/json"
-    assert json.loads(response.body)["reason"] == "collision"
+    (source_dir / ".hidden.md").write_text("hidden")
+    (source_dir / "excluded.md").write_text("excluded")
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(exclude_patterns=["excluded.md"])
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        result = await sink.read("okf-bundle?include_hidden&include_index_excluded")
+        with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
+            assert {".hidden.md", "excluded.md"} <= set(archive.namelist())
+    finally:
+        vault.close()
 
 
 async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:

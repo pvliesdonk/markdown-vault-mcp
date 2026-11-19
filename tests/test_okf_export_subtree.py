@@ -8,6 +8,7 @@ import pytest
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.okf_export_paths import ExportPaths
+from markdown_vault_mcp.okf_export_report import ExportCollisionError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.fixtures.okf_export import export_note
 
@@ -51,20 +52,24 @@ def test_subtree_relocates_and_reports(tmp_path):
         vault.close()
 
 
-def test_collision_refused_or_externalized(tmp_path):
+@pytest.mark.parametrize("name", ["b.md", "README.md", "index.md"])
+def test_collision_refused_or_externalized(tmp_path, name):
     (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text("[x](/b.md#part)")
-    (tmp_path / "guides/b.md").write_text("# B")
+    (tmp_path / "guides/a.md").write_text(f"[x](/{name}#part)")
+    (tmp_path / f"guides/{name}").write_text("# B")
     vault = Vault(source_dir=tmp_path, settings=VaultSettings())
     try:
         config = ProjectConfig(source_dir=tmp_path)
-        with pytest.raises(ValueError, match="collision"):
+        with pytest.raises(ExportCollisionError, match="collision"):
             build_okf_bundle(vault, config, folder="guides")
         result = build_okf_bundle(
             vault, config, folder="guides", external_base="https://example.org/vault/"
         )
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            assert archive.read("a.md") == b"[x](https://example.org/vault/b.md#part)"
+            assert (
+                archive.read("a.md")
+                == f"[x](https://example.org/vault/{name}#part)".encode()
+            )
     finally:
         vault.close()
 
@@ -512,7 +517,7 @@ def test_relative_wikilinks_preserve_suffixes_and_collision():
         == "[[../b#heading|B]] ![[./img.png|image]] [[b\\|table]]\n`[[../../guides/b]]` <!-- [[../../guides/b]] -->"
     )
     assert not dependencies
-    with pytest.raises(ValueError, match="collision"):
+    with pytest.raises(ExportCollisionError, match="collision"):
         paths.relocate("[[../../b]]", "guides/s/a.md")
 
 
