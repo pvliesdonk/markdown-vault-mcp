@@ -1,31 +1,7 @@
-"""OKF enforced-write layer runtime (#964): request-scoped actor + enrichment.
+"""Compatibility helpers and subject resolution for OKF review.
 
-The enforced-write layer (design §6) stamps ``generated`` provenance and clears
-``verified`` on content writes, attributing them to the authenticated identity.
-That identity is a FastMCP request-context dependency (``get_subject``), so it is
-resolvable only inside a tool handler — but the write path runs deep under
-``asyncio.to_thread``. The actor (and a *suppress* flag for ``okf_verify``, which
-sets ``verified`` deliberately and must not have it cleared) therefore travel via
-a contextvar: ``asyncio.to_thread`` copies the current context into its worker, so
-a value set around the ``to_thread`` call is visible to the enricher. This mirrors
-``fastmcp_pvl_core``'s own ``_current_auth_mode`` contextvar.
-
-What the spec requires of the ``generated`` / ``verified`` stamps written here
-(actor convention, timestamp form) is in ``docs/design/reference/okf-v0.2.md``;
-the stamps' departure from it is #1372.
-
-Actor resolution rules (design §6):
-
-- ``human:<subject>`` for a principal classified as human by the identity layer.
-- a tool actor ``markdown-vault-mcp/<version>`` otherwise (service credentials,
-  unauthenticated callers, or a non-tool write with no request identity).
-
-Those rules are applied once, in :mod:`markdown_vault_mcp._identity` —
-including that a caller without a token has no human identity even when
-``get_subject()`` returns the no-auth sentinel ``"local"``. An actual token
-subject with that spelling is distinct. This module reads a ``Principal``
-and never the request context directly (#1231); a second copy of the rules is a second thing to keep
-in agreement.
+Ordinary writes preserve supplied provenance. Request identity remains available
+for commit attribution and explicit review.
 """
 
 from __future__ import annotations
@@ -34,20 +10,12 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from functools import lru_cache
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._identity import current_principal, resolve_mcp_principal
-from markdown_vault_mcp.okf import apply_okf_write_stamp
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
-
-    from markdown_vault_mcp.okf import OkfDetector
-    from markdown_vault_mcp.types import WriteOperation
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +32,9 @@ class OkfWriteIntent:
     """The current request's OKF write intent, carried across ``to_thread``.
 
     Attributes:
-        actor: The provenance actor to stamp (``human:<subject>`` or a tool actor).
-        suppress: When ``True`` the enricher is a no-op — used by ``okf_verify``,
-            which sets ``verified`` on purpose and must not have it cleared.
+        suppress: When true, automatic convention maintenance is suppressed.
     """
 
-    actor: str
     suppress: bool = False
 
 
@@ -94,34 +59,18 @@ def okf_write_intent(intent: OkfWriteIntent) -> Iterator[None]:
 
 @contextmanager
 def okf_write_suppressed() -> Iterator[None]:
-    """Bind a suppressing intent so the enricher is a no-op for the duration.
+    """Suppress automatic convention maintenance for the duration.
 
-    For mechanical writes that must not be re-stamped or have ``verified``
-    cleared — the one-shot migration transforms and ``okf_verify`` (which sets
-    ``verified`` deliberately). Enter it **before** the ``asyncio.to_thread``
-    write call.
+    Used by mechanical transforms and explicit review. Enter before the
+    ``asyncio.to_thread`` call so the worker receives the context.
     """
-    with okf_write_intent(OkfWriteIntent(actor="", suppress=True)):
+    with okf_write_intent(OkfWriteIntent(suppress=True)):
         yield
 
 
 def current_okf_intent() -> OkfWriteIntent | None:
     """Return the current request's :class:`OkfWriteIntent`, or ``None``."""
     return _intent_var.get()
-
-
-@lru_cache(maxsize=1)
-def package_version() -> str:
-    """Return the installed package version, or ``"unknown"`` if undeterminable."""
-    try:
-        return _pkg_version("markdown-vault-mcp")
-    except PackageNotFoundError:  # pragma: no cover - packaging edge
-        return "unknown"
-
-
-def tool_actor(version: str) -> str:
-    """The non-human provenance actor: ``markdown-vault-mcp/<version>``."""
-    return f"markdown-vault-mcp/{version}"
 
 
 def resolve_human_subject() -> str | None:
@@ -147,45 +96,9 @@ def resolve_human_subject() -> str | None:
 def resolve_verify_subject() -> str:
     """Return the subject to stamp once an elicit-mode review is confirmed.
 
-    The human principal's subject when present, else the ``local`` sentinel. Under
-    ``OKF_VERIFY=elicit`` the elicitation — not the token — is the
-    human-presence proof, so a human using no auth or a service credential
-    records an attributable ``human:local`` entry after confirming through the client UI.
+    The human principal's subject when present, else the ``local`` sentinel.
+    The MCP tool separately refuses service principals before calling this helper.
+    Under ``OKF_VERIFY=elicit``, a confirmed unauthenticated review uses
+    ``human:local``.
     """
     return resolve_human_subject() or _LOCAL_SUBJECT
-
-
-def build_okf_write_enrich(
-    *, okf_write: bool, detector: OkfDetector, version: str
-) -> Callable[[str, WriteOperation], str] | None:
-    """Build the ``DocumentManager`` write-enrichment hook, or ``None`` when off.
-
-    Returns ``None`` (zero overhead, no detector probe) when ``okf_write`` is
-    disabled. Otherwise returns a callable that, for ``write`` / ``edit`` on an
-    OKF-active vault, stamps provenance and clears verification — unless the
-    current request carries a suppressing :class:`OkfWriteIntent` (``okf_verify``).
-
-    Args:
-        okf_write: The ``OKF_WRITE`` operator flag.
-        detector: The vault's OKF detector (active-state probe).
-        version: The package version for the tool actor default.
-
-    Returns:
-        The enrichment callable, or ``None``.
-    """
-    if not okf_write:
-        return None
-    default_actor = tool_actor(version)
-
-    def enrich(text: str, operation: WriteOperation) -> str:
-        if operation not in ("write", "edit"):
-            return text
-        intent = current_okf_intent()
-        if intent is not None and intent.suppress:
-            return text
-        if not detector.state().active:
-            return text
-        actor = intent.actor if intent is not None else default_actor
-        return apply_okf_write_stamp(text, actor=actor, now=datetime.now(UTC))
-
-    return enrich

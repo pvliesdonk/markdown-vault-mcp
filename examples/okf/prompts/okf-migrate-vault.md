@@ -66,5 +66,7 @@ git-backed vault each change is committed):
 
 Finish with a fresh `okf_validate` summary and a short note on residual gaps
 (unknown `status` values, notes still missing recommended fields). Suggest
-enabling `MARKDOWN_VAULT_MCP_OKF_WRITE=true` if the operator wants provenance
-and reserved-file upkeep enforced going forward.
+enabling `MARKDOWN_VAULT_MCP_OKF_INDEX` and `MARKDOWN_VAULT_MCP_OKF_LOG` if the
+operator wants reserved-file upkeep going forward, and `MARKDOWN_VAULT_MCP_OKF_AUTHOR`
+to record producers with `okf_author`. The server does not stamp provenance on
+ordinary writes.

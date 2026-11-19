@@ -10,9 +10,11 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
 import os
 import posixpath
+import re
 import shutil
 import sqlite3
 import stat
@@ -109,9 +111,6 @@ from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
 )
 from markdown_vault_mcp.utils.text import (
-    decode_utf8 as _decode_utf8,
-)
-from markdown_vault_mcp.utils.text import (
     find_closest_match as _find_closest_match,
 )
 from markdown_vault_mcp.utils.text import (
@@ -126,6 +125,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
+    from markdown_vault_mcp.indexing.observations import ObservationLedger, _Captured
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
@@ -145,6 +145,59 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
     "are not tracked as links, so none were rewritten. Notes embedding the "
     "old path still name it; edit them to point at the new path."
 )
+
+
+_EOL = re.compile(r"\r\n|\r|\n")
+
+
+def _read_view(raw: str) -> str:
+    """Return stored note text as :meth:`DocumentManager.read` shows it.
+
+    The BOM is dropped and every line ending becomes ``\\n`` (#673), so an
+    edit matches exactly the text the caller read.
+    """
+    return raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _head_end(view: str) -> int:
+    """Return the offset just past *view*'s closing frontmatter delimiter line.
+
+    Detects the block as the reader does, in any registered format.  0 means
+    no frontmatter block: none, or unclosed.
+    """
+    offset = len(view) - len(view.lstrip())
+    candidate = view[offset:]
+    handler = fm.detect_format(candidate, fm.handlers)
+    boundary = None if handler is None else handler.FM_BOUNDARY
+    if boundary is None:
+        return 0
+    fences = list(itertools.islice(boundary.finditer(candidate), 2))
+    if len(fences) < 2:
+        return 0
+    end = view.find("\n", offset + fences[1].start())
+    return len(view) if end < 0 else end + 1
+
+
+def _keep_head(raw: str, view: str, new: str) -> str:
+    """Restore the stored frontmatter bytes of an edit that left them alone.
+
+    *new* is an edit of *view*, the read view of *raw*.  When *new* still
+    opens with *view*'s whole frontmatter block, that block is taken from
+    *raw* instead, so its BOM, comments and line endings stay byte-identical
+    (#1443).  Otherwise *new* is returned unchanged.
+    """
+    n = _head_end(view)
+    if not n or not new.startswith(view[:n]):
+        return new
+    if not view[:n].endswith("\n"):
+        return raw + new[n:]
+    lines = view.count("\n", 0, n)
+    fence = next(itertools.islice(_EOL.finditer(raw), lines - 1, None))
+    tail = new[n:]
+    if fence.group() == "\r" and tail.startswith("\n"):
+        # A bare CR fence then LF would read back as one CRLF line break.
+        tail = "\r" + tail
+    return raw[: fence.end()] + tail
 
 
 def _submodule_links_text(sources: list[str]) -> str:
@@ -205,7 +258,9 @@ class DocumentManager:
         inventory_ready: Read-only index readiness check.
     """
 
-    def __init__(
+    _exact_bytes = False  # see exact_byte_writes()
+
+    def __init__(  # noqa: PLR0913, RUF100 — retain existing injected collaborators.
         self,
         fts: KeywordGraphIndex,
         source_dir: Path,
@@ -216,17 +271,19 @@ class DocumentManager:
         write_protect_existing: bool = False,
         exclude_patterns: list[str] | None = None,
         protected_paths: Sequence[str] | None = None,
+        designated_index: Callable[[str], bool] | None = None,
         attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
-        okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
         inspection_policy: InspectionPolicy | None = None,
         inventory_ready: Callable[[], bool] | None = None,
+        observations: ObservationLedger | None = None,
     ) -> None:
+        self._observations = observations
         self._fts = fts
         self._source_dir = source_dir
         self._inspection_policy = inspection_policy or InspectionPolicy()
@@ -236,7 +293,7 @@ class DocumentManager:
         self._read_only = read_only
         self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
-        self._path_guard = PathGuard(source_dir, protected_paths)
+        self._path_guard = PathGuard(source_dir, protected_paths, designated_index)
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
         self._artifacts = ArtifactStore(
@@ -255,10 +312,6 @@ class DocumentManager:
         self._sync_index = sync_index
         self._submodule_guard = submodule_guard
         self._title_field = title_field
-        # OKF enforced-write hook (#964): transforms the final note text
-        # (stamp `generated`, clear `verified`) before it lands. None when
-        # OKF_WRITE is off — zero overhead on the write path.
-        self._okf_write_enrich = okf_write_enrich
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
@@ -320,35 +373,50 @@ class DocumentManager:
         require_vault_root(self._source_dir, indexed=self._fts.has_documents())
 
     def protection_reason(
-        self, path: str, *, allow_protected: bool = False
+        self,
+        path: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
     ) -> str | None:
         """Return the reason operator policy protects a vault-relative path.
 
         Args:
             path: Vault-relative path to check.
             allow_protected: Explicit trusted library override.
+            allow_designated: Permit generated indexes only.
 
         Returns:
             The protection reason, or None if unprotected.
         """
-        return None if allow_protected else self._path_guard.reason(path)
+        return (
+            None
+            if allow_protected
+            else self._path_guard.reason(path, allow_designated=allow_designated)
+        )
 
-    def refuse_protected(self, path: str, *, allow_protected: bool = False) -> None:
+    def refuse_protected(
+        self,
+        path: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
+    ) -> None:
         """Refuse a protected path unless a trusted caller opts in.
 
         Args:
             path: Vault-relative path to change.
             allow_protected: Explicit trusted library override.
+            allow_designated: Permit generated indexes only.
 
         Raises:
             InvalidRequestError: If the path is protected or contains a NUL byte.
         """
-        reason = self.protection_reason(path, allow_protected=allow_protected)
+        reason = self.protection_reason(
+            path, allow_protected=allow_protected, allow_designated=allow_designated
+        )
         if reason:
-            raise InvalidRequestError(
-                f"Path {path!r} is {reason}. "
-                "Ask the operator to edit the file or change the setting."
-            )
+            raise InvalidRequestError(f"Path {path!r} is {reason}.")
 
     def _refuse_submodule(
         self, abs_path: Path, argument: str, path: str, *, holding: bool = True
@@ -405,6 +473,27 @@ class DocumentManager:
         with self._file_write_lock:
             yield
 
+    @contextlib.contextmanager
+    def exact_byte_writes(self) -> Iterator[None]:
+        """Persist content writes as UTF-8 bytes, with no newline translation.
+
+        Held under the write lock, so no other write sees the mode.  For a
+        caller that splices text it read byte for byte (OKF authoring) and
+        must not have a platform's text-mode staging rewrite its line endings.
+        Edit and append use it to keep a stored frontmatter block's line
+        endings; other content writes keep their text-mode staging.
+        """
+        with self._file_write_lock:
+            self._exact_bytes = True
+            try:
+                yield
+            finally:
+                self._exact_bytes = False
+
+    def _staged(self, content: str) -> str | bytes:
+        """Return *content* in the form the current write mode stages."""
+        return content.encode("utf-8") if self._exact_bytes else content
+
     def ensure_writable(self) -> None:
         """Raise :exc:`ReadOnlyError` if the vault is read-only.
 
@@ -427,6 +516,9 @@ class DocumentManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
+    def _vault_relative(self, path: Path) -> str:
+        return path.relative_to(self._source_dir.resolve()).as_posix()
+
     def _validate_path(self, path: str) -> Path:
         """Resolve a relative path and validate it is inside source_dir.
 
@@ -441,6 +533,35 @@ class DocumentManager:
                 not end with ``.md``.
         """
         return validate_path(path, self._source_dir)
+
+    def _read_authorable(self, path: str) -> NoteContent | None:
+        """Read *path*, refusing unparseable frontmatter instead of faulting.
+
+        A note whose frontmatter is not valid YAML is a problem with the note,
+        not the server: the caller must repair it, so it is an
+        :exc:`InvalidRequestError` rather than the fault :meth:`read` reports.
+        Every other read failure propagates unchanged.
+        """
+        try:
+            return self.read(path)
+        except DocumentUnreadableError as exc:
+            if not isinstance(exc.__cause__, yaml.YAMLError):
+                raise
+            raise InvalidRequestError(
+                f"Cannot author {path}: its frontmatter is not valid YAML "
+                "and must be repaired first."
+            ) from exc
+
+    def _okf_author_snapshot(self, path: str) -> tuple[str, str]:
+        """Read exact note bytes and its resolved vault-relative identity under write_scope."""
+        target = self._validate_path(path)
+        canonical = target.relative_to(self._source_dir.resolve()).as_posix()
+        if self._read_authorable(path) is None:
+            raise DocumentNotFoundError.note(path)
+        try:
+            return canonical, target.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.
@@ -578,8 +699,13 @@ class DocumentManager:
                 )
                 target_attempted = True
                 atomic_write(abs_path, repaired)
+                observed_path = self._vault_relative(abs_path)
+                if self._observations is not None:
+                    self._observations.expect_write(
+                        observed_path, compute_etag(repaired)
+                    )
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([path])
+                    self._mark_paths_dirty([*{path: 0, observed_path: 0}])
                 self._notifier.fire(abs_path, repaired.decode("utf-8"), "write")
             except LogRepairCollision:
                 raise
@@ -963,6 +1089,7 @@ class DocumentManager:
         *,
         allow_overwrite: bool = False,
         allow_protected: bool = False,
+        allow_designated: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -972,6 +1099,7 @@ class DocumentManager:
 
         Args:
             allow_protected: Allow this library call to change protected paths.
+            allow_designated: Permit generated indexes only.
             path: Relative document path.
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as YAML header.
@@ -1001,7 +1129,9 @@ class DocumentManager:
         """
         self._check_writable()
         with self._file_write_lock:
-            self.refuse_protected(path, allow_protected=allow_protected)
+            self.refuse_protected(
+                path, allow_protected=allow_protected, allow_designated=allow_designated
+            )
             abs_path = self._validate_path(path)
             self._refuse_submodule(abs_path, "path", path)
             if not allow_overwrite:
@@ -1022,6 +1152,43 @@ class DocumentManager:
 
         return result
 
+    def replace_body(
+        self,
+        path: str,
+        original: str | None,
+        body: str,
+        *,
+        allow_protected: bool = False,
+        allow_designated: bool = False,
+    ) -> bool:
+        """Replace a note body while preserving an existing header's bytes.
+
+        Args:
+            path: Relative document path.
+            original: Content returned by a preceding read, or None for a new file.
+            body: Replacement Markdown body.
+            allow_protected: Allow changes to operator-protected paths.
+            allow_designated: Permit generated indexes only.
+
+        Returns:
+            Whether an existing frontmatter block was preserved.
+        """
+        head = (original or "")[: _head_end(original or "")]
+        separator = "\n" if head and not head.endswith("\n") else ""
+        with self.exact_byte_writes():
+            text = head + separator + body
+            if head:
+                raw = self._validate_path(path).read_bytes().decode("utf-8")
+                text = _keep_head(raw, _read_view(raw), text)
+            self.write(
+                path,
+                text,
+                allow_overwrite=True,
+                allow_protected=allow_protected,
+                allow_designated=allow_designated,
+            )
+        return bool(head)
+
     def _finalize_content_write(
         self,
         abs_path: Path,
@@ -1031,8 +1198,7 @@ class DocumentManager:
     ) -> None:
         """Run the shared tail of every content write.
 
-        Enriches *content* through the OKF enforced-write hook (when wired),
-        writes it atomically, marks the path dirty for the index writer, and
+        Writes *content* atomically, marks the path dirty for the index writer, and
         fires the write callback.  Must be called with ``_file_write_lock``
         held.
 
@@ -1040,36 +1206,21 @@ class DocumentManager:
             abs_path: Absolute path of the target file.
             path: Vault-relative path of the target file.
             content: Full file content to persist.
-            operation: The write operation reported to the enricher and the
-                write callback.
+            operation: The write operation reported to the write callback.
 
-        Raises:
-            InvalidRequestError: The enforced-write layer is on and a *write*'s
-                content opens with a frontmatter block it cannot parse.
-            ValueError: The same for an edit or append, whose block may be the
-                stored note's (a fault, #1608).
         """
-        if self._okf_write_enrich is not None:
-            try:
-                content = self._okf_write_enrich(content, operation)
-            except yaml.YAMLError as exc:
-                # The stamp is written *into* the note's frontmatter, so a
-                # block the parser cannot read leaves the enforced-write layer
-                # nothing to stamp and the write is refused. The parser's own
-                # exception named no path and reached the client looking like a
-                # server fault, so it is restated as the refusal it is (#1454).
-                # A write's frontmatter is the caller's own content; for an
-                # edit or append it may be the stored note's, so that stays a
-                # fault until the edit path can tell which (#1608).
-                error = InvalidRequestError if operation == "write" else ValueError
-                raise error(
-                    f"Cannot {operation} {path}: its frontmatter block is not "
-                    f"parseable, so the OKF enforced-write layer cannot stamp "
-                    f"provenance on it — {exc}"
-                ) from exc
-        atomic_write(abs_path, content)
+        observed_path = self._vault_relative(abs_path)
+        staged = self._staged(content)
+        atomic_write(abs_path, staged)
+        if self._observations is not None:
+            data = (
+                staged
+                if isinstance(staged, bytes)
+                else staged.replace("\n", os.linesep).encode("utf-8")
+            )
+            self._observations.expect_write(observed_path, compute_etag(data))
         if self._mark_paths_dirty is not None:
-            self._mark_paths_dirty([path])
+            self._mark_paths_dirty([*{path: 0, observed_path: 0}])
         self._notifier.fire(abs_path, content, operation)
 
     def append(
@@ -1087,10 +1238,10 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content.  Like every content write,
-        the file is persisted in the vault's normalized form (UTF-8, no
-        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
-        first append.
+        directly after the existing content.  The existing text is
+        rewritten as :meth:`read` shows it (``\\n`` line endings, no BOM), so
+        a CRLF file is normalized on its first append; its frontmatter block
+        keeps its stored bytes, BOM included (#1443).
 
         Args:
             allow_protected: Allow this library call to change protected paths.
@@ -1133,16 +1284,21 @@ class DocumentManager:
             check_if_match(abs_path, path, if_match)
 
             if existed:
-                file_content = _read_text_utf8(abs_path)
+                raw = abs_path.read_bytes().decode("utf-8")
+                file_content = _read_view(raw)
                 needs_newline = bool(file_content) and not file_content.endswith("\n")
-                new_content = file_content + ("\n" if needs_newline else "") + content
+                new_content = _keep_head(
+                    raw,
+                    file_content,
+                    file_content + ("\n" if needs_newline else "") + content,
+                )
             else:
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 new_content = content
 
-            # An append is a content edit for the enforced-write layer and
-            # the git commit callback alike.
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            # An append is a content edit for the commit callback.
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
             result = WriteResult(path=path, created=not existed)
 
         return result
@@ -1276,7 +1432,8 @@ class DocumentManager:
 
             check_if_match(abs_path, path, if_match)
 
-            file_content = _read_text_utf8(abs_path)
+            raw = abs_path.read_bytes().decode("utf-8")
+            file_content = _read_view(raw)
 
             if has_lines:
                 assert line_start is not None and line_end is not None
@@ -1294,7 +1451,9 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            new_content = _keep_head(raw, file_content, new_content)
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 
@@ -1446,9 +1605,17 @@ class DocumentManager:
                 if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
+                observed_path = self._vault_relative(abs_path)
+                captured = (
+                    self._observations.capture(observed_path)
+                    if self._observations
+                    else None
+                )
                 abs_path.unlink()
+                if self._observations is not None:
+                    self._observations.record_removal(observed_path, captured)
                 if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([path])
+                    self._mark_paths_dirty([*{path: 0, observed_path: 0}])
             else:
                 abs_path = self._artifacts.unlink(path, if_match)
 
@@ -1546,34 +1713,50 @@ class DocumentManager:
                     old_abs, old_path, if_match, tolerate=tolerate_link_rewrites
                 )
 
+                canon_old = self._vault_relative(old_abs)
+                canon_new = self._vault_relative(new_abs)
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
+                captured = (
+                    self._observations.capture(canon_old)
+                    if self._observations
+                    else None
+                )
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
-
-                note = parse_note(
-                    new_abs,
-                    self._source_dir,
-                    self._chunk_strategy,
-                    title_field=self._title_field,
-                )
-
-                callback_content = _read_text_utf8(new_abs)
-
-                backlink_callbacks, backlink_paths, unrewritten = (
-                    self._update_backlinks(
-                        old_path, new_path, backlinks, allow_protected=allow_protected
+                backlink_paths: list[str] = []
+                try:
+                    parse_note(
+                        new_abs,
+                        self._source_dir,
+                        self._chunk_strategy,
+                        title_field=self._title_field,
                     )
-                )
-                updated_links = len(backlink_callbacks)
-                hint = self._submodule_links_hint(
-                    unrewritten, allow_protected=allow_protected
-                )
 
-                if self._mark_paths_dirty is not None:
-                    dirty: list[str] = [old_path, note.path]
-                    dirty.extend(backlink_paths)
-                    self._mark_paths_dirty(dirty)
+                    callback_content = _read_text_utf8(new_abs)
+
+                    backlink_callbacks, backlink_paths, unrewritten = (
+                        self._update_backlinks(
+                            old_path,
+                            new_path,
+                            backlinks,
+                            allow_protected=allow_protected,
+                        )
+                    )
+                    updated_links = len(backlink_callbacks)
+                    hint = self._submodule_links_hint(
+                        unrewritten, allow_protected=allow_protected
+                    )
+                finally:
+                    self._record_moves(
+                        {canon_old: canon_new},
+                        {canon_old: captured},
+                        backlink_callbacks,
+                    )
+                    if self._mark_paths_dirty is not None:
+                        self._mark_paths_dirty(
+                            [old_path, new_path, canon_old, canon_new, *backlink_paths]
+                        )
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
                 callback_content = ""
@@ -1592,6 +1775,36 @@ class DocumentManager:
             hint=hint,
             link_rewrites_since_etag=crossed,
         )
+
+    def _record_moves(
+        self,
+        moves: dict[str, str],
+        captures: dict[str, _Captured | None],
+        callbacks: list[tuple[Path, str]],
+    ) -> None:
+        if self._observations is None:
+            return
+        digests = {
+            self._vault_relative(path): compute_etag(content.encode("utf-8"))
+            for path, content in callbacks
+        }
+        for old_path, new_path in moves.items():
+            self._observations.record_removal(
+                old_path, captures[old_path], new_path, rewritten=digests.get(new_path)
+            )
+
+    def _record_completed_moves(
+        self,
+        completed: set[str],
+        moves: dict[str, str],
+        captures: dict[str, _Captured | None],
+        callers: dict[str, tuple[str, str]],
+    ) -> None:
+        done = {path: target for path, target in moves.items() if path in completed}
+        self._record_moves(done, captures, [])
+        if done and self._mark_paths_dirty is not None:
+            caller = dict(callers[path] for path in done)
+            self._mark_paths_dirty([*done, *done.values(), *caller, *caller.values()])
 
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
@@ -1665,7 +1878,8 @@ class DocumentManager:
         # the ledger would then vouch for (#1492). Newlines are normalised
         # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
-        original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
+        stored = raw.decode("utf-8")
+        original = _read_view(stored)
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
@@ -1688,13 +1902,14 @@ class DocumentManager:
                 len(rewrites),
             )
             return None
-        # The bytes a text-mode write would produce, encoded here so the
-        # ledger records the hash of exactly what landed.
-        encoded = content.replace("\n", os.linesep).encode("utf-8")
+        content = _keep_head(stored, original, content)
+        # Encoded here so the ledger records the hash of exactly what landed.
+        encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
-        self._link_rewrites.record(
-            source_path, compute_etag(raw), compute_etag(encoded)
-        )
+        etag = compute_etag(encoded)
+        if self._observations is not None:
+            self._observations.expect_write(self._vault_relative(source_abs), etag)
+        self._link_rewrites.record(source_path, compute_etag(raw), etag)
         return content
 
     def _rewrite_link_sources(
@@ -1730,8 +1945,8 @@ class DocumentManager:
               source document whose bytes actually changed. A source the
               rewrite left untouched is in none of the three lists: it is
               not a failure, but it is not an update either (#1521).
-            * ``dirty_paths`` — vault-relative paths of those same sources,
-              for the caller to feed to ``mark_paths_dirty``.
+            * ``dirty_paths`` — each such source's caller path and canonical
+              path, for the caller to feed to ``mark_paths_dirty``.
             * ``failed_sources`` — sources that were skipped or failed.
         """
         pending_callbacks: list[tuple[Path, str]] = []
@@ -1785,7 +2000,7 @@ class DocumentManager:
                     # reindex, announce or count (#1521).
                     continue
                 pending_callbacks.append((source_abs, content))
-                dirty_paths.append(source_path)
+                dirty_paths += {source_path: 0, self._vault_relative(source_abs): 0}
             except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
                 logger.warning(
                     "link_rewrite_source_failed op=%s path=%s err=%s",
@@ -1830,10 +2045,7 @@ class DocumentManager:
                 continue
         hints = [_submodule_links_text(in_submodules)] if in_submodules else []
         if protected:
-            hints.append(
-                f"Link rewrites were skipped: {protected!r}. "
-                "Ask the operator to update them or change the setting."
-            )
+            hints.append(f"Link rewrites were skipped: {protected!r}.")
         return " ".join(hints) or None
 
     def _update_backlinks(
@@ -2063,9 +2275,9 @@ class DocumentManager:
                 being moved (e.g. a permission error, full disk, or concurrent
                 file removal). The pre-move collision gate prevents
                 destination clashes, but an OS error mid-move can leave the
-                subtree partially moved with the index unchanged; a
-                subsequent reindex reconciles the index with the on-disk
-                state. It subclasses :class:`OSError`.
+                subtree partially moved. Completed Markdown moves are queued
+                for indexing and observation; a subsequent reindex reconciles
+                the on-disk state. It subclasses :class:`OSError`.
         """
         self._check_writable()
         self.ensure_index_current()
@@ -2101,14 +2313,30 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
+            observed = {
+                self._vault_relative(
+                    old_abs / Path(path).relative_to(old_dir)
+                ): self._vault_relative(new_abs / Path(path).relative_to(old_dir))
+                for path in md_map
+            }
+            callers = dict(zip(observed, md_map.items(), strict=True))
+            captures = (
+                {path: self._observations.capture(path) for path in observed}
+                if self._observations is not None
+                else {}
+            )
+
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error
             #    raised before anything moved.
+            completed: set[str] = set()
             try:
                 for src_abs, dst_abs in moves:
                     dst_abs.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(src_abs), str(dst_abs))
+                    completed.add(self._vault_relative(src_abs))
             except OSError as exc:
+                self._record_completed_moves(completed, observed, captures, callers)
                 raise FolderMoveInterruptedError(old_dir, new_dir) from exc
 
             # 5. Single-pass link rewrite. Group annotated rows by source,
@@ -2127,15 +2355,11 @@ class DocumentManager:
                 allow_protected=allow_protected,
             )
 
-            # 6. Index: purge old note paths, reparse new note paths, plus the
-            #    rewritten sources. A single mark_paths_dirty batch makes the
-            #    writer run resolve_vault_wikilinks() once.
+            # 6. Queue the moved paths and rewritten sources for indexing.
+            self._record_moves(observed, captures, pending_callbacks)
+            moved = {**md_map, **observed}
             if self._mark_paths_dirty is not None:
-                move_dirty: list[str] = []
-                move_dirty.extend(md_map.keys())  # old paths -> purged
-                move_dirty.extend(md_map.values())  # new paths -> reparsed
-                move_dirty.extend(dirty_paths)  # rewritten sources
-                self._mark_paths_dirty(move_dirty)
+                self._mark_paths_dirty([*moved, *moved.values(), *dirty_paths])
 
             scope = current_commit_scope()
             if scope is not None:

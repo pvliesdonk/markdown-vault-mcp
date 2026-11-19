@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 
 #: Where the state file defaulted to before #1693, under the vault root.
 #: Nothing writes there now; ``Vault`` copies a leftover file into the new
@@ -232,7 +233,10 @@ class VaultSettings:
             scalar keys (``type`` / ``status`` / ``stale_after``) extend the
             effective *indexed_frontmatter_fields* set. See
             :attr:`~markdown_vault_mcp.vault.Vault.okf`.
-        okf_write: Enable the OKF enforced-write layer.
+        okf_write: The deprecated ``OKF_WRITE`` alias; it enables authoring,
+            review and maintenance defaults and stamps nothing (#1443).
+        okf_capabilities: Resolved OKF authority, or ``None`` for the legacy
+            library construction behavior controlled by ``okf_write``.
     """
 
     index_path: Path | None = None
@@ -250,6 +254,8 @@ class VaultSettings:
     state_path: Path | None = None
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
+    git_group_idle_s: float = dataclasses.field(default=300, kw_only=True)
+    git_group_max_age_s: float = dataclasses.field(default=3600, kw_only=True)
     git_pull_interval_s: int = 0
     protected_paths: Sequence[str] | None = dataclasses.field(
         default=None, kw_only=True
@@ -278,9 +284,13 @@ class VaultSettings:
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
+    okf_capabilities: OkfCapabilities | None = None
 
     def __post_init__(self) -> None:
-        """Validate protected-path policy for direct library callers."""
+        """Validate protected paths and group deadlines for library callers."""
+        from markdown_vault_mcp.config_sections.git import validate_group_timeouts
+
+        validate_group_timeouts(self.git_group_idle_s, self.git_group_max_age_s)
         object.__setattr__(
             self, "protected_paths", normalize_protected_paths(self.protected_paths)
         )
@@ -346,6 +356,8 @@ class VaultSettings:
                 if (git.repo_url is not None or git.token is not None)
                 else 0
             ),
+            git_group_idle_s=git.group_idle_s,
+            git_group_max_age_s=git.group_max_age_s,
             protected_paths=config.protected_paths,
             exclude_patterns=config.indexing.exclude_patterns,
             attachment_extensions=config.content.attachment_extensions,
@@ -383,6 +395,7 @@ class VaultSettings:
             conventions_file=config.content.conventions_file,
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,
+            okf_capabilities=config.content.okf_capabilities,
         )
 
     def effective_indexed_fields(self, *, okf_active: bool) -> list[str]:

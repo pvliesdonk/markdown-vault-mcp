@@ -467,3 +467,65 @@ def test_git_snapshot_nonregular_modes_are_unavailable(tmp_path, kind):
         (e.path, e.state, e.reason) for e in page.entries
     ]
     snapshot.close()
+
+
+def test_children_pages_never_descend_and_validate_cursor(tmp_path):
+    import pytest
+
+    from markdown_vault_mcp.bundle_inventory import BundleChildrenRequest
+
+    bundle = tmp_path / "bundle"
+    (bundle / "a").mkdir(parents=True)
+    (bundle / "a" / "nested.md").write_text("nested")
+    (bundle / "z.md").write_text("z")
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    first = inspector.inspect(BundleChildrenRequest("bundle", entry_limit=1))
+    assert [entry.path for entry in first.entries] == ["bundle/a"]
+    second = inspector.inspect(
+        BundleChildrenRequest("bundle", cursor=first.next_cursor)
+    )
+    assert [entry.path for entry in second.entries] == ["bundle/z.md"]
+    assert [
+        entry.path for entry in inspector.inspect(BundleTreeRequest("bundle")).entries
+    ] == ["bundle/a", "bundle/a/nested.md", "bundle/z.md"]
+    with pytest.raises(ValueError):
+        BundleChildrenRequest("bundle", cursor="bundle/a/nested.md")
+
+
+def test_children_names_only_do_not_consume_note_budget(tmp_path, monkeypatch):
+    from markdown_vault_mcp import bundle_inventory
+    from markdown_vault_mcp.bundle_inventory import BundleChildrenRequest
+
+    folder = tmp_path / "bundle"
+    folder.mkdir()
+    for i in range(50):
+        (folder / f"{i:02}.md").write_text("x" * 60000)
+    limits = []
+    original = bundle_inventory.read_regular_nofollow
+
+    def capture(parent, name, limit):
+        limits.append(limit)
+        return original(parent, name, limit)
+
+    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", capture)
+    inspector = BundleInspector(tmp_path, (), frozenset(), 0)
+    page = inspector.inspect(BundleChildrenRequest("bundle", entry_limit=100))
+    assert page.enumeration == "complete" and page.next_cursor is None
+    assert len(page.entries) == 50
+    assert limits == [0] * 50
+    assert all(entry.reason == "byte_budget" for entry in page.entries)
+    from markdown_vault_mcp.vault import Vault
+
+    limits.clear()
+    vault = Vault(source_dir=tmp_path)
+    try:
+        navigation = vault.reader.okf_navigation("bundle", entry_limit=100)
+        assert navigation.enumeration == "complete" and navigation.next_cursor is None
+        assert navigation.body.count("- [") == 50
+        assert limits == [0] * 50
+    finally:
+        vault.close()
+    limits.clear()
+    tree = inspector.inspect(BundleTreeRequest("bundle", entry_limit=1))
+    assert limits and limits[0] > 0
+    assert tree.entries[0].state == "inspected"

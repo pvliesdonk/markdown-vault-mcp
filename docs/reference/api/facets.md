@@ -90,9 +90,7 @@ backslashes and empty or dot components are rejected with `ValueError`.
 
 The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
 `state`, `enumeration`, `interpretation="caller_selected"`, and
-`search_state="not_evaluated"`. This legacy scope-level field is unchanged;
-each entry carries its own search state. A commit-backed tree page also includes
-`uncommitted`, the policy-visible changed paths within its selected scope. Scope states distinguish `inspected`, `missing`
+`search_state="not_evaluated"`, and `removal_history="not_inspected"` for generic tree inspections. Each entry carries its own search state. A commit-backed tree page also includes `uncommitted`, the policy-visible changed paths within its selected scope. Scope states distinguish `inspected`, `missing`
 and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
 
@@ -211,6 +209,16 @@ on each page, even when most names are omitted. Live resume skips
 policy checks for names before the cursor. A current non-directory at the cursor
 is treated as a leaf; an inaccessible cursor ancestor makes enumeration incomplete.
 
+To select concept candidates from the same bounded observation, call
+`vault.reader.okf_inventory(BundleTreeRequest(root="knowledge"), type_state="absent")`.
+
+Locally observed removed concepts appear with `presence="removed"`, subject to current access policy. Live entries and removal probes share the 1,000-observation page budget. `removal_history` reports `available` when the local ledger is usable and `unavailable` when it is not; it does not establish complete history. Ledger availability does not overwrite `enumeration`. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews).
+
+Each call filters up to 1,000 observations and returns at most the requested
+limit; continue with `next_cursor` even when no entries match. Reserved files named `index.md` and `log.md` are excluded. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. An absent type has no `type` key; blank, null and non-string values are invalid.
+
+`vault.reader.okf_navigation("knowledge", cursor=cursor)` returns the authored index body or a synthesized immediate page, with its source, enumeration state and `next_cursor`. Pass each returned cursor to continue until it is null.
+
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet
 <!-- vale on -->
@@ -240,3 +248,5 @@ status.
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.index.IndexFacet
 <!-- vale on -->
+
+Snapshot-bound library reviews use `WriterFacet.okf_verify(path, subject, snapshot, check="human-review")`. Pass the snapshot from the whole-note read and the reviewer subject. A `human-review` records `human:<subject>`; a named machine check records `process:<subject>`. The call checks the snapshot, writes the claim with an etag guard and records a local receipt.

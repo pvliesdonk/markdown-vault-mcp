@@ -1,17 +1,4 @@
-"""Tests for the OKF enforced-write layer (#964, design §6).
-
-Covers the four pieces of the frontmatter-enforcement phase:
-
-- The pure transforms in ``okf.py`` (:func:`apply_okf_write_stamp`,
-  :func:`append_okf_verification`).
-- The runtime seam in ``_okf_write.py`` (actor resolution, the enrichment
-  builder, and the suppress contextvar).
-- Config cross-validation (``OKF_WRITE`` requires ``OKF_MODE != off``).
-- The invalidation matrix end-to-end through a writable, OKF-active vault
-  (body write / body edit / frontmatter-only edit clear ``verified``; rename
-  preserves it) and the ``okf_verify`` tool under both an authed and a
-  no-auth server.
-"""
+"""Provenance preservation and explicit OKF review behavior."""
 
 from __future__ import annotations
 
@@ -29,24 +16,19 @@ from mcp.shared.exceptions import MCPError
 from markdown_vault_mcp import _okf_write
 from markdown_vault_mcp._okf_write import (
     OkfWriteIntent,
-    build_okf_write_enrich,
     okf_write_intent,
     okf_write_suppressed,
     resolve_human_subject,
-    tool_actor,
 )
-from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import (
-    OkfDetector,
     append_okf_verification,
-    apply_okf_write_stamp,
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
     _parse_tool_data,
     wait_for_mcp_writer_drain,
-    wait_for_writer_drain,
 )
+from tests.fixtures.review_binding import review_args
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
@@ -64,97 +46,6 @@ def _assert_recent_utc_stamp(value: object) -> None:
     assert isinstance(value, str) and _STAMP_RE.match(value), value
     written = _dt.datetime.fromisoformat(value)
     assert abs(_dt.datetime.now(_dt.UTC) - written) < _dt.timedelta(minutes=5)
-
-
-# ---------------------------------------------------------------------------
-# Pure transforms: apply_okf_write_stamp
-# ---------------------------------------------------------------------------
-
-
-class TestApplyOkfWriteStamp:
-    @pytest.mark.parametrize("existing_stamp", [False, True])
-    def test_preserves_sources_and_other_fields(self, existing_stamp: bool) -> None:
-        stamp = "generated: {by: old, at: old}\n" if existing_stamp else ""
-        text = (
-            "---\nzeta: {zeta: 1, alpha: 2}\ntype: Playbook\n"
-            + stamp
-            + "verified: [{by: 'human:old', at: old}]\n"
-            "sources: [{resource: 'https://example.com/a', id: a}]\n"
-            "x_custom: 1\nalpha: false\n---\n\n# Body\n\nText."
-        )
-        before = fm.loads(text)
-        post = fm.loads(apply_okf_write_stamp(text, actor="human:writer", now=_NOW))
-        expected = (
-            ["zeta", "type", "generated", "sources", "x_custom", "alpha"]
-            if existing_stamp
-            else ["zeta", "type", "sources", "x_custom", "alpha", "generated"]
-        )
-        assert list(post.metadata) == expected
-        assert post.metadata["generated"] == {"by": "human:writer", "at": _ISO}
-        assert list(post.metadata["generated"]) == ["by", "at"]
-        for key in ("zeta", "type", "sources", "x_custom", "alpha"):
-            assert post.metadata[key] == before.metadata[key]
-        assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
-        assert list(post.metadata["sources"][0]) == ["resource", "id"]
-        assert post.content == before.content
-
-    def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
-        out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
-        post = fm.loads(out)
-        assert post.metadata["generated"] == {"by": "a/1", "at": _ISO}
-        assert "Body." in post.content
-
-    def test_clears_verified_on_content_change(self) -> None:
-        text = (
-            "---\n"
-            "verified:\n"
-            "  - by: human:peter\n"
-            "    at: 2026-01-01\n"
-            "title: T\n"
-            "---\n"
-            "# T\n"
-        )
-        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW)
-        meta = fm.loads(out).metadata
-        assert "verified" not in meta
-        assert meta["generated"] == {"by": "human:x", "at": _ISO}
-        # Unrelated fields survive.
-        assert meta["title"] == "T"
-
-    def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
-        # Once a note carries this exact actor/instant stamp and no verified,
-        # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
-        once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", now=_NOW)
-        assert apply_okf_write_stamp(once, actor="t/1", now=_NOW) == once
-
-    def test_a_local_offset_instant_is_written_as_utc(self) -> None:
-        # 16:30:05 at +02:00 is 14:30:05Z; the stamp carries one spelling
-        # for every deployment (OKF v0.2 §5 as amended 2026-08-21; #1372).
-        local = _dt.datetime(
-            2026, 8, 9, 16, 30, 5, tzinfo=_dt.timezone(_dt.timedelta(hours=2))
-        )
-        out = apply_okf_write_stamp("# Note\n", actor="a/1", now=local)
-        assert fm.loads(out).metadata["generated"]["at"] == _ISO
-
-    def test_a_naive_instant_is_refused(self) -> None:
-        # A naive value would be read as the host's local time and silently
-        # become an offset the caller never stated — the class of ambiguity
-        # the amendment exists to remove. Callers pass an aware instant.
-        with pytest.raises(ValueError, match="aware"):
-            apply_okf_write_stamp(
-                "# Note\n", actor="a/1", now=_dt.datetime(2026, 8, 9, 14, 30, 5)
-            )
-
-    def test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp(self) -> None:
-        # A datetime value would be re-dumped as ``2026-08-09 14:30:05+00:00``,
-        # the corruption the amendment names; a string stays as written.
-        out = apply_okf_write_stamp("# Note\n", actor="a/1", now=_NOW)
-        assert "at: '2026-08-09T14:30:05Z'" in out
-        assert isinstance(fm.loads(out).metadata["generated"]["at"], str)
-
-    def test_human_actor_is_recorded_verbatim(self) -> None:
-        out = apply_okf_write_stamp("body\n", actor="human:peter", now=_NOW)
-        assert fm.loads(out).metadata["generated"]["by"] == "human:peter"
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +87,10 @@ class TestAppendOkfVerification:
         out = append_okf_verification("# N\n", subject="peter", now=_NOW)
         meta = fm.loads(out).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _ISO}]
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        with pytest.raises(InvalidRequestError, match="snapshot"):
+            append_okf_verification("# N\n", subject="checker", now=_NOW, check="links")
 
     def test_appends_to_existing_list(self) -> None:
         text = "---\nverified:\n  - by: human:alice\n    at: 2026-01-01\n---\n# N\n"
@@ -236,9 +131,6 @@ class TestAppendOkfVerification:
 
 
 class TestActorResolution:
-    def test_tool_actor_format(self) -> None:
-        assert tool_actor("1.2.3") == "markdown-vault-mcp/1.2.3"
-
     def test_resolve_human_subject_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -255,69 +147,8 @@ class TestActorResolution:
 
 
 # ---------------------------------------------------------------------------
-# Enrichment builder (_okf_write.build_okf_write_enrich)
+# Maintenance suppression context
 # ---------------------------------------------------------------------------
-
-
-def _active_detector(tmp_path: Path) -> OkfDetector:
-    """An OKF detector forced active via mode='on'."""
-    return OkfDetector(tmp_path, mode="on")
-
-
-def _inactive_detector(tmp_path: Path) -> OkfDetector:
-    """An auto-mode detector over a vault with no declaration (inactive)."""
-    return OkfDetector(tmp_path, mode="auto")
-
-
-class TestBuildOkfWriteEnrich:
-    def test_returns_none_when_disabled(self, tmp_path: Path) -> None:
-        assert (
-            build_okf_write_enrich(
-                okf_write=False, detector=_active_detector(tmp_path), version="1"
-            )
-            is None
-        )
-
-    def test_stamps_on_active_write(self, tmp_path: Path) -> None:
-        enrich = build_okf_write_enrich(
-            okf_write=True, detector=_active_detector(tmp_path), version="9.9"
-        )
-        assert enrich is not None
-        meta = fm.loads(enrich("# N\n", "write")).metadata
-        # No request intent bound → default tool actor.
-        assert meta["generated"]["by"] == "markdown-vault-mcp/9.9"
-
-    def test_noop_on_delete_and_rename_ops(self, tmp_path: Path) -> None:
-        enrich = build_okf_write_enrich(
-            okf_write=True, detector=_active_detector(tmp_path), version="1"
-        )
-        assert enrich is not None
-        assert enrich("# N\n", "delete") == "# N\n"
-        assert enrich("# N\n", "rename") == "# N\n"
-
-    def test_noop_when_inactive(self, tmp_path: Path) -> None:
-        enrich = build_okf_write_enrich(
-            okf_write=True, detector=_inactive_detector(tmp_path), version="1"
-        )
-        assert enrich is not None
-        assert enrich("# N\n", "write") == "# N\n"
-
-    def test_suppress_intent_makes_it_a_noop(self, tmp_path: Path) -> None:
-        enrich = build_okf_write_enrich(
-            okf_write=True, detector=_active_detector(tmp_path), version="1"
-        )
-        assert enrich is not None
-        with okf_write_suppressed():
-            assert enrich("# N\n", "write") == "# N\n"
-
-    def test_bound_intent_actor_is_used(self, tmp_path: Path) -> None:
-        enrich = build_okf_write_enrich(
-            okf_write=True, detector=_active_detector(tmp_path), version="1"
-        )
-        assert enrich is not None
-        with okf_write_intent(OkfWriteIntent(actor="human:peter")):
-            meta = fm.loads(enrich("# N\n", "write")).metadata
-        assert meta["generated"]["by"] == "human:peter"
 
 
 class TestIntentContextvar:
@@ -325,8 +156,8 @@ class TestIntentContextvar:
         assert _okf_write.current_okf_intent() is None
 
     def test_intent_reset_after_block(self) -> None:
-        with okf_write_intent(OkfWriteIntent(actor="a")):
-            assert _okf_write.current_okf_intent() == OkfWriteIntent(actor="a")
+        with okf_write_intent(OkfWriteIntent(suppress=True)):
+            assert _okf_write.current_okf_intent() == OkfWriteIntent(suppress=True)
         assert _okf_write.current_okf_intent() is None
 
     def test_suppress_sets_suppress_flag(self) -> None:
@@ -363,20 +194,6 @@ class TestConfigCrossValidation:
         with pytest.raises(ConfigurationError, match="okf_verify must be one of"):
             ContentConfig(okf_write=True, okf_verify=bad)
 
-    @pytest.mark.parametrize("mode", ["off", "trust-auth"])
-    def test_okf_verify_non_default_requires_okf_write(self, mode: str) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-        from markdown_vault_mcp.exceptions import ConfigurationError
-
-        with pytest.raises(ConfigurationError, match="only meaningful when okf_write"):
-            ContentConfig(okf_write=False, okf_verify=mode)
-
-    def test_okf_verify_default_allowed_without_okf_write(self) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        # The default value must not trip the OKF_WRITE-off interaction guard.
-        assert ContentConfig(okf_write=False).okf_verify == "elicit"
-
     @pytest.mark.parametrize("mode", ["elicit", "off", "trust-auth"])
     def test_okf_verify_allowed_with_okf_write(self, mode: str) -> None:
         from markdown_vault_mcp.config_sections.content import ContentConfig
@@ -404,15 +221,9 @@ _VERIFIED_NOTE = (
 )
 
 
-def _meta(vault: Vault, path: str) -> dict[str, Any]:
-    note = vault.reader.read(path)
-    assert note is not None
-    return dict(note.frontmatter)
-
-
 @pytest.fixture
-def enforced_vault(tmp_path: Path) -> Iterator[Vault]:
-    """A writable vault that declares OKF and has OKF_WRITE enabled."""
+def okf_alias_vault(tmp_path: Path) -> Iterator[Vault]:
+    """A writable vault that declares OKF and sets the OKF_WRITE alias."""
     root = tmp_path / "vault"
     root.mkdir()
     (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
@@ -427,149 +238,53 @@ def enforced_vault(tmp_path: Path) -> Iterator[Vault]:
         col.close()
 
 
-class TestInvalidationMatrix:
-    def test_body_write_clears_verified_and_stamps(self, enforced_vault: Vault) -> None:
-        enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
-        wait_for_writer_drain(enforced_vault)
-        meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-        _assert_recent_utc_stamp(meta["generated"]["at"])
-
-    def test_body_edit_clears_verified(self, enforced_vault: Vault) -> None:
-        enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
-        wait_for_writer_drain(enforced_vault)
-        # Re-establish a verified attestation without going through the enricher.
-        (enforced_vault._source_dir / "note.md").write_text(
-            _VERIFIED_NOTE, encoding="utf-8"
-        )
-        enforced_vault.writer.edit("note.md", old_text="Body.", new_text="Changed.")
-        wait_for_writer_drain(enforced_vault)
-        meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-
-    def test_body_append_clears_verified(self, enforced_vault: Vault) -> None:
-        (enforced_vault._source_dir / "note.md").write_text(
-            _VERIFIED_NOTE, encoding="utf-8"
-        )
-        enforced_vault.index.build_index()
-        enforced_vault.writer.append("note.md", "Appended line.\n")
-        wait_for_writer_drain(enforced_vault)
-        meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-
-    def test_frontmatter_only_edit_clears_verified(self, enforced_vault: Vault) -> None:
-        (enforced_vault._source_dir / "note.md").write_text(
-            _VERIFIED_NOTE, encoding="utf-8"
-        )
-        enforced_vault.index.build_index()
-        # Edit a frontmatter line only — still a content change, still invalidates.
-        enforced_vault.writer.edit(
-            "note.md", old_text="title: Playbook", new_text="title: Renamed Playbook"
-        )
-        wait_for_writer_drain(enforced_vault)
-        meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
-        assert meta["title"] == "Renamed Playbook"
-
-    def test_rename_preserves_verified(self, enforced_vault: Vault) -> None:
-        (enforced_vault._source_dir / "note.md").write_text(
-            _VERIFIED_NOTE, encoding="utf-8"
-        )
-        enforced_vault.index.build_index()
-        enforced_vault.writer.rename("note.md", "renamed.md")
-        wait_for_writer_drain(enforced_vault)
-        meta = _meta(enforced_vault, "renamed.md")
+class TestProvenancePreservation:
+    @pytest.mark.parametrize("operation", ["write", "edit", "append", "frontmatter"])
+    def test_supplied_claims_survive(
+        self, okf_alias_vault: Vault, operation: str
+    ) -> None:
+        path = okf_alias_vault.source_dir / "note.md"
+        path.write_text(_VERIFIED_NOTE, encoding="utf-8")
+        okf_alias_vault.index.build_index()
+        if operation == "write":
+            okf_alias_vault.writer.write("new.md", _VERIFIED_NOTE)
+            path = okf_alias_vault.source_dir / "new.md"
+            assert path.read_bytes() == _VERIFIED_NOTE.encode()
+        elif operation == "edit":
+            okf_alias_vault.writer.edit(
+                "note.md", old_text="Body.", new_text="Changed."
+            )
+        elif operation == "append":
+            okf_alias_vault.writer.append("note.md", "Added")
+        else:
+            okf_alias_vault.writer.edit(
+                "note.md", old_text="title: Playbook", new_text="title: Changed"
+            )
+        meta = fm.loads(path.read_text(encoding="utf-8")).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
-        # Rename bypasses the enricher: generated is left untouched.
         assert meta["generated"] == {"by": "process:enrich"}
 
-
-class TestUnparseableFrontmatterRefusal:
-    """#1454: the refusal is right; it has to say so in the caller's terms."""
-
-    MALFORMED_JSON = "{\n  not json,\n}\n# body\n"
-
-    def test_write_is_refused_with_the_path_and_the_reason(
-        self, enforced_vault: Vault
-    ) -> None:
-        # The stamp cannot be applied to a block that does not parse, so the
-        # write is refused — but it used to surface the parser's own exception,
-        # naming no path and reading like a server fault.
-        # The frontmatter is the caller's own content, so the caller must
-        # change the request (#1608).
-        with pytest.raises(InvalidRequestError, match=r"bad\.md") as excinfo:
-            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
-        assert "frontmatter" in str(excinfo.value)
-
-    def test_the_refused_write_leaves_no_file(self, enforced_vault: Vault) -> None:
-        with pytest.raises(ValueError):
-            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
-        assert not (enforced_vault.source_dir / "bad.md").exists()
-
-    def test_malformed_yaml_is_refused_the_same_way(
-        self, enforced_vault: Vault
-    ) -> None:
-        # The dialect is not what the refusal is about (#1408).
-        with pytest.raises(InvalidRequestError, match=r"bad\.md"):
-            enforced_vault.writer.write("bad.md", "---\ntitle: [unclosed\n---\n# b\n")
-
-    def test_editing_an_already_malformed_note_names_the_operation(
-        self, enforced_vault: Vault
-    ) -> None:
-        # `edit` matches on raw text, so it reaches the stamp with a block that
-        # never parsed — the refusal has to read for that operation too.
-        (enforced_vault.source_dir / "bad.md").write_text(
-            self.MALFORMED_JSON, encoding="utf-8"
+    def test_malformed_frontmatter_is_preserved(self, okf_alias_vault: Vault) -> None:
+        content = "---\ntitle: [unclosed\n---\n# b\n"
+        okf_alias_vault.writer.write("bad.md", content)
+        okf_alias_vault.writer.edit("bad.md", old_text="# b", new_text="# c")
+        assert (okf_alias_vault.source_dir / "bad.md").read_text() == content.replace(
+            "# b", "# c"
         )
-        # The stored note's block is at fault here, not the caller's edit, so
-        # this stays a plain ValueError: a server fault by the design (#1608).
-        with pytest.raises(ValueError, match=r"Cannot edit bad\.md") as excinfo:
-            enforced_vault.writer.edit("bad.md", old_text="# body", new_text="# other")
-        assert not isinstance(excinfo.value, InvalidRequestError)
-
-    def test_a_parseable_note_still_stamps(self, enforced_vault: Vault) -> None:
-        enforced_vault.writer.write("ok.md", '{\n"title": "T"\n}\n# T\n')
-        wait_for_writer_drain(enforced_vault)
-        assert _meta(enforced_vault, "ok.md")["generated"]["by"].startswith(
-            "markdown-vault-mcp/"
-        )
-
-
-class TestOffModeIdentity:
-    def test_write_is_byte_identical_when_okf_write_off(self, tmp_path: Path) -> None:
-        root = tmp_path / "vault"
-        root.mkdir()
-        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-        col = Vault(
-            source_dir=root,
-            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=False),
-        )
-        try:
-            col.index.build_index()
-            col.writer.write("note.md", _VERIFIED_NOTE)
-            wait_for_writer_drain(col)
-            on_disk = (root / "note.md").read_text(encoding="utf-8")
-        finally:
-            col.close()
-        # No enricher wired → the note lands exactly as written.
-        assert on_disk == _VERIFIED_NOTE
 
 
 # ---------------------------------------------------------------------------
-# End to end through the MCP server (actor threading + okf_verify tool)
+# End to end through the MCP server (authorship + okf_verify tool)
 # ---------------------------------------------------------------------------
 
 _PLAIN_NOTE = "# Plain\n\nSee [[playbook]].\n"
 
 
 @pytest.fixture
-def enforced_env(
+def okf_alias_env(
     _clear_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """Env for a writable, OKF-declared vault with the enforced-write layer on."""
+    """Env for a writable, OKF-declared vault with the OKF_WRITE alias set."""
     vault = tmp_path / "vault"
     (vault / "guides").mkdir(parents=True)
     (vault / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
@@ -583,10 +298,10 @@ def enforced_env(
 
 
 @pytest.fixture
-def trust_auth_env(enforced_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def trust_auth_env(okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Enforced-write vault with okf_verify pinned to the no-confirmation mode."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
-    return enforced_env
+    return okf_alias_env
 
 
 async def _accept_review(
@@ -615,24 +330,10 @@ def _verified_meta(path: Path) -> Any:
     return fm.loads(path.read_text(encoding="utf-8")).metadata.get("verified")
 
 
-@pytest.mark.usefixtures("enforced_env")
-class TestWriteToolThreadsActor:
-    async def test_write_stamps_tool_actor_and_clears_verified(
-        self, enforced_env: Path
-    ) -> None:
-        # No auth configured → get_subject() is "local" → tool actor, not human.
-        async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
-            await client.call_tool(
-                "write", {"path": "note.md", "content": _VERIFIED_NOTE}
-            )
-            await wait_for_mcp_writer_drain(client)
-        meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
-        assert "verified" not in meta
-        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-
-    async def test_write_stamps_human_actor_when_authed(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.usefixtures("okf_alias_env")
+class TestWriteToolAuthorship:
+    async def test_human_credentials_do_not_imply_authorship(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
@@ -642,93 +343,10 @@ class TestWriteToolThreadsActor:
                 "write", {"path": "note.md", "content": "# N\n\nBody.\n"}
             )
             await wait_for_mcp_writer_drain(client)
-        meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
-        assert meta["generated"]["by"] == "human:peter"
-
-    async def test_convert_links_migration_does_not_restamp(
-        self, enforced_env: Path
-    ) -> None:
-        # A migration transform suppresses the enricher on every write it
-        # issues (#1401), so converting a wikilink must not clear a note's
-        # human verification nor stamp it — through this tool or the facade.
-        (enforced_env / "guides" / "plain.md").write_text(
-            "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n---\n"
-            + _PLAIN_NOTE,
-            encoding="utf-8",
-        )
-        async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
-            await client.call_tool("okf_convert_links", {})
-            await wait_for_mcp_writer_drain(client)
         meta = fm.loads(
-            (enforced_env / "guides" / "plain.md").read_text(encoding="utf-8")
+            (okf_alias_env / "note.md").read_text(encoding="utf-8")
         ).metadata
-        assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
         assert "generated" not in meta
-
-
-@pytest.mark.usefixtures("enforced_env")
-class TestUnparseableFrontmatterRefusalTool:
-    """The refusal as an MCP client reads it (#1454)."""
-
-    async def test_unparseable_frontmatter_is_refused_in_the_client_s_terms(
-        self, enforced_env: Path
-    ) -> None:
-        """The client is told what it did wrong, not what the parser hit.
-
-        The enricher's own exception reached the client as
-        ``Expecting property name enclosed in double quotes`` — no path, no
-        cause, and logged server-side as an unexpected tool failure (#1454).
-        """
-        async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError) as excinfo:
-                await client.call_tool(
-                    "write", {"path": "bad.md", "content": "{\n  not json,\n}\n# b\n"}
-                )
-        message = str(excinfo.value)
-        assert "bad.md" in message
-        assert "frontmatter" in message
-        assert not (enforced_env / "bad.md").exists()
-
-
-@pytest.mark.usefixtures("enforced_env")
-class TestFetchThreadsActor:
-    async def test_fetch_stamps_human_actor_when_authed(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from unittest.mock import AsyncMock
-
-        from fastmcp_pvl_core import FetchResult
-
-        # fetch writes .md notes through DocumentManager.write, so the enricher
-        # fires; the provenance actor must be the authenticated caller (#964).
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
-        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        # The download is incidental here — only the actor threading on the
-        # write path is under test — so fetch_url (a black-box library
-        # boundary, #1028) is stubbed with a canned result.
-        monkeypatch.setattr(
-            "markdown_vault_mcp._tools.writer.fetch_url",
-            AsyncMock(
-                return_value=FetchResult(
-                    body=b"# Fetched\n\nBody.\n",
-                    content_type="text/plain",
-                    final_url="https://example.com/report.md",
-                )
-            ),
-        )
-        async with Client(make_server()) as client:
-            await wait_for_mcp_writer_drain(client)
-            await client.call_tool(
-                "fetch",
-                {"url": "https://example.com/report.md", "path": "notes/report.md"},
-            )
-            await wait_for_mcp_writer_drain(client)
-        meta = fm.loads(
-            (enforced_env / "notes" / "report.md").read_text(encoding="utf-8")
-        ).metadata
-        assert meta["generated"]["by"] == "human:peter"
 
 
 @pytest.mark.usefixtures("trust_auth_env")
@@ -739,7 +357,7 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="no human identity"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
 
     async def test_appends_verification_when_authed(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -749,14 +367,13 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         payload = _parse_tool_data(result)
         assert payload["verifier"] == "human:peter"
         assert payload["verified_count"] == 1
-        # The append survives — okf_verify suppresses the enricher so its own
-        # write does not clear the verification it just added.
+        # The explicit verification survives its own write.
         meta = fm.loads(
             (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata
@@ -764,38 +381,56 @@ class TestOkfVerifyTrustAuth:
         assert entry["by"] == "human:peter"
         _assert_recent_utc_stamp(entry["at"])
 
+    @pytest.mark.usefixtures("trust_auth_env")
+    @pytest.mark.parametrize("subject", ["user:alice", "urn:uuid:123", "team/alice"])
+    async def test_written_subject_remains_recorded_on_read(
+        self, monkeypatch: pytest.MonkeyPatch, subject: str
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": subject})
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool("okf_verify", review_args("guides/playbook.md"))
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("read", {"path": "guides/playbook.md"})
+        annotation = _parse_tool_data(result)["okf"]
+        assert annotation["trust_tier"] == "human-reviewed"
+        assert annotation["review"]["state"] == "recorded"
+        assert annotation["review"]["recorded_entries"] == 1
+        assert annotation["review"]["malformed_entries"] == 0
+        assert annotation["recorded"]["verified"][0]["by"] == f"human:{subject}"
+
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="Document not found"):
-                await client.call_tool("okf_verify", {"path": "nope.md"})
+                await client.call_tool(
+                    "okf_verify", {"path": "nope.md", "reviewed_snapshot": {}}
+                )
 
     async def test_aborts_on_concurrent_modification(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # okf_verify reads then writes with if_match=note.etag. Simulate a
-        # concurrent write landing in that window by mutating the file from
-        # inside the transform (which runs after the read); the etag no longer
-        # matches, so the write is refused rather than clobbering the change.
+        # Edit after the facet's read but before the guarded note write.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        import markdown_vault_mcp._tools.writer as writer_mod
+        import markdown_vault_mcp.facets.writer as writer_mod
 
-        real_append = writer_mod.append_okf_verification
+        real_write = writer_mod.WriterFacet.write
 
-        def racing_append(text: str, *, subject: str, now: Any) -> str:
+        def racing_write(self: Any, *args: Any, **kwargs: Any) -> Any:
             (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
-            return real_append(text, subject=subject, now=now)
+            return real_write(self, *args, **kwargs)
 
-        monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
+        monkeypatch.setattr(writer_mod.WriterFacet, "write", racing_write)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="changed while it was being verified"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
 
     async def test_counts_a_bare_mapping_as_one(
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -811,13 +446,13 @@ class TestOkfVerifyTrustAuth:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verified_count"] == 2
 
 
-@pytest.mark.usefixtures("enforced_env")
+@pytest.mark.usefixtures("okf_alias_env")
 class TestOkfVerifyElicit:
     """okf_verify under the default ``OKF_VERIFY=elicit`` — human elicitation gate."""
 
@@ -827,13 +462,13 @@ class TestOkfVerifyElicit:
             make_server(), mode="legacy", elicitation_handler=_accept_review
         ) as client:
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verifier"] == "human:local"
 
     async def test_writes_on_affirmative_elicitation(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # An affirmative elicitation reply attributes to the authenticated
         # subject and records the verification.
@@ -842,13 +477,13 @@ class TestOkfVerifyElicit:
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         payload = _parse_tool_data(result)
         assert payload["verifier"] == "human:peter"
         assert payload["verified_count"] == 1
-        (entry,) = _verified_meta(enforced_env / "guides" / "playbook.md")
+        (entry,) = _verified_meta(okf_alias_env / "guides" / "playbook.md")
         assert entry["by"] == "human:peter"
         _assert_recent_utc_stamp(entry["at"])
 
@@ -858,25 +493,25 @@ class TestOkfVerifyElicit:
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
+                "okf_verify", review_args("guides/playbook.md")
             )
             await wait_for_mcp_writer_drain(client)
         assert _parse_tool_data(result)["verifier"] == "human:local"
 
     async def test_declined_elicitation_writes_nothing(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server(), elicitation_handler=_decline_review) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
-        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
     async def test_negative_reply_writes_nothing(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Accepting the form but answering 'no' is not an affirmation.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
@@ -886,12 +521,12 @@ class TestOkfVerifyElicit:
         ) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
-        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
     async def test_unsupported_client_fails_closed(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # On the modern protocol the client drives the returned input request;
         # with no handler it refuses before issuing a continuation call.
@@ -900,12 +535,23 @@ class TestOkfVerifyElicit:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(MCPError, match="Elicitation not supported"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
-        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
+
+    async def test_unsupported_legacy_client_fails_closed(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+        async with Client(make_server(), mode="legacy") as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match=r"client.*cannot ask"):
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
+        assert _verified_meta(okf_alias_env / "guides" / "playbook.md") is None
 
 
-@pytest.mark.usefixtures("enforced_env")
+@pytest.mark.usefixtures("okf_alias_env")
 class TestOkfVerifyOff:
     """okf_verify under ``OKF_VERIFY=off`` — the tool is hidden entirely."""
 
@@ -926,14 +572,14 @@ class TestOkfVerifyOff:
 
 @pytest.fixture(params=["single", "mapped"])
 async def service_token(
-    request: pytest.FixtureRequest, enforced_env: Path
+    request: pytest.FixtureRequest, okf_alias_env: Path
 ) -> AsyncIterator[None]:
     """Bind a real static verifier result, including mapped subject labels."""
     from fastmcp_pvl_core import ServerConfig, build_bearer_auth
     from mcp.server.auth.middleware.auth_context import auth_context_var
     from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
-    tokens_file = enforced_env.parent / "tokens.toml"
+    tokens_file = okf_alias_env.parent / "tokens.toml"
     tokens_file.write_text(
         '[tokens]\n"test-only-1463" = "user:peter"\n', encoding="utf-8"
     )
@@ -955,58 +601,39 @@ async def service_token(
 
 @pytest.mark.usefixtures("service_token")
 class TestServiceTokenOkf:
-    async def test_write_uses_tool_provenance(self, enforced_env: Path) -> None:
-        async with Client(make_server()) as client:
-            await client.call_tool(
-                "write", {"path": "service.md", "content": "# Service\n"}
-            )
-            await wait_for_mcp_writer_drain(client)
-        meta = fm.loads(
-            (enforced_env / "service.md").read_text(encoding="utf-8")
-        ).metadata
-        assert meta["generated"]["by"] == tool_actor(_okf_write.package_version())
-
-    async def test_trust_auth_refuses_without_changing_note(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("mode", ["elicit", "trust-auth"])
+    async def test_service_cannot_record_human_review(
+        self, okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch, mode: str
     ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
-        path = enforced_env / "guides" / "playbook.md"
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", mode)
+        path = okf_alias_env / "guides" / "playbook.md"
         before = path.read_bytes()
-        async with Client(make_server()) as client:
-            with pytest.raises(ToolError, match="no human identity"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+        async with Client(make_server(), elicitation_handler=_accept_review) as client:
+            with pytest.raises(
+                ToolError, match="service principal cannot record human-review"
+            ):
+                await client.call_tool("okf_verify", review_args("guides/playbook.md"))
             await wait_for_mcp_writer_drain(client)
         assert path.read_bytes() == before
 
-    @pytest.mark.parametrize("legacy", [False, True])
-    async def test_elicit_attributes_confirmed_review_to_local_human(
-        self, enforced_env: Path, legacy: bool
-    ) -> None:
-        async with Client(
-            make_server(),
-            mode="legacy" if legacy else "auto",
-            elicitation_handler=_accept_review,
-        ) as client:
-            result = await client.call_tool(
-                "okf_verify", {"path": "guides/playbook.md"}
-            )
-            await wait_for_mcp_writer_drain(client)
-        assert _parse_tool_data(result)["verifier"] == "human:local"
-        (entry,) = _verified_meta(enforced_env / "guides" / "playbook.md")
-        assert entry["by"] == "human:local"
 
-    async def test_elicit_decline_does_not_verify(self, enforced_env: Path) -> None:
-        async with Client(make_server(), elicitation_handler=_decline_review) as client:
-            with pytest.raises(ToolError, match="not confirmed"):
-                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
-            await wait_for_mcp_writer_drain(client)
-        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+def test_ordinary_write_preserves_supplied_provenance(okf_alias_vault: Vault) -> None:
+    fields = {
+        "z": "first",
+        "generated": {"by": "agent/example", "at": "2026-01-01T00:00:00Z"},
+        "verified": [{"by": "human:reviewer", "at": "2026-01-02T00:00:00Z"}],
+        "a": "last",
+    }
+    okf_alias_vault.writer.write("provenance.md", "Body\n", frontmatter=fields)
+    text = (okf_alias_vault._source_dir / "provenance.md").read_text()
+    assert list(fm.loads(text).metadata) == list(fields)
+    assert fm.loads(text).metadata == fields
 
 
 async def test_protected_verify_precedes_elicitation(
-    enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    okf_alias_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = enforced_env / "_conventions.md"
+    path = okf_alias_env / "_conventions.md"
     path.write_text("original")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "_conventions.md")
     calls = 0
@@ -1020,6 +647,6 @@ async def test_protected_verify_precedes_elicitation(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
         with pytest.raises(ToolError, match="PROTECTED_PATHS"):
-            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+            await client.call_tool("okf_verify", review_args("_conventions.md"))
     assert calls == 0
     assert path.read_text() == "original"

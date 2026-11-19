@@ -427,8 +427,8 @@ class IndexWriteCoordinator:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Schedule a build whose Future includes marker and readiness publication.
 
-        An idle warm restart returns an already-resolved Future. A failed marker
-        write fails this Future just like a failed scan. Cancellation is possible
+        An idle warm restart queues an observation sweep while reusing FTS.
+        A failed marker write or sweep fails this Future. Cancellation is possible
         until execution begins; cancelling a pending build does not mark it failed.
         """
         return self._builds.submit(self._writer, force=force)

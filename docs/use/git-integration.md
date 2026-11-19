@@ -61,9 +61,49 @@ OKF updates share that commit. Folder names with control characters, boundary
 whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
 to keep the subject identifiable on one line.
 
+With Git commits enabled, a writing MCP call waits up to 30 seconds for its
+local commit attempt before returning; on timeout or failure, the result returns
+and the commit may be late or absent. Push remains deferred.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
+
+## Group writes into one commit
+
+Call `begin_transaction` with a commit description, pass its handle as
+`transaction` to each `write`, `edit`, `append`, `delete`, `rename` or
+`move_folder`, then call `end_transaction`. The files change immediately and
+are not rolled back. A write without the handle commits separately. Uploads,
+`fetch` and OKF tools do not accept a handle and stay outside the group.
+If a request is cancelled after its write starts, the write continues. While
+its group remains open, `end_transaction` and `git_sync` refuse until the write
+finishes; cancellation does not roll it back.
+
+`end_transaction` returns `committed`, `no_changes` or `failed` with a SHA
+when available and a file count. Without Git commit support, a group with writes
+returns `failed`; the files remain written. An empty group returns `no_changes`.
+A real `git_sync` closes the caller's open
+groups and waits for their commits already under way. A failed commit stops
+sync; inspect the Git index to recover staged work. Both tools wait up to 30
+seconds; if a commit is still pending, it continues in the background and no
+sync leg runs. Check the server log, Git index and history for the outcome.
+A later `git_sync` waits only while the commit is still pending. A
+`git_sync` dry run leaves groups open; omit the transaction handle for a preview.
+Completed automatic-close results are available to their owner by handle until
+the server restarts; an implicit sync does not inspect earlier results.
+Unauthenticated clients share the local principal and its transaction groups.
+An interactive `git_sync` pull by another principal can flush an open group,
+splitting its writes across commits.
+
+Groups close automatically after five minutes of inactivity or one hour after
+opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
+bounds. A group can close while a write is active. New attempts to bind an
+closed group are refused. A write already bound to the group can continue; later
+callbacks use the ordinary per-call commit path under the opener's identity.
+Git stages current on-disk content, which can include a write whose callback is
+still pending.
 
 ## Uncommitted files at startup
 

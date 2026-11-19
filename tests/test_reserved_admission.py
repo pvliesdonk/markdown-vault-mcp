@@ -75,7 +75,7 @@ def test_body_only_and_generated_folder_indexes_survive_version_gate(
         vault.writer.okf_generate_index(folder="generated")
         assert vault.index.wait_for_drain(timeout=5)
         generated = vault.reader.read("generated/index.md")
-        assert generated.frontmatter["okf_version"] is None
+        assert generated.frontmatter == {}
         assert "generated/index.md" in {n.path for n in vault.reader.list_documents()}
     finally:
         vault.close()

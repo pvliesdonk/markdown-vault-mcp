@@ -655,4 +655,6 @@ async def test_nul_verify_preflight_is_actionable(
         make_server(), mode="legacy", elicitation_handler=accept
     ) as client:
         with pytest.raises(ToolError, match="NUL"):
-            await client.call_tool("okf_verify", {"path": "bad\0.md"})
+            await client.call_tool(
+                "okf_verify", {"path": "bad\0.md", "reviewed_snapshot": {}}
+            )
