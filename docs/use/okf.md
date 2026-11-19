@@ -32,7 +32,9 @@ This declaration travels with the vault, so the same bundle behaves the same way
 | `off` | Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as `status` for an unrelated purpose. |
 | `on` | Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own. |
 
-Check the current state at any time through the `okf` section of the `stats` tool, or the `config://vault` resource.
+Check the current state through the `config://vault` resource. Its `okf_write_configured` field reports the configured `OKF_WRITE` flag, and `okf_write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the `stats` tool's `okf` section reports the same values as `write_configured` and `write_effective`. The section is absent when OKF is inactive; use `config://vault` to inspect that state. Detection reflects changes to the declaration on the next call.
+
+The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether `okf_verify` is available: `OKF_VERIFY=off` can hide that tool while the write layer remains effective. Independent capability reporting is planned in [#1412](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412).
 
 ## What the metadata means
 
@@ -109,7 +111,9 @@ Anything already in the file wins, so a title you wrote yourself and the root `i
 
 ## The enforced write layer
 
-The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before. On a read-only deployment the flag is accepted and does nothing: the write tools are hidden, so there is no write for the layer to act on.
+The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
+
+Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification invalidation, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
@@ -144,13 +148,70 @@ With the layer on, the server also maintains a folder's reserved files as a side
 
 A `delete`, `rename` or `move_folder` keeps the listings current too. A deleted note drops out of its folder's `index.md`. A renamed note leaves its old folder's listing and appears in its new folder's, as a write there would. After a folder move, every `index.md` that moved with it is regenerated for its new paths, and so are the listings of the old and the new parent folder. When a note or folder lands several levels below the nearest folder with an `index.md`, that folder's listing is regenerated and each level in between gets one, so no listing points at a missing file. These changes add no `log.md` entry. A rename to or from `index.md` or `log.md` leaves the listings alone, so renaming a note onto a reserved name keeps its content.
 
+After a folder move, the refresh skips folders inside a git submodule or nested repository, and their descendants. It still updates ordinary containing folders and their other descendants, without attempting to rewrite those listings. The [Git integration guide](git-integration.md#submodules-and-nested-repositories-in-the-vault) explains the read-only boundary.
+
 A few boundaries keep this predictable, and they are also its limits. Maintenance runs only on an active bundle. A write whose target is itself a reserved file does not trigger it. The `okf_verify` tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only one listing is regenerated per write: that of the folder directly containing the note, or, when it has no `index.md`, that of the nearest folder above it with one. A folder's own listing is not otherwise refreshed when a note lands in one of its subfolders. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it, so a listing can silently fall behind.
 
 **Do not hand-edit a maintained `index.md`.** The write itself is left alone, because the maintainer skips a write whose target is a reserved file. But the next content write into that folder regenerates the listing from the note list, and an edit you made is gone with nothing reporting it. The same applies to anyone else editing the vault. A teammate's change to a maintained `index.md` in Obsidian, or one arriving through a git pull, survives only until the next write into that folder. Put anything you want to keep in a note, not in the generated navigation. `log.md` is appended to rather than regenerated, so hand-written entries there are not overwritten, but a conflicting edit from another editor can still collide with the server's append.
 
 One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
-To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
+To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.
+
+## Repairing legacy log frontmatter
+
+Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
+start of `log.md`. The [`admin repair-log`](../reference/cli.md#markdown-vault-mcp-admin-repair-log)
+command repairs one such file at a time. Without `--apply` it only previews.
+As an operator command rather than an MCP tool, it is out of every client's
+reach.
+
+Preview the affected log with its vault-relative path:
+
+```bash
+markdown-vault-mcp admin repair-log guides/log.md
+```
+
+The preview prints the exact bytes it would remove, with their byte offsets,
+between `>>> removal begins` and `<<< removal ends`. Below them it prints the
+command that applies the removal. It keeps the opening block and removes only the
+identical copies directly after it. Matching blocks alone do not prove the old
+defect wrote them: a log can quote its own frontmatter on purpose. Apply only
+when nothing in the removal was written deliberately. `Nothing to repair`
+means the file holds no supported repeated run: differing, interleaved or
+malformed blocks are left for you to edit by hand.
+
+To apply, run the printed command. It carries the `etag` of the log as you
+previewed it:
+
+```bash
+markdown-vault-mcp admin repair-log guides/log.md --apply <etag>
+```
+
+If the log changed after the preview, apply refuses and changes nothing;
+preview it again and review the new removal. Apply first keeps the complete
+original as `log.md.frontmatter-repair.bak` beside the log, then removes only
+the previewed repeats. The opening frontmatter, provenance fields, line endings
+and the rest of the file stay byte for byte; no `log.md` entry or provenance
+stamp is added. On systems that enforce Unix file modes, only the account
+that ran the command can read the recovery file. It is not indexed as a note.
+In a Git-backed vault both files are committed like any other write. Keep the
+recovery file until you have checked the result. The same preview and apply
+are available to library callers as `Vault.writer.okf_preview_log_repair` and
+`Vault.writer.okf_apply_log_repair`.
+
+Any existing recovery entry blocks apply, even one with the same bytes. If
+apply stops part-way, its error says whether the log may already have
+changed. The recovery file may then be partial or missing, so inspect both
+files. Apply never reuses or deletes the recovery file: move it somewhere safe
+before a retry.
+
+Stop the server before applying. Apply refuses while a server holds the
+on-disk index (`MARKDOWN_VAULT_MCP_INDEX_PATH`), but a server with an
+in-memory index, another editor, or a sync tool writing the same file is not
+detected. Apply is not a transaction and gives no guarantee across a power
+loss. Apply does not update the search index. The next `admin reindex`, or
+the reindex the server runs when it starts, finds the changed log.
 
 ## Using OKF with PARA or Zettelkasten
 

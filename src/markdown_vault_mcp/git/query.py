@@ -28,7 +28,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
-from markdown_vault_mcp.git._run import cleanup_git_env, git_env, literal_pathspec
+from markdown_vault_mcp.git._run import (
+    cleanup_git_env,
+    git_env,
+    literal_pathspec,
+    run_git_capturing,
+)
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 from markdown_vault_mcp.utils.fs import path_exists
 
@@ -93,9 +98,8 @@ def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] 
     suppresses the double-quoted rendering ``core.quotePath`` produces for
     non-ASCII names, and unlike ``-c core.quotePath=false`` it also covers the
     names git quotes unconditionally (a double quote, tab, or newline in the
-    path).  Carriage returns are the exception, and the text-mode pipe rather
-    than git is what rewrites them: a lone ``\r`` is translated, and a
-    ``\r\n`` pair collapses to a single byte (#1290).
+    path). Path streams are captured without universal-newline translation,
+    so CR and CRLF in names survive too (#1290).
 
     Exactly one trailing empty token is dropped — the one git's final NUL
     creates — rather than every trailing empty, because a commit with an empty
@@ -417,11 +421,8 @@ def _lineage(
         back to its previous behaviour instead of discarding every commit.
     """
     cmd = [
-        "git",
         "-c",
         _RENAME_LIMIT,
-        "-C",
-        str(git_root),
         "log",
         "-z",
         "--follow",
@@ -432,7 +433,7 @@ def _lineage(
     if rev_range is not None:
         cmd.append(rev_range)
     cmd += ["--", literal_pathspec(str(path))]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+    result = run_git_capturing(git_root, *cmd, env=env, preserve_newlines=True)
     if result.returncode != 0:
         return _Lineage(None, False)
     shas: set[str] = set()
@@ -450,10 +451,8 @@ def _lineage(
     return _Lineage(shas, False)
 
 
-def _first_parent_records_cmd(
-    git_root: Path, cur_rel: str, revs: str | None
-) -> list[str]:
-    """Assemble the argv for the walk that resolves a note's names.
+def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
+    """Assemble Git arguments for the walk that resolves a note's names.
 
     ``-m --first-parent`` is load-bearing, not decoration: a rename performed
     *while resolving a merge* appears in no parent's diff, so a plain walk
@@ -467,17 +466,13 @@ def _first_parent_records_cmd(
     newline survives intact and no ``core.quotePath`` unescaping is needed.
 
     Args:
-        git_root: Pre-resolved git repository root.
         cur_rel: The note's path, repo-relative and posix.
         revs: What to walk: a range (``"<ref>..HEAD"``) or a single revision
             to walk back from, or ``None`` for ``HEAD`` without a bound.
     """
     cmd = [
-        "git",
         "-c",
         _RENAME_LIMIT,
-        "-C",
-        str(git_root),
         "log",
         "-m",
         "--first-parent",
@@ -594,11 +589,10 @@ def _walk_one_name(
         its oldest name has no lower bound, and a name recovered without one
         can pick up whatever held it before this note existed.
     """
-    result = subprocess.run(
-        _first_parent_records_cmd(git_root, frontier.name, frontier.rev),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        *_first_parent_records_args(frontier.name, frontier.rev),
+        preserve_newlines=True,
         env=env,
     )
     if result.returncode != 0:
@@ -763,8 +757,7 @@ def _vault_prefix(git_root: Path, repo_path: Path) -> str:
     return "" if vault_rel == Path() else vault_rel.as_posix() + "/"
 
 
-def _history_log_cmd(
-    git_root: Path,
+def _history_log_args(
     repo_path: Path,
     path: Path | None,
     since: str | None,
@@ -773,10 +766,9 @@ def _history_log_cmd(
     *,
     is_dir: bool,
 ) -> list[str]:
-    """Assemble the ``git log`` argv for a history query.
+    """Assemble the ``git log`` arguments for a history query.
 
     Args:
-        git_root: Pre-resolved git repository root.
         repo_path: Absolute path of the vault root (the vault-wide pathspec).
         path: Absolute path of the file (or directory, when *is_dir*) to
             filter on, or ``None`` for the entire vault.
@@ -786,7 +778,7 @@ def _history_log_cmd(
         is_dir: When ``True``, *path* is a directory subtree.
 
     Returns:
-        The full ``git log`` argv, formatted with :data:`_HISTORY_SENTINEL`
+        Git arguments, formatted with :data:`_HISTORY_SENTINEL`
         block markers and NUL-separated header fields.  ``-z`` frames the
         ``--name-only`` paths by NUL as well, so a non-ASCII name reaches
         the caller as git recorded it rather than octal-escaped inside
@@ -797,15 +789,13 @@ def _history_log_cmd(
         detection would alter their ``--name-only`` output.
     """
     single_file = path is not None and not is_dir
-    cmd = ["git"]
+    cmd: list[str] = []
     if single_file:
         # Rename detection is only in play for the ``--follow`` branch below;
         # leaving the vault-wide and directory argv untouched keeps their
         # ``--name-only`` output exactly as it was.
         cmd += ["-c", _RENAME_LIMIT]
     cmd += [
-        "-C",
-        str(git_root),
         "log",
         "-z",
         f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
@@ -834,7 +824,9 @@ def _history_log_cmd(
     return cmd
 
 
-def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
+def _history_log_output(
+    git_root: Path, args: list[str], env: dict[str, str] | None
+) -> str:
     """Run the assembled ``git log`` command and return its raw stdout.
 
     Raises:
@@ -843,13 +835,8 @@ def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
             complaint, so a bad date never gets here.
     """
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
+        result = run_git_capturing(git_root, *args, preserve_newlines=True, env=env)
+        result.check_returncode()
     except subprocess.CalledProcessError as exc:
         raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
     return result.stdout
@@ -1147,9 +1134,7 @@ def get_file_history(
         return []
 
     limit = min(max(1, limit), 100)
-    cmd = _history_log_cmd(
-        git_root, repo_path, path, since, until, limit, is_dir=is_dir
-    )
+    args = _history_log_args(repo_path, path, since, until, limit, is_dir=is_dir)
 
     cur_rel = None if (path is None or is_dir) else _repo_rel(git_root, path)
     vault_prefix = _vault_prefix(git_root, repo_path)
@@ -1160,7 +1145,7 @@ def get_file_history(
     try:
         if not _has_commits(git_root, env):
             return []
-        raw = _history_log_output(cmd, env)
+        raw = _history_log_output(git_root, args, env)
         # Single-file queries only: establish which commits belong to the note
         # now at this path, so a name that was reused does not hand the caller
         # its previous occupant's commits (#1285).
@@ -1198,24 +1183,18 @@ def resolve_path_at_ref(
     commit as *to_ref* to resolve a rename a single commit introduced.
     """
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(git_root),
-                "diff",
-                "--name-status",
-                _RENAME_THRESHOLD,
-                # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
-                "-z",
-                ref,
-                to_ref,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
+        result = run_git_capturing(
+            git_root,
+            "diff",
+            "--name-status",
+            _RENAME_THRESHOLD,
+            "-z",
+            ref,
+            to_ref,
+            preserve_newlines=True,
             env=env,
         )
+        result.check_returncode()
     except subprocess.CalledProcessError:
         return None
     # Stream: <status>\0<path>\0 — R*/C* records add a second path
@@ -1475,8 +1454,7 @@ def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
         thanks to ``--follow``), falling back to *rel_fallback* when the
         block carries no path.  It is the name git recorded rather than
         git's quoted rendering of it, so it can be handed straight back as a
-        pathspec (see :func:`_split_z_block`, and #1290 for the carriage
-        returns still rewritten in transit).
+        pathspec (see :func:`_split_z_block`, #1290).
     """
     split = _split_z_block(block, 4)
     if split is None:
@@ -1609,11 +1587,8 @@ def _per_commit_rows(
     """
     path_str = str(path)
     log_cmd = [
-        "git",
         "-c",
         _RENAME_LIMIT,
-        "-C",
-        str(git_root),
         "log",
         "-z",
         "--follow",
@@ -1626,13 +1601,10 @@ def _per_commit_rows(
         log_cmd.append(f"-n{clamped_limit}")
     log_cmd += [f"{ref}..HEAD", "--", literal_pathspec(path_str)]
     try:
-        log_result = subprocess.run(
-            log_cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
+        log_result = run_git_capturing(
+            git_root, *log_cmd, preserve_newlines=True, env=env
         )
+        log_result.check_returncode()
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"git log failed listing commits since {ref!r}: "
@@ -1781,18 +1753,18 @@ def _revision_walk_output(
 ) -> str:
     """Return git's ``--name-status`` record stream for *cur_rel* over ``ref..HEAD``.
 
-    See :func:`_first_parent_records_cmd` for why the walk is shaped the way
+    See :func:`_first_parent_records_args` for why the walk is shaped the way
     it is.  A failed invocation is an error here, because the caller is about
     to serve a note's content and has nothing to fall back on.
     """
     try:
-        result = subprocess.run(
-            _first_parent_records_cmd(git_root, cur_rel, f"{ref}..HEAD"),
-            capture_output=True,
-            text=True,
-            check=True,
+        result = run_git_capturing(
+            git_root,
+            *_first_parent_records_args(cur_rel, f"{ref}..HEAD"),
+            preserve_newlines=True,
             env=env,
         )
+        result.check_returncode()
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"Could not read history for revision {ref!r}: {(exc.stderr or '').strip()}"
@@ -2009,21 +1981,15 @@ def _tree_entry(
             note content; a directory has no content to return).
         ValueError: If ``git ls-tree`` fails or prints what cannot be parsed.
     """
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "ls-tree",
-            "-l",
-            "-z",
-            ref,
-            "--",
-            literal_pathspec(repo_rel),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "ls-tree",
+        "-l",
+        "-z",
+        ref,
+        "--",
+        literal_pathspec(repo_rel),
+        preserve_newlines=True,
         env=env,
     )
     if result.returncode != 0:

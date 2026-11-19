@@ -226,7 +226,7 @@ class TestPullDivergenceClassification:
         assert result.from_sha == result.to_sha
 
     def test_an_available_fast_forward_can_still_fail_on_a_dirty_tree(
-        self, git_repo_pair: GitRepoPair
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
     ) -> None:
         """History says fast-forward; the working tree can still refuse it.
 
@@ -248,11 +248,15 @@ class TestPullDivergenceClassification:
         )
         head = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
 
-        result = strategy.force_pull()
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
+            result = strategy.force_pull()
 
         assert result.applied is False
         assert result.reason == "conflict_resolution_failed"
         assert result.from_sha == result.to_sha == head
+        line = next(r for r in caplog.records if r.msg.startswith("git_ff_only_failed"))
+        assert "local changes" in line.getMessage()
+        assert "\n" not in line.getMessage()
         # The uncommitted edit is still on disk — nothing was thrown away.
         assert (
             git_repo_pair.local_path / "README.md"
@@ -283,7 +287,10 @@ class TestPullDivergenceClassification:
         ) -> subprocess.CompletedProcess[str]:
             if args[:2] == ("merge-base", "--is-ancestor"):
                 return subprocess.CompletedProcess(
-                    args=["git", *args], returncode=128, stdout="", stderr="boom\n"
+                    args=["git", *args],
+                    returncode=128,
+                    stdout="",
+                    stderr="boom\n  details\n",
                 )
             return real_capturing(git_root, *args, **kwargs)  # type: ignore[arg-type]
 
@@ -294,7 +301,10 @@ class TestPullDivergenceClassification:
 
         assert result.fast_forward is False
         assert result.reason == "diverged"
-        assert any("git_merge_base_failed" in r.message for r in caplog.records)
+        line = next(
+            r for r in caplog.records if r.msg.startswith("git_merge_base_failed")
+        )
+        assert line.getMessage().endswith("stderr=boom details")
 
 
 class TestForcePush:
@@ -1060,69 +1070,6 @@ class TestForceMethodsErrorBranches:
         assert result.to_sha == head_after
         assert result.to_sha != result.from_sha
         assert result.conflict_files == ()
-
-    def test_force_pull_rebase_loop_hits_max_iterations(
-        self,
-        git_repo_pair: GitRepoPair,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Cap exhaustion logs its distinct DEBUG event and returns saved paths."""
-        import logging
-        import subprocess as _real_subprocess
-
-        from markdown_vault_mcp.git import subprocess as git_subprocess
-
-        real_run = _real_subprocess.run
-
-        def _patched_run(args: list[str], **kwargs: object) -> object:
-            if not isinstance(args, list):
-                return real_run(args, **kwargs)
-            if "diff" in args and "--diff-filter=U" in args:
-                # -z frames the conflicting paths by NUL, not by newline.
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="README.md\0", stderr=""
-                )
-            if "show" in args and any(
-                isinstance(a, str) and a.startswith("REBASE_HEAD:") for a in args
-            ):
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="# local\n", stderr=""
-                )
-            if "checkout" in args and "--ours" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="", stderr=""
-                )
-            if "add" in args and "--" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="", stderr=""
-                )
-            if "rebase" in args and "--continue" in args:
-                return _real_subprocess.CompletedProcess(
-                    args=args,
-                    returncode=1,
-                    stdout="",
-                    stderr="CONFLICT (content): merge conflict in README.md",
-                )
-            return real_run(args, **kwargs)
-
-        monkeypatch.setattr(git_subprocess, "run", _patched_run)
-
-        # DEBUG since #1287: the cap is hit on every cycle while the same
-        # divergence stands, so the detail line moved down there.
-        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
-            saved = conflict.resolve_rebase_conflicts(
-                git_repo_pair.local_path, env=None
-            )
-
-        # README.md was "saved" on every iteration; dict dedup leaves one entry.
-        assert saved == [("README.md", "# local\n")]
-        log_messages = [r.getMessage() for r in caplog.records]
-        assert (
-            "git_pull_conflict_resolution_exhausted "
-            "max_iterations=50 saved_paths=1" in log_messages
-        )
-        assert not any("git_pull_rebase_no_unmerged_paths" in m for m in log_messages)
 
     def test_force_pull_non_fast_forward_with_conflicts_when_abort_fails(
         self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch

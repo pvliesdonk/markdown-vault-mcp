@@ -77,6 +77,15 @@ class TestImportIsLight:
         )
         assert result.returncode == 0, result.stderr
 
+    def test_commit_scope_does_not_import_fastmcp(self) -> None:
+        """Library commit scope state and dispatcher must not load FastMCP."""
+        self._run(
+            "import sys; import markdown_vault_mcp.write_callback; "
+            "loaded = {m for m in sys.modules if m == 'fastmcp' "
+            "or m.startswith('fastmcp.')}; "
+            "assert not loaded, f'commit scope loaded FastMCP: {sorted(loaded)}'"
+        )
+
     def test_package_import_is_light(self):
         """``import markdown_vault_mcp`` must not pull in the heavy deps."""
         self._run(
