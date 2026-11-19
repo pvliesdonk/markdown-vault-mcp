@@ -26,7 +26,6 @@ from markdown_vault_mcp._pvl_core import (
     get_current_auth_mode,
     normalise_http_path,
     register_health_routes,
-    register_server_info_tool,
     wire_middleware_stack,
 )
 from markdown_vault_mcp._server_apps import register_apps
@@ -34,6 +33,7 @@ from markdown_vault_mcp._server_deps import (
     bind_config,
     server_lifespan,
 )
+from markdown_vault_mcp._server_info import register_server_info_tool
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp._tool_visibility import apply_tool_visibility
 from markdown_vault_mcp.config import ProjectConfig
