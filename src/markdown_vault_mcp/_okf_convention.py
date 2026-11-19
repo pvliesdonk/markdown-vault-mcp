@@ -299,7 +299,9 @@ class ConventionMaintainer:
             return
         folder = folder_of(path := self._canonical(path))
         with okf_write_suppressed(), auxiliary_commit_writes():
-            if self._capabilities.log == "writes":
+            from markdown_vault_mcp._okf_log_event import event_deferred
+
+            if self._capabilities.log == "writes" and not event_deferred():
                 self._append_log(folder, path, operation)
             # Refresh the listing that owns this note, folding where needed.
             if self._capabilities.index:

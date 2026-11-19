@@ -535,6 +535,31 @@ distinct days), plus:
 ```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
 
+## `okf_log_event`
+
+**OKF: Record Editorial Event.** Changes state, not destructive. Tags: `okf`, `write`.
+
+Record one explanation for a change spanning existing concepts.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `paths` | `array of string` | required | Concept paths covered by the event. |
+| `description` | `string` | required | One-line explanation of the change, up to 500 characters. |
+
+**Returns**
+
+The path of the updated log.
+
+<!-- DOMAIN-EXAMPLE-okf_log_event-START -->
+Record one policy change across concepts:
+
+```json
+{"paths": ["policy/access.md", "policy/review.md"], "description": "Aligned access and review rules"}
+```
+<!-- DOMAIN-EXAMPLE-okf_log_event-END -->
+
 ## `okf_author`
 
 **OKF: Author Concept.** Changes state, not destructive. Tags: `okf`, `okf-author`, `write`.

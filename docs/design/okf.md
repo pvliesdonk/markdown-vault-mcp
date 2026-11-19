@@ -508,8 +508,7 @@ boundaries, which can still place an appended entry inside code. This bounded
 fallback preserves the public helper’s return behavior: inserting before an
 unclosed indented opener can change Markdown list nesting, and refusing the
 append would introduce a new failure. It does not invent a closing delimiter
-or add a separator. Date grouping and per-write maintenance otherwise remain
-the shipped behavior, not the editorial-event design of #1416.
+or add a separator. Date grouping preserves separate entries for distinct editorial events. The explicit event operation selects the log for the common ancestor and records links to all supplied concepts. A deferred-event context suppresses automatic write bullets without suppressing index maintenance.
 
 Concurrency note: log-append and index-refresh are secondary writes riding an
 existing primary write; they flow through the same single-writer index path

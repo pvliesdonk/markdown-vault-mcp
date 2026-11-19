@@ -61,6 +61,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Writer | [`okf_convert_links`](writer.md#okf_convert_links) | OKF: Convert Wikilinks | Rewrite wikilinks as bundle-root-absolute Markdown links, the Open Knowledge Format's recommended style; returns counts of links converted and skipped. |
 | Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Generate a folder's Open Knowledge Format index.md, preserving frontmatter. |
 | Writer | [`okf_seed_log`](writer.md#okf_seed_log) | OKF: Seed log.md | Create a folder's Open Knowledge Format log.md from the git history of the notes under it, one dated section per day, newest first. |
+| Writer | [`okf_log_event`](writer.md#okf_log_event) | OKF: Record Editorial Event | Record one explanation for a change spanning existing concepts. |
 | Writer | [`okf_author`](writer.md#okf_author) | OKF: Author Concept | Set editorial fields or repair provenance on an existing OKF concept. |
 | Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record a review of a note snapshot; returns the verifier recorded. |
 | Git | [`get_history`](git.md#get_history) | Note History | List the commits that touched a note, an attachment, a folder or the whole vault, newest first. |

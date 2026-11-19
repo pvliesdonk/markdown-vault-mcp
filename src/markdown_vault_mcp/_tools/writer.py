@@ -1173,6 +1173,48 @@ def register(mcp: FastMCP) -> None:
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
+        tags={"okf", "write"},
+        icons=_TOOL_ICONS["okf_author"],
+        annotations={
+            "title": "OKF: Record Editorial Event",
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def okf_log_event(
+        paths: list[str],
+        description: str,
+        config: ProjectConfig = Depends(get_config),
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Record one explanation for a change spanning existing concepts.
+
+        Args:
+            paths: Concept paths covered by the event.
+            description: One-line explanation of the change, up to 500 characters.
+
+        Returns:
+            The path of the updated log.
+        """
+        caps = config.content.okf_capabilities
+        if caps.log == "off" or not await okf_active(vault):
+            raise ToolError(
+                "OKF event logging is not active. Ask the operator to enable logging on an active bundle.",
+                log_level=logging.INFO,
+            )
+        with write_identity_scope():
+            path = await asyncio.to_thread(
+                vault.writer.okf_log_event,
+                paths,
+                description,
+                folders=caps.folders,
+            )
+        return attach_remote_health(vault, {"path": path})
+
+    @mcp.tool(
         tags={"okf", "write", "okf-author"},
         icons=_TOOL_ICONS["okf_author"],
         annotations={

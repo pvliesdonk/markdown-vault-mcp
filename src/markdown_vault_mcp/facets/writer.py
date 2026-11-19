@@ -358,6 +358,27 @@ class WriterFacet:
         """
         return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
 
+    def okf_log_event(
+        self,
+        paths: list[str],
+        description: str,
+        *,
+        folders: tuple[str, ...] = (".",),
+    ) -> str:
+        """Record one editorial event across existing concepts.
+
+        Args:
+            paths: Vault-relative paths to the concepts.
+            description: One-line explanation of the change.
+            folders: Designated folder patterns used for log routing.
+
+        Returns:
+            Vault-relative path of the updated log.
+        """
+        from markdown_vault_mcp._okf_log_event import record_event
+
+        return record_event(self._doc_mgr, paths, description, folders)
+
     def okf_author(
         self,
         path: str,
