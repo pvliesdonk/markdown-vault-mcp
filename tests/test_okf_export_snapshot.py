@@ -500,7 +500,8 @@ def test_git_large_source_and_target_resolve_links(tmp_path: Path, case: str) ->
 
     if case != "valid":
         path = "target.md" if case.endswith("target") else "source.md"
-        assert result.report.uninspected[path] == "note_limit"
+        reason = "metadata_encoding" if "yaml" in case else "note_limit"
+        assert result.report.uninspected[path] == reason
 
 
 def test_git_write_during_packing_is_reported(tmp_path: Path, monkeypatch) -> None:
