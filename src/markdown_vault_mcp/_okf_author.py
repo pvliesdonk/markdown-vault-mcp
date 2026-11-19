@@ -43,14 +43,16 @@ def _valid_field(key: str, value: Any) -> bool:
     return False
 
 
-def _validate(fields: dict[str, Any], producer: str | None) -> None:
+def _validate(
+    fields: dict[str, Any], producer: str | None, repair: dict[str, Any] | None
+) -> None:
     if fields.keys() - _FIELDS:
         raise InvalidRequestError("Only OKF editorial fields can be authored")
     if producer is not None and not _ACTOR.fullmatch(producer):
         raise InvalidRequestError(
             "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
         )
-    if not fields and producer is None:
+    if not fields and producer is None and repair is None:
         raise InvalidRequestError("At least one field or producer is required")
     for key, value in fields.items():
         if not _valid_field(key, value):
@@ -161,7 +163,10 @@ def _replacement(source: str, key: Any, node: Any, value: Any) -> str:
 
 
 def _collect_edits(
-    source: str, root: MappingNode, changes: dict[str, Any]
+    source: str,
+    root: MappingNode,
+    changes: dict[str, Any],
+    replace_generated: bool = False,
 ) -> tuple[list[tuple[int, int, str]], list[str]]:
     nodes = {}
     for key, value in root.value:
@@ -176,11 +181,19 @@ def _collect_edits(
             additions.append(f"{key}: {_render(value)}")
             continue
         key_node, node = entry
-        if key == "generated" and isinstance(node, MappingNode):
+        if (
+            key == "generated"
+            and isinstance(node, MappingNode)
+            and not replace_generated
+        ):
             if node.start_mark.index < key_node.end_mark.index:
                 raise InvalidRequestError("Cannot replace an aliased field")
             edits.extend(_generated_edits(source, node, value))
-        elif key == "generated" and node.tag != "tag:yaml.org,2002:null":
+        elif (
+            key == "generated"
+            and not replace_generated
+            and node.tag != "tag:yaml.org,2002:null"
+        ):
             raise InvalidRequestError("Existing generated field must be a mapping")
         else:
             edits.append(
@@ -205,9 +218,11 @@ def _parse_root(source: str) -> MappingNode:
     return root
 
 
-def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
+def _edit_header(
+    source: str, changes: dict[str, Any], newline: str, replace_generated: bool = False
+) -> str:
     root = _parse_root(source)
-    edits, additions = _collect_edits(source, root, changes)
+    edits, additions = _collect_edits(source, root, changes, replace_generated)
     if additions and root.flow_style:
         edits.append(_flow_insertion(source, root, additions))
         additions = []
@@ -227,9 +242,117 @@ def _edit_header(source: str, changes: dict[str, Any], newline: str) -> str:
     return source
 
 
-def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
-    """Apply named fields and optional producer without reserializing the note."""
-    _validate(fields, producer)
+def _check_repair_nodes(node: Any, seen: set[int] | None = None) -> None:
+    """Refuse duplicate keys or aliases in a repair's source header."""
+    seen = set() if seen is None else seen
+    if id(node) in seen:
+        raise InvalidRequestError("Cannot repair frontmatter containing aliases")
+    seen.add(id(node))
+    if isinstance(node, MappingNode):
+        keys: set[str] = set()
+        for key, value in node.value:
+            if key.tag != "tag:yaml.org,2002:str" or key.value in keys:
+                raise InvalidRequestError("Cannot repair ambiguous frontmatter keys")
+            keys.add(key.value)
+            _check_repair_nodes(value, seen)
+    elif isinstance(node, SequenceNode):
+        for value in node.value:
+            _check_repair_nodes(value, seen)
+
+
+def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[str, Any]:
+    if (
+        not isinstance(repair, dict)
+        or not repair
+        or repair.keys() - {"retire_reviews", "replace_generated"}
+    ):
+        raise InvalidRequestError("Invalid repair request")
+    extension = metadata.get("x-mvmcp", {})
+    if not isinstance(extension, dict):
+        raise InvalidRequestError("x-mvmcp must be a mapping")
+    extension = dict(extension)
+    changes: dict[str, Any] = {"x-mvmcp": extension}
+    for action, key, history in (
+        ("retire_reviews", "verified", "review_history"),
+        ("replace_generated", "generated", "generated_history"),
+    ):
+        if action not in repair:
+            continue
+        request = repair[action]
+        required = {"reason", "indices" if action == "retire_reviews" else "by"}
+        if (
+            not isinstance(request, dict)
+            or request.keys() != required
+            or not isinstance(request["reason"], str)
+            or not request["reason"].strip()
+        ):
+            raise InvalidRequestError(f"Invalid {action} request")
+        previous = metadata.get(key)
+        entries = extension.get(history, [])
+        if not isinstance(entries, list):
+            raise InvalidRequestError(f"{history} must be a list")
+        entries = list(entries)
+        if action == "retire_reviews":
+            if isinstance(previous, dict):
+                previous = [previous]
+            indices = request["indices"]
+            if (
+                not isinstance(previous, list)
+                or not isinstance(indices, list)
+                or not indices
+                or any(
+                    type(i) is not int or i < 0 or i >= len(previous) for i in indices
+                )
+                or len(set(indices)) != len(indices)
+            ):
+                raise InvalidRequestError("Invalid review indices")
+            if any(not isinstance(previous[i], dict) for i in indices):
+                raise InvalidRequestError("Selected reviews must be mappings")
+            selected = set(indices)
+            entries.extend(
+                {"review": previous[i], "reason": request["reason"]}
+                for i in sorted(selected)
+            )
+            changes[key] = [
+                item for i, item in enumerate(previous) if i not in selected
+            ]
+        else:
+            actor = request["by"]
+            if (
+                not isinstance(previous, dict)
+                or not isinstance(actor, str)
+                or not _ACTOR.fullmatch(actor)
+            ):
+                raise InvalidRequestError(
+                    "Replacement requires existing generated mapping and valid actor"
+                )
+            entries.append({"generated": previous, "reason": request["reason"]})
+            changes[key] = {"by": actor, "at": okf_timestamp(datetime.now(UTC))}
+        extension[history] = entries
+    return changes
+
+
+def author_text(
+    text: str,
+    fields: dict[str, Any],
+    producer: str | None,
+    *,
+    repair: dict[str, Any] | None = None,
+) -> str:
+    """Apply editorial fields and explicit repairs without reserializing the note.
+
+    Args:
+        text: Original note text.
+        fields: Editorial fields to update.
+        producer: Optional producer actor.
+        repair: Explicit provenance repair requests.
+
+    Returns:
+        The edited note text.
+    """
+    _validate(fields, producer, repair)
+    if repair is not None and producer is not None and "replace_generated" in repair:
+        raise InvalidRequestError("Choose producer or replace_generated, not both")
     changes = dict(fields)
     if producer is not None:
         changes["generated"] = {"by": producer, "at": okf_timestamp(datetime.now(UTC))}
@@ -239,6 +362,13 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
     newline = line_end.group() if line_end else "\n"
     try:
         original = parse_frontmatter(text.removeprefix("\ufeff"))
+        if repair is not None and span is not None:
+            _check_repair_nodes(_parse_root(text[span[0] : span[1]]))
+        repair_changes = (
+            _repair_changes(original.metadata, repair) if repair is not None else {}
+        )
+        changes.update(repair_changes)
+        replacing = "generated" in repair_changes
         if span is None:
             prefix = "\ufeff" if text.startswith("\ufeff") else ""
             source = "".join(
@@ -255,7 +385,7 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
             )
         else:
             start, end = span
-            source = _edit_header(text[start:end], changes, newline)
+            source = _edit_header(text[start:end], changes, newline, replacing)
             result = text[:start] + source + text[end:]
         parsed = parse_frontmatter(result.removeprefix("\ufeff"))
         expected = dict(original.metadata)
@@ -267,6 +397,7 @@ def author_text(text: str, fields: dict[str, Any], producer: str | None) -> str:
             generated = dict(previous or {})
             generated.update(changes["generated"])
             expected["generated"] = generated
+        expected.update(repair_changes)
         if parsed.metadata != expected or parsed.content != original.content:
             raise InvalidRequestError("Cannot safely apply authoring changes")
         return result

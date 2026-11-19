@@ -364,6 +364,7 @@ class WriterFacet:
         if_match: str,
         fields: dict[str, Any],
         producer: str | None = None,
+        repair: dict[str, Any] | None = None,
     ) -> WriteResult:
         """Apply named OKF fields to an existing, etag-guarded concept.
 
@@ -372,6 +373,7 @@ class WriterFacet:
             if_match: Etag of the note read by the caller.
             fields: Editorial fields to set.
             producer: Explicit OKF actor, or None to leave generation unchanged.
+            repair: Explicit provenance repair requests.
 
         Returns:
             The write result.
@@ -389,7 +391,7 @@ class WriterFacet:
                 raise InvalidRequestError(
                     "Cannot author a reserved OKF file as a concept"
                 )
-            content = author_text(original, fields, producer)
+            content = author_text(original, fields, producer, repair=repair)
             with okf_write_suppressed(), self._doc_mgr.exact_byte_writes():
                 result = self.write(canonical, content, if_match=if_match)
             if self._convention_maintainer is not None:
