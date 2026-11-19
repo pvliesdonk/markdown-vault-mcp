@@ -547,6 +547,7 @@ Record one explanation for a change spanning existing concepts.
 |---|---|---|---|
 | `paths` | `array of string` | required | Concept paths covered by the event. |
 | `description` | `string` | required | One-line explanation of the change, up to 500 characters. |
+| `proposed_by` | `string \| null` | `null` | Optional attribution, up to 100 characters. |
 
 **Returns**
 

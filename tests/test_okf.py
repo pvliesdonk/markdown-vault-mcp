@@ -1196,3 +1196,14 @@ class TestAppendOkfLogEntry:
 
         out = append_okf_log_entry("# Log\n", date="2026-08-09", summary="x")
         assert out == "# Log\n\n## 2026-08-09\n\n- x\n"
+
+
+@pytest.mark.parametrize("index", [False, True])
+def test_event_guidance_allows_curation(index):
+    from markdown_vault_mcp.config_sections.content import ContentConfig
+
+    caps = ContentConfig(okf_log="events", okf_index=index).okf_capabilities
+    text = _guidance(read_only=False, okf_mode="on", okf_capabilities=caps)
+    assert "'log.md' stays editable" in text
+    assert "Record related edits with 'okf_log_event'" in text
+    assert ("Server maintains designated indexes" in text) == index

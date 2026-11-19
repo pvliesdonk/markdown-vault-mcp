@@ -748,7 +748,7 @@
       "label": "Okf Log",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OKF_LOG",
-      "help": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write.",
+      "help": "OKF log authority defaults to off. Events records explicit editorial entries; writes also records server writes automatically.",
       "advancedGroup": "Content"
     },
     {

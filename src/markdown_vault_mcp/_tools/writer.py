@@ -1187,7 +1187,7 @@ def register(mcp: FastMCP) -> None:
     async def okf_log_event(
         paths: list[str],
         description: str,
-        config: ProjectConfig = Depends(get_config),
+        proposed_by: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Record one explanation for a change spanning existing concepts.
@@ -1195,22 +1195,14 @@ def register(mcp: FastMCP) -> None:
         Args:
             paths: Concept paths covered by the event.
             description: One-line explanation of the change, up to 500 characters.
+            proposed_by: Optional attribution, up to 100 characters.
 
         Returns:
             The path of the updated log.
         """
-        caps = config.content.okf_capabilities
-        if caps.log == "off" or not await okf_active(vault):
-            raise ToolError(
-                "OKF event logging is not active. Ask the operator to enable logging on an active bundle.",
-                log_level=logging.INFO,
-            )
         with write_identity_scope():
             path = await asyncio.to_thread(
-                vault.writer.okf_log_event,
-                paths,
-                description,
-                folders=caps.folders,
+                vault.writer.okf_log_event, paths, description, proposed_by
             )
         return attach_remote_health(vault, {"path": path})
 

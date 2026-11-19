@@ -98,6 +98,8 @@ class WriterFacet:
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
         receipt_store: ReceiptStore | None = None,
+        event_policy: tuple[tuple[str, ...], Callable[[], dict[str, Any]]]
+        | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -118,6 +120,7 @@ class WriterFacet:
                 write path (OKF link conversion rewrites thousands of notes in
                 one call), and a git probe per file there would spend several
                 subprocesses each on a result nobody reads.
+            event_policy: Resolved logging capabilities and active-bundle detector.
             receipt_store: Supplies local storage for recorded review receipts.
             link_reporter: Answers ``report_unresolved_links=True`` on
                 :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
@@ -130,6 +133,7 @@ class WriterFacet:
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
         self._receipt_store = receipt_store
+        self._event_policy = event_policy
 
     def _current_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
         """Read *path*, refuse a stale snapshot and check receipt storage."""
@@ -359,25 +363,28 @@ class WriterFacet:
         return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
 
     def okf_log_event(
-        self,
-        paths: list[str],
-        description: str,
-        *,
-        folders: tuple[str, ...] = (".",),
+        self, paths: list[str], description: str, proposed_by: str | None = None
     ) -> str:
         """Record one editorial event across existing concepts.
 
         Args:
             paths: Vault-relative paths to the concepts.
             description: One-line explanation of the change.
-            folders: Designated folder patterns used for log routing.
+            proposed_by: Optional attribution for the proposal.
 
         Returns:
             Vault-relative path of the updated log.
         """
         from markdown_vault_mcp._okf_log_event import record_event
+        from markdown_vault_mcp.exceptions import InvalidRequestError
 
-        return record_event(self._doc_mgr, paths, description, folders)
+        if self._event_policy is None:
+            raise InvalidRequestError(
+                "OKF event logging is not configured; ask the operator to enable it."
+            )
+        return record_event(
+            self._doc_mgr, paths, description, self._event_policy, proposed_by
+        )
 
     def okf_author(
         self,

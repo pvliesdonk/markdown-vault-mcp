@@ -1137,3 +1137,21 @@ def test_links_hint_logs_failed_protection_check(
         r.getMessage().startswith("submodule_hint_check_failed path=sub/note.md")
         for r in caplog.records
     )
+
+
+def test_event_log_inside_submodule_refused(
+    tmp_path: Path, vault_of: Callable[[Path], Vault]
+) -> None:
+    from markdown_vault_mcp._okf_log_event import record_event
+
+    source = make_superproject(tmp_path)
+    vault = vault_of(source)
+    before = _snapshot(source)
+    with pytest.raises(SubmodulePathError):
+        record_event(
+            vault._doc_mgr,
+            ["sub/note.md"],
+            "Change",
+            (("**",), lambda: {"effective": True}),
+        )
+    assert _snapshot(source) == before

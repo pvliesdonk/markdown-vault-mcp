@@ -275,7 +275,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
+          "description": "OKF log authority defaults to off. Events records explicit editorial entries; writes also records server writes automatically."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
@@ -977,7 +977,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_LOG",
-          "description": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write."
+          "description": "OKF log authority defaults to off. Events records explicit editorial entries; writes also records server writes automatically."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_FOLDERS",
