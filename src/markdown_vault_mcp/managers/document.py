@@ -43,7 +43,6 @@ from markdown_vault_mcp._okf_log_repair import (
 )
 from markdown_vault_mcp._path_guard import PathGuard
 from markdown_vault_mcp.bundle_inventory import (
-    BundleChildrenRequest,
     BundleInspection,
     BundleInspectionRequest,
     BundleInspector,
@@ -569,47 +568,100 @@ class DocumentManager:
         hidden = any(part.startswith(".") for part in path.split("/"))
         return not hidden and not self._is_path_excluded(path)
 
-    def index_note_paths(self, folder: str) -> list[str]:
-        """List every note a generated index under *folder* may show.
+    def index_note_paths(self, top: str, selected: str) -> list[str]:
+        """List every note a generated index over *top* may show.
 
         The walk reads no note contents, so an unreadable note keeps its place.
         It leaves out dot and excluded paths, links resolving outside the
-        vault, and whatever the inspection policy owns as server state.
+        vault, and whatever the inspection policy owns as server state. A
+        directory holding a listed ``index.md`` is a boundary: its index is
+        returned but nothing below it. *selected* and its ancestors are not.
 
         Args:
-            folder: Normalized vault-relative folder (``""`` for the root).
+            top: Normalized vault-relative folder the listing starts from.
+            selected: The folder whose index was asked for, at or below *top*.
 
         Returns:
             Sorted vault-relative note paths; empty for a missing folder.
 
         Raises:
-            InvalidRequestError: If *folder* or a directory below it cannot be
+            InvalidRequestError: If *top*, *selected* or its ``index.md`` is
+                server-owned, or a directory the listing needs cannot be
                 listed; the message names that directory.
         """
-        top = self._source_dir / folder
         inspector = self._inspector()
         try:
-            if not is_directory(top):
-                return []
-            # The owner's ownership test needs an inspection to prepare it.
-            root = inspector.inspect(BundleChildrenRequest(root="", entry_limit=1))
-            if root.state != "inspected":
+            # path_presence reads no content: it prepares the owner's ownership
+            # test and reports "blocked" when the vault root cannot be resolved.
+            if inspector.path_presence(".md") == "blocked":
                 raise OSError(errno.EACCES, "Cannot inspect", self._source_dir)
-            return [
-                path.relative_to(self._source_dir).as_posix()
-                for path in walk_files_strict(
-                    top, prune=partial(self._index_skips, inspector), follow_links=True
-                )
-                if is_note(path.name)
-                and could_be_regular_file(path)
-                and not self._index_skips(inspector, path, leaf=True)
-            ]
+            self._refuse_owned_index(inspector, top, selected)
+            return self._walk_index_notes(inspector, top, selected)
         except OSError as exc:
             where = Path(exc.filename or top).relative_to(self._source_dir).as_posix()
             raise InvalidRequestError(
                 f"Cannot list {where!r}; no index was written. Ask the user to "
                 "restore access to it, then call okf_generate_index again."
             ) from exc
+
+    def _walk_index_notes(
+        self, inspector: BundleInspector, top: str, selected: str
+    ) -> list[str]:
+        """Walk *top* by name, stopping at boundaries; see :meth:`index_note_paths`."""
+        if not is_directory(self._source_dir / top):
+            return []
+        boundaries: list[str] = []
+        walked = walk_files_strict(
+            self._source_dir / top,
+            prune=partial(self._index_prune, inspector, selected, boundaries),
+            follow_links=True,
+        )
+        notes = [
+            path.relative_to(self._source_dir).as_posix()
+            for path in walked
+            if is_note(path.name)
+            and could_be_regular_file(path)
+            and not self._index_skips(inspector, path, leaf=True)
+        ]
+        return sorted(notes + boundaries)
+
+    def _refuse_owned_index(
+        self, inspector: BundleInspector, top: str, selected: str
+    ) -> None:
+        """Refuse a folder, or an ``index.md``, the server owns as its state."""
+        for rel in (top, selected):
+            dest = f"{rel}/index.md" if rel else "index.md"
+            if owned := next((p for p in (rel, dest) if inspector._internal(p)), ""):
+                raise InvalidRequestError(
+                    f"Cannot generate an index at {owned!r}: the server owns that "
+                    "path. Choose a folder outside its index, tracker and state "
+                    "locations."
+                )
+
+    def _index_prune(
+        self,
+        inspector: BundleInspector,
+        selected: str,
+        boundaries: list[str],
+        path: Path,
+    ) -> bool:
+        """Whether the walk skips directory *path*; a boundary's index is kept."""
+        if self._index_skips(inspector, path):
+            return True
+        rel = path.relative_to(self._source_dir).as_posix()
+        if selected == rel or selected.startswith(f"{rel}/"):
+            return False
+        index = path / "index.md"
+        try:
+            # A refused stat proves nothing, so the walk goes on to name it.
+            if not is_regular_file(index) or self._index_skips(
+                inspector, index, leaf=True
+            ):
+                return False
+        except OSError:
+            return False
+        boundaries.append(f"{rel}/index.md")
+        return True
 
     def _index_skips(
         self, inspector: BundleInspector, path: Path, *, leaf: bool = False

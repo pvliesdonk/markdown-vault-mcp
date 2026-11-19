@@ -465,7 +465,7 @@ Dict with:
 
 **Outcomes and errors**
 
-- InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused. A visible folder that cannot be listed refuses before any write.
+- InvalidRequestError: If the folder is outside the active designation or its index destination is an alias. Protected paths are refused; indexes already written remain if a later write is refused. A visible folder that cannot be listed refuses before any write. A folder holding server state is not indexed.
 - TimeoutError: If queued writes do not reach the index within 60 seconds; earlier index writes may remain.
 - IndexUnavailableError: If a scheduled index build failed or was cancelled; earlier writes may remain.
 - DocumentUnreadableError: If an index cannot be read; it is left untouched, though earlier writes may remain.

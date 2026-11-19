@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
 from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.fixtures.designated_index import designated_vault
@@ -295,14 +296,10 @@ def test_server_owned_paths_are_not_listed(tmp_path: Path, explicit: bool) -> No
 def test_uninspectable_vault_root_refuses_naming_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from types import SimpleNamespace
-
     from markdown_vault_mcp.bundle_inventory import BundleInspector
 
     (tmp_path / "a.md").write_text("# A\n")
-    monkeypatch.setattr(
-        BundleInspector, "inspect", lambda *_: SimpleNamespace(state="unavailable")
-    )
+    monkeypatch.setattr(BundleInspector, "path_presence", lambda *_: "blocked")
     vault = _vault(tmp_path)
     try:
         with pytest.raises(InvalidRequestError, match=r"Cannot list '\.'"):
@@ -318,5 +315,130 @@ def test_missing_folder_is_listed_empty(tmp_path: Path) -> None:
         result = vault.writer.okf_generate_index(folder="new")
         assert result.entries == 0
         assert (tmp_path / "new/index.md").read_text().startswith("# new")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("built", [False, True])
+@pytest.mark.parametrize("via", ["dir", "alias"])
+def test_selected_server_state_is_not_read_or_written(
+    tmp_path: Path, built: bool, via: str
+) -> None:
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
+
+    owned = tmp_path / "state"
+    owned.mkdir()
+    (owned / "index.md").write_text("# Existing server data\n")
+    (tmp_path / "alias").symlink_to(owned, target_is_directory=True)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False),
+        inspection_policy=InspectionPolicy(state_paths=(owned,)),
+    )
+    try:
+        if built:
+            vault.index.build_index()
+        with pytest.raises(InvalidRequestError, match="server owns"):
+            vault.writer.okf_generate_index(folder="state" if via == "dir" else "alias")
+        assert (owned / "index.md").read_text() == "# Existing server data\n"
+    finally:
+        vault.close()
+
+
+def test_name_only_generation_reads_no_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "first.md").write_text("# First\n")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub/n.md").write_text("# N\n")
+    vault = _vault(tmp_path)
+    opened: list[str] = []
+    real = os.open
+
+    def spy(path: str, *args: int, **kwargs: int) -> int:
+        opened.append(os.fspath(path))
+        return real(path, *args, **kwargs)
+
+    try:
+        monkeypatch.setattr(os, "open", spy)
+        vault.writer.okf_generate_index(folder="sub")
+        monkeypatch.undo()
+        assert "first.md" not in opened
+    finally:
+        vault.close()
+
+
+@needs_permissions
+def test_existing_boundary_contents_are_not_walked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("# A\n")
+    for name in ("other1", "other2"):
+        (tmp_path / name / "deep").mkdir(parents=True)
+        (tmp_path / name / "index.md").write_text("# Authored\n")
+        (tmp_path / name / "deep/x.md").write_text("# X\n")
+    (tmp_path / "index.md").write_text(_ROOT_INDEX)
+    (tmp_path / "other1/deep").chmod(0)
+    vault = designated_vault(tmp_path, (".", "guides"))
+    entered: list[str] = []
+    real = os.walk
+
+    def spy(top: str, *args: object, **kwargs: object):
+        for item in real(top, *args, **kwargs):
+            entered.append(os.fspath(item[0]))
+            yield item
+
+    try:
+        monkeypatch.setattr(os, "walk", spy)
+        vault.writer.okf_generate_index(folder="guides")
+        monkeypatch.undo()
+        body = (tmp_path / "index.md").read_text()
+        assert "[other1/](/other1/index.md)" in body
+        assert "[other2/](/other2/index.md)" in body
+        assert (tmp_path / "other1/index.md").read_text() == "# Authored\n"
+        assert not [p for p in entered if "/deep" in p]
+    finally:
+        (tmp_path / "other1/deep").chmod(0o755)
+        vault.close()
+
+
+@needs_permissions
+def test_unreadable_folder_without_boundary_still_refuses(tmp_path: Path) -> None:
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("# A\n")
+    (tmp_path / "other/deep").mkdir(parents=True)
+    (tmp_path / "other/deep/x.md").write_text("# X\n")
+    (tmp_path / "index.md").write_text(_ROOT_INDEX)
+    (tmp_path / "other/deep").chmod(0)
+    vault = designated_vault(tmp_path, (".", "guides"))
+    try:
+        with pytest.raises(InvalidRequestError, match="'other/deep'"):
+            vault.writer.okf_generate_index(folder="guides")
+        assert not path_exists(tmp_path / "guides/index.md")
+        assert (tmp_path / "index.md").read_text() == _ROOT_INDEX
+    finally:
+        (tmp_path / "other/deep").chmod(0o755)
+        vault.close()
+
+
+def test_each_folder_existence_is_read_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "a/b").mkdir(parents=True)
+    (tmp_path / "a/b/n.md").write_text("# N\n")
+    (tmp_path / "a/m.md").write_text("# M\n")
+    vault = _vault(tmp_path)
+    calls: list[str] = []
+    real = OkfMigrationManager._has_index
+
+    def spy(self: OkfMigrationManager, folder: str) -> bool:
+        calls.append(folder)
+        return real(self, folder)
+
+    try:
+        monkeypatch.setattr(OkfMigrationManager, "_has_index", spy)
+        vault.writer.okf_generate_index()
+        assert len(calls) == len(set(calls)), calls
     finally:
         vault.close()
