@@ -33,10 +33,7 @@ from markdown_vault_mcp._pvl_core import (
 # additions don't need a new import.  No `noqa: F401` — that factory makes
 # the import genuinely used, and a redundant directive fails RUF100.
 from markdown_vault_mcp._env import env
-from markdown_vault_mcp._pvl_core import (
-    ServerConfig,
-    TransferConfig,
-)
+from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
@@ -47,6 +44,7 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
     SummarizeConfig,
     SyncConfig,
+    TransferConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
@@ -1077,12 +1075,12 @@ class ProjectConfig:
     # The soft deadline before a still-running summarize call is promoted to
     # a background job is no longer a summarize-specific knob: it is owned by
     # the jobs section (JOBS_SOFT_DEADLINE_S and friends, #1033).
-    # The transfer subsystem's operator knobs are owned by
-    # ``fastmcp_pvl_core.TransferConfig`` (link TTL default/max, post-success
-    # grace window, crashed-handler lease, per-upload cap). Compose it as a
-    # single field — the config-surface generator discovers its env vars by
-    # AST-walking ``TransferConfig.from_env`` and documents them from core's own
-    # field metadata (help/tags/wizard), so no flat mirror field is needed.
+    # The transfer settings (link TTL default/max, post-success grace window,
+    # crashed-handler lease, per-upload cap) are ``config_sections.TransferConfig``
+    # (#2321). Compose it as a single field: the config-surface generator
+    # discovers its env vars by AST-walking ``TransferConfig.from_env`` and
+    # documents them from its field metadata (help/tags/wizard), so no flat
+    # mirror field is needed.
     transfer: TransferConfig = field(
         default_factory=TransferConfig,
         metadata={"tags": ("transfer",)},

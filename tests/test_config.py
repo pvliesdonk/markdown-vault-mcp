@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from markdown_vault_mcp._pvl_core import TransferConfig
 from markdown_vault_mcp.config import (
     ProjectConfig,
     derive_max_chunk_chars,
@@ -19,6 +18,7 @@ from markdown_vault_mcp.config_sections import (
     GitConfig,
     IndexingConfig,
     SearchConfig,
+    TransferConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,

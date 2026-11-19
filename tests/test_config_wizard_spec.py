@@ -35,7 +35,6 @@ from pathlib import Path
 import markdown_vault_mcp
 from markdown_vault_mcp._pvl_core import (
     ServerConfig,
-    TransferConfig,
     finalize_instructions,
     register_health_routes,
 )
@@ -111,13 +110,14 @@ def _server_config_source_file() -> Path:
 
 
 def _transfer_config_source_file() -> Path:
-    """Resolve the installed ``TransferConfig`` source file (server tier).
+    """Resolve the ``TransferConfig`` source file (server tier).
 
-    ``TransferConfig`` is a pvl-core-owned section composed into
-    :class:`ProjectConfig` (#979); its env reads live in pvl-core's own source,
-    so it is resolved the same way as ``ServerConfig`` rather than scanned by the
-    domain package walk.
+    ``TransferConfig`` is a section composed into :class:`ProjectConfig` (#979),
+    resolved the same way as ``ServerConfig``. It moved out of pvl-core in #2321
+    and keeps its server tier.
     """
+    from markdown_vault_mcp.config_sections import TransferConfig
+
     src = inspect.getsourcefile(TransferConfig)
     assert src is not None, "TransferConfig source file not found"
     return Path(src)

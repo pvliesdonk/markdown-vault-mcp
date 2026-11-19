@@ -37,7 +37,6 @@ from starlette.routing import Route
 
 from markdown_vault_mcp._pvl_core import (
     ServerConfig,
-    TransferConfig,
     apply_tool_visibility,
     finalize_instructions,
     instructions_for,
@@ -50,6 +49,7 @@ from markdown_vault_mcp._transfer_links import (
     build_transfer_links,
     register_transfer_routes,
 )
+from markdown_vault_mcp.config_sections import TransferConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
