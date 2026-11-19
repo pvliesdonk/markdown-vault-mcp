@@ -8,6 +8,10 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) — tag shapes and pagination for the scheduled image check.
+- [Watchdog event filtering](watchdog-event-filtering.md) — mutation-only
+  subscriptions, Linux native masks and the FSEvents 4.0.2 API floor. Read
+  before changing `_file_watcher.py` subscriptions.
 - [File creation permissions and default ACLs](file-creation-permissions.md) —
   kernel permission inheritance for atomic note and attachment writes.
 - [LEANN query-time embedding recomputation](leann.md) — the external
@@ -148,6 +152,11 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Python Future completion and cancellation](python-futures.md) — result
   publication, callback ordering, cancellation and executor lock ownership.
   Read before changing the index build lifecycle or writer cancellation.
+- [OpenAI-compatible embedding responses](openai-compatible-embeddings.md) —
+  the per-item `index` the OpenAI shape requires, how the `openai` SDK reads
+  a field the endpoint left out (as `None`), ProtoJSON's omitted zero values,
+  and Gemini's batches whose first item has no `index` (#2050). Read before
+  changing how `providers.py` reads an embeddings response.
 - [SQLite FTS5 delete cost and shadow-table architecture](sqlite-fts5.md) — why
   a content-carrying FTS5 table full-scans on non-rowid deletes (#1535), rowid
   vs. ordinary-column query plans, the `'delete'` special command's
