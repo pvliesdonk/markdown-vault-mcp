@@ -34,13 +34,22 @@ _UNSAFE_LAYOUT = "Log layout cannot take an event safely (check `log.md` for an 
 
 _INACTIVE = {None: "logging is off", "okf_inactive": "no OKF bundle is active"}
 
-_deferred: ContextVar[bool] = ContextVar("okf_deferred_event", default=False)
+_deferred: ContextVar[bool | Callable[[], bool]] = ContextVar(
+    "okf_deferred_event", default=False
+)
 
 
 @contextmanager
-def deferred_event() -> Iterator[None]:
-    """Suppress automatic write bullets in this context while retaining index maintenance."""
-    token = _deferred.set(True)
+def deferred_event(active: Callable[[], bool] | None = None) -> Iterator[None]:
+    """Suppress automatic write bullets while retaining index maintenance.
+
+    Args:
+        active: Optional predicate controlling suppression for the current write.
+
+    Yields:
+        Control with the deferred event policy bound.
+    """
+    token = _deferred.set(active if active is not None else True)
     try:
         yield
     finally:
@@ -49,7 +58,8 @@ def deferred_event() -> Iterator[None]:
 
 def event_deferred() -> bool:
     """Return whether automatic write bullets are deferred in this context."""
-    return _deferred.get()
+    value = _deferred.get()
+    return value() if callable(value) else value
 
 
 def _literal(text: str) -> str:
@@ -153,11 +163,19 @@ def _insert_preserving(body: str, updated: str, bullet: str, event_date: str) ->
 
 
 def _validate_input(
-    paths: list[str], description: str, proposed_by: str | None
+    paths: list[str],
+    description: str,
+    proposed_by: str | None,
+    *,
+    grouped: bool = False,
 ) -> None:
     if (
         not description.strip()
-        or len(description.strip()) > 500
+        or (
+            len(description.encode("utf-8")) > 4096
+            if grouped
+            else len(description.strip()) > 500
+        )
         or _unsafe(description)
     ):
         raise InvalidRequestError(
@@ -234,6 +252,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     proposed_by: str | None = None,
     *,
     today: date | None = None,
+    grouped: bool = False,
 ) -> str:
     """Append one event and return its vault-relative log path.
 
@@ -244,11 +263,12 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         policy: Designated folders and effective log capability callback.
         proposed_by: Optional proposal attribution.
         today: Optional event date.
+        grouped: Accept group descriptions and already validated touched paths.
 
     Returns:
         Path of the log receiving the event.
     """
-    _validate_input(paths, description, proposed_by)
+    _validate_input(paths, description, proposed_by, grouped=grouped)
     folders, capability_report = policy
     report = capability_report()
     if not report["effective"]:
@@ -257,7 +277,16 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         )
     doc_mgr.ensure_writable()
     with doc_mgr.write_scope():
-        canonical = _canonical_paths(doc_mgr, paths)
+        canonical = (
+            [
+                doc_mgr._validate_path(p)
+                .relative_to(doc_mgr._source_dir.resolve())
+                .as_posix()
+                for p in paths
+            ]
+            if grouped
+            else _canonical_paths(doc_mgr, paths)
+        )
         common = os.path.commonpath([folder_of(p) for p in canonical])
         folder = log_anchor(common, folders, doc_mgr._source_dir)
         if destination_home(folder, "log.md", doc_mgr._source_dir) is None:
@@ -282,3 +311,42 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         with okf_write_suppressed():
             doc_mgr.replace_body(log_path, raw, updated, if_match=etag)
         return log_path
+
+
+def record_group_events(
+    doc_mgr: DocumentManager,
+    paths: set[Path],
+    description: str,
+    policy: tuple[tuple[str, ...], Callable[[], dict[str, Any]]],
+    today: date,
+) -> list[Path]:
+    """Record one group event per selected log, including removed note paths.
+
+    Args:
+        doc_mgr: Document manager for log writes.
+        paths: Absolute paths touched by the group.
+        description: Group description.
+        policy: Designated folders and effective logging callback.
+        today: Date captured when the group closed.
+
+    Returns:
+        Absolute paths of the logs written.
+    """
+    folders, report = policy
+    if not report()["effective"]:
+        return []
+    root = doc_mgr._source_dir.resolve()
+    grouped: dict[str, list[str]] = {}
+    for path in sorted(paths):
+        relative = path.relative_to(root).as_posix()
+        if not relative.endswith(".md") or is_okf_reserved_file(relative):
+            continue
+        folder = log_anchor(folder_of(relative), folders, doc_mgr._source_dir)
+        grouped.setdefault(folder, []).append(relative)
+    logs = []
+    for paths_for_log in grouped.values():
+        log = record_event(
+            doc_mgr, paths_for_log, description, policy, today=today, grouped=True
+        )
+        logs.append(root / log)
+    return logs

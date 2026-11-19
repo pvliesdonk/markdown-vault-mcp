@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Literal
 from markdown_vault_mcp._commit_scope import CommitScope, new_commit_scope
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from markdown_vault_mcp._identity import Principal
 
 COMMIT_GROUP_ATTR = "accepts_group_commit"
@@ -50,6 +52,8 @@ class CommitGroup:
     touched: float = field(default_factory=time.monotonic)
     active: int = 0
     closed: bool = False
+    closing: bool = False
+    paths: set[Path] = field(default_factory=set)
 
     def record(self, result: GroupCommitResult) -> None:
         """Accumulate a flush result, preserving any failure."""

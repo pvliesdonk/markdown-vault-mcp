@@ -889,6 +889,21 @@ class Vault:
             self._git_strategy, GitWriteStrategy
         ):
             self._git_strategy.set_generated_index_policy(self._is_generated_index)
+        from markdown_vault_mcp._okf_log_event import record_group_events
+
+        self._write_callback.group_write_scope = self._doc_mgr.write_scope
+        self._write_callback.group_event = lambda group, day: record_group_events(
+            self._doc_mgr,
+            group.paths,
+            group.description,
+            (
+                capabilities.folders,
+                lambda: self.okf_capability_report(active=self._okf.state().active)[
+                    "log"
+                ],
+            ),
+            day,
+        )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
             receipt_store=receipt_store,
@@ -1444,6 +1459,9 @@ class Vault:
         # 0. Stop the pull loop start() launched: its ticks call back into
         # this vault, and the strategy object itself stays its owner's (#1765).
         self.stop()
+
+        if hasattr(self, "_write_callback"):
+            self._write_callback.close_groups(timeout=30.0)
 
         if hasattr(self, "_index_facet"):
             self._index_facet._close()

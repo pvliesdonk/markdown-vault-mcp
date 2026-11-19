@@ -6990,7 +6990,11 @@ not scan completed historical auto-close results. End and sync wait up to 30
 seconds; a timeout leaves the commit running and no sync leg runs. A dry run
 leaves groups open and refuses a supplied handle. Other write tools, including uploads,
 stay outside the group. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
-in a Git command argument.
+in a Git command argument. An OKF group suppresses per-write bullets and
+records its description once per touched log at close when logging is enabled.
+A finalizer writes the events under the file lock before the scope end marker;
+the opener identity and close date are captured, and a failed event makes the
+group result fail. Removed and moved paths remain eligible history links.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
