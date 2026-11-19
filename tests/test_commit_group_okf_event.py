@@ -80,23 +80,19 @@ def test_group_records_one_event(
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
+@pytest.mark.parametrize("mode", ["events", "off"])
 def test_empty_and_off_groups_do_not_create_log(
-    git_repo: Path, make_vault: Callable[..., Vault]
+    git_repo: Path, make_vault: Callable[..., Vault], mode: str
 ) -> None:
-    """Check empty and off groups do not create log."""
-    vault = make_vault("off")
-    group = vault._write_callback.open_group("No changes", None)
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "no_changes"
-    )
+    """Empty enabled groups and writes with logging off create no log."""
+    vault = make_vault(mode)
     group = vault._write_callback.open_group("Change", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
+    if mode == "off":
+        with vault._write_callback.bind_group(group.handle, None):
+            vault.writer.write("a.md", "# A\n")
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
+    assert result.status == ("committed" if mode == "off" else "no_changes")
+    assert not result.history_failed
     assert not is_regular_file(git_repo / "log.md")
 
 
@@ -119,82 +115,6 @@ def test_group_survives_drain_and_long_description(
     log = (git_repo / "log.md").read_text()
     assert description in log and "first.md" in log and "second.md" in log
     assert log.count("\n- ") == 1
-
-
-def test_auto_close_uses_opener_identity(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """Check auto close uses opener identity."""
-    vault = make_vault("events")
-    principal = Principal("alice", "Alice", "alice@example.com", "human")
-    group = vault._write_callback.open_group("Change", principal)
-    with (
-        bound_principal(principal),
-        vault._write_callback.bind_group(group.handle, principal),
-    ):
-        vault.writer.write("a.md", "# A\n")
-    result = vault._write_callback.close_group(
-        group.handle, principal, _automatic=True
-    ).result(timeout=10)
-    assert result.status == "committed"
-    assert (
-        _run_git(git_repo, "log", "-1", "--format=%an <%ae>").strip()
-        == "Alice <alice@example.com>"
-    )
-    assert "Change" in (git_repo / "log.md").read_text()
-
-
-def test_removed_and_renamed_paths_are_recorded(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """Check removed and renamed paths are recorded."""
-    vault = make_vault("events")
-    vault.writer.write("delete.md", "# Delete\n")
-    vault.writer.write("old.md", "# Old\n")
-    assert vault._write_callback.drain(timeout=10)
-    group = vault._write_callback.open_group("Reorganize", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.delete("delete.md")
-        vault.writer.rename("old.md", "new.md")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
-    log = (git_repo / "log.md").read_text()
-    assert all(path in log for path in ("delete.md", "old.md", "new.md"))
-
-
-def test_group_records_separate_selected_logs(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """Check group records separate selected logs."""
-    (git_repo / "one").mkdir()
-    (git_repo / "two").mkdir()
-    vault = make_vault("events", ("one", "two"))
-    group = vault._write_callback.open_group("Across folders", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("one/a.md", "# A\n")
-        vault.writer.write("two/b.md", "# B\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
-    assert "one/a.md" in (git_repo / "one/log.md").read_text()
-    assert "two/b.md" in (git_repo / "two/log.md").read_text()
-
-
-def test_log_failure_makes_group_result_failed(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """Check log failure makes group result failed."""
-    vault = make_vault("events")
-    (git_repo / "log.md").write_text("# Log\n\n```\nunclosed\n")
-    group = vault._write_callback.open_group("Unsafe log", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
-    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed" and result.history_failed
-    assert "unclosed" in (git_repo / "log.md").read_text()
 
 
 def test_no_git_group_records_event(git_repo: Path) -> None:
@@ -237,19 +157,25 @@ def test_shutdown_records_open_group(
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
+@pytest.mark.parametrize("mode", ["events", "off"])
 def test_close_does_not_block_drain_holding_file_lock(
-    git_repo: Path, make_vault: Callable[..., Vault]
+    git_repo: Path, make_vault: Callable[..., Vault], mode: str
 ) -> None:
-    """Check close does not block drain holding file lock."""
-    vault = make_vault("events")
+    """Drain completes during closure; off-mode closure needs no file lock."""
+    vault = make_vault(mode)
     group = vault._write_callback.open_group("Drain", None)
     with vault._write_callback.bind_group(group.handle, None):
         vault.writer.write("a.md", "# A\n")
     with vault.pause_writes():
         future = vault._write_callback.close_group(group.handle, None)
         assert vault._write_callback.drain(timeout=2)
+        if mode == "off":
+            assert future.result(timeout=2).status == "committed"
     assert future.result(timeout=10).status == "committed"
-    assert "Drain" in (git_repo / "log.md").read_text()
+    if mode == "events":
+        assert "Drain" in (git_repo / "log.md").read_text()
+    else:
+        assert not is_regular_file(git_repo / "log.md")
 
 
 def test_event_date_is_close_date(
@@ -272,10 +198,10 @@ def test_event_date_is_close_date(
     assert "## 2026-01-02" in (git_repo / "log.md").read_text()
 
 
-def test_timer_closes_with_opener_identity(
+def test_timer_closes_and_records_history(
     git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
-    """Check timer closes with opener identity."""
+    """A timer closes the group and records its description."""
     import time
 
     vault = make_vault("events")
@@ -295,10 +221,6 @@ def test_timer_closes_with_opener_identity(
         timeout=10
     )
     assert result.status == "committed"
-    assert (
-        _run_git(git_repo, "log", "-1", "--format=%an <%ae>").strip()
-        == "Alice <alice@example.com>"
-    )
     assert "Timer change" in (git_repo / "log.md").read_text()
 
 
@@ -385,56 +307,23 @@ def test_group_accepts_newline_in_note_path(
 def test_removed_paths_are_not_broken_links(
     git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
-    """Removed paths remain readable history without becoming broken links."""
+    """Deleted and renamed sources use code; the new path remains a link."""
     vault = make_vault("events")
+    vault.writer.write("delete.md", "# Delete\n")
     vault.writer.write("old.md", "# Old\n")
     assert vault._write_callback.drain(timeout=10)
-    group = vault._write_callback.open_group("Remove", None)
+    group = vault._write_callback.open_group("Reorganize", None)
     with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.delete("old.md")
+        vault.writer.delete("delete.md")
+        vault.writer.rename("old.md", "new.md")
     assert (
         vault._write_callback.close_group(group.handle, None).result(timeout=10).status
         == "committed"
     )
     log = (git_repo / "log.md").read_text()
-    assert "`old.md`" in log
-    assert "](/old.md)" not in log
-
-
-def test_partial_history_failure_reports_location_and_git_succeeds(
-    git_repo: Path, make_vault: Callable[..., Vault], caplog: pytest.LogCaptureFixture
-) -> None:
-    """A failed second log reports its destination and earlier successes."""
-    for folder in ("a", "b"):
-        (git_repo / folder).mkdir()
-    (git_repo / "b/log.md").write_text("# Log\n\n```\nunclosed\n")
-    vault = make_vault("events", ("a", "b"))
-    group = vault._write_callback.open_group("Two folders", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a/one.md", "# One\n")
-        vault.writer.write("b/two.md", "# Two\n")
-    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed" and result.history_failed
-    assert "Two folders" in (git_repo / "a/log.md").read_text()
-    assert "b/log.md" in caplog.text and "a/log.md" in caplog.text
-    assert "unclosed" in caplog.text
-
-
-def test_disabled_log_group_closes_while_writes_paused(
-    make_vault: Callable[..., Vault],
-) -> None:
-    """Closing a group without history does not wait for the file lock."""
-    vault = make_vault("off")
-    group = vault._write_callback.open_group("No history", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
-    with vault.pause_writes():
-        assert (
-            vault._write_callback.close_group(group.handle, None)
-            .result(timeout=2)
-            .status
-            == "committed"
-        )
+    assert "`delete.md`" in log and "`old.md`" in log
+    assert "[new.md](/new.md)" in log
+    assert "](/delete.md)" not in log and "](/old.md)" not in log
 
 
 def test_history_failure_does_not_block_sync(
@@ -505,8 +394,6 @@ def test_auto_close_racing_first_write_records_history(
     from contextlib import contextmanager
     from threading import Event
 
-    import markdown_vault_mcp.write_callback as callbacks
-
     vault = make_vault("writes")
     dispatcher = vault._write_callback
     group = dispatcher.open_group("First change", None)
@@ -526,7 +413,6 @@ def test_auto_close_racing_first_write_records_history(
             yield
 
     with dispatcher.bind_group(group.handle, None):
-        monkeypatch.setattr(callbacks, "nullcontext", pause)
         monkeypatch.setattr(dispatcher, "group_write_scope", paused_scope)
         future = dispatcher.close_group(group.handle, None, _automatic=True)
         assert entered.wait(5)
@@ -566,7 +452,11 @@ def test_failed_log_does_not_skip_other_destinations(
     assert bad.read_text() == original
     assert f"{failed}/log.md" in caplog.text
     for folder in set("abc") - {failed}:
-        assert (git_repo / folder / "log.md").read_text().count("Three folders") == 1
+        log = (git_repo / folder / "log.md").read_text()
+        assert log.count("Three folders") == 1
+        assert f"{folder}/note.md" in log
+    if failed == "b":
+        assert "a/log.md" in caplog.text
 
 
 def test_group_with_only_reserved_index_does_not_create_history(

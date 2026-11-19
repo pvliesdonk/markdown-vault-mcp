@@ -124,10 +124,10 @@ class _ScopeEnd:
 class WriteCallbackDispatcher:
     """Run write callbacks on a single background thread, in FIFO order.
 
-    The worker starts lazily on the first callback or grouped history write
-    and is joined by :meth:`close`. Without a callback, grouped history still
-    records touched paths. A callback that raises is logged and skipped; the
-    worker keeps processing subsequent items.
+    The worker starts lazily on the first write with a callback and is joined
+    by :meth:`close`. Without a callback, groups still track paths for history.
+    A callback that raises is logged and skipped; the worker keeps processing
+    subsequent items.
     """
 
     def __init__(
