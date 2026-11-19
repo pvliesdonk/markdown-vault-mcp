@@ -349,7 +349,7 @@ independent indexes must not share a tracker or ledger. If a ledger is missing
 or corrupt, the next sweep starts a new history from the files it can read. A
 newer schema is refused rather than overwritten.
 
-When downgrading to a version 1 reader, move the version 2 ledger aside to start
+When downgrading to a version 1 or 2 reader, move the version 3 ledger aside to start
 new observation history. A ledger refusal or I/O failure fails the build or reindex before
 search is updated; repair the ledger or its storage and retry. A failed build
 leaves the on-disk completion marker intact if the ledger sweep failed; after
@@ -367,7 +367,7 @@ trimmed. An absent, unterminated or invalid UTF-8 header has no frontmatter
 digest; invalid bytes in the body do not affect a valid header's digest. Reads
 use bounded chunks. Ordinary notes use bounded memory, while a candidate header,
 including an unterminated one, can use memory proportional to its length. The
-version 2 ledger preserves digest meanings across parser upgrades; changing them
+version 3 ledger preserves digest meanings across parser upgrades and stores generated navigation history; changing them
 requires a new version and migration.
 
 Server writes, edits, appends and deletes refresh affected observations. A server

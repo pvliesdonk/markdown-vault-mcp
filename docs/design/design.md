@@ -7959,12 +7959,12 @@ staged bytes until processing;
 only a matching disk digest records `server_write`. A dirty-job ledger I/O or
 schema failure is logged and leaves search usable; once storage is repaired,
 the next sweep reconciles it. Reindex repairs changes missed after a crash,
-without guessing their origin. Version 2 preserves row
+without guessing their origin. Version 3 stores navigation history and preserves row
 meanings and digest vectors across parser upgrades; a
 change requires a version bump and a migration preserving trustworthy history
 and marking unknowns. A missing or corrupt ledger starts new history, while a
-newer schema is refused. A downgrade to a version 1 reader requires moving the
-version 2 ledger aside and starting new observation history. A ledger refusal or I/O failure fails the build or
+newer schema is refused. A downgrade to a version 1 or 2 reader requires moving the
+version 3 ledger aside and starting new observation history. A ledger refusal or I/O failure fails the build or
 reindex before search is touched; on a build the completion marker remains
 intact until observation succeeds. A repaired restart can reuse it. An unforced
 warm build retains in-process queryability after a sweep failure; a forced build

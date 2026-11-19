@@ -970,3 +970,63 @@ def test_malformed_ledger_rebuilds_history(tmp_path: Path, data: str) -> None:
         assert vault._index_mgr.observations.rows()["a.md"].presence == "present"
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize(
+    "navigation",
+    [
+        "not a mapping",
+        {"generated": [], "reported": {}},
+        {"generated": {"index.md": "invalid"}, "reported": {}},
+        {"generated": {}, "reported": {"index.md": "not a list"}},
+    ],
+)
+def test_malformed_navigation_history_resets_without_losing_rows(
+    tmp_path: Path, navigation: object
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    before = ledger.rows()
+    data = json.loads(path.read_text())
+    data["navigation"] = navigation
+    path.write_text(json.dumps(data))
+    assert ledger.generated_navigation() == {}
+    assert ledger.rows() == before
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_ledger_rows_survive_version_three_upgrade(
+    tmp_path: Path, version: int
+) -> None:
+    import json
+
+    from markdown_vault_mcp.bundle_inventory import BundleInspector
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    note = root / "note.md"
+    note.write_text("# Note\n")
+    path = tmp_path / "ledger.json"
+    ledger = ObservationLedger(path, BundleInspector(root, (), frozenset(), 0))
+    ledger.sweep()
+    note.unlink()
+    ledger.sweep()
+    before = ledger.rows()
+    data = json.loads(path.read_text())
+    data["version"] = version
+    data.pop("navigation", None)
+    path.write_text(json.dumps(data))
+    assert ledger.rows() == before
+    ledger.record_navigation("index.md", b"# Index\n")
+    assert ledger.rows() == before
+    assert json.loads(path.read_text())["version"] == 3

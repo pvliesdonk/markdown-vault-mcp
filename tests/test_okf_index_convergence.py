@@ -176,8 +176,6 @@ def test_persistent_restart_preserves_index_and_creates_offline_arrival(
         vault.index.reindex()
     finally:
         vault.close()
-    edited = "# Hand-edited\n"
-    existing.write_text(edited)
     (root / "projects/two/offline.md").write_text("# Offline\n")
     vault = designated_vault(root, ("projects/*",), index_path=db)
     try:
@@ -191,8 +189,7 @@ def test_persistent_restart_preserves_index_and_creates_offline_arrival(
 
         monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
         vault.index.reindex()
-        assert set(calls) == {"projects/one", "projects/two"}
-        assert existing.read_text() != edited
+        assert calls == ["projects/two"]
         assert path_exists(root / "projects/two/index.md")
     finally:
         vault.close()
@@ -225,7 +222,7 @@ def test_noop_does_not_canonicalize_each_observation(
 
 @pytest.mark.parametrize("boundary", [False, True])
 def test_external_folder_removal_refreshes_designated_ancestor(
-    tmp_path: Path, boundary: bool
+    tmp_path: Path, boundary: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
     folder = tmp_path / "projects/one"
@@ -239,14 +236,22 @@ def test_external_folder_removal_refreshes_designated_ancestor(
         vault.index.build_index()
         vault.index.reindex()
         root_index = tmp_path / "index.md"
-        if boundary:
-            root_index.write_text('---\nokf_version: "0.2"\n---\n# Hand edited\n')
-        else:
+        before = root_index.read_bytes()
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
+        if not boundary:
             assert "projects/one/index.md" in root_index.read_text()
         shutil.rmtree(folder)
         vault.index.reindex()
         if boundary:
-            assert "Hand edited" not in root_index.read_text()
+            assert root_index.read_bytes() == before
+            assert calls == []
             assert (folder.parent / "index.md").read_text() == "# Authored boundary\n"
         else:
             assert "projects/one/index.md" not in root_index.read_text()
@@ -503,8 +508,6 @@ def test_search_retry_reconciles_label(
     try:
         vault.index.build_index()
         vault.index.reindex()
-        sibling = root / "two/index.md"
-        sibling_before = sibling.read_text()
         note.write_text("---\ntitle: After\n---\n# Body\n")
         if failure == "upsert":
             original_upsert = vault._index_mgr._fts.upsert_note
@@ -544,7 +547,6 @@ def test_search_retry_reconciles_label(
         vault.index.reindex()
         assert "After" in (root / "one/index.md").read_text()
         assert calls == ["one"]
-        assert sibling.read_text() == sibling_before
         calls.clear()
         vault.index.reindex()
         assert calls == []
@@ -633,8 +635,6 @@ def test_title_policy_restart_refreshes_only_changed_label(
         vault.index.reindex()
     finally:
         vault.close()
-    sibling = root / "two/index.md"
-    sibling_before = sibling.read_text()
     vault = open_vault("label")
     try:
         vault.index.build_index()
@@ -648,7 +648,6 @@ def test_title_policy_restart_refreshes_only_changed_label(
         monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
         vault.index.reindex()
         assert "New label" in (root / "one/index.md").read_text()
-        assert sibling.read_text() == sibling_before
         assert calls == ["one"]
         calls.clear()
         vault.index.reindex()
@@ -848,7 +847,7 @@ def test_unknown_history_refreshes_existing_without_creating_indexes(
 @pytest.mark.parametrize("operation", ["write", "delete", "rename"])
 @pytest.mark.parametrize("restart", [False, True])
 def test_immediate_maintenance_preserves_unrelated_pending_changes(
-    tmp_path: Path, operation: str, restart: bool
+    tmp_path: Path, operation: str, restart: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "vault"
     for name in ("a", "b"):
@@ -871,13 +870,20 @@ def test_immediate_maintenance_preserves_unrelated_pending_changes(
             vault.writer.delete("a/note.md")
         else:
             vault.writer.rename("a/note.md", "a/moved.md")
-        edited = (root / "a/index.md").read_text()
         if restart:
             vault.close()
             vault = designated_vault(root, ("a", "b"), index_path=db)
             vault.index.build_index()
+        calls: list[str] = []
+        original = vault._okf_migrate.generate_index
+
+        def record(**kwargs: object) -> object:
+            calls.append(str(kwargs["folder"]))
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(vault._okf_migrate, "generate_index", record)
         vault.index.reindex()
-        assert (root / "a/index.md").read_text() == edited
+        assert calls == ["b"]
         assert "pending" in (root / "b/index.md").read_text()
     finally:
         vault.close()

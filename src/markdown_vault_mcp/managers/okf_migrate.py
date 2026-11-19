@@ -34,6 +34,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._okf_convention import stored_index_body
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import (
@@ -51,7 +52,7 @@ from markdown_vault_mcp.okf import (
     convert_wikilinks_to_markdown,
     is_okf_reserved_file,
 )
-from markdown_vault_mcp.scanner import normalize_heading, strip_frontmatter_block
+from markdown_vault_mcp.scanner import normalize_heading
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
@@ -332,7 +333,7 @@ class OkfMigrationManager:
                 with okf_write_suppressed():
                     existing = self._doc_mgr._read_note(index_path, capped=False)
                     old_body = (
-                        strip_frontmatter_block(existing.content, preserve_body=True)
+                        stored_index_body(self._doc_mgr, index_path)
                         if existing is not None
                         else None
                     )
@@ -342,7 +343,12 @@ class OkfMigrationManager:
                         else None
                     )
                     if ledger is not None:
-                        ledger.observe_navigation(index_path, old_body, body)
+                        desired = (
+                            stored_index_body(self._doc_mgr, index_path, body)
+                            if existing is not None
+                            else body.encode("utf-8")
+                        )
+                        ledger.observe_navigation(index_path, old_body, desired)
                     preserved = self._doc_mgr.replace_body(
                         index_path,
                         existing.content if existing is not None else None,
@@ -351,7 +357,9 @@ class OkfMigrationManager:
                         allow_designated=True,
                     )
                     if ledger is not None:
-                        ledger.record_navigation(index_path, body)
+                        ledger.record_navigation(
+                            index_path, stored_index_body(self._doc_mgr, index_path)
+                        )
         return OkfIndexResult(
             path=index_path,
             entries=sum(len(items) for items in sections.values()),

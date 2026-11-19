@@ -628,7 +628,7 @@ def test_version_one_rows_survive_upgrade(tmp_path: Path) -> None:
         (source / "b.md").write_text("new")
         vault.index.reindex()
         assert vault._index_mgr.observations.rows()["a.md"] == before
-        assert json.loads(ledger_path.read_text())["version"] == 2
+        assert json.loads(ledger_path.read_text())["version"] == 3
     finally:
         vault.close()
 

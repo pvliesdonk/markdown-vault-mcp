@@ -152,7 +152,8 @@ def _valid_row(key: str, row: Observation) -> bool:
 class ObservationLedger:
     """Compare complete inventory sweeps against durable local state.
 
-    Version 2 writers preserve row meaning and digest vectors across parser
+    Version 3 adds generated navigation history; versions 1 and 2 retain row
+    meaning and digest vectors across parser
     upgrades. A changed digest meaning needs a version bump and migration that
     retains trustworthy history and marks unknowns.
     """
@@ -160,11 +161,7 @@ class ObservationLedger:
     def __init__(self, path: Path | None, inspector: BundleInspector) -> None:
         self._path = path
         self._inspector = inspector
-        self._navigation: dict[str, object] = {
-            "version": 1,
-            "generated": {},
-            "reported": {},
-        }
+        self._navigation: dict[str, object] = {"generated": {}, "reported": {}}
         self._pending: dict[str, _WriteHint] = {}
         self._removals: _Evidence = {}
         self._pending_lock = threading.Lock()
@@ -176,31 +173,53 @@ class ObservationLedger:
         )
 
     def _load(self) -> tuple[dict[str, Observation], bool]:
+        rows, valid, _ = self._load_full()
+        return rows, valid
+
+    def _load_full(self) -> tuple[dict[str, Observation], bool, dict[str, object]]:
+        empty: dict[str, object] = {"generated": {}, "reported": {}}
         if self._path is None:
-            return (self._rows or {}).copy(), True
+            return (self._rows or {}).copy(), True, copy.deepcopy(self._navigation)
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             version = data["version"]
             if type(version) is not int:
                 raise ValueError("Invalid observation version")
-            if version > 2:
+            if version > 3:
                 raise StoreUnsupportedSchemaError(
                     f"Unsupported observation schema version: {version}. "
                     "Upgrade the server or move the ledger aside to start new history.",
                     backend="observations",
                     location=str(self._path),
                 )
-            if version not in (1, 2) or not isinstance(data["rows"], dict):
+            if version not in (1, 2, 3) or not isinstance(data["rows"], dict):
                 raise ValueError("Invalid observation ledger")
             rows = {key: Observation(**row) for key, row in data["rows"].items()}
             if any(not _valid_row(key, row) for key, row in rows.items()):
                 raise ValueError("Invalid observation row")
-            return rows, True
+            navigation = self._parse_navigation(data.get("navigation"))
+            return rows, True, navigation
         except FileNotFoundError:
-            return {}, False
+            return {}, False, empty
         except (ValueError, TypeError, KeyError, AttributeError):
             logger.warning("observation_ledger_reset path=%s", self._path)
-            return {}, False
+            return {}, False, empty
+
+    def _parse_navigation(self, state: object) -> dict[str, object]:
+        empty: dict[str, object] = {"generated": {}, "reported": {}}
+        if state is None:
+            return empty
+        try:
+            if not isinstance(state, dict):
+                raise ValueError("invalid navigation history")
+            generated, reported = state["generated"], state["reported"]
+            if not isinstance(generated, dict) or not isinstance(reported, dict):
+                raise ValueError("invalid navigation history")
+            self._validate_navigation(generated, reported)
+            return {"generated": generated, "reported": reported}
+        except (ValueError, TypeError, KeyError, AttributeError):
+            logger.warning("okf_navigation_history_reset path=%s", self._path)
+            return empty
 
     def rows(self) -> dict[str, Observation]:
         """Return a snapshot of locally recorded observations."""
@@ -477,37 +496,6 @@ class ObservationLedger:
                 states,
             )
 
-    def _navigation_state(self) -> dict[str, object]:
-        if self._path is None:
-            return copy.deepcopy(self._navigation)
-        try:
-            self._load()  # Refuse a ledger written by a newer server.
-            state = json.loads(self._path.read_text(encoding="utf-8")).get("navigation")
-            if state is None:
-                return {"version": 1, "generated": {}, "reported": {}}
-            version = state["version"]
-            if type(version) is int and version > 1:
-                raise StoreUnsupportedSchemaError(
-                    "Unsupported navigation history schema. Upgrade the server or move the ledger aside.",
-                    backend="observations",
-                    location=str(self._path),
-                )
-            generated, reported = state["generated"], state["reported"]
-            if (
-                type(version) is not int
-                or version != 1
-                or not isinstance(generated, dict)
-                or not isinstance(reported, dict)
-            ):
-                raise ValueError("invalid navigation history")
-            self._validate_navigation(generated, reported)
-            return {"version": version, "generated": generated, "reported": reported}
-        except FileNotFoundError:
-            pass
-        except (ValueError, TypeError, KeyError, AttributeError):
-            logger.warning("okf_navigation_history_reset path=%s", self._path)
-        return {"version": 1, "generated": {}, "reported": {}}
-
     @staticmethod
     def _validate_navigation(
         generated: dict[str, object], reported: dict[str, object]
@@ -534,18 +522,18 @@ class ObservationLedger:
     def generated_navigation(self) -> dict[str, str]:
         """Return the last generated body digests as one local snapshot."""
         with self._lock:
-            generated = self._navigation_state()["generated"]
+            generated = self._load_full()[2]["generated"]
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
             return dict(generated)
 
-    def observe_navigation(self, path: str, old: str | None, new: str) -> None:
+    def observe_navigation(self, path: str, old: bytes | None, new: bytes) -> None:
         """Report an unexpected body before replacing a designated index."""
         with self._lock:
-            state = self._navigation_state()
+            rows, _, state = self._load_full()
             generated, reported = state["generated"], state["reported"]
             assert isinstance(generated, dict) and isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
-            desired = compute_etag(new.encode())
-            observed = compute_etag(old.encode()) if old is not None else None
+            desired = compute_etag(new)
+            observed = compute_etag(old) if old is not None else None
             seen = reported.get(path, [])
             if (
                 path in generated
@@ -553,30 +541,31 @@ class ObservationLedger:
                 and observed not in seen
             ):
                 reported.setdefault(path, []).append(observed)
-                self._save_navigation(state)
+                self._save_navigation(rows, state)
                 logger.warning("okf_index_divergence path=%s digest=%s", path, observed)
 
-    def record_navigation(self, path: str, body: str) -> None:
+    def record_navigation(self, path: str, body: bytes) -> None:
         """Record a successfully generated designated index body."""
         with self._lock:
-            state = self._navigation_state()
+            rows, _, state = self._load_full()
             generated = state["generated"]
             assert isinstance(generated, dict)  # noqa: S101, RUF100 - validated local state
-            digest = compute_etag(body.encode())
+            digest = compute_etag(body)
             if generated.get(path) != digest:
                 generated[path] = digest
-                self._save_navigation(state)
+                self._save_navigation(rows, state)
 
-    def _save_navigation(self, state: dict[str, object]) -> None:
+    def _save_navigation(
+        self, rows: dict[str, Observation], state: dict[str, object]
+    ) -> None:
         self._navigation = state
         if self._path is not None:
-            rows, _ = self._load()
             self._save(rows, state)
 
     def navigation_stats(self) -> dict[str, object]:
         """Return the cumulative count and bounded examples of local divergences."""
         with self._lock:
-            reported = self._navigation_state()["reported"]
+            reported = self._load_full()[2]["reported"]
             assert isinstance(reported, dict)  # noqa: S101, RUF100 - validated local state
             count = sum(len(digests) for digests in reported.values())
             examples: list[dict[str, str]] = []
@@ -601,11 +590,11 @@ class ObservationLedger:
                 stream.write(
                     json.dumps(
                         {
-                            "version": 2,
+                            "version": 3,
                             "rows": {k: vars(v) for k, v in rows.items()},
                             "navigation": navigation
                             if navigation is not None
-                            else self._navigation_state(),
+                            else self._load_full()[2],
                         },
                         sort_keys=True,
                     )

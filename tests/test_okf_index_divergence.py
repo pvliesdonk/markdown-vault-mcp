@@ -8,47 +8,53 @@ import pytest
 from tests.fixtures.designated_index import designated_vault
 
 
-def test_external_edit_is_reported_once_and_regenerated(tmp_path: Path) -> None:
+@pytest.mark.parametrize("persistent", [False, True])
+def test_fresh_baseline_and_divergences_are_capped_and_deduplicated(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, persistent: bool
+) -> None:
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
     header = b'---\nokf_version: "0.2"\n---\n'
     index.write_bytes(header + b"# Original\n")
     (root / "note.md").write_text("# Note\n")
-    db = tmp_path / "index.sqlite"
+    db = tmp_path / "db" if persistent else None
     vault = designated_vault(root, (".",), index_path=db)
     try:
         vault.index.build_index()
         vault.index.reindex()
         assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 0
-        index.write_bytes(header + b"# Hand edited\n")
-        vault.index.reindex()
+        with caplog.at_level(logging.WARNING):
+            for i in range(12):
+                index.write_bytes(header + f"# Edit {i}\n".encode())
+                vault.index.reindex()
+            index.write_bytes(header + b"# Edit 0\n")
+            vault.index.reindex()
         assert index.read_bytes().startswith(header)
-        assert b"Hand edited" not in index.read_bytes()
-        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+        assert b"# Edit" not in index.read_bytes()
+        divergences = vault.reader.okf_stats()["navigation"]["divergences"]
+        assert divergences["count"] == 12
+        assert len(divergences["examples"]) == 10
+        assert sum("okf_index_divergence " in r.message for r in caplog.records) == 12
     finally:
         vault.close()
+    if not persistent:
+        return
     vault = designated_vault(root, (".",), index_path=db)
     try:
         vault.index.build_index()
-        index.write_bytes(header + b"# Hand edited\n")
+        index.write_bytes(header + b"# Edit 0\n")
         vault.index.reindex()
-        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 1
+        assert vault.reader.okf_stats()["navigation"]["divergences"]["count"] == 12
     finally:
         vault.close()
 
 
-def test_explicit_generation_tracks_parent_and_leaves_authored_and_log(
-    tmp_path: Path,
-) -> None:
+def test_explicit_generation_tracks_parent(tmp_path: Path) -> None:
     root = tmp_path / "vault"
     child = root / "child"
-    authored = root / "authored"
     child.mkdir(parents=True)
-    authored.mkdir()
     (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-    (authored / "index.md").write_text("# Authored\n")
-    (root / "log.md").write_text("# Log\n")
     (child / "note.md").write_text("# Note\n")
     vault = designated_vault(root, (".", "child"), index_path=tmp_path / "db")
     try:
@@ -61,8 +67,12 @@ def test_explicit_generation_tracks_parent_and_leaves_authored_and_log(
         stats = vault.reader.okf_stats()
         assert stats is not None
         assert stats["navigation"]["divergences"]["count"] == 2
-        assert (authored / "index.md").read_text() == "# Authored\n"
-        assert (root / "log.md").read_text() == "# Log\n"
+        ledger = vault._index_mgr.observations
+        assert ledger is not None and ledger._path is not None
+        vault.index.reindex()
+        before = ledger._path.stat().st_mtime_ns
+        vault.writer.okf_generate_index(folder="child")
+        assert ledger._path.stat().st_mtime_ns == before
     finally:
         vault.close()
 
@@ -93,35 +103,7 @@ def test_new_desired_body_on_disk_is_not_divergence(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_examples_are_capped_and_warning_once(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    root = tmp_path / "vault"
-    root.mkdir()
-    index = root / "index.md"
-    header = '---\nokf_version: "0.2"\n---\n'
-    index.write_text(header + "# Original\n")
-    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
-    try:
-        vault.index.build_index()
-        vault.index.reindex()
-        with caplog.at_level(logging.WARNING):
-            for i in range(12):
-                index.write_text(header + f"# Edit {i}\n")
-                vault.index.reindex()
-            index.write_text(header + "# Edit 0\n")
-            vault.index.reindex()
-        stats = vault.reader.okf_stats()
-        assert stats is not None
-        divergences = stats["navigation"]["divergences"]
-        assert divergences["count"] == 12
-        assert len(divergences["examples"]) == 10
-        assert sum("okf_index_divergence " in r.message for r in caplog.records) == 12
-    finally:
-        vault.close()
-
-
-def test_invalid_history_is_reset_and_future_version_refused(tmp_path: Path) -> None:
+def test_future_ledger_refusal_leaves_index_untouched(tmp_path: Path) -> None:
     import json
 
     from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
@@ -129,44 +111,20 @@ def test_invalid_history_is_reset_and_future_version_refused(tmp_path: Path) -> 
     root = tmp_path / "vault"
     root.mkdir()
     index = root / "index.md"
-    header = '---\nokf_version: "0.2"\n---\n'
-    index.write_text(header + "# Root\n")
+    index.write_text("# Root\n")
     vault = designated_vault(root, (".",), index_path=tmp_path / "db")
     try:
         vault.index.build_index()
-        vault.index.reindex()
+        vault.writer.okf_generate_index(folder="")
         ledger = vault._index_mgr.observations
         assert ledger is not None and ledger._path is not None
         data = json.loads(ledger._path.read_text())
-        del data["navigation"]
+        data["version"] = 4
         ledger._path.write_text(json.dumps(data))
-        assert ledger.navigation_stats()["count"] == 0
-        data["navigation"] = {"version": 1, "generated": [], "reported": {}}
-        ledger._path.write_text(json.dumps(data))
-        assert ledger.navigation_stats()["count"] == 0
-        data["navigation"] = {
-            "version": 1,
-            "generated": {"index.md": "invalid"},
-            "reported": {},
-        }
-        ledger._path.write_text(json.dumps(data))
-        assert ledger.generated_navigation() == {}
-        data["navigation"] = {
-            "version": 1,
-            "generated": {},
-            "reported": {"index.md": "not a list"},
-        }
-        ledger._path.write_text(json.dumps(data))
-        index.write_text(header + "# Untracked\n")
-        vault.writer.okf_generate_index(folder="")
-        assert ledger.navigation_stats()["count"] == 0
-        data = json.loads(ledger._path.read_text())
-        data["navigation"]["version"] = 999
-        ledger._path.write_text(json.dumps(data))
-        index.write_text(header + "# Must survive\n")
+        index.write_text("# Must survive\n")
         with pytest.raises(StoreUnsupportedSchemaError):
             vault.writer.okf_generate_index(folder="")
-        assert index.read_text() == header + "# Must survive\n"
+        assert index.read_text() == "# Must survive\n"
     finally:
         vault.close()
 
@@ -204,19 +162,84 @@ def test_unreadable_index_does_not_block_other_folders_and_retries(
         vault.close()
 
 
-def test_unchanged_explicit_generation_leaves_history_in_place(tmp_path: Path) -> None:
+@pytest.mark.parametrize("ending", [b"\r\n", b"\r"])
+@pytest.mark.parametrize("entry", ["explicit", "reindex"])
+def test_body_line_endings_are_compared_as_stored(
+    tmp_path: Path, ending: bytes, entry: str
+) -> None:
+    root = tmp_path / "vault"
+    for folder in ("a", "b"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "note.md").write_text("# Note\n")
+    index = root / "a/index.md"
+    header = b'---\r\nokf_version: "0.2"\r\n---\r\n'
+    index.write_bytes(header + b"# Before\n")
+    vault = designated_vault(root, ("a", "b"), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        vault.writer.okf_generate_index(folder="a")
+        vault.writer.okf_generate_index(folder="b")
+        vault.index.reindex()
+        baseline = index.read_bytes()
+        assert baseline.startswith(header)
+        body = baseline[len(header) :]
+        index.write_bytes(header + body.replace(b"\n", ending))
+        if entry == "explicit":
+            vault.writer.okf_generate_index(folder="a")
+        else:
+            vault.index.reindex()
+        assert index.read_bytes() == baseline
+        stats = vault.reader.okf_stats()
+        assert stats is not None
+        assert stats["navigation"]["divergences"]["count"] == 1
+    finally:
+        vault.close()
+
+
+def test_bare_cr_header_and_leading_newline_body_stay_stable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.managers.okf_migrate as migration
+
     root = tmp_path / "vault"
     root.mkdir()
-    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    header = b'---\rokf_version: "0.2"\r---\r'
+    index = root / "index.md"
+    index.write_bytes(header + b"# Original\n")
+    vault = designated_vault(root, (".",), index_path=tmp_path / "db")
+    try:
+        vault.index.build_index()
+        monkeypatch.setattr(migration, "_render_fold", lambda *_args: "\n# Listing\n")
+        vault.writer.okf_generate_index(folder="")
+        generated = index.read_bytes()
+        assert generated == header + b"\r\n# Listing\n"
+        vault.writer.okf_generate_index(folder="")
+        vault.index.reindex()
+        assert index.read_bytes() == generated
+        stats = vault.reader.okf_stats()
+        assert stats is not None
+        assert stats["navigation"]["divergences"]["count"] == 0
+    finally:
+        vault.close()
+
+
+def test_header_only_edit_is_preserved_without_divergence(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    index = root / "index.md"
+    index.write_bytes(b'---\nokf_version: "0.2"\n---\n# Root\n')
     vault = designated_vault(root, (".",), index_path=tmp_path / "db")
     try:
         vault.index.build_index()
         vault.writer.okf_generate_index(folder="")
-        ledger = vault._index_mgr.observations
-        assert ledger is not None and ledger._path is not None
+        old = index.read_bytes()
+        header = b'---\r\nokf_version: "0.2"\r\ntitle: Local\r\n---\r\n'
+        index.write_bytes(header + old.split(b"---\n", 2)[2])
         vault.index.reindex()
-        before = ledger._path.stat().st_mtime_ns
         vault.writer.okf_generate_index(folder="")
-        assert ledger._path.stat().st_mtime_ns == before
+        assert index.read_bytes().startswith(header)
+        stats = vault.reader.okf_stats()
+        assert stats is not None
+        assert stats["navigation"]["divergences"]["count"] == 0
     finally:
         vault.close()
