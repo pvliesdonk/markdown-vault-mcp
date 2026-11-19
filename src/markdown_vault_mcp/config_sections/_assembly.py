@@ -11,16 +11,6 @@ chunk-cap heuristic, and the ``from_env`` field validators — lives here instea
 
 Imports only pvl-core (through ``_pvl_core``), stdlib, and sibling domain modules (never
 ``config`` at runtime) so ``config.py`` can import these without a cycle.
-
-Module-scope imports here are also bound by the config import floor: every
-module reachable from ``ProjectConfig`` at import time must resolve with only
-``fastmcp-pvl-core`` and PyYAML installed, because the template's
-``scripts/gen_config_surface.py`` imports ``ProjectConfig`` under
-``uv run --no-project`` with exactly those two, before any project
-virtualenv exists (#1259). Anything reaching a further third-party package —
-``markdown_vault_mcp.git`` reaches ``python-frontmatter``, for one — belongs
-in ``TYPE_CHECKING`` plus a function-local import at the use site.
-``tests/test_config_import_floor.py`` enforces this.
 """
 
 from __future__ import annotations
