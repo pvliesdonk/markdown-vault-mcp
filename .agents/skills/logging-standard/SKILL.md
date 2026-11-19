@@ -4,8 +4,6 @@ description: >-
   Use before adding or changing any logging call in src/: log levels, exception handling, the event_name key=value message grammar tests/test_logging_standard.py enforces, and what pvl-core's root-logger setup (standard-library logging rendered as Rich or JSON) does with a call that follows it or does not.
 ---
 
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
-
 # Logging Standard
 
 ## Logging Standard
