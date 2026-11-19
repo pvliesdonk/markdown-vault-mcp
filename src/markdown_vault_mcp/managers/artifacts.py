@@ -100,8 +100,8 @@ class ArtifactStore:
         policy: Construction-time artifact policy.
         indexed: Whether the keyword index holds notes; with it, a write into
             an empty vault folder is refused (#1791). ``None`` skips the check.
-        submodule_guard: Refuses a write into a git submodule, which would
-            never be committed (#1564). ``None`` refuses nothing.
+        submodule_guard: Refuses a write into a git submodule or nested
+            repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
     """
 
     def __init__(
@@ -141,7 +141,7 @@ class ArtifactStore:
             require_vault_root(self._source_dir, indexed=self._indexed())
 
     def _refuse_submodule(self, abs_path: Path, argument: str, path: str) -> None:
-        """Refuse a write into a git submodule, before anything touches disk."""
+        """Refuse a write into a git submodule or nested repository."""
         if self._submodule_guard is not None:
             self._submodule_guard.refuse(abs_path, argument, path)
 
@@ -305,7 +305,8 @@ class ArtifactStore:
             The write result, recording whether the file was created.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* does not match.
             DocumentExistsError: If write protection refuses a blind overwrite.
@@ -343,7 +344,8 @@ class ArtifactStore:
             The absolute path that was removed.
 
         Raises:
-            SubmodulePathError: If *path* lies inside a git submodule (#1564).
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the artifact does not exist.
             ConcurrentModificationError: If *if_match* does not match.
@@ -377,7 +379,7 @@ class ArtifactStore:
 
         Raises:
             SubmodulePathError: If either path lies inside a git submodule
-                (#1564).
+                or nested repository (#1564, #1949).
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.

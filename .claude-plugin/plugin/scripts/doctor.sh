@@ -35,7 +35,7 @@ PYEOF
 # The settings env block and the shell environment remain as legacy
 # fallbacks for installs that predate the screen.
 src="${CLAUDE_PLUGIN_OPTION_SOURCE_DIR:-}"
-if [ -z "$src" ] && [ -f "$HOME/.claude/settings.json" ]; then
+if [[ -z "$src" ]] && [[ -f "$HOME/.claude/settings.json" ]]; then
   src=$(python3 - <<'PYEOF' 2>/dev/null
 import json
 import os
@@ -57,18 +57,18 @@ print(value)
 PYEOF
 )
 fi
-if [ -z "$src" ]; then
+if [[ -z "$src" ]]; then
   src="${MARKDOWN_VAULT_MCP_SOURCE_DIR:-}"
 fi
 
-if [ -z "$src" ]; then
+if [[ -z "$src" ]]; then
   emit \
     "markdown-vault-mcp: no vault configured — the MCP server cannot start. Ask Claude to set up your vault to fix this." \
     "The markdown-vault-mcp plugin's MCP server is down because no vault directory is configured: the plugin's source_dir option is unset (no CLAUDE_PLUGIN_OPTION_SOURCE_DIR, nothing under pluginConfigs in ~/.claude/settings.json) and the legacy MARKDOWN_VAULT_MCP_SOURCE_DIR env fallbacks are empty too. If the user asks about the vault or wants it working, use the vault-setup skill to run the guided setup."
   exit 0
 fi
 
-if [ ! -d "$src" ]; then
+if [[ ! -d "$src" ]]; then
   emit \
     "markdown-vault-mcp: configured vault directory does not exist ($src) — the MCP server cannot start. Ask Claude to repair the vault setup." \
     "The markdown-vault-mcp plugin's MCP server is down because its configured vault directory does not exist: MARKDOWN_VAULT_MCP_SOURCE_DIR=$src. The vault was likely moved or renamed. If the user asks about the vault or wants it working, use the vault-setup skill to re-point the configuration."
