@@ -24,7 +24,7 @@ sources:
 This reference records the pinned specification, not a claim that this server
 implements all of it. For the previous text see [v0.2](okf-v0.2.md).
 
-- A bundle may declare `okf_version` in root `index.md`; an unknown version should be consumed best-effort, not refused (§12). [source: spec] [pins: tests/test_okf.py::TestOkfDetector::test_known_version_detected_without_warning, tests/test_okf.py::TestOkfDetector::test_unknown_version_warns_once_and_detects]
+- A bundle may declare `okf_version` in root `index.md`; an unknown version should be consumed best-effort, not refused (§12). [source: spec] [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestOkfDetector::test_unknown_version_warns_once_and_detects]
 - A non-reserved Markdown file with non-empty `type` is a concept; untyped files do not affect conformance and dot-paths are outside the bundle (§3.1–3.2, §11.1). [source: spec]
 - Frontmatter uses YAML 1.2 core mappings; unknown extension keys must be preserved by producers (§4, §4.1). [source: spec]
 - Only current verification events determine trust; date-only timestamps mean the start of the day in UTC (§5, §5.3). [source: spec]

@@ -68,14 +68,8 @@ class TestOkfDetector:
         assert state.declared_version is None
         assert state.mode == "auto"
 
-    def test_declared_auto_active(self, tmp_path: Path) -> None:
-        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
-        state = OkfDetector(tmp_path, mode="auto").state()
-        assert state.active is True
-        assert state.declared_version == "0.2"
-
     @pytest.mark.parametrize("version", ["0.1", "0.2", "0.3"])
-    def test_known_version_detected_without_warning(
+    def test_declared_auto_active(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture, version: str
     ) -> None:
         _write_root_index(tmp_path, f'---\nokf_version: "{version}"\n---\n')
