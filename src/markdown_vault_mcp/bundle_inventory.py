@@ -11,9 +11,8 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 import yaml
-from frontmatter.default_handlers import YAMLHandler
 
-from markdown_vault_mcp.scanner import _split_frontmatter, parse_frontmatter
+from markdown_vault_mcp.scanner import _split_yaml, parse_frontmatter
 from markdown_vault_mcp.stores._legacy import matrix_sequence
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
@@ -239,10 +238,10 @@ def _role(name: str, conventions_file: str | None) -> Role:
 
 def _metadata_too_complex(text: str) -> bool:
     """Bound YAML work before construction using the shared block boundaries."""
-    block = _split_frontmatter(text)
-    if block is None or not isinstance(block[0], YAMLHandler):
+    block = _split_yaml(text)
+    if block is None:
         return False
-    _, header, _ = block
+    header, _ = block
     depth = 0
     for ordinal, event in enumerate(yaml.parse(header, Loader=yaml.SafeLoader)):
         if ordinal >= 4096 or isinstance(event, yaml.events.AliasEvent):

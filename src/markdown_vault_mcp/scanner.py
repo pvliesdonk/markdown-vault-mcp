@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
-from frontmatter.default_handlers import BaseHandler, YAMLHandler
+from frontmatter.default_handlers import YAMLHandler
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import (
@@ -796,24 +796,22 @@ class MalformedFrontmatterError(yaml.YAMLError):
 
 
 _YAML_BOUNDARY = re.compile(r"^---\r?$", re.MULTILINE)
+_YAML = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
 
 
-def _split_frontmatter(text: str) -> tuple[BaseHandler, str, str] | None:
-    """Find one complete frontmatter block and retain its unstripped body."""
+def _split_yaml(text: str) -> tuple[str, str] | None:
+    """Find a complete exact YAML block and retain its unstripped body."""
     candidate = text.removeprefix("\ufeff")
-    handler: BaseHandler | None
-    if _YAML_BOUNDARY.match(candidate):
-        handler = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
-    else:
-        candidate = text.lstrip()
-        handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-        if handler is None or isinstance(handler, YAMLHandler):
-            return None
+    if not _YAML_BOUNDARY.match(candidate):
+        return None
     try:
-        metadata, body = handler.split(candidate)
+        return _YAML.split(candidate)
     except ValueError:
         return None
-    return handler, metadata, body
+
+
+def _yaml_like(text: str) -> bool:
+    return YAMLHandler().detect(text.removeprefix("\ufeff").strip())
 
 
 def parse_frontmatter(text: str) -> frontmatter.Post:
@@ -835,17 +833,19 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
-    block = _split_frontmatter(text)
-    if block is None:
+    block = _split_yaml(text)
+    if block is not None:
+        header, body = block
+        metadata = _YAML.load(header)
+        return frontmatter.Post(
+            body.strip(), _YAML, **(metadata if isinstance(metadata, dict) else {})
+        )
+    if _yaml_like(text):
         return frontmatter.Post(text.strip())
-    handler, raw_metadata, body = block
     try:
-        metadata = handler.load(raw_metadata)
+        return frontmatter.loads(text)
     except ValueError as exc:
         raise MalformedFrontmatterError(str(exc)) from exc
-    return frontmatter.Post(
-        body.strip(), handler, **(metadata if isinstance(metadata, dict) else {})
-    )
 
 
 def strip_frontmatter_block(text: str) -> str:
@@ -872,10 +872,20 @@ def strip_frontmatter_block(text: str) -> str:
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
-    block = _split_frontmatter(text)
-    if block is None:
+    block = _split_yaml(text)
+    if block is not None:
+        return block[1].lstrip("\r\n")
+    if _yaml_like(text):
         return text
-    return block[2].lstrip("\r\n")
+    candidate = text.lstrip()
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None:
+        return text
+    try:
+        _, body = handler.split(candidate)
+    except ValueError:
+        return text
+    return body.lstrip("\n")
 
 
 def _restore_first_indent(text: str, stripped: str) -> str:

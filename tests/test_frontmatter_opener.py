@@ -6,13 +6,15 @@ import pytest
 
 from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 
 @pytest.mark.parametrize(
     ("text", "metadata", "body"),
     [
         ("---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
+        ("---\ntype: Metric\n---", {"type": "Metric"}, ""),
+        ("---\ntype: Metric\n--- ", {}, None),
         # Public string callers can supply a BOM without file decoding.
         ("\ufeff---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
         ("---\r\ntype: Metric\r\n---\r\nBody", {"type": "Metric"}, "Body"),
@@ -49,5 +51,27 @@ def test_public_inventory_uses_frontmatter_boundaries(
         assert entry.parse_state == "valid"
         assert entry.reason is None
         assert not entry.is_concept
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("operation", ["read", "index"])
+def test_json_header_only_with_trailing_space_remains_readable(
+    tmp_path: Path, operation: str
+) -> None:
+    text = '{\n"title": "Kept"\n}  '
+    (tmp_path / "note.md").write_text(text)
+    vault = Vault(
+        source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+    )
+    try:
+        if operation == "read":
+            assert strip_frontmatter_block(text) == text
+            note = vault.reader.read("note.md")
+            assert note is not None
+            assert note.frontmatter.get("title") == "Kept"
+        else:
+            vault.index.build_index()
+            assert "note.md" in {note.path for note in vault.reader.list_documents()}
     finally:
         vault.close()
