@@ -2918,6 +2918,8 @@ form) is read as a fragment, or as an anchor when the name begins with one,
 and a parenthesis that will not parse in the plain form ends the destination
 early, so `/notes/a)b.md` becomes a link to `notes/a`. Exactly those are
 backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`, `/notes/a\)b.md`).
+A literal percent escape is written with `%25`, and a named character
+reference is escaped, so decoding preserves those characters in the path.
 The paren half was first assigned to the *other* class and left unrepaired;
 #1516 showed that only an unbalanced `(` breaks visibly, while a `)`
 re-points silently, so both now escape.
@@ -3487,11 +3489,13 @@ vault root clamps to root.
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
 is stored without it.
 
-**Link rewrites preserve the spelling they found.** `rename` and `move_folder`
+**Link rewrites preserve the spelling they found where safe.** `rename` and `move_folder`
 repoint links through `compute_new_raw_target`, which recognises three shapes
 for markdown and reference links: leading-slash root-relative (`/folder/x.md`),
 root-relative matching `old_path` (`folder/x.md`), and relative to the source
-file's directory (`../x.md`). Each is rewritten in its own shape. The first was
+file's directory (`../x.md`). A bare vault path in a nested source is always
+rewritten source-relative, so a later local file cannot shadow it. A
+leading-slash link stays rooted. The first shape was
 missing until issue #1105: `old_path` carries no leading slash, so a
 leading-slash link never compared equal to it and fell into the
 relative-to-source branch, silently converting OKF's recommended spelling (and
@@ -3499,6 +3503,24 @@ what `okf_convert_links` / `okf_generate_index` emit) into a bare relative
 filename on any rename or folder move. Nothing broke — the output was a correct
 relative path — which is what made it a fidelity defect rather than a
 correctness one, and what let it go unnoticed.
+
+**Markdown and reference resolution**: The decoded destination first resolves
+relative to the source. If that indexed path is absent, the resolver searches
+for an exact vault path and then suffix matches, using the wikilink tie-break
+below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
+location. A destination whose percent decoding is refused does not use the
+vault search; its source-relative literal path remains available. Obsidian's
+precedence when both paths exist is [unverified]; local-first is proposed
+for generic Markdown compatibility. Unlike
+wikilinks, these links do not infer `.md` or match aliases.
+Every pass recomputes the source-relative path from the original destination,
+so adding or removing a target updates the graph consistently.
+On rename with link updates or folder move, fallback links in moved sources and
+vault-path links to moved targets become source-relative so a source-local
+note cannot shadow the intended target. The rewrite does not promise the
+shortest spelling. A rename without link updates leaves bytes as written.
+After a rename with link updates, read the moved note before a guarded write:
+its own rewritten links may have changed its etag.
 
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:

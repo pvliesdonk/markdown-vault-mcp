@@ -54,6 +54,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.scanner import _resolve_link_path
 from markdown_vault_mcp.types import (
     FTS_COLUMNS,
     FTSResult,
@@ -62,6 +63,7 @@ from markdown_vault_mcp.types import (
     SubtreeNote,
     TocEntry,
 )
+from markdown_vault_mcp.utils.links import parse_markdown_destination
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Iterator
@@ -509,7 +511,12 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1383) adds vault-wide fallback for missing source-relative
+#: markdown and reference links, shared grouped path matching, and
+#: shadow-safe rewrites, including links in moved sources, and refuses vault
+#: search on destinations with refused escapes. Version 12 shipped
+#: in v6.1.2.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -659,6 +666,33 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     source_dir = source_path.rpartition("/")[0]
     own_folder = [p for p in candidates if p.rpartition("/")[0] == source_dir]
     return min(own_folder or candidates, key=lambda p: (len(p), p))
+
+
+def _match_vault_path(
+    target: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
+) -> str | None:
+    """Find an exact or suffix path using the shared vault tie-break."""
+    if target in path_set:
+        return target
+    candidates = [
+        path
+        for path in by_name.get(target.rpartition("/")[2], [])
+        if path.endswith("/" + target)
+    ]
+    return _pick_wikilink_candidate(candidates, source) if candidates else None
+
+
+def _markdown_link_target(
+    raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
+) -> str:
+    """Resolve a markdown destination, keeping explicit and existing local paths."""
+    parsed = parse_markdown_destination(raw)
+    decoded = parsed.path
+    baseline, _ = _resolve_link_path(decoded, source)
+    if parsed.refused or baseline in path_set or decoded.startswith(("/", "./", "../")):
+        return baseline
+    target, _ = _resolve_link_path(decoded, "")
+    return _match_vault_path(target, source, path_set, by_name) or baseline
 
 
 class FTSIndex:
@@ -2564,7 +2598,7 @@ class FTSIndex:
 
     @_retry_on_locked
     def resolve_vault_wikilinks(self) -> int:
-        """Resolve vault-wide wikilink ``target_path`` values against the document set.
+        """Resolve link ``target_path`` values against the document set.
 
         Obsidian resolves a bare wikilink (``[[Note]]``) by searching the
         whole vault for a document whose name matches, and a path-qualified
@@ -2581,7 +2615,7 @@ class FTSIndex:
         renamed — the original stem is always available regardless of how many
         times the index has been rebuilt.
 
-        When no path match is found, the method also checks the
+        When no wikilink path match is found, the method also checks the
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
         that document.  This mirrors Obsidian's alias resolution behaviour
@@ -2592,6 +2626,12 @@ class FTSIndex:
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
         and do not participate in vault-wide resolution.
+
+        Markdown and reference links retain an existing source-relative path.
+        Otherwise they search exact and suffix paths with the same tie-break,
+        except that explicit decoded ``/``, ``./`` and ``../`` prefixes remain
+        authoritative. They do not infer extensions or resolve aliases. Each
+        pass recomputes their source-relative path from the raw destination.
 
         Call this method after all documents have been indexed
         (``IndexFacet.build_index()`` and ``IndexFacet.reindex()`` do this
@@ -2613,6 +2653,9 @@ class FTSIndex:
             for r in conn.execute("SELECT path FROM documents_live").fetchall()
         ]
         doc_paths_set = set(doc_paths)
+        by_name: dict[str, list[str]] = {}
+        for path in doc_paths:
+            by_name.setdefault(path.rpartition("/")[2], []).append(path)
 
         # Build alias → document path mapping for fallback resolution.
         # Case-insensitive: Obsidian alias matching is case-insensitive.
@@ -2658,17 +2701,28 @@ class FTSIndex:
 
             # An exact vault path wins outright (rule 1); the suffix matches
             # and the alias fallback go through the tie-break (rules 2, 3).
-            if search_target in doc_paths_set:
-                new_path = search_target
-            else:
-                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
-                if not candidates:
-                    # Fallback: check if the stem matches a document alias.
-                    # Use the raw stem (without .md) for alias matching.
-                    candidates = alias_map.get(stem.lower(), [])
+            new_path = _match_vault_path(
+                search_target, row["source_path"], doc_paths_set, by_name
+            )
+            if new_path is None:
+                candidates = alias_map.get(stem.lower(), [])
                 if not candidates:
                     continue  # Genuinely broken — no document matches.
                 new_path = _pick_wikilink_candidate(candidates, row["source_path"])
+            if new_path != row["target_path"]:
+                updates.append((new_path, row["id"]))
+
+        markdown_rows = conn.execute(
+            """
+            SELECT l.id, l.raw_target, l.target_path, d.path AS source_path
+            FROM links l JOIN documents d ON d.id = l.source_id
+            WHERE l.link_type IN ('markdown', 'reference') AND l.raw_target != ''
+            """
+        ).fetchall()
+        for row in markdown_rows:
+            new_path = _markdown_link_target(
+                row["raw_target"], row["source_path"], doc_paths_set, by_name
+            )
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
