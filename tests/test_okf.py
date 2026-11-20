@@ -350,7 +350,7 @@ class TestOkfConfig:
 
 
 def _guidance(**kwargs: object) -> str:
-    """Render the domain snippets the way pvl-core's builder serialises them.
+    """Render the domain snippets the way the instructions builder serialises them.
 
     ``finalize_instructions`` joins snippets with a blank line, so this is the
     domain half of the text the server actually emits — minus the identity,
