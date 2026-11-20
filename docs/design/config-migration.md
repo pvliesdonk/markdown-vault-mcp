@@ -19,7 +19,7 @@ is changing now.
 
 All four files are now `generated`, produced by
 `scripts/gen_config_surface.py` from
-`fastmcp_pvl_core.server_config_surface()` plus `config-presentation.yml`,
+`markdown_vault_mcp._config_surface.server_config_surface()` plus `config-presentation.yml`,
 and re-run on every `copier copy` (as a post-copy task) and at the end of
 every `copier update` (as an after-stage migration, once the update has
 restored your domain `config.py` — so the regenerated artifacts always
@@ -31,8 +31,8 @@ If you customised the help text or example value of a **core** var (as
 opposed to adding a domain var), there is no preservation path at all:
 `config-presentation.yml` is template-owned and gets overwritten the same
 way, and step 2 below covers only domain fields. Re-apply that customisation
-upstream in `fastmcp-pvl-core` or `config-presentation.yml` in the template
-repo, not in the generated file.
+in `ServerConfig`'s field metadata (`config_sections/server.py`) or in
+`config-presentation.yml`, not in the generated file.
 
 ## Steps
 
@@ -69,12 +69,12 @@ For every domain env var you found in step 1, add or update its field in
 ```
 
 A composed sub-config section works as well: a `ProjectConfig` field whose
-type is a dataclass with its own `from_env` (core's `TransferConfig`, or a
-project-local section) contributes its vars with each *section* field's own
-`metadata` — no need to flatten the section into top-level fields. This
-needs `fastmcp-pvl-core` 4.6.0 or later, and each section read must stay
-inline in its constructor keyword (`field=env(prefix, "LITERAL")`) for the
-scan to attach the field's metadata.
+type is a dataclass with its own `from_env` (for example `TransferConfig` in
+`config_sections/transfer.py`, or another project-local section) contributes
+its vars with each *section* field's own `metadata` — no need to flatten the
+section into top-level fields. Each section read must stay inline in its
+constructor keyword (`field=env(prefix, "LITERAL")`) for the scan to attach
+the field's metadata.
 
 **This step needs a human or a capable agent, not mechanical substitution.**
 Deciding which sentence in a paragraph holds the actual help text, as
@@ -90,7 +90,7 @@ to read the var if it doesn't already, and `__post_init__` (between
 prose described. Old prose that says a variable is required becomes
 `required=True` on its `env(...)` read in `from_env`, plus an entry in
 `config_contract_env` in `tests/conftest.py`; any other invariant goes in
-`__post_init__`, raising `fastmcp_pvl_core.ConfigurationError`. Only a
+`__post_init__`, raising `markdown_vault_mcp.exceptions.ConfigurationError`. Only a
 `ConfigurationError` gets `serve`'s one-line configuration error; a
 `ValueError` prints a full traceback.
 

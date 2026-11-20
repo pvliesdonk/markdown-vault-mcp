@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp._tools.transactions import settle_transactions
 from markdown_vault_mcp.exceptions import InvalidRequestError
