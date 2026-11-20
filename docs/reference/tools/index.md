@@ -19,6 +19,8 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 
 | Group | Tool | Title | Does |
 |---|---|---|---|
+| Reader | [`get_file_reference`](reader.md#get_file_reference) | Get File Reference | Create a portable file reference without returning its body. |
+| Reader | [`resolve_file_reference`](reader.md#resolve_file_reference) | Resolve File Reference | Check a saved reference against current raw bytes, optionally reading verified bytes. |
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
 | Reader | [`list_documents`](reader.md#list_documents) | List Documents | List notes, and optionally attachments, with path, title and frontmatter but no body text. |

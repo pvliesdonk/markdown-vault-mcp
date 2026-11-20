@@ -159,6 +159,39 @@ including the `.md` extension. Example: `Journal/2024-01-15.md`.
 This avoids collisions between files with the same stem in different
 directories (such as `Journal/2024-01-15.md` vs `Archive/2024-01-15.md`).
 
+### Portable file references (#2124)
+
+`references.ReferenceReader` is a synchronous public API independent of the
+index and Git. Its version-one `FileReference` contains `namespace`, `path`,
+`size_bytes`, optional `sha256` and opt-in caller `provenance`. The MCP adapter
+uses `ProjectConfig.reference_namespace`; library callers configure the same
+namespace and attachment allowlist explicitly. Operators own namespace
+uniqueness and keep it stable across moves and container redeployments. There
+is no filesystem-derived fallback, global file ID or tracker dependency.
+
+`get_file_reference` returns no body. Digest reads stream complete raw bytes
+including frontmatter and original line endings. Byte count and SHA-256 come
+from that stream, guarded by descriptor and path identity, size, nanosecond
+mtime and ctime checks before/after consumption. A concurrent modification
+refuses the call. No Git revision is attached through a separate query.
+
+`resolve_file_reference` checks the saved namespace before file I/O and
+reports `verified`, `unverified` (no saved digest), `changed`, `missing` or
+`wrong_vault`. Optional body retrieval requires a saved digest and returns
+base64 of the same verified raw bytes; it obeys the normal note/attachment
+body-read caps. Identity is checked before a body-cap refusal: an oversized
+changed file still reports `changed`, while an unchanged oversized body is
+refused. Hash-only calls stream without those response-size caps.
+Path traversal and attachment allowlisting reuse existing access rules.
+
+References do not retain bytes. A rename and deletion are indistinguishable
+at a saved path and both report `missing`, with that limitation stated in the
+result. No digest lookup silently redirects a reference. Git-assisted recovery
+is a separate explicit operation. Resolution uses a readable Git HEAD as a
+history capability, not a guarantee that saved bytes were
+committed. Standalone callers opt in to that context with `history_available`;
+it defaults to false. See the [public API contract](../reference/api/vault.md#portable-file-references).
+
 ### Folder Derivation
 
 The `folder` field is derived as the parent directory of the document's

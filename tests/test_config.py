@@ -29,6 +29,13 @@ from markdown_vault_mcp.config_sections._assembly import (
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 
+def test_reference_namespace_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ConfigurationError, match="reference_namespace"):
+        ProjectConfig(reference_namespace=" ")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_REFERENCE_NAMESPACE", "urn:vault:test")
+    assert ProjectConfig.from_env().reference_namespace == "urn:vault:test"
+
+
 def test_search_ranking_config_defaults(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

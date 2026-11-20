@@ -8,8 +8,16 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 
 from markdown_vault_mcp._cli_read import read_payload
+from markdown_vault_mcp._server_deps import get_config
 from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
+from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.references import (
+    FileReference,
+    ReferenceReader,
+    ReferenceResolution,
+)
+from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
@@ -28,6 +36,95 @@ from ._common import (
 
 def register(mcp: FastMCP) -> None:
     """Register read/query tools on *mcp*."""
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Get File Reference",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def get_file_reference(
+        path: str,
+        include_sha256: bool = False,
+        provenance: str | None = None,
+        vault: Vault = Depends(get_vault),
+        config: ProjectConfig = Depends(get_config),
+    ) -> FileReference:
+        """Create a portable file reference without returning its body.
+
+        Save the result for resolve_file_reference to check later.
+
+        Args:
+            path: Vault-relative note or allowed attachment path.
+            include_sha256: Include SHA-256 of the complete raw file, including frontmatter.
+            provenance: Optional caller label, at most 1024 characters; omitted by default.
+
+        Returns:
+            Version 1 reference with namespace, path, size_bytes, optional sha256
+            and provenance. A reference retains no historical copy.
+        """
+        reader = ReferenceReader(
+            vault.source_dir,
+            config.reference_namespace,
+            attachment_extensions=config.attachment_extensions,
+        )
+        return await asyncio.to_thread(
+            reader.get_file_reference,
+            path,
+            include_sha256=include_sha256,
+            provenance=provenance,
+        )
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Resolve File Reference",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def resolve_file_reference(
+        reference: FileReference,
+        include_content: bool = False,
+        vault: Vault = Depends(get_vault),
+        config: ProjectConfig = Depends(get_config),
+    ) -> ReferenceResolution:
+        """Check a saved reference against current raw bytes, optionally reading verified bytes.
+
+        Args:
+            reference: Complete saved reference from get_file_reference.
+            include_content: Include verified raw bytes as content_base64; requires a saved digest.
+
+        Returns:
+            verified, unverified (no digest), changed, missing (including renamed),
+            or wrong_vault, with the original reference and recovery guidance.
+            Only a verified result can contain bytes. No history is retained.
+        """
+        reader = ReferenceReader(
+            vault.source_dir,
+            config.reference_namespace,
+            attachment_extensions=config.attachment_extensions,
+            history_available=await asyncio.to_thread(vault.git_head) is not None,
+        )
+        cap = (
+            config.max_note_read_bytes
+            if is_note(reference.path)
+            else config.max_attachment_size_mb * 1024 * 1024
+        )
+        return await asyncio.to_thread(
+            reader.resolve_file_reference,
+            reference,
+            include_content=include_content,
+            max_content_bytes=cap,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["search"],

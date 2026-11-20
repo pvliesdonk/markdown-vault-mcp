@@ -123,6 +123,10 @@
           "default": "/data/vault"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_REFERENCE_NAMESPACE",
+          "description": "Stable unique namespace for portable file references. Keep it unchanged across vault moves and deployments; use a different value for each independent vault. Unset disables reference calls."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
           "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
           "format": "boolean",
@@ -778,6 +782,10 @@
           "description": "Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+.",
           "format": "filepath",
           "default": "/data/vault"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_REFERENCE_NAMESPACE",
+          "description": "Stable unique namespace for portable file references. Keep it unchanged across vault moves and deployments; use a different value for each independent vault. Unset disables reference calls."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",

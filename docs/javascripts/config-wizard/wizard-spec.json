@@ -508,6 +508,13 @@
       "help": "Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+."
     },
     {
+      "id": "reference_namespace",
+      "label": "Reference Namespace",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_REFERENCE_NAMESPACE",
+      "help": "Stable unique namespace for portable file references. Keep it unchanged across vault moves and deployments; use a different value for each independent vault. Unset disables reference calls."
+    },
+    {
       "id": "read_only",
       "label": "Read Only",
       "type": "bool",
