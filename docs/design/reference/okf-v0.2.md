@@ -17,6 +17,10 @@ sources:
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a0954/okf/SPEC.md
     accessed: 2026-09-06
+  - id: draft-v03
+    title: Open Knowledge Format v0.3 draft, SPEC.md at commit 9506f310 (2026-10-23)
+    resource: https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md
+    accessed: 2026-11-17
   - id: spec-july
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 3fcbb9f8 (2026-07-24, the text v0.2 was published with)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/3fcbb9f828/okf/SPEC.md
@@ -47,6 +51,10 @@ revision [source: spec] (§1, §12), it was amended without a version bump,
 and the repository carries no tags, so this page's `stale_after` is six
 months, not twelve.
 
+Rechecked on 2026-11-17: the neutral repository contains a v0.3 draft [source: draft-v03].
+Published v0.2 remains this project’s baseline; the draft changes the treatment
+of untyped Markdown and dot-paths and is not adopted by this export.
+
 ## Scope
 
 - Covers: bundle structure and reserved filenames (§3), concept
@@ -55,7 +63,7 @@ months, not twelve.
   conformance and versioning (§11–§13).
 - Does not cover: Attested Computations (§10) and per-source credibility
   signals (`usage_count`, `usage_window`, §5.1) — nothing here reads them;
-  the v0.3 proposal.
+  the v0.3 draft.
 - Depended on by: `src/markdown_vault_mcp/okf.py` (detection, annotations,
   filters, ranking weights, the audit, index/log builders, write stamps),
   `_okf_write.py` and `_okf_convention.py` (write-side stamping and log
@@ -250,16 +258,16 @@ tree, 2026-09-07].
   `okf_version`; §9 is silent on frontmatter in `log.md`. With
   `required_frontmatter` configured, the server's own `index.md` / `log.md` generators
   (`ReservedFrontmatterPolicy` in `okf.py`) seed the configured keys — the
-  title field with the file's title, any other as `null` — because a
-  generated file with no frontmatter would fail the same index gate the
-  server enforces and vanish from `search` and `list_documents` (#1174,
-  #1175). Existing keys, including the root `okf_version`, are preserved;
-  `okf_version` is never synthesised into a folder index. With nothing
-  required, the files are written body-only as §8 and §9 have them.
+  title field with the file's title, any other as `null`. This seeding
+  originally kept generated files visible under the index gate (#1174,
+  #1175); in an active OKF vault, reserved files now pass that gate without
+  those fields (#1438). Existing keys, including the root `okf_version`, are preserved;
+  a required `okf_version` is seeded as `null` in a folder index, not as a
+  version declaration. With nothing required, the files are written body-only
+  as §8 and §9 have them.
   Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
   and the index gate". The audit does not exempt the result: keys seeded
-  into an `index.md` are reported as `index_frontmatter` (#1396); whether
-  the gate should reach generated files at all is #1438.
+  into an `index.md` are reported as `index_frontmatter` (#1396).
   [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generated_index_is_audited_like_any_index]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires

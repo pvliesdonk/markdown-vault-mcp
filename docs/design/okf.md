@@ -607,22 +607,31 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-The generated `index.md` / `log.md` are subject to the same
-`required_frontmatter` gate as any other note, so a body-only reserved file is
-a deterministic `missing_frontmatter` skip on a vault that configures one — the
-server generating a file its own indexer then rejects (#1174, #1175). Two
-second-order effects follow: the bundle's change history disappears from
-`search` and `list_documents` while staying readable from disk, and a folder
-whose only indexed file would have been its generated `index.md` loses its
-pointer in the parent listing, because `generate_index` synthesises sub-folder
-pointers from index entries.
+In an active OKF vault, `index.md` and `log.md` bypass the
+`required_frontmatter` gate. Concept notes and all notes outside an active
+OKF vault remain subject to it. Full builds, incremental scans and dirty-path
+refreshes use the same admission rule (#1438). A root index change also
+reconciles the other reserved files on the next indexing pass. After a dirty
+refresh changes the scope, the admission marker stays unknown until a reindex
+also reconciles tracker state. Successful dirty refreshes remember the reconciled
+scope in process, so later writes only refresh their own paths until the scope
+changes again. Warm reopen compares the effective state
+recorded with a complete build. An upgrade from older index semantics rebuilds
+the index once. Keyword backends without the optional OKF
+admission provenance capability rebuild conservatively on reopen. An unread
+build candidate is retried on the next reindex; the version 13 rebuild also
+clears old tracker-only skips left by version 12. Reopening before a reindex
+after a dirty scope change triggers one conservative rebuild. If reading the
+root `index.md` fails with an I/O error, admission keeps its last confirmed
+state when available and logs `okf_scope_probe_failed`; without a confirmed
+state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
+and forced-on mode is unaffected.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:
 
-- **Conditional, not unconditional.** With no required fields configured a
-  reserved file needs no frontmatter to be indexed, and the policy returns
-  `None` so the generators keep emitting the body-only files existing bundles
+- **Conditional, not unconditional.** With no required fields configured,
+  the policy returns `None` so the generators keep emitting the body-only files existing bundles
   already have on disk. Closing the defect costs an unaffected vault no churn
   — and, on a git vault, no commits.
 - **Existing keys win.** A hand-authored title and the root `index.md`'s
@@ -638,8 +647,7 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 The audit does not exempt these files. A key the policy seeds into an
 `index.md` is an `index_frontmatter` finding like any hand-written one
 (#1396): the finding describes the file against §8, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits. Whether the
-gate should reach generated reserved files at all is open (#1438).
+changes neither what the policy seeds nor what the gate admits.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a
@@ -734,15 +742,30 @@ time via `okf_bundle.build_okf_bundle`. This is a domain use of the transfer
 primitives expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
-The bundle is a conformant *copy*: wikilinks rewritten to root-absolute links
-(reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
-convention files (`_conventions.md`) and the template folder excluded, the
-reserved `index.md` / `log.md` kept, non-conformant notes included as-is
-(permissive consumers tolerate them), and a fixed zip-entry timestamp so an
-unchanged vault re-exports to identical bytes. Notes are read raw from disk
-(uncapped), so a large note exports in full. Export never mutates the vault.
-Residual conformance gaps are reported separately by `okf_validate`, not embedded
-in the archive.
+The bundle copies live inventory independently of search admission. Subtree export uses an offset-preserving mask distinct from graph extraction so original literal bytes survive. For subtree exports, fences, indented code including list items, HTML code blocks, code spans and comments retain their bytes. Other HTML blocks are not protected. HTML attribute values are not parsed; link-shaped text inside them may be relocated like body text. Subtree notes with invalid UTF-8 are scanned losslessly; NUL or UTF-16 bodies are copied and reported as uninspected. Transformed paths and dependency sources use archive paths; H1 observations use vault paths. Resolvable
+wikilinks use the existing graph for searchable notes, which can be stale. Remaining subtree wikilinks are resolved by name independently of search admission. An exact selected filename needs no whole-vault scan; other names use a lazily loaded whole-vault inventory. A name without a filename match remains raw and is reported as a dependency even with `external_base`; alias-only and case-insensitive matches are not resolved. A subtree
+becomes the archive root. Body destinations to selected files are relocated
+when root-relative; relative destinations stay as written when they retain their target, and are adjusted when needed.
+Outside destinations are reported as dependencies, and a destination that would
+point to a different exported file refuses the export. Library callers can supply
+`external_base` to turn outside destinations into absolute URLs. The report
+lists files whose bytes changed. Frontmatter stays unchanged, and only the
+selected root’s own index can provide an `okf_version`. Known outside wikilink targets are reported as dependencies; `external_base` turns them into Markdown links or images. Wikilink-looking text in recognized Markdown link titles and destinations is treated as literal content of the enclosing link. Links with titles spanning multiple lines are not recognized by the shared link grammar. Only used reference definitions with first-label precedence are relocated. Convention files, templates, hidden
+paths and index-excluded paths are omitted by default. Reserved `index.md` and
+`log.md` are kept unless an omission policy applies, including a matching
+configured conventions filename. Library callers can opt into hidden and
+index-excluded paths separately (including a hidden scope root) and receive partial v0.2 observations;
+the download ref exposes neither options nor report. Incomplete inventory
+enumeration refuses export, even under default-omitted hidden paths, including denied entries and unavailable state paths. Local policy records last-observed index state, not
+admission of current bytes; `unknown` covers candidates without a decisive index
+state. A candidate absent from both policy lists was last observed searchable.
+An uninspected entry may be included with bounded metadata. Links are never
+followed; dot-path links omitted by policy are counted as hidden. Selected
+symlinks and nonregular entries refuse export. Failure to observe or read a selected file
+aborts export. Reads use the inspected vault root; conversion leaves supplied
+frontmatter bytes unchanged. A fixed zip-entry timestamp makes unchanged vaults
+reproducible. Notes are read uncapped, and export never mutates the vault. This
+is not a conformance verdict or snapshot; the report is not embedded.
 
 ---
 
@@ -758,7 +781,7 @@ onto `sources`. Three documented frictions, resolved at guide level:
 |---|---|
 | `status` vocabulary: PARA `active/archived` (workflow) vs OKF `draft/stable/deprecated` (lifecycle) | Different meanings — do **not** map (archived ≠ deprecated). PARA workflow state moves to its own extension key (OKF preserves unknown keys); `status` is reserved for OKF lifecycle. |
 | PARA `0-Inbox/` notes are deliberately untyped until triage | Captures get placeholder `type: Capture` (conformant immediately; triage overwrites). Fallback: audit-whitelist the inbox via exclude patterns. |
-| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; conversion happens at export. Guides state: write either style, export converts. |
+| Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; export converts resolvable links only for searchable notes using the existing graph. |
 
 Deliverables (docs phase): `docs/guides/okf.md`; "Using X with OKF" interop
 sections in `para.md` and `zettelkasten.md`; `examples/okf/` (templates +
