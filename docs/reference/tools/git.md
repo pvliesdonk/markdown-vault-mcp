@@ -25,7 +25,7 @@ A vault without git history returns no commits.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `path` | `string \| null` | `null` | A note or attachment path, such as `"notes/alpha.md"`, or a folder, such as `"guides"`; omit for the whole vault. Give a note's current name: history from before a rename is included. |
-| `since` | `string \| null` | `null` | Earliest commit date, inclusive: an ISO calendar date/time within 1970-2099, `"now"`, `"today"`, `"yesterday"`, or integer quantities of seconds, minutes, hours, days, weeks, months or years ending in `"ago"` (such as `"1 week ago"`); quantities use at most eight digits, no leading zeros, and stay after 1970; omit for all history. |
+| `since` | `string \| null` | `null` | Earliest commit date, inclusive: an ISO date or date-time within 1970-2099, such as `"2026-04-01T00:00:00Z"`; `"now"`, `"today"` or `"yesterday"`; or whole numbers of seconds, minutes, hours, days, weeks, months or years followed by `"ago"`, such as `"1 week ago"` or `"2 days 3 hours ago"`. Omit for all history. |
 | `until` | `string \| null` | `null` | Latest commit date, inclusive, in the same forms as since; omit for no upper bound. |
 | `limit` | `integer` | `20` | Maximum commits to return (default 20, at most 100). |
 
@@ -79,7 +79,7 @@ Pass exactly one of `since_sha` and `since_timestamp`; find commits with
 |---|---|---|---|
 | `path` | `string` | required | A note or attachment path, such as `"notes/alpha.md"`; a binary attachment returns a summary of size and renames instead of a patch. |
 | `since_sha` | `string \| null` | `null` | A commit SHA to diff from, such as from `get_history`; at least 4 hex digits. |
-| `since_timestamp` | `string \| null` | `null` | An ISO calendar date/time within 1970-2099, `"now"`, `"today"`, `"yesterday"`, or integer quantities of seconds, minutes, hours, days, weeks, months or years ending in `"ago"` (such as `"1 week ago"`), using at most eight digits, no leading zeros, and staying after 1970; diffs from the latest commit at or before that time. |
+| `since_timestamp` | `string \| null` | `null` | An ISO date or date-time within 1970-2099, such as `"2026-04-01T00:00:00Z"`; `"now"`, `"today"` or `"yesterday"`; or whole numbers of seconds, minutes, hours, days, weeks, months or years followed by `"ago"`, such as `"1 week ago"`. Diffs from the latest commit at or before that time. |
 | `per_commit` | `boolean` | `false` | True for one diff per commit since the starting point, newest first; default false for a single diff. |
 | `limit` | `integer \| null` | `null` | With `per_commit`, how many of the most recent commits to include, 1 to 100; omit for all. |
 
@@ -105,7 +105,7 @@ Envelope dict whose shape depends on `per_commit`:
 
 **Outcomes and errors**
 
-- ToolError: If neither or both reference parameters are supplied, the SHA or date is invalid, the reference commit is not found, or the path uses an unsupported extension.
+- ToolError: If the call does not give exactly one reference parameter or names a path with an unsupported extension, and when its SHA or date is invalid or matches no commit.
 
 <!-- DOMAIN-EXAMPLE-get_diff-START -->
 ```json
