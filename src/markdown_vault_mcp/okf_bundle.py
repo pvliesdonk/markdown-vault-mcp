@@ -337,6 +337,41 @@ def _declared_version(vault: Vault, raw: bytes | None) -> str | None:
     return vault.okf._probe(text)[0]
 
 
+def _source_probe(
+    vault: Vault, snapshot: GitExportSnapshot | None
+) -> Callable[[str], bool]:
+    """Probe one exact-case source path: a regular file, or a directory with a slash."""
+    directories: set[str] = set()
+    for path, (mode, _) in (snapshot.entries if snapshot else {}).items():
+        parent = path.rpartition("/")[0]
+        while parent and parent + "/" not in directories:
+            directories.add(parent + "/")
+            parent = parent.rpartition("/")[0]
+        if mode == "160000":
+            directories.add(path + "/")
+
+    @cache
+    def exists(path: str) -> bool:
+        name = path.rstrip("/")
+        if snapshot is not None:
+            entry = snapshot.entries.get(name)
+            return path in directories or (
+                not path.endswith("/")
+                and bool(entry and entry[0] in {"100644", "100755"})
+            )
+        parts = name.split("/")
+        kind = stat.S_ISDIR if path.endswith("/") else stat.S_ISREG
+        try:
+            with open_directory_nofollow(vault.source_dir, parts[:-1]) as parent:
+                return parts[-1] in os.listdir(parent) and kind(  # noqa: PTH208 -- descriptor-relative, no-follow lookup
+                    os.lstat(parts[-1], dir_fd=parent).st_mode
+                )
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+
+    return exists
+
+
 def _review_policy(
     require_review: bool, require_check: str | None, review_evidence: str | None
 ) -> tuple[bool, str, str]:
@@ -533,20 +568,6 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             except (OSError, ValueError) as exc:
                 raise type(exc)(f"Cannot read declaration {path}: {exc}") from exc
 
-        @cache
-        def source_file(path: str) -> bool:
-            if snapshot is not None:
-                entry = snapshot.entries.get(path)
-                return bool(entry and entry[0] in {"100644", "100755"})
-            parts = path.split("/")
-            try:
-                with open_directory_nofollow(vault.source_dir, parts[:-1]) as parent:
-                    return parts[-1] in os.listdir(parent) and stat.S_ISREG(  # noqa: PTH208 -- descriptor-relative, no-follow lookup
-                        os.lstat(parts[-1], dir_fd=parent).st_mode
-                    )
-            except (FileNotFoundError, NotADirectoryError):
-                return False
-
         paths = ExportPaths(
             folder,
             {item.path for item in selected},
@@ -554,7 +575,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             inventory,
             extensions,
             declared,
-            source_file,
+            _source_probe(vault, snapshot),
         )
         admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}

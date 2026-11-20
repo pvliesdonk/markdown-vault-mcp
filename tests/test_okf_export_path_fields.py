@@ -956,9 +956,7 @@ def test_unselected_declaration_read_is_bounded(tmp_path, monkeypatch):
 @pytest.mark.usefixtures("isolated_git")
 @pytest.mark.parametrize("extensions", [None, ("*",)])
 @pytest.mark.parametrize("committed", [False, True])
-def test_r4_outside_extensionless_license_precedes_spdx(
-    tmp_path, extensions, committed
-):
+def test_outside_extensionless_license_precedes_spdx(tmp_path, extensions, committed):
     import io
     import zipfile
 
@@ -999,7 +997,7 @@ def test_r4_outside_extensionless_license_precedes_spdx(
 
 
 @pytest.mark.parametrize("descriptor", ["production", "BigQuery"])
-def test_r4_single_word_sources_descriptor_passes_strict(tmp_path, descriptor):
+def test_single_word_sources_descriptor_passes_strict(tmp_path, descriptor):
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides/a.md").write_text(
         f"---\ntype: Note\nsources: [{{resource: {descriptor}}}]\n---\n"
@@ -1014,7 +1012,7 @@ def test_r4_single_word_sources_descriptor_passes_strict(tmp_path, descriptor):
     assert not result.report.dependencies
 
 
-def test_r4_malformed_declaration_refuses_version_dependent_fallback(tmp_path):
+def test_malformed_declaration_refuses_version_dependent_fallback(tmp_path):
     (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\nbad: [\n---\n')
     (tmp_path / "guides/sub").mkdir(parents=True)
     (tmp_path / "guides/b.md").write_text("target")
@@ -1028,7 +1026,7 @@ def test_r4_malformed_declaration_refuses_version_dependent_fallback(tmp_path):
 
 
 @pytest.mark.parametrize("failure", ["invalid_utf8", "malformed_yaml", "unreadable"])
-def test_r4_unusable_omitted_root_without_fields_can_export(
+def test_unusable_omitted_root_without_fields_can_export(
     tmp_path, monkeypatch, failure
 ):
     from markdown_vault_mcp import okf_bundle
@@ -1069,9 +1067,7 @@ def test_r4_unusable_omitted_root_without_fields_can_export(
 )
 @pytest.mark.parametrize("kind", ["invalid", "malformed", "overlong"])
 @pytest.mark.parametrize("reference", ["none", "selected", "unresolved", "fallback"])
-def test_replan2_declaration_is_read_only_for_fallback(
-    tmp_path, scenario, kind, reference
-):
+def test_declaration_is_read_only_for_fallback(tmp_path, scenario, kind, reference):
     committed, mode, selected_root = scenario
     from tests.fixtures.git import _run_git
 
@@ -1123,7 +1119,7 @@ def test_replan2_declaration_is_read_only_for_fallback(
 
 
 @pytest.mark.parametrize("value", ["b.md", "tables/b.md", "my%20note.md", "b.md?x=1"])
-def test_replan2_path_shaped_source_is_a_dependency(tmp_path, value):
+def test_path_shaped_source_is_a_dependency(tmp_path, value):
     from markdown_vault_mcp.okf_export_report import PublicationRefused
 
     (tmp_path / "guides").mkdir()
@@ -1144,7 +1140,7 @@ def test_replan2_path_shaped_source_is_a_dependency(tmp_path, value):
 
 
 @pytest.mark.parametrize("version", [None, "unversioned", "0.2", "0.3", "9.0"])
-def test_replan2_absent_unversioned_and_unknown_declaration(tmp_path, version):
+def test_absent_unversioned_and_unknown_declaration(tmp_path, version):
     if version is not None:
         header = (
             "title: Index" if version == "unversioned" else f'okf_version: "{version}"'
@@ -1168,7 +1164,7 @@ def test_replan2_absent_unversioned_and_unknown_declaration(tmp_path, version):
 @pytest.mark.parametrize("fallback", [False, True])
 @pytest.mark.parametrize("committed", [False, True])
 @pytest.mark.parametrize("mode", ["off", "auto"])
-def test_replan2_selected_bad_index_only_refuses_archive_fallback(
+def test_selected_bad_index_only_refuses_archive_fallback(
     tmp_path, fallback, committed, mode
 ):
     (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
@@ -1200,7 +1196,7 @@ def test_replan2_selected_bad_index_only_refuses_archive_fallback(
         vault.close()
 
 
-def test_replan2_license_probe_does_not_follow_symlink(tmp_path):
+def test_license_probe_does_not_follow_symlink(tmp_path):
     import io
     import zipfile
 
@@ -1228,7 +1224,7 @@ def test_replan2_license_probe_does_not_follow_symlink(tmp_path):
 
 
 @pytest.mark.parametrize("version", ["0.2", "0.3"])
-def test_replan2_whole_vault_same_name_uses_local_target(tmp_path, version):
+def test_whole_vault_same_name_uses_local_target(tmp_path, version):
     import io
     import zipfile
 
@@ -1253,7 +1249,7 @@ def test_replan2_whole_vault_same_name_uses_local_target(tmp_path, version):
 @pytest.mark.parametrize("committed", [False, True])
 @pytest.mark.parametrize("mode", ["off", "auto"])
 @pytest.mark.parametrize("fallback", [False, True])
-def test_replan2_unreadable_omitted_root_only_refuses_fallback(
+def test_unreadable_omitted_root_only_refuses_fallback(
     tmp_path, monkeypatch, committed, mode, fallback
 ):
     from markdown_vault_mcp import okf_bundle
@@ -1295,7 +1291,7 @@ def test_replan2_unreadable_omitted_root_only_refuses_fallback(
         vault.close()
 
 
-def test_replan2_selected_extensionless_license_is_included(tmp_path):
+def test_selected_extensionless_license_is_included(tmp_path):
     import io
     import zipfile
 
@@ -1321,7 +1317,7 @@ def test_replan2_selected_extensionless_license_is_included(tmp_path):
 @pytest.mark.usefixtures("isolated_git")
 @pytest.mark.parametrize("mode", ["off", "on", "auto"])
 @pytest.mark.parametrize("kind", ["invalid", "symlink", "inspection"])
-def test_r5_git_admission_preserves_inherited_policy(tmp_path, monkeypatch, mode, kind):
+def test_git_admission_preserves_inherited_policy(tmp_path, monkeypatch, mode, kind):
     from markdown_vault_mcp import okf_bundle
     from tests.fixtures.git import _run_git
 
@@ -1367,7 +1363,7 @@ def test_r5_git_admission_preserves_inherited_policy(tmp_path, monkeypatch, mode
 @pytest.mark.parametrize(
     "value", ["../outside.md", "./../outside.md", "a/../../outside.md"]
 )
-def test_r5_parent_path_does_not_scan_inventory(value):
+def test_parent_path_does_not_scan_inventory(value):
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
@@ -1381,7 +1377,7 @@ def test_r5_parent_path_does_not_scan_inventory(value):
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_r5_source_directory_fallback_refuses_retarget(tmp_path, strict):
+def test_source_directory_fallback_refuses_retarget(tmp_path, strict):
     from markdown_vault_mcp.okf_export_paths import ExportCollisionError
 
     (tmp_path / "shared").mkdir()
@@ -1404,7 +1400,7 @@ def test_r5_source_directory_fallback_refuses_retarget(tmp_path, strict):
         vault.close()
 
 
-def test_r5_empty_directory_fallback_externalized(tmp_path):
+def test_empty_directory_fallback_externalized(tmp_path):
     (tmp_path / "empty").mkdir()
     output, report = export_note(
         tmp_path,
@@ -1416,7 +1412,7 @@ def test_r5_empty_directory_fallback_externalized(tmp_path):
 
 
 @pytest.mark.usefixtures("isolated_git")
-def test_r5_git_directory_fallback_externalized(tmp_path):
+def test_git_directory_fallback_externalized(tmp_path):
     from tests.fixtures.git import _run_git
 
     (tmp_path / "empty").mkdir()
@@ -1446,7 +1442,7 @@ def test_r5_git_directory_fallback_externalized(tmp_path):
     assert result.report.dependencies and result.report.v0_2_root_fallback
 
 
-def test_r5_license_alias_used_as_path_keeps_path_role():
+def test_license_alias_used_as_path_keeps_path_role():
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
@@ -1456,3 +1452,104 @@ def test_r5_license_alias_used_as_path_keeps_path_role():
         "---\nlicense: &value MIT\nresource: *value\n---\n", "index.md", report
     )
     assert report.dependencies
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("committed", [False, True], ids=["live", "git"])
+@pytest.mark.parametrize("missing", [False, True], ids=["relocation", "missing"])
+def test_single_source_mapping_relocates_or_refuses_in_strict_export(
+    tmp_path, committed, missing
+):
+    import io
+    import zipfile
+
+    from markdown_vault_mcp.okf_export_report import PublicationRefused
+    from tests.fixtures.git import _run_git
+
+    (tmp_path / "index.md").write_text("---\nokf_version: '0.2'\n---\n")
+    (tmp_path / "guides/sub").mkdir(parents=True)
+    (tmp_path / "guides/target.md").write_text("---\ntype: Note\n---\n")
+    target = "missing.md" if missing else "guides/target.md"
+    (tmp_path / "guides/sub/a.md").write_text(
+        f"---\ntype: Note\nsources: {{resource: {target}}}\n---\n"
+    )
+    if committed:
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(tmp_path, "add", ".")
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        if missing:
+            with pytest.raises(PublicationRefused):
+                build_okf_bundle(
+                    vault,
+                    ProjectConfig(source_dir=tmp_path),
+                    folder="guides",
+                    strict=True,
+                )
+        else:
+            result = build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder="guides", strict=True
+            )
+            with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+                assert b"resource: ../target.md" in archive.read("sub/a.md")
+            assert result.report.v0_2_root_fallback
+    finally:
+        vault.close()
+
+
+def test_single_word_source_descriptor_ignores_unrelated_inventory_failure(
+    tmp_path, monkeypatch
+):
+    from markdown_vault_mcp import okf_bundle
+
+    (tmp_path / "index.md").write_text("---\nokf_version: '0.3'\n---\n")
+    (tmp_path / "other").mkdir()
+    (tmp_path / "other/secret.md").write_text("---\ntype: Note\n---\n")
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text(
+        "---\ntype: Note\nsources: [{resource: production}]\n---\n"
+    )
+    original = okf_bundle._inspect_page
+
+    def deny_whole_vault(vault, folder, snapshot, *args, **kwargs):
+        if not folder:
+            raise ValueError("unreadable unrelated directory")
+        return original(vault, folder, snapshot, *args, **kwargs)
+
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    monkeypatch.setattr(okf_bundle, "_inspect_page", deny_whole_vault)
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides", strict=True
+        )
+    finally:
+        vault.close()
+    assert not result.report.dependencies
+
+
+def test_source_descriptor_probes_directory_starting_with_two_dots():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    probed = []
+
+    def source_exists(path):
+        probed.append(path)
+        return path == "..a/"
+
+    paths = ExportPaths(
+        "guides",
+        {"guides/sub/a.md"},
+        "https://example.org/v",
+        source_exists=source_exists,
+    )
+    report = OkfExportReport()
+    result = paths.relocate_frontmatter(
+        "---\nsources: [{resource: ..a}]\n---\n", "guides/sub/a.md", report
+    )
+    assert "..a/" in probed
+    assert "https://example.org/v/..a/" in result
+    assert report.dependencies and report.v0_2_root_fallback

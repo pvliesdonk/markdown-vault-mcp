@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import posixpath
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote, urlsplit
@@ -428,6 +429,42 @@ def _external_wikilink(body: str, start: int, end: int, url: str) -> tuple[int, 
     return start, f"{'!' if embed else ''}[{escape_link_text(display)}]({url})"
 
 
+class _Identities(Set[str]):
+    """Read-only file and directory identities (`dir/`, root `/`) of one namespace."""
+
+    def __init__(
+        self,
+        files: set[str],
+        directories: set[str],
+        prefix: str = "",
+        extra: frozenset[str] = frozenset(),
+    ) -> None:
+        self._files, self._directories = files, directories
+        self._prefix, self._extra = prefix, extra
+
+    def __contains__(self, item: object) -> bool:
+        if not isinstance(item, str):
+            return False
+        if item == "/" or item in self._extra:
+            return True
+        if item.endswith("/"):
+            return self._prefix + item[:-1] in self._directories
+        return item in self._files
+
+    def __iter__(self) -> Iterator[str]:
+        directories = (
+            path[len(self._prefix) :] + "/"
+            for path in self._directories
+            if path.startswith(self._prefix) and path != self._prefix.rstrip("/")
+        )
+        yield from dict.fromkeys(
+            itertools.chain(("/",), self._files, self._extra, directories)
+        )
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
 @dataclass
 class ExportPaths:
     """Selected vault paths and their bundle-root mapping."""
@@ -440,13 +477,11 @@ class ExportPaths:
         default_factory=lambda: effective_attachment_extensions(None)
     )
     declared: Callable[[str], str | None] = lambda _path: None
-    source_file: Callable[[str], bool] = lambda _path: False
+    source_exists: Callable[[str], bool] = lambda _path: False
     _candidates: dict[str, set[str]] | None = field(default=None, init=False)
     _archive_members: set[str] = field(default_factory=set, init=False)
     _directories: set[str] = field(default_factory=set, init=False)
     _field_inventory: set[str] | None = field(default=None, init=False)
-    _selected_fields: set[str] = field(default_factory=set, init=False)
-    _artifact_fields: set[str] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
         self._archive_members = {
@@ -458,18 +493,6 @@ class ExportPaths:
             while parent not in self._directories:
                 self._directories.add(parent)
                 parent = parent.rpartition("/")[0]
-        self._selected_fields = (
-            self.members | {d + "/" for d in self._directories} | {"/"}
-        )
-        self._artifact_fields = (
-            self._archive_members
-            | {
-                (d[len(self.scope) + 1 :] if self.scope else d) + "/"
-                for d in self._directories
-                if d != self.scope
-            }
-            | {"/"}
-        )
         if self.external_base is not None:
             try:
                 parts = urlsplit(self.external_base)
@@ -711,7 +734,7 @@ class ExportPaths:
         return source[len(self.scope) + 1 :] if self.scope else source
 
     def _versioned_result(
-        self, value: str, source: str, available: set[str], declaration: str | None
+        self, value: str, source: str, available: Set[str], declaration: str | None
     ) -> OkfPathResult:
         result = resolve_okf_path(value, source, available, None)
         if result.status != "root_fallback":
@@ -733,7 +756,7 @@ class ExportPaths:
         license_field, scope_descriptor = field_flags
         archive_source = self._archive_path(source)
         written = _field_parts(value)[0]
-        result = resolve_okf_path(value, source, self._selected_fields, None)
+        result = resolve_okf_path(value, source, self._vault_fields(), None)
         if result.status == "external" and not re.match(
             r"^[A-Za-z][A-Za-z0-9+.-]*:", value
         ):
@@ -746,32 +769,52 @@ class ExportPaths:
             and (any(char.isspace() for char in value))
         ):
             return None
-        if result.status != "resolved" and license_field and _is_spdx_license(value):
-            candidates = {posixpath.join(posixpath.dirname(source), value), value}
-            available = self._selected_fields | {
-                path for path in candidates if self.source_file(path)
-            }
-            result = self._versioned_result(value, source, available, "index.md")
-            if result.status not in {"resolved", "root_fallback"}:
-                return None
-        elif result.status != "resolved":
+        probe = (license_field and _is_spdx_license(value)) or (
+            scope_descriptor
+            and "/" not in written
+            and not written.lower().endswith(".md")
+            and not names_attachment(written, self.extensions)
+        )
+        if result.status != "resolved":
             result = self._versioned_result(
-                value, source, self._available_fields(), "index.md"
+                value,
+                source,
+                self._probed_fields(value, source)
+                if probe
+                else self._available_fields(),
+                "index.md",
             )
+            if probe and result.status not in {"resolved", "root_fallback"}:
+                return None
         if result.status == "root_fallback":
             fallback.append(Dependency(archive_source, _safe_text(value)))
         if result.status in {"resolved", "root_fallback"} and result.path:
             return self._resolved_field(
                 value, source, result.path, result.suffix, dependencies
             )
-        descriptor = (
-            scope_descriptor
-            and "/" not in written
-            and not written.lower().endswith(".md")
-            and not names_attachment(written, self.extensions)
+        return self._unresolved_field(value, source, dependencies)
+
+    def _vault_fields(self, extra: frozenset[str] = frozenset()) -> Set[str]:
+        return _Identities(self.members, self._directories, "", extra)
+
+    def _archive_fields(self) -> Set[str]:
+        prefix = f"{self.scope}/" if self.scope else ""
+        return _Identities(self._archive_members, self._directories, prefix)
+
+    def _probed_fields(self, value: str, source: str) -> Set[str]:
+        path = decode_link_target(_field_parts(value)[0])
+        names = (
+            posixpath.normpath(posixpath.join(base, path))
+            for base in (posixpath.dirname(source), "")
         )
-        return (
-            None if descriptor else self._unresolved_field(value, source, dependencies)
+        return self._vault_fields(
+            frozenset(
+                found
+                for name in names
+                if name != "." and name.partition("/")[0] != ".."
+                for found in (name, name + "/")
+                if self.source_exists(found)
+            )
         )
 
     def _unresolved_field(
@@ -789,7 +832,7 @@ class ExportPaths:
         artifact_index = f"{self.scope}/index.md" if self.scope else "index.md"
         declaration = artifact_index if artifact_index in self.members else None
         apparent = self._versioned_result(
-            value, archive_source, self._artifact_fields, declaration
+            value, archive_source, self._archive_fields(), declaration
         )
         if apparent.status in {"resolved", "root_fallback"}:
             raise ExportCollisionError(
@@ -854,7 +897,9 @@ class ExportPaths:
             Prefix with eligible path values relocated.
 
         Raises:
-            ValueError: An outside path collides with a bundle member.
+            ValueError: A path collides with a bundle member, or required
+                inventory or declaration data is invalid.
+            OSError: A required declaration cannot be read.
         """
         candidate = prefix.removeprefix("\ufeff").lstrip()
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
@@ -1062,11 +1107,10 @@ def _frontmatter_paths(
     ordinary = {id(node) for node in nodes}
     descriptors: set[int] = set()
     for sources in _mapping_values(root, "sources", memo):
-        if isinstance(sources, SequenceNode):
-            for item in sources.value:
-                resources = _mapping_values(item, "resource", memo)
-                nodes.extend(resources)
-                descriptors.update(id(node) for node in resources)
+        for item in sources.value if isinstance(sources, SequenceNode) else [sources]:
+            resources = _mapping_values(item, "resource", memo)
+            nodes.extend(resources)
+            descriptors.update(id(node) for node in resources)
     unique: dict[int, ScalarNode] = {}
     for node in nodes:
         if isinstance(node, ScalarNode) and node.tag == "tag:yaml.org,2002:str":
