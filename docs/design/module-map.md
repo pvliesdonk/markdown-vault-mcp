@@ -108,6 +108,7 @@ src/markdown_vault_mcp/
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
+  _okf_paths.py        -- pure OKF URI-reference resolution against supplied bundle paths
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   bundle_inventory.py -- Bounded live and commit-backed subtree observations with optional index-state projection and descriptor-relative full observation traversal (#1442)
   okf_bundle.py        -- OKF bundle-zip export from a Git snapshot or digest-checked live inventory, served via an okf-bundle download ref (#963)
