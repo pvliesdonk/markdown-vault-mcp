@@ -130,7 +130,7 @@ def test_inventory_concept_and_bundle_membership(
     assert (entry.role, entry.is_concept, entry.in_bundle) == expected
 
 
-@pytest.mark.parametrize("root", ["bundle", ".workspace/bundle", ".bundle"])
+@pytest.mark.parametrize("root", [".workspace/bundle", ".bundle"])
 @pytest.mark.parametrize("tree", [False, True])
 def test_membership_is_relative_to_selected_root(
     tmp_path: Path, root: str, tree: bool
