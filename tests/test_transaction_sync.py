@@ -16,6 +16,8 @@ from tests.test_git_sync import _git_managed_env as _git_managed_env
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp._commit_groups import CommitGroup
+    from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
     from tests.fixtures.git import GitRepoPair
 
 
@@ -133,13 +135,33 @@ async def test_sync_cannot_close_another_principals_group(
         ] == "committed"
 
 
+def _assert_owner_preflight(
+    dispatcher: WriteCallbackDispatcher,
+    alice: Principal,
+    manual: CommitGroup,
+    active: CommitGroup,
+    other: CommitGroup,
+) -> None:
+    """Preflight rejects active and foreign groups without closing earlier ones."""
+    from markdown_vault_mcp._commit_groups import CommitGroupError
+
+    with (
+        dispatcher.bind_group(active.handle, alice),
+        pytest.raises(CommitGroupError, match="active"),
+    ):
+        dispatcher.close_owner_groups(alice)
+    with dispatcher.bind_group(manual.handle, alice):
+        pass
+    with pytest.raises(CommitGroupError, match="Unknown"):
+        dispatcher.close_owner_groups(alice, other.handle)
+
+
 def test_owner_settlement_preflights_and_selects_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from concurrent.futures import Future
     from threading import Condition
 
-    from markdown_vault_mcp._commit_groups import CommitGroupError
     from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
     alice = Principal("alice", None, None, "human")
@@ -169,16 +191,7 @@ def test_owner_settlement_preflights_and_selects_closes(
         automatic = dispatcher.open_group("Automatic", alice)
         other = dispatcher.open_group("Other", bob)
         active = dispatcher.open_group("Active", alice)
-        with (
-            dispatcher.bind_group(active.handle, alice),
-            pytest.raises(CommitGroupError, match="active"),
-        ):
-            dispatcher.close_owner_groups(alice)
-        # Preflight must leave the earlier group open.
-        with dispatcher.bind_group(manual.handle, alice):
-            pass
-        with pytest.raises(CommitGroupError, match="Unknown"):
-            dispatcher.close_owner_groups(alice, other.handle)
+        _assert_owner_preflight(dispatcher, alice, manual, active, other)
 
         manual_result = dispatcher.close_group(manual.handle, alice)
         auto_result = dispatcher.close_group(automatic.handle, alice, _automatic=True)
