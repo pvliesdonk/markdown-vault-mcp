@@ -587,3 +587,39 @@ def test_service_shutdown_closes_git_after_group_timeout(
     assert "note.md" in _run_git(git_repo, "status", "--porcelain")
     assert "Shutdown timeout" not in _run_git(git_repo, "log", "--format=%s")
     vault.close()
+
+
+@pytest.mark.parametrize("operation", ["rename", "move"])
+@pytest.mark.parametrize("same_log", [False, True])
+def test_backlink_rewrite_contributes_to_group_history(
+    git_repo: Path, make_vault: Callable[..., Vault], operation: str, same_log: bool
+) -> None:
+    """Backlink rewrites contribute to their selected log and the commit."""
+    (git_repo / "source").mkdir()
+    (git_repo / "source/note.md").write_text("# Source\n")
+    ref = "ref.md" if same_log else "references/ref.md"
+    if not same_log:
+        (git_repo / "references").mkdir()
+    (git_repo / ref).write_text("[Source](/source/note.md)\n")
+    _run_git(git_repo, "add", ".")
+    _run_git(git_repo, "commit", "-m", "Seed notes")
+    vault = make_vault("events", ("source", "destination", "references"))
+    vault.index.build_index()
+    group = vault._write_callback.open_group("Repair links", None)
+    with vault._write_callback.bind_group(group.handle, None):
+        if same_log:
+            vault.writer.write("anchor.md", "# Anchor\n")
+        if operation == "rename":
+            vault.writer.rename(
+                "source/note.md", "destination/note.md", update_links=True
+            )
+        else:
+            vault.writer.move_folder("source", "destination")
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
+    assert result.status == "committed" and not result.history_failed and result.sha
+    assert "/destination/note.md" in (git_repo / ref).read_text()
+    log_path = "log.md" if same_log else "references/log.md"
+    log = (git_repo / log_path).read_text()
+    assert log.count("Repair links") == 1 and ref in log
+    committed = _run_git(git_repo, "show", "--format=", "--name-only", result.sha)
+    assert ref in committed and log_path in committed

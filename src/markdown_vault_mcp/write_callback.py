@@ -52,7 +52,6 @@ from markdown_vault_mcp._commit_scope import (
     is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._identity import bound_principal, current_principal
-from markdown_vault_mcp._okf_log_event import deferred_event, end_event_deferral
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
@@ -270,9 +269,11 @@ class WriteCallbackDispatcher:
                 )
                 if group is not None:
                     if group.closed and not is_auxiliary_commit_write():
+                        from markdown_vault_mcp._okf_log_event import end_event_deferral
+
                         end_event_deferral()
                     principal = group.principal
-                    if not group.closed and not is_auxiliary_commit_write():
+                    if not group.closed:
                         group.paths.add(abs_path)
                         if old_path is not None:
                             group.paths.add(old_path)
@@ -341,6 +342,8 @@ class WriteCallbackDispatcher:
     @contextmanager
     def bind_group(self, handle: str, principal: Principal | None) -> Iterator[None]:
         """Bind a group for writes in this context."""
+        from markdown_vault_mcp._okf_log_event import deferred_event
+
         if current_commit_group() is not None:
             raise CommitGroupError("Nested groups are not supported")
         with self._group_lock:

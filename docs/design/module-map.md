@@ -120,13 +120,13 @@ src/markdown_vault_mcp/
   _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after writes, structural changes and observed reindexes, from the designated anchor that owns the affected folder
   _okf_write.py        -- review subject resolution and maintenance suppression context
   _path_guard.py       -- operator-configured mutation protection and path matching
-  _okf_log_event.py    -- explicit editorial events and deferred per-write logging context (#1416)
+  _okf_log_event.py    -- explicit and grouped editorial events, path routing and deferred per-write logging context (#1416)
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
-  _commit_groups.py    -- Internal commit-group handles and accumulated status, SHA, and path counts (#1677)
+  _commit_groups.py    -- Internal commit-group handles, touched paths, history failures and accumulated Git results (#1677)
   _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
   _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)

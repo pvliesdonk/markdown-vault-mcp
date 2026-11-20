@@ -271,8 +271,9 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
 
     Args:
         doc_mgr: Document manager holding the shared write lock.
-        paths: Existing concept paths covered by the event.
-        description: Single-line explanation, at most 500 characters.
+        paths: Existing concept paths, or touched paths including removed notes when grouped.
+        description: Single-line explanation, at most 500 characters for an
+            explicit event or 4096 UTF-8 bytes for a group.
         policy: Designated folders and effective log capability callback.
         proposed_by: Optional proposal attribution.
         today: Optional event date.
