@@ -273,8 +273,7 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     Args:
         doc_mgr: Document manager holding the shared write lock.
         paths: Existing concept paths, or touched paths including removed notes when grouped.
-        description: Single-line explanation, at most 500 characters for an
-            explicit event or 4096 UTF-8 bytes for a group.
+        description: Single-line explanation (500 characters; group: 4096 UTF-8 bytes).
         policy: Designated folders and effective log capability callback.
         proposed_by: Optional proposal attribution.
         today: Optional event date.
@@ -295,12 +294,13 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
     doc_mgr.ensure_writable()
     with doc_mgr.write_scope():
         canonical = paths if grouped else _canonical_paths(doc_mgr, paths)
-        common = os.path.commonpath([folder_of(p) for p in canonical])
-        folder = (
-            log_folder
-            if log_folder is not None
-            else log_anchor(common, folders, doc_mgr._source_dir)
-        )
+        folder = log_folder
+        if folder is None:
+            folder = log_anchor(
+                os.path.commonpath([folder_of(p) for p in canonical]),
+                folders,
+                doc_mgr._source_dir,
+            )
         if destination_home(folder, "log.md", doc_mgr._source_dir) is None:
             raise InvalidRequestError(
                 "The selected log is an alias; choose a safe log destination."
