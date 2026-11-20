@@ -38,7 +38,10 @@ def strip_seeded_frontmatter(
     ),
     apply: bool = typer.Option(False, "--apply", help="Remove the listed keys."),
 ) -> None:
-    """List historical placeholder fields in reserved files; apply to remove them."""
+    """List seeded fields in folder indexes and logs; apply to remove them.
+
+    The root index is always preserved.
+    """
     from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
     from markdown_vault_mcp.exceptions import MarkdownMCPError
 
@@ -58,6 +61,8 @@ def strip_seeded_frontmatter(
                 typer.echo("Nothing to repair.")
             action = "Removed" if apply else "Would remove"
             for item in items:
+                if item.kept_reason:
+                    typer.echo(_safe(f"Kept {item.path}: {item.kept_reason}"))
                 if item.skip_reason:
                     typer.echo(_safe(f"Skipped {item.path}: {item.skip_reason}"))
                 for key in item.keys:

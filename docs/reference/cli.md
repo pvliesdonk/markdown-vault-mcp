@@ -677,7 +677,9 @@ Inspect and repair an OKF vault.
 
 ## `markdown-vault-mcp okf strip-seeded-frontmatter`
 
-List historical placeholder fields in reserved files; apply to remove them.
+List seeded fields in folder indexes and logs; apply to remove them.
+
+The root index is always preserved.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|

@@ -12,7 +12,7 @@ from markdown_vault_mcp._okf_author import _header_span
 from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.exceptions import InvalidRequestError, MarkdownMCPError
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.okf import OKF_LOG_TITLE, OKF_ROOT_INDEX_TITLE
+from markdown_vault_mcp.okf import OKF_LOG_TITLE
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.bundle_inventory import BundleEntry
@@ -23,11 +23,12 @@ _PROTECTED = frozenset({"okf_version", "conflict_with"})
 
 @dataclass(frozen=True)
 class ReservedRepair:
-    """A candidate path and the fields selected for removal."""
+    """A candidate path, selected fields, or a reason it was skipped or kept."""
 
     path: str
     keys: tuple[str, ...]
     skip_reason: str | None = None
+    kept_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ class ReservedFrontmatterRepair:
             allow_protected: Allow a trusted caller to repair protected paths.
 
         Returns:
-            Each reserved path and matching keys, or a reason it was skipped.
+            Each reserved path and matching keys, or a reason it was skipped or kept.
 
         Raises:
             InvalidRequestError: If OKF scope or inventory cannot be established.
@@ -194,10 +195,16 @@ class ReservedFrontmatterRepair:
             if cursor is None:
                 return result
 
-    def _inspect_entry(self, entry: BundleEntry) -> _PendingRepair | None:
+    def _inspect_entry(
+        self, entry: BundleEntry
+    ) -> _PendingRepair | ReservedRepair | None:
         name = entry.path.rsplit("/", 1)[-1]
         if name not in {"index.md", "log.md"}:
             return None
+        if entry.path == "index.md":
+            return ReservedRepair(
+                entry.path, (), kept_reason="bundle metadata is preserved"
+            )
         if entry.role not in {"navigation", "history"} or (
             entry.state != "inspected"
             and entry.reason not in {"note_limit", "byte_budget"}
@@ -215,7 +222,7 @@ class ReservedFrontmatterRepair:
         title = (
             OKF_LOG_TITLE
             if path.rsplit("/", 1)[-1] == "log.md"
-            else (folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE)
+            else folder.rsplit("/", 1)[-1]
         )
         try:
             text, keys = _strip(

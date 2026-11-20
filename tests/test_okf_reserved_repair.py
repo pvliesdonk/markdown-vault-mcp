@@ -43,11 +43,29 @@ def test_unwired_writer_refuses_repair(tmp_path: Path) -> None:
         vault.close()
 
 
+@pytest.mark.parametrize("original", [b"---\ntitle: [\n---\n\xff", b"body only\n"])
+def test_root_index_is_kept_without_parsing(tmp_path: Path, original: bytes) -> None:
+    path = tmp_path / "index.md"
+    path.write_bytes(original)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_mode="on"),
+    )
+    try:
+        for apply in (False, True):
+            item = vault.writer.okf_strip_seeded_frontmatter(apply=apply)[0]
+            assert item.path == "index.md" and item.kept_reason
+            assert item.skip_reason is None and item.keys == ()
+            assert path.read_bytes() == original
+    finally:
+        vault.close()
+
+
 def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
     (tmp_path / "guides").mkdir()
     root = tmp_path / "index.md"
     root.write_text(
-        '---\nokf_version: "0.2"\ntitle: Index\ntype: null\nconflict_with: null\ncustom: null\n---\n# Index\n'
+        '\ufeff---\r\nokf_version: "0.3"\r\ntitle: Index\r\ndescription: Bundle\r\nlicense: MIT\r\ntype: null\r\nx-test: value\r\n---\r\n# Index\r\n'
     )
     log = tmp_path / "guides" / "log.md"
     log.write_text("---\ntitle: Log\ntype: null\n---\n# Log\n")
@@ -67,16 +85,14 @@ def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
         repair = ReservedFrontmatterRepair(vault)
         preview = repair.run()
         assert {x.path: x.keys for x in preview} == {
-            "index.md": ("title", "type"),
+            "index.md": (),
             "guides/index.md": ("type",),
             "guides/log.md": ("title", "type"),
         }
         assert [p.read_bytes() for p in (root, log, edited)] == before
         assert repair.run(apply=True) == preview
-        assert (
-            root.read_text()
-            == '---\nokf_version: "0.2"\nconflict_with: null\ncustom: null\n---\n# Index\n'
-        )
+        assert next(x for x in preview if x.path == "index.md").kept_reason
+        assert root.read_bytes() == before[0]
         assert log.read_text() == "# Log\n"
         assert edited.read_text() == "---\ntitle: Hand edited\n---\n# Guide\n"
     finally:
@@ -104,6 +120,9 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     root = tmp_path / "vault"
     root.mkdir()
     log = root / "log.md"
+    index = root / "index.md"
+    original = b"---\ntitle: Index\n---\nbody\n"
+    index.write_bytes(original)
     log.write_text("---\ntitle: Log\ntype: null\n---\n# Log\n")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
@@ -112,6 +131,7 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     runner = CliRunner()
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
     assert result.exit_code == 0, result.output
+    assert "Kept index.md:" in result.stdout
     assert (
         "Would remove log.md: title" in result.stdout
         and "Would remove log.md: type" in result.stdout
@@ -119,12 +139,14 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "title: Log" in log.read_text()
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert result.exit_code == 0, result.output
+    assert "Kept index.md:" in result.stdout
+    assert index.read_bytes() == original
     assert "Removed log.md: title" in result.stdout
     assert log.read_text() == "# Log\n"
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
-    assert "Nothing to repair" in result.stdout
+    assert "Kept index.md:" in result.stdout
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
-    assert "Nothing to repair" in result.stdout
+    assert "Kept index.md:" in result.stdout
 
 
 def test_custom_title_field(tmp_path: Path) -> None:
@@ -367,10 +389,11 @@ def test_unreadable_batch_continues_in_preview_and_apply(
 def test_designated_index_respects_operator_protection(tmp_path: Path) -> None:
     from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 
-    path = tmp_path / "index.md"
-    path.write_text("---\ntitle: Index\n---\nbody\n")
+    (tmp_path / "guides").mkdir()
+    path = tmp_path / "guides" / "index.md"
+    path.write_text("---\ntitle: guides\n---\nbody\n")
     caps = OkfCapabilities(
-        author=False, verify="off", index=True, log="off", folders=(".",)
+        author=False, verify="off", index=True, log="off", folders=("guides",)
     )
     settings = VaultSettings(
         read_only=False,
@@ -384,21 +407,21 @@ def test_designated_index_respects_operator_protection(tmp_path: Path) -> None:
         assert path.read_text() == "body\n"
     finally:
         vault.close()
-    path.write_text("---\ntitle: Index\n---\nbody\n")
+    path.write_text("---\ntitle: guides\n---\nbody\n")
     settings = VaultSettings(
         read_only=False,
         okf_mode="on",
         required_frontmatter=["title"],
-        protected_paths=["index.md"],
+        protected_paths=["guides/index.md"],
         okf_capabilities=caps,
     )
     vault = Vault(source_dir=tmp_path, settings=settings)
     try:
         repair = vault.writer.okf_strip_seeded_frontmatter
         assert repair(apply=True)[0].skip_reason
-        assert "title: Index" in path.read_text()
+        assert "title: guides" in path.read_text()
         assert repair(apply=True, allow_protected=True)[0].keys == ("title",)
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["index.md"]
+        assert sorted(p.name for p in (tmp_path / "guides").iterdir()) == ["index.md"]
     finally:
         vault.close()
 
