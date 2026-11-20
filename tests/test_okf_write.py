@@ -365,20 +365,6 @@ class TestConfigCrossValidation:
         with pytest.raises(ConfigurationError, match="okf_verify must be one of"):
             ContentConfig(okf_write=True, okf_verify=bad)
 
-    @pytest.mark.parametrize("mode", ["off", "trust-auth"])
-    def test_okf_verify_non_default_requires_okf_write(self, mode: str) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-        from markdown_vault_mcp.exceptions import ConfigurationError
-
-        with pytest.raises(ConfigurationError, match="only meaningful when okf_write"):
-            ContentConfig(okf_write=False, okf_verify=mode)
-
-    def test_okf_verify_default_allowed_without_okf_write(self) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        # The default value must not trip the OKF_WRITE-off interaction guard.
-        assert ContentConfig(okf_write=False).okf_verify == "elicit"
-
     @pytest.mark.parametrize("mode", ["elicit", "off", "trust-auth"])
     def test_okf_verify_allowed_with_okf_write(self, mode: str) -> None:
         from markdown_vault_mcp.config_sections.content import ContentConfig
@@ -1025,3 +1011,25 @@ class TestServiceTokenOkf:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+async def test_protected_verify_precedes_elicitation(
+    enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = enforced_env / "_conventions.md"
+    path.write_text("original")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "_conventions.md")
+    calls = 0
+
+    async def accept(*_args: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=accept
+    ) as client:
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await client.call_tool("okf_verify", {"path": "_conventions.md"})
+    assert calls == 0
+    assert path.read_text() == "original"

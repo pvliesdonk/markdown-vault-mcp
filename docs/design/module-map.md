@@ -81,13 +81,14 @@ src/markdown_vault_mcp/
     summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)
   git/
     __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
-    _run.py            -- low-level git subprocess + credential plumbing; literal_pathspec (#1303)
+    _subject.py        -- bounded opt-in model descriptions of auto-commits
+    _run.py            -- low-level git subprocess + credential plumbing; literal pathspecs, index-write scope, diff rendering and NUL stream decoding (#1303, #1310)
     interfaces.py      -- HistorySource/RevisionReader/SyncHealthReporter/Syncer/Versioner/VersionedStore: the versioning seam; GitWriteStrategy is the one implementation (#1229)
-    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock (#893)
+    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock; holds in-memory pending generated indexes (#893)
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
-    conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
+    conflict.py        -- rebase-conflict resolution (caller holds the strategy lock)
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
@@ -106,14 +107,17 @@ src/markdown_vault_mcp/
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  okf_capabilities.py  -- resolve configured OKF authority and the legacy alias
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
+  _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
+  _commit_groups.py    -- Internal commit-group handles and accumulated status, SHA, and path counts (#1677)
   _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
   _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)
@@ -185,7 +189,7 @@ src/markdown_vault_mcp/
   _transfer_links.py   -- register_transfer_routes / build_transfer_links / TransferLinks / add_transfer_workflow: the /transfer route mount, the create_*_link tools and the transfer workflow snippet (#2318)
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for the transfer routes in _transfer_routes / _transfer_links (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)
-  _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)
+  _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → automatic deferred pull + reconcile (#530, #1178)
   _health.py           -- register_health_routes / HealthCheck: unauthenticated /health liveness and /health/ready readiness (KV write probe + domain checks, HEALTH_DETAIL) (#2334)
   _http_path.py        -- normalise_http_path: HTTP mount-path normalisation for serve and the health prefix (#2334)
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)

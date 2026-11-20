@@ -249,6 +249,13 @@ the file appears before the bytes arrive. Use a new path, or set
 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
 See [transfer links](../deploy/transfer-links.md#upload-destinations).
 
+`MARKDOWN_VAULT_MCP_PROTECTED_PATHS` protects matching paths, including
+automatic OKF upkeep. An unprotected primary write still succeeds if upkeep is
+blocked. Globs are case-insensitive; `*` crosses `/`, and `**/` requires at
+least one folder. Use `_conventions.md,**/_conventions.md` to cover both the
+root and nested convention files. A matching folder protects its contents.
+The root pattern `.` is rejected; use `*` to protect every path.
+
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade
     from 3.x widens access unless the deployment explicitly sets
@@ -404,7 +411,27 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true` | No | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites. |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | (none) | No | Comma-separated case-insensitive vault-relative globs protecting paths and folder contents (_conventions.md,**/_conventions.md). Empty by default. The * wildcard crosses folders; **/ requires a folder. |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | `false` | No | Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged. |
+
+### Content
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | (none) | No | Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. Elicit asks a human to confirm; trust-auth requires human credentials and a human-driven interface. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error. |
+| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
+| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
+| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` | No | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode. |
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | Deprecated alias for the OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | (none) | No | Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting. |
+| `MARKDOWN_VAULT_MCP_OKF_INDEX` | (none) | No | Enable automatic index maintenance in designated folders; defaults to false. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG` | (none) | No | OKF log authority: off (default), events, or writes. Writes appends an entry on each server write. |
+| `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | (none) | No | Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored. |
+| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:<sub>, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
+| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once. |
+| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
+| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |
 
 ### Embeddings
 
@@ -463,25 +490,10 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_POOL_SIZE` | `4` | No | With EMBEDDING_STORE=postgres, the most connections the store opens (at least 1). |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S` | `30.0` | No | With EMBEDDING_STORE=postgres, the longest one query may run, in seconds (0 sets none; at most 2147483.647). The bulk write of a full rebuild is never limited. |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset. |
-| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |
+| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault. |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | (none) | No | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**). |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | `title` | No | Frontmatter field used as the document title (falls back to title, the first H1, then the filename). Changing it cold-rebuilds the index once on next startup. |
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | (none) | No | Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup. |
-
-### Content
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
-| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
-| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
-| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` | No | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected. |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default. |
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` | No | How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error. |
-| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:<sub>, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
-| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once. |
-| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
-| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |
 
 ### Search tuning
 
@@ -505,11 +517,14 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | No | Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` | `300.0` | No | Seconds of group inactivity before automatic close. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` | `3600.0` | No | Maximum group age in seconds before automatic close. |
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30.0` | No | Seconds of write-idle time before pushing; 0 pushes only on shutdown. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | No | Git committer name for auto-commits, and the author name too unless an OIDC claim supplies one; set this in Docker where git config user.name is empty. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits, and the author email too unless an OIDC claim supplies one. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | (none) | No | OIDC claim key used as the commit author name (such as name) when an OIDC token is present; the committer stays GIT_COMMIT_NAME. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write. A configured claim the token does not carry is reported once at WARNING and the static identity is used. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | (none) | No | OIDC claim key used as the commit author email (such as email) when an OIDC token is present; the committer stays GIT_COMMIT_EMAIL. Resolved and carried the same way as the name claim. |
+| `MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS` | `false` | No | Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git. |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | No | Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS. |
 
 ### Change detection

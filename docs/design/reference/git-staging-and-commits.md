@@ -13,6 +13,22 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: git-ls-files
+    title: git-ls-files(1)
+    resource: https://git-scm.com/docs/git-ls-files
+    accessed: 2026-11-18
+  - id: git-interpret-trailers
+    title: git-interpret-trailers(1)
+    resource: https://git-scm.com/docs/git-interpret-trailers
+    accessed: 2026-11-18
+  - id: git-commit-231
+    title: git-commit(1), Git v2.31.0
+    resource: https://raw.githubusercontent.com/git/git/v2.31.0/Documentation/git-commit.txt
+    accessed: 2026-11-18
+  - id: git-commit-232
+    title: git-commit(1), Git v2.32.0
+    resource: https://raw.githubusercontent.com/git/git/v2.32.0/Documentation/git-commit.txt
+    accessed: 2026-11-18
   - id: git-commit
     title: git-commit(1)
     resource: https://git-scm.com/docs/git-commit
@@ -141,6 +157,10 @@ repositories under `/tmp/gitref/`.
 
 ### Committing and identity (`strategy.py`: `_commit_staged`, `_sanitize_git_identity`)
 
+- By default, a trailer is a colon-separated key and value; keys use ASCII alphanumerics and hyphens. A trailer block is at the end of the message and preceded by a blank line. `--parse` outputs parsed trailers. Plain `--parse` treats a `---` divider as the end of the message; for a raw commit message use `--parse --no-divider` so text after such a line remains visible. When `trailer.separators` has a nondefault value, use `git -c trailer.separators=: interpret-trailers --parse --no-divider` for colon-separated trailers. [source: git-interpret-trailers] [pins: tests/test_git_commit_trailers.py::test_server_commit_trailers]
+- Git applies commit message cleanup to the trailers: with `commit.cleanup=strip` and `core.commentChar=V`, a successful commit omits both `Vault-` trailers. [source: git-commit] (`--cleanup`) [observed: git 2.56.1, isolated commit fixture]
+- A final paragraph containing non-trailer text is not necessarily a trailer block; the documented alternative requires a configured or Git-generated trailer and other conditions. `commit --trailer` creates a block where needed, but its behavior is configurable and it is absent from the Git 2.31 commit manual and present in 2.32. [source: git-interpret-trailers] [source: git-commit-231] [source: git-commit-232] [pins: tests/test_git_commit_trailers.py::test_server_commit_trailers, tests/test_git_commit_trailers.py::test_conflict_save_commit_has_trailers]
+
 - `commit --only -- <paths>` commits the *working-tree* content of those paths and nothing else staged; `--only` without paths is `fatal: No paths with --include/--only does not make sense.` outside `--amend`/`--allow-empty`; an unchanged path exits 1 `nothing to commit`. [source: git-commit] (`--only`) [source: src-commit] [observed: git 2.43.0, index `idx`, tree `wt`, commit recorded `wt`] [pins: tests/test_git.py::TestCommitsAreScopedToTheOperation::test_a_real_write_commits_only_its_own_path]
 - During a merge (`MERGE_HEAD`) a partial commit dies `fatal: cannot do a partial commit during a merge.`, exit 128; the whole-index form dies on the unmerged paths instead. [source: src-commit] (`COMMIT_PARTIAL`) [observed: git 2.43.0] [pins: tests/test_git.py::TestCommitsAreScopedToTheOperation::test_a_write_during_a_merge_commits_nothing]
 - During a conflicted non-interactive rebase (`rebase-merge/` present, no `MERGE_HEAD`) a partial commit of an unrelated path succeeded on 2.43.0 (`<file>: needs merge`, commit on the detached rebase HEAD) while the whole-index form failed `Committing is not possible because you have unmerged files.`; the source at v2.43.0 and master also has `cannot do a partial commit during a rebase.`, keyed on `CHERRY_PICK_HEAD` existing and equalling `REBASE_HEAD`. [observed: git 2.43.0] [source: src-commit] [source: src-sequencer] (`sequencer_determine_whence`) [unverified] Which rebase stops set `CHERRY_PICK_HEAD` was not established; an interactive `edit` stop would show it.
@@ -168,6 +188,7 @@ repositories under `/tmp/gitref/`.
 - `REBASE_HEAD` is the commit being replayed and `REBASE_HEAD:<path>` reads its version; the ref outlives a successful `--continue`, so it is no in-progress signal. [source: gitrevisions] [source: git-rebase] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_ignores_stale_rebase_head_ref]
 - The merge backend keeps state in `$GIT_DIR/rebase-merge/` (`am` backend: `rebase-apply/`); both vanish on completion or `--abort`; `rev-parse --git-path rebase-merge` finds it in a linked worktree. [source: src-sequencer] (`rebase_path`) [source: git-rev-parse] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_detects_rebase_merge_directory]
 - In a rebase "ours" is the upstream side and "theirs" the replayed local commit ("the sides are swapped"), so `checkout --ours -- <path>` takes upstream; `rebase --continue` under `GIT_EDITOR=true` needs no editor. [source: git-rebase] (`--merge`) [observed: git 2.43.0]
+- `ls-files --unmerged -z -- <path>` lists only unmerged index entries with mode, object ID and stage before a tab and a NUL-terminated verbatim path; unmerged entries have up to three stages, with stage 2 for ours and stage 3 for theirs. In a modify/delete rebase conflict where upstream deleted the file, the local version is stage 3 and stage 2 is absent. [source: git-ls-files] [source: git-rebase] [observed: git 2.56.1, `tests/test_conflict_recovery_failures.py::test_upstream_deleted_generated_index_is_regenerated`] [pins: tests/test_conflict_recovery_failures.py::test_upstream_deleted_generated_index_is_regenerated]
 - Default markers `<<<<<<< HEAD` / `=======` / `>>>>>>> <sha> (<subject>)`; `merge.conflictStyle=diff3|zdiff3` add `||||||| parent of <sha> (<subject>)` with the base. [source: git-config] [observed: git 2.43.0]
 
 ## Where this project departs from the subject

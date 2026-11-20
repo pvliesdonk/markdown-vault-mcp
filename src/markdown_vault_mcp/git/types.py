@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 # Reason codes returned in :class:`PullResult.reason` and
 # :class:`PushResult.reason`.  Defined as module-level constants so callers
 # (and tests) can refer to them by name rather than re-typing string literals.
+PULL_REASON_GROUP_OPEN = "group_open"
 PULL_REASON_FETCH_FAILED = "fetch_failed"
 PULL_REASON_PULL_DISABLED = "pull_disabled"
 PULL_REASON_NO_REMOTE = "no_remote"
@@ -82,6 +83,9 @@ class PullResult:
             and for dry-runs predicting a clean fast-forward.  Otherwise
             one of:
 
+            * ``"group_open"`` — an automatic pull was deferred because a
+              write group is open. No fetch or pull ran, and both SHA
+              fields are empty.
             * ``"fetch_failed"`` — ``git fetch origin`` exited non-zero
               (network error, auth failure, etc.); HEAD did not move.
             * ``"pull_disabled"`` — the strategy was built without remote
@@ -95,8 +99,8 @@ class PullResult:
               histories diverged and the conflict-resolution path
               failed to produce a usable result; HEAD did not move.
             * ``"rebased"`` — local and remote histories diverged but
-              ``git rebase origin/<branch>`` replayed local commits cleanly
-              on top of the upstream with no manual intervention.
+              the rebase completed without siblings, including when only
+              designated generated indexes conflicted and await regeneration.
               ``applied`` is ``True``; ``conflict_files`` is empty.
             * ``"conflicts_resolved_with_siblings"`` — local and remote
               histories diverged AND rebase hit real conflicts, which
@@ -121,7 +125,7 @@ class PullResult:
 
             See module-level ``PULL_REASON_*`` constants for the
             string values.
-        conflict_files: Vault-relative paths of Syncthing-style
+        conflict_files: Repository-relative paths of Syncthing-style
             ``.conflict-mcp-*`` siblings written when the pull resolved
             divergent history (see #232 and the
             ``"conflicts_resolved_with_siblings"`` reason above).

@@ -8,7 +8,9 @@ kind: reference
 # Git
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Generated index conflicts can return `rebased` without siblings; authored
+indexes and logs retain a local sibling without injected conflict metadata.
+See [Git integration](../../use/git-integration.md) for recovery details.
 <!-- DOMAIN-INTRO-END -->
 
 ## `get_history`
@@ -40,7 +42,8 @@ Envelope dict with the following fields:
     - `short_sha` (str): 7-character abbreviated SHA.
     - timestamp (str): ISO 8601 author timestamp.
     - author (str): Author name and email, such as `"Name <email>"`.
-    - message (str): First line of the commit message.
+    - message (str): First line of the commit message. See
+      [model-written subjects](../../use/git-integration.md#model-written-auto-commit-subjects).
     - `paths_changed` (list[str]): Files touched by the commit.
       Populated for vault-wide queries (path=None) and folder
       queries (the subtree files the commit touched). Always empty
@@ -97,7 +100,8 @@ Envelope dict whose shape depends on `per_commit`:
         - `sha` (str): Full commit SHA.
         - `short_sha` (str): Abbreviated SHA.
         - timestamp (str): ISO 8601 author timestamp.
-        - message (str): First line of commit message.
+        - message (str): First line of commit message. See
+          [model-written subjects](../../use/git-integration.md#model-written-auto-commit-subjects).
         - diff (str): Unified diff for this commit.
     - total (int): Count of entries in `commits` (always equals
       `len(commits)`; does NOT indicate how many commits exist
@@ -155,8 +159,12 @@ Dict with the following fields:
     did not move, or the rebase completed and HEAD moved but
     committing the sibling files failed), or, on a dry run only,
     `"diverged"`.
-  - `conflict_files` (list[str], optional): the `.conflict-mcp-*`
-    sibling files written when the pull resolved conflicts.
+  - `conflict_files` (list[str], optional): repository-relative paths
+    of the `.conflict-mcp-*` siblings written to resolve conflicts.
+    Strip the repository-to-vault prefix before using vault tools.
+    If the prefix is unknown, locate the sibling with `list_documents`
+    or search. A sibling outside the vault requires access to the
+    repository checkout; vault tools cannot read or delete it.
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,

@@ -10,6 +10,10 @@ keeps git-root discovery out of these functions so that tests can prime the
 cache on the strategy instance and then patch ``subprocess.run`` without the
 patch also interfering with the discovery call.
 
+Ref, date, parent, ancestor, empty-tree and cat-file probes, and identity-only
+``log --no-walk`` calls, stay raw because they carry neither pathspecs nor
+path streams.
+
 Each public entry point states what a ``None`` ``git_root`` means for it, and
 they deliberately differ: the history and diff queries return an empty result,
 because "no git" and "nothing changed" are equally uninteresting to a caller
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -31,8 +36,9 @@ from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidReques
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
-    literal_pathspec,
+    run_git,
     run_git_capturing,
+    text_field,
 )
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 from markdown_vault_mcp.utils.fs import path_exists
@@ -50,15 +56,6 @@ _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 # Diff payloads larger than this are truncated with a byte-count marker.
 _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
-
-# Patch and ``--stat`` payloads name files in their own body.  Under git's
-# default ``core.quotePath`` a non-ASCII name is rendered there octal-escaped
-# inside double quotes, so the diff a caller reads back names a file they
-# cannot then look up.  This is a rendering choice rather than the framing
-# problem the log readers have (nothing parses these payloads — they are
-# handed to the caller as text), so the config override is the right tool
-# here where ``-z`` is the right tool there.
-_READABLE_PATHS = ("-c", "core.quotePath=false")
 
 # Rename-detection threshold for every query in this module that resolves a
 # note across a rename — the single-note walks and the two-rev resolution
@@ -80,10 +77,9 @@ _RENAME_THRESHOLD = "--find-renames=30"
 # whatever the operator has in their git config.
 _RENAME_LIMIT = "diff.renameLimit=2000"
 
-# \x1e (ASCII Record Separator) marks the start of each commit block in
-# ``git log`` output.  Commit messages do not carry it, and while a POSIX
-# filename legally may, git has no framing that would let a block boundary be
-# found without a marker of some kind.
+# Each commit block starts with two NULs and this ASCII Record Separator.
+# Paths may contain RS but cannot contain NUL or be empty, so the combined
+# marker cannot occur within the path list.
 _HISTORY_SENTINEL = "\x1e"
 
 
@@ -123,7 +119,7 @@ def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] 
     paths = tokens[field_count:]
     if paths and paths[0].startswith("\n"):
         paths[0] = paths[0][1:]
-    return tokens[:field_count], paths
+    return [text_field(field) for field in tokens[:field_count]], paths
 
 
 def _truncate_diff(diff: str) -> str:
@@ -428,17 +424,16 @@ def _lineage(
         "--follow",
         "--name-status",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H",
     ]
     if rev_range is not None:
         cmd.append(rev_range)
-    cmd += ["--", literal_pathspec(str(path))]
-    result = run_git_capturing(git_root, *cmd, env=env, preserve_newlines=True)
+    result = run_git_capturing(git_root, *cmd, env=env, pathspecs=[str(path)])
     if result.returncode != 0:
         return _Lineage(None, False)
     shas: set[str] = set()
     tracked = cur_rel
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         split = _split_z_block(block, 1)
         if split is None:
             continue
@@ -451,7 +446,7 @@ def _lineage(
     return _Lineage(shas, False)
 
 
-def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
+def _first_parent_records_args(revs: str | None) -> list[str]:
     """Assemble Git arguments for the walk that resolves a note's names.
 
     ``-m --first-parent`` is load-bearing, not decoration: a rename performed
@@ -466,7 +461,6 @@ def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
     newline survives intact and no ``core.quotePath`` unescaping is needed.
 
     Args:
-        cur_rel: The note's path, repo-relative and posix.
         revs: What to walk: a range (``"<ref>..HEAD"``) or a single revision
             to walk back from, or ``None`` for ``HEAD`` without a bound.
     """
@@ -480,11 +474,11 @@ def _first_parent_records_args(cur_rel: str, revs: str | None) -> list[str]:
         "--name-status",
         "-z",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H",
     ]
     if revs is not None:
         cmd.append(revs)
-    return [*cmd, "--", literal_pathspec(cur_rel)]
+    return cmd
 
 
 class _NameSegment(NamedTuple):
@@ -591,8 +585,8 @@ def _walk_one_name(
     """
     result = run_git_capturing(
         git_root,
-        *_first_parent_records_args(frontier.name, frontier.rev),
-        preserve_newlines=True,
+        *_first_parent_records_args(frontier.rev),
+        pathspecs=[frontier.name],
         env=env,
     )
     if result.returncode != 0:
@@ -600,7 +594,7 @@ def _walk_one_name(
     tracked, through = frontier.name, frontier.through
     segments: list[_NameSegment] = []
     opened: list[_Frontier] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         split = _split_z_block(block, 1)
         if split is None:
             continue
@@ -684,7 +678,7 @@ def _rename_aware_diff_args(
     cur_rel: str | None,
     pathspec: str,
     env: dict[str, str] | None,
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], list[str] | None, str | None]:
     """Build diff args for ``from_ref..to_ref``, resolving renames.
 
     Resolves the path *cur_rel* had at *from_ref*; when it differs from the
@@ -692,9 +686,10 @@ def _rename_aware_diff_args(
     rename instead of reporting delete+add.
 
     Returns:
-        Tuple ``(diff_args, old_path)`` where *diff_args* is the ref/path
-        portion of the ``git diff`` invocation and *old_path* is the
-        resolved historical path (``None`` when no rename was resolved).
+        Tuple ``(diff_args, pathspecs, old_path)`` where *diff_args* is the ref
+        portion of the ``git diff`` invocation, *pathspecs* holds separate raw
+        paths or ``None``, and *old_path* is the resolved historical path
+        (``None`` when no rename was resolved).
     """
     old_path = (
         resolve_path_at_ref(git_root, from_ref, cur_rel, env, to_ref=to_ref)
@@ -702,35 +697,22 @@ def _rename_aware_diff_args(
         else None
     )
     if old_path is None or cur_rel is None or old_path == cur_rel:
-        return [f"{from_ref}..{to_ref}", "--", literal_pathspec(pathspec)], old_path
-    return [f"{from_ref}:{old_path}", f"{to_ref}:{cur_rel}"], old_path
+        return [f"{from_ref}..{to_ref}"], [pathspec], old_path
+    return [f"{from_ref}:{old_path}", f"{to_ref}:{cur_rel}"], None, old_path
 
 
 def _diff_is_binary(
-    git_root: Path, diff_args: list[str], env: dict[str, str] | None
+    git_root: Path,
+    diff_args: list[str],
+    pathspecs: list[str] | None,
+    env: dict[str, str] | None,
 ) -> bool:
-    """True if git reports the diff target as binary.
+    """Probe numstat for revision args plus pathspecs; a blob pair takes ``None``.
 
-    *diff_args* is the ref/path portion of a ``git diff`` invocation — such as
-    a range/path form (``["<from>..<to>", "--", <pathspec>]``), a two-endpoint
-    blob/tree-spec form (``[f"{a}:{old}", f"{b}:{new}"]``), or two revs followed
-    by a pathspec (e.g. the empty-tree SHA and a commit SHA followed by
-    ``["--", <pathspec>]``, used for parent-less commits).  The endpoints may
-    be refs, commit SHAs, blob specs, or the empty-tree constant; every
-    pathspec among them is built by
-    :func:`~markdown_vault_mcp.git._run.literal_pathspec`.
-    ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts
-    for text; empty output (no change) → non-binary.
-    A non-zero git exit (e.g. a bad ref) yields empty stdout, so it is classified
-    non-binary; the error is then surfaced by the subsequent checked ``git diff``
-    call. This is a detection probe, not the final word.
+    A failure is surfaced by the subsequent checked diff.
     """
-    result = subprocess.run(
-        ["git", "-C", str(git_root), "diff", "--numstat", *diff_args],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
+    result = run_git_capturing(
+        git_root, "diff", "--numstat", *diff_args, pathspecs=pathspecs, env=env
     )
     first = result.stdout.strip().split("\n", 1)[0]
     return first.startswith("-\t-")
@@ -765,7 +747,7 @@ def _history_log_args(
     limit: int,
     *,
     is_dir: bool,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Assemble the ``git log`` arguments for a history query.
 
     Args:
@@ -778,8 +760,8 @@ def _history_log_args(
         is_dir: When ``True``, *path* is a directory subtree.
 
     Returns:
-        Git arguments, formatted with :data:`_HISTORY_SENTINEL`
-        block markers and NUL-separated header fields.  ``-z`` frames the
+        Git arguments, formatted with two NULs and :data:`_HISTORY_SENTINEL`
+        as block markers and NUL-separated header fields.  ``-z`` frames the
         ``--name-only`` paths by NUL as well, so a non-ASCII name reaches
         the caller as git recorded it rather than octal-escaped inside
         double quotes (see :func:`_split_z_block`).  A single-file query
@@ -798,7 +780,7 @@ def _history_log_args(
     cmd += [
         "log",
         "-z",
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
         f"-n{limit}",
     ]
     if since:
@@ -808,24 +790,27 @@ def _history_log_args(
     if path is None:
         # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
         # values work correctly (git compares against the real toplevel).
-        cmd += ["--name-only", "--", literal_pathspec(str(repo_path.resolve()))]
+        cmd += ["--name-only"]
+        scope = str(repo_path.resolve())
     elif is_dir:
         # directory scope: no --follow (git rejects it for anything but a
         # single file); --name-only so paths_changed carries the subtree files
         # each commit touched. git already filters the name-only output to the
         # <dir> pathspec, so no sibling paths leak in and no extra filtering is
         # needed here.
-        cmd += ["--name-only", "--", literal_pathspec(str(path))]
+        cmd += ["--name-only"]
+        scope = str(path)
     else:
         # Same threshold as every other rename-crossing query here: without it
         # this walk stopped at a rename git scored under its 50% default, and
         # listed no commit for a revision ``read`` would happily serve (#1297).
-        cmd += ["--follow", _RENAME_THRESHOLD, "--", literal_pathspec(str(path))]
-    return cmd
+        cmd += ["--follow", _RENAME_THRESHOLD]
+        scope = str(path)
+    return cmd, [scope]
 
 
 def _history_log_output(
-    git_root: Path, args: list[str], env: dict[str, str] | None
+    git_root: Path, args: list[str], pathspecs: list[str], env: dict[str, str] | None
 ) -> str:
     """Run the assembled ``git log`` command and return its raw stdout.
 
@@ -835,7 +820,7 @@ def _history_log_output(
             complaint, so a bad date never gets here.
     """
     try:
-        result = run_git_capturing(git_root, *args, preserve_newlines=True, env=env)
+        result = run_git_capturing(git_root, *args, pathspecs=pathspecs, env=env)
         result.check_returncode()
     except subprocess.CalledProcessError as exc:
         raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
@@ -887,7 +872,7 @@ def _segment_shas(
     found: dict[str, str] = {}
     claims: dict[str, str] = {}
     for seg in segments:
-        cmd = ["git", "-C", str(git_root), "log", "--format=%H"]
+        cmd = ["log", "--format=%H"]
         if bounds.limit is not None:
             cmd.append(f"-n{bounds.limit}")
         if bounds.since:
@@ -895,10 +880,7 @@ def _segment_shas(
         if bounds.until:
             cmd.append(f"--until={bounds.until}")
         cmd += _segment_rev_args(seg, bounds.exclude)
-        cmd += ["--", literal_pathspec(seg.name)]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, env=env
-        )
+        result = run_git_capturing(git_root, *cmd, pathspecs=[seg.name], env=env)
         if result.returncode != 0:
             continue
         for sha in result.stdout.split():
@@ -923,27 +905,20 @@ def _history_entries_for(
     which is what puts commits gathered from several walks into one sequence
     without this module having to compare timestamps across time zones.
     """
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            "--no-walk",
-            "-z",
-            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
-            *sorted(shas),
-            "--",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "log",
+        "--no-walk",
+        "-z",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        *sorted(shas),
+        "--",
         env=env,
     )
     if result.returncode != 0:
         return []
     entries: list[HistoryEntry] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         entry = _parse_history_block(block, vault_prefix, collect_paths=False)
         if entry is not None:
             entries.append(entry)
@@ -1006,14 +981,14 @@ def _parse_history_entries(
 ) -> list[HistoryEntry]:
     """Parse a history walk's ``-z`` stream into the note's own entries.
 
-    Splits on the sentinel embedded at the start of each format line.  The
-    first element will be empty (output starts with the sentinel); the parser
+    Splits on two NULs and the sentinel at the start of each format line. The
+    first element will be empty (output starts with the marker); the parser
     rejects it along with any other empty or malformed block.  Commits outside
     *lineage* are dropped, so a reused name does not hand the caller its
     previous occupant's commits (#1285).
     """
     entries: list[HistoryEntry] = []
-    for block in raw.split(_HISTORY_SENTINEL):
+    for block in raw.split("\0\0" + _HISTORY_SENTINEL):
         entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
         if entry is None:
             continue
@@ -1134,7 +1109,9 @@ def get_file_history(
         return []
 
     limit = min(max(1, limit), 100)
-    args = _history_log_args(repo_path, path, since, until, limit, is_dir=is_dir)
+    args, pathspecs = _history_log_args(
+        repo_path, path, since, until, limit, is_dir=is_dir
+    )
 
     cur_rel = None if (path is None or is_dir) else _repo_rel(git_root, path)
     vault_prefix = _vault_prefix(git_root, repo_path)
@@ -1145,7 +1122,7 @@ def get_file_history(
     try:
         if not _has_commits(git_root, env):
             return []
-        raw = _history_log_output(git_root, args, env)
+        raw = _history_log_output(git_root, args, pathspecs, env)
         # Single-file queries only: establish which commits belong to the note
         # now at this path, so a name that was reused does not hand the caller
         # its previous occupant's commits (#1285).
@@ -1345,58 +1322,35 @@ def _range_diff(
         # against the empty tree instead: the note reads as the creation it
         # is, exactly as it would if the name had never been used before
         # (#1285).
-        diff_args = [
-            _empty_tree(git_root, env),
-            "HEAD",
-            "--",
-            literal_pathspec(path_str),
-        ]
+        diff_args = [_empty_tree(git_root, env), "HEAD"]
+        diff_paths: list[str] | None = [path_str]
     else:
-        diff_args, _old_path = _rename_aware_diff_args(
+        diff_args, diff_paths, _old_path = _rename_aware_diff_args(
             git_root, ref, "HEAD", cur_rel, path_str, env
         )
 
     # Binary attachments: a unified patch is meaningless, so emit a
     # --stat summary instead.  Text attachments (and notes, since the
     # default is summarize_binary=False) fall through to the full diff.
-    if summarize_binary and _diff_is_binary(git_root, diff_args, env):
+    if summarize_binary and _diff_is_binary(git_root, diff_args, diff_paths, env):
         try:
-            stat = subprocess.run(
-                [
-                    "git",
-                    *_READABLE_PATHS,
-                    "-C",
-                    str(git_root),
-                    "diff",
-                    "--stat",
-                    *diff_args,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
+            stat = run_git(
+                git_root, "diff", "--stat", *diff_args, pathspecs=diff_paths, env=env
             )
         except subprocess.CalledProcessError as exc:
             raise ValueError(
                 f"Could not compute diff summary against {ref!r}: "
                 f"{(exc.stderr or '').strip()}"
             ) from exc
-        return stat.stdout
+        return stat
 
-    diff_cmd = ["git", *_READABLE_PATHS, "-C", str(git_root), "diff", *diff_args]
     try:
-        result = subprocess.run(
-            diff_cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
+        result = run_git(git_root, "diff", *diff_args, pathspecs=diff_paths, env=env)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"Could not compute diff against {ref!r}: {(exc.stderr or '').strip()}"
         ) from exc
-    return _truncate_diff(result.stdout)
+    return _truncate_diff(result)
 
 
 def _root_commit_diff(
@@ -1415,33 +1369,23 @@ def _root_commit_diff(
     """
     empty_tree = _empty_tree(git_root, env)
     root_binary = summarize_binary and _diff_is_binary(
-        git_root, [empty_tree, sha, "--", literal_pathspec(commit_path)], env
+        git_root, [empty_tree, sha], [commit_path], env
     )
-    fallback_cmd = [
-        "git",
-        *_READABLE_PATHS,
-        "-C",
-        str(git_root),
-        "show",
-        "--format=",
-        "--stat" if root_binary else "-p",
-        sha,
-        "--",
-        literal_pathspec(commit_path),
-    ]
     try:
-        show_result = subprocess.run(
-            fallback_cmd,
-            capture_output=True,
-            text=True,
-            check=True,
+        show_result = run_git(
+            git_root,
+            "show",
+            "--format=",
+            "--stat" if root_binary else "-p",
+            sha,
+            pathspecs=[commit_path],
             env=env,
         )
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"Could not retrieve diff for commit {sha!r}: {(exc.stderr or '').strip()}"
         ) from exc
-    return show_result.stdout
+    return show_result
 
 
 def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
@@ -1497,27 +1441,20 @@ def _commit_rows_for(
     git_root: Path, shas: set[str], name: str, env: dict[str, str] | None
 ) -> list[tuple[str, ...]]:
     """Return per-commit rows for *shas*, each carrying *name* as its path."""
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            "--no-walk",
-            "-z",
-            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
-            *sorted(shas),
-            "--",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_git_capturing(
+        git_root,
+        "log",
+        "--no-walk",
+        "-z",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        *sorted(shas),
+        "--",
         env=env,
     )
     if result.returncode != 0:
         return []
     rows: list[tuple[str, ...]] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
+    for block in result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         row = _parse_log_block(block, name)
         if row is not None:
             rows.append(row)
@@ -1593,16 +1530,16 @@ def _per_commit_rows(
         "-z",
         "--follow",
         _RENAME_THRESHOLD,
-        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        f"--format=%x00%x00{_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
         "--name-only",
     ]
     clamped_limit = None if limit is None else min(max(1, limit), 100)
     if clamped_limit is not None:
         log_cmd.append(f"-n{clamped_limit}")
-    log_cmd += [f"{ref}..HEAD", "--", literal_pathspec(path_str)]
+    log_cmd.append(f"{ref}..HEAD")
     try:
         log_result = run_git_capturing(
-            git_root, *log_cmd, preserve_newlines=True, env=env
+            git_root, *log_cmd, pathspecs=[path_str], env=env
         )
         log_result.check_returncode()
     except subprocess.CalledProcessError as exc:
@@ -1623,7 +1560,7 @@ def _per_commit_rows(
         else _lineage(git_root, path, cur_rel, env, rev_range=f"{ref}..HEAD")
     )
     rows: list[tuple[str, ...]] = []
-    for block in log_result.stdout.split(_HISTORY_SENTINEL):
+    for block in log_result.stdout.split("\0\0" + _HISTORY_SENTINEL):
         parsed = _parse_log_block(block, rel_fallback)
         if parsed is None:
             continue
@@ -1661,25 +1598,22 @@ def _per_commit_diffs(
         # mirroring the single-range branch, so a renamed binary pairs into
         # `{old => new} | Bin OLD -> NEW` instead of an add/text stat (#683).
         parent = f"{sha}^"
-        commit_args, old_at_parent = _rename_aware_diff_args(
+        commit_args, commit_paths, old_at_parent = _rename_aware_diff_args(
             git_root, parent, sha, commit_path, commit_path, env
         )
         # Classify binariness for THIS commit (not the whole range).
-        commit_binary = summarize_binary and _diff_is_binary(git_root, commit_args, env)
-        diff_cmd = [
-            "git",
-            *_READABLE_PATHS,
-            "-C",
-            str(git_root),
-            "diff",
-            "--stat" if commit_binary else "-p",
-            *commit_args,
-        ]
+        commit_binary = summarize_binary and _diff_is_binary(
+            git_root, commit_args, commit_paths, env
+        )
         try:
-            show_result = subprocess.run(
-                diff_cmd, capture_output=True, text=True, check=True, env=env
+            commit_diff_raw = run_git(
+                git_root,
+                "diff",
+                "--stat" if commit_binary else "-p",
+                *commit_args,
+                pathspecs=commit_paths,
+                env=env,
             )
-            commit_diff_raw = show_result.stdout
         except subprocess.CalledProcessError as exc:
             # A failure here is expected ONLY for a parent-less (root/orphan)
             # commit, where `{sha}^` can't resolve. Any other failure is real
@@ -1760,8 +1694,8 @@ def _revision_walk_output(
     try:
         result = run_git_capturing(
             git_root,
-            *_first_parent_records_args(cur_rel, f"{ref}..HEAD"),
-            preserve_newlines=True,
+            *_first_parent_records_args(f"{ref}..HEAD"),
+            pathspecs=[cur_rel],
             env=env,
         )
         result.check_returncode()
@@ -1917,13 +1851,7 @@ def _require_tracked(
     """
     if not path_exists(path):
         return
-    result = subprocess.run(
-        ["git", "-C", str(git_root), "ls-files", "--", literal_pathspec(cur_rel)],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    result = run_git_capturing(git_root, "ls-files", pathspecs=[cur_rel], env=env)
     if result.returncode != 0:
         raise ValueError(f"git ls-files failed: {result.stderr.strip()}")
     if not result.stdout.strip():
@@ -1987,9 +1915,7 @@ def _tree_entry(
         "-l",
         "-z",
         ref,
-        "--",
-        literal_pathspec(repo_rel),
-        preserve_newlines=True,
+        pathspecs=[repo_rel],
         env=env,
     )
     if result.returncode != 0:
@@ -2180,52 +2106,20 @@ def committed_revision(
     env = git_env(token, username)
     try:
         rel = _repo_relative(git_root, path)
-        found = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(git_root),
-                "log",
-                "-1",
-                "--format=%H",
-                "--",
-                literal_pathspec(rel),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
+        # Byte-safe capture: only exit status and a SHA are read, so a filter's
+        # non-UTF-8 stderr must not raise.
+        run = partial(run_git_capturing, git_root, env=env, preserve_newlines=True)
+        found = run("log", "-1", "--format=%H", pathspecs=[rel])
         sha = found.stdout.strip()
         if found.returncode != 0 or not sha:
             return None
-        tracked = subprocess.run(
-            ["git", "-C", str(git_root), "ls-files", "--", literal_pathspec(rel)],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
+        tracked = run("ls-files", pathspecs=[rel])
         if not tracked.stdout.strip():
             # git diff is blind to an untracked file, so without this a note
             # recreated after a committed delete would "match" the commit that
             # deleted it — a breadcrumb pointing at content that is not there.
             return None
-        clean = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(git_root),
-                "diff",
-                "--quiet",
-                sha,
-                "--",
-                literal_pathspec(rel),
-            ],
-            capture_output=True,
-            check=False,
-            env=env,
-        )
+        clean = run("diff", "--quiet", sha, pathspecs=[rel])
         return sha if clean.returncode == 0 else None
     finally:
         cleanup_git_env(env)
