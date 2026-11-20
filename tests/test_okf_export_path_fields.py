@@ -1,5 +1,7 @@
 """Path-valued frontmatter relocates without reserializing the document."""
 
+import sys
+
 import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
@@ -81,8 +83,14 @@ def test_deep_metadata_copied_and_reported(tmp_path):
     large = "---\ntags:\n" + "".join(f"  - tag{i}\n" for i in range(4100)) + "---\n"
     assert export(tmp_path, large)[0] == large
     text = "---\nunknown: " + "[" * 1100 + "x" + "]" * 1100 + "\nresource: /b.md\n---\n"
-    output, _ = export(tmp_path, text)
-    assert output == text
+    # The copied-depth case needs the default limit; in-process mypy raises it.
+    previous_limit = sys.getrecursionlimit()
+    try:
+        sys.setrecursionlimit(1000)
+        output, _ = export(tmp_path, text)
+        assert output == text
+    finally:
+        sys.setrecursionlimit(previous_limit)
 
 
 def test_alias_expansion_over_budget_is_copied(tmp_path):
