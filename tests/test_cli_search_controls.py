@@ -234,3 +234,17 @@ async def test_local_payload_agrees_with_native_mcp(
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == expected
+
+
+def test_local_triage_text_explains_conditions(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "expired.md").write_text("---\nstale_after: 2000-01-01\n---\nneedle")
+    (tmp_path / "missing.md").write_text("needle")
+    args = ["search", "needle", "--local", "--source-dir", str(tmp_path)]
+    result = CliRunner().invoke(app, [*args, "--filter", "needs_review=true"])
+    assert result.exit_code == 0, result.output
+    assert "Review check:" in result.stdout
+    assert "conditions:" in result.stdout
+    ordinary = CliRunner().invoke(app, args)
+    assert ordinary.exit_code == 0, ordinary.output
+    assert "Review check:" not in ordinary.stdout

@@ -74,6 +74,21 @@ or recursive exclusion policy.
   that native bit preserves a notification the existing handler can observe.
   [source: ino4] [source: ino7]
   [pins: tests/test_file_watcher.py::test_inotify_watch_mask_suppresses_reads, tests/test_file_watcher.py::test_mutating_events_schedule]
+- The 7.1.0 inotify emitter queues `DirModifiedEvent(parent)` directly after a
+  child's create, delete and move (both parents), and also after a writable
+  close. Only the first three are adjacent to a child event the handler can
+  judge, so only an ignored hidden create, delete or move arms its parent, and
+  the next `DirModifiedEvent` for exactly that parent is absorbed once. Every
+  other event, a hidden modification included, clears the pending parents, so a
+  bare `DirModifiedEvent` still schedules and the `IN_CLOSE_WRITE` signal
+  survives; a writable close of a hidden file still schedules, as before. The
+  state is at most two parent paths per handler. On macOS with 7.1.0 the
+  observed stream for a hidden directory created and removed in a folder placed
+  `modified <folder>` directly after each hidden `created` and `deleted` of that
+  directory; other watchdog versions and FSEvents orderings were not checked,
+  and a notice that arrives non-adjacent schedules a reindex, as it did before.
+  [source: ino7]
+  [pins: tests/test_file_watcher.py::test_hidden_child_parent_notice_does_not_schedule, tests/test_file_watcher.py::test_hidden_move_parent_notices_do_not_schedule, tests/test_file_watcher.py::test_real_changes_still_schedule_after_hidden_changes, tests/test_file_watcher.py::test_hidden_scratch_dir_in_nested_folder_is_ignored]
 - Adding `FileClosedEvent` is unnecessary for CLOSE_WRITE and is harmful at the
   minimum: 4.0.2 maps it to `IN_CLOSE`, which also includes CLOSE_NOWRITE;
   7.1.0 maps it to CLOSE_WRITE alone. [source: ino4] [source: ino7]

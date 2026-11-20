@@ -140,6 +140,9 @@ def _read_text(data: dict[str, Any]) -> None:
             f"({terminal_text(data.get('mime_type') or 'unknown type')}); use --json for base64."
         )
         return
+    review = _recorded_review_text(data)
+    if review:
+        typer.echo(review, err=True)
     # Preserve note line breaks without letting note text issue terminal commands.
     typer.echo("\n".join(terminal_text(line) for line in data["content"].split("\n")))
 
@@ -174,11 +177,44 @@ def _agent_records(
         typer.echo(_json_record(item))
 
 
+def _recorded_review_text(data: dict[str, Any]) -> str:
+    """Label the existing metadata classification without certifying content."""
+    annotation = data.get("okf")
+    if not isinstance(annotation, dict):
+        return ""
+    tier = annotation.get("trust_tier")
+    if not isinstance(tier, str) or not tier:
+        return ""
+    return (
+        f"Recorded review metadata: {terminal_text(tier)}. "
+        "Applicability to current content: unknown."
+    )
+
+
 def _search_text(items: list[Any]) -> None:
     for hit in items:
         typer.echo(f"  {terminal_text(hit['path'])} ({hit['score']:.4f})")
         if hit.get("title"):
             typer.echo(f"    {terminal_text(hit['title'])}")
+        review = _recorded_review_text(hit)
+        if review:
+            typer.echo(f"    {review}")
+        assessment = hit.get("needs_review")
+        if isinstance(assessment, dict):
+            check = assessment.get("required_check")
+            conditions = assessment.get("conditions")
+            if isinstance(check, str) and isinstance(conditions, list):
+                reasons = (
+                    ", ".join(
+                        terminal_text(item)
+                        for item in conditions
+                        if isinstance(item, str)
+                    )
+                    or "none"
+                )
+                typer.echo(
+                    f"    Review check: {terminal_text(check)}; conditions: {reasons}"
+                )
 
 
 def _json_record(value: object) -> str:

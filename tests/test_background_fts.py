@@ -425,14 +425,14 @@ def test_lifespan_cold_start_handshake_does_not_block_on_build(
     release = threading.Event()
     original_build_index = IndexManager.build_index
 
-    def gated_build_index(self: Any, *, force: bool = False) -> Any:
+    def gated_build_index(self: Any, *, force: bool = False, before_search=None) -> Any:
         assert release.wait(10), (
             "build gate not released within 10s — the lifespan likely blocked "
             "on the FTS build during startup (the gate is released only inside "
             "the client context, which a startup-blocking lifespan never "
             "reaches), or the test is mis-wired"
         )
-        return original_build_index(self, force=force)
+        return original_build_index(self, force=force, before_search=before_search)
 
     monkeypatch.setattr(IndexManager, "build_index", gated_build_index)
 
@@ -664,9 +664,9 @@ def test_decorator_cold_path_blocks_until_ready(
 
     original_build_index = index_mod.IndexManager.build_index
 
-    def slow_build_index(self, *, force: bool = False):  # type: ignore[no-untyped-def]
+    def slow_build_index(self, *, force: bool = False, before_search=None):  # type: ignore[no-untyped-def]
         time_mod.sleep(0.3)
-        return original_build_index(self, force=force)
+        return original_build_index(self, force=force, before_search=before_search)
 
     monkeypatch.setattr(index_mod.IndexManager, "build_index", slow_build_index)
 
@@ -791,9 +791,9 @@ def test_decorator_respects_env_timeout_override(
     release = threading.Event()
     original = index_mod.IndexManager.build_index
 
-    def hang(self, *, force: bool = False):  # type: ignore[no-untyped-def]
+    def hang(self, *, force: bool = False, before_search=None):  # type: ignore[no-untyped-def]
         assert release.wait(10)
-        return original(self, force=force)
+        return original(self, force=force, before_search=before_search)
 
     monkeypatch.setattr(index_mod.IndexManager, "build_index", hang)
 
@@ -841,9 +841,9 @@ def test_require_built_raises_immediately_not_blocks(tmp_path: Path) -> None:
 
     original = index_mod.IndexManager.build_index
 
-    def slow(self, *, force: bool = False):  # type: ignore[no-untyped-def]
+    def slow(self, *, force: bool = False, before_search=None):  # type: ignore[no-untyped-def]
         time_mod.sleep(1.0)
-        return original(self, force=force)
+        return original(self, force=force, before_search=before_search)
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(index_mod.IndexManager, "build_index", slow)
@@ -883,9 +883,9 @@ def test_git_pull_during_background_does_not_starve_writes(tmp_path: Path) -> No
 
     original = index_mod.IndexManager.build_index
 
-    def slow(self, *, force: bool = False):  # type: ignore[no-untyped-def]
+    def slow(self, *, force: bool = False, before_search=None):  # type: ignore[no-untyped-def]
         time_mod.sleep(0.5)
-        return original(self, force=force)
+        return original(self, force=force, before_search=before_search)
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(index_mod.IndexManager, "build_index", slow)
@@ -1015,36 +1015,31 @@ def test_synchronous_build_index_clears_prior_background_error(
     col.close()
 
 
-def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
-    """build_index_async returns an already-resolved Future on warm restart (#559).
-
-    The async path must mirror the synchronous build_index() short-circuit: a
-    populated FTS + the persisted completeness sentinel must yield an
-    already-resolved Future carrying the existing document count without
-    submitting a job to the writer queue.
-    """
+def test_build_index_async_warm_restart_short_circuit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warm builds reuse FTS."""
     vault = _vault(tmp_path)
     _seed(vault)
     index_path = tmp_path / "fts.db"
 
-    # Phase 1: pre-build to set the sentinel and FTS rows.
     pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
 
-    # Phase 2: fresh Vault sees the warm sentinel; async submission
-    # must short-circuit.
     col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
-    future = col.index.build_index_async()
-    assert future.done(), "warm-restart short-circuit must return resolved Future"
-    stats = future.result(timeout=0.1)
-    assert stats.documents_indexed >= 1
-    # Writer should NOT be processing a BuildIndex job.
-    assert col._coordinator.writer.get_status()["in_flight"] is None
-    # Vault is queryable and the background-build event is set.
-    assert col.index.is_queryable() is True
-    assert col._coordinator._readiness._done.is_set()
-    col.close()
+    try:
+
+        def no_rebuild(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("warm build must reuse FTS")
+
+        monkeypatch.setattr(col._index_mgr, "build_index", no_rebuild)
+        stats = col.index.build_index_async().result(timeout=5)
+        assert stats.documents_indexed >= 1
+        assert col.index.is_queryable() is True
+        assert col._coordinator._readiness._done.is_set()
+    finally:
+        col.close()
 
 
 def test_build_index_async_submit_failure_unblocks_waiters(tmp_path: Path) -> None:

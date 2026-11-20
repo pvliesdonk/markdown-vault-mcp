@@ -142,6 +142,9 @@ def register_resources(mcp: FastMCP) -> None:
                     "okf_declared_version": okf_state.declared_version,
                     "okf_write_configured": okf_write_configured,
                     "okf_write_effective": okf_write_effective,
+                    "okf_capabilities": vault.okf_capability_report(
+                        active=okf_state.active
+                    ),
                     "semantic_search_available": stats.semantic_search_available,
                     "attachment_extensions": stats.attachment_extensions,
                 }
