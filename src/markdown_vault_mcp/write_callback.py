@@ -29,14 +29,29 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
+from concurrent.futures import Future
+from contextlib import contextmanager, nullcontext
+from datetime import date
 from typing import TYPE_CHECKING, cast
 
+from markdown_vault_mcp._commit_groups import (
+    COMMIT_GROUP_ATTR,
+    CommitGroup,
+    CommitGroupError,
+    GroupCommitResult,
+    make_group,
+    owner_key,
+)
 from markdown_vault_mcp._commit_scope import (
+    auxiliary_commit_writes,
+    bound_commit_group,
     bound_folder_move,
+    current_commit_group,
     current_commit_scope,
     is_auxiliary_commit_write,
 )
-from markdown_vault_mcp._identity import current_principal
+from markdown_vault_mcp._identity import bound_principal, current_principal
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
@@ -45,6 +60,8 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from contextlib import AbstractContextManager
     from pathlib import Path
     from typing import Any
 
@@ -88,25 +105,33 @@ class _ScopeEnd:
     Enqueued by
     :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
     when a tool call returns. FIFO ordering guarantees every write that call
-    fired precedes this marker, so no wait or handshake is needed.
+    fired precedes this marker. ``done`` acknowledges the flush attempt.
     """
 
-    __slots__ = ("token",)
+    __slots__ = ("done", "token")
 
     def __init__(self, token: int) -> None:
         self.token = token
+        self.done: Future[None] = Future()
+        self.done.set_running_or_notify_cancel()
 
 
 class WriteCallbackDispatcher:
     """Run write callbacks on a single background thread, in FIFO order.
 
-    The worker starts lazily on the first :meth:`fire` (only when a callback
-    is configured) and is joined by :meth:`close`. A ``None`` callback makes
-    :meth:`fire` a no-op. A callback that raises is logged and skipped; the
-    worker keeps processing subsequent items.
+    The worker starts lazily on the first write with a callback and is joined
+    by :meth:`close`. Without a callback, groups still track paths for history.
+    A callback that raises is logged and skipped; the worker keeps processing
+    subsequent items.
     """
 
-    def __init__(self, on_write: WriteCallback | None) -> None:
+    def __init__(
+        self,
+        on_write: WriteCallback | None,
+        *,
+        group_idle_s: float = 300,
+        group_max_age_s: float = 3600,
+    ) -> None:
         """Store the callback; the worker is started lazily by :meth:`fire`.
 
         Args:
@@ -116,8 +141,23 @@ class WriteCallbackDispatcher:
                 :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`
                 attribute to ``True`` also receives ``old_path=`` on
                 ``rename`` dispatches (#894).
+            group_idle_s: Idle seconds before closing a group.
+            group_max_age_s: Maximum group age in seconds.
         """
         self._on_write = on_write
+        self.group_event: Callable[[CommitGroup, set[Path], date], None] | None = None
+        self.group_write_scope: Callable[[], AbstractContextManager[None]] = nullcontext
+        self.group_event_enabled: Callable[[], bool] = lambda: False
+        self._groups: dict[str, CommitGroup] = {}
+        self._group_lock = threading.RLock()
+        self._group_pull_gate = threading.Lock()
+        self._groups_closed = False
+        self._group_idle_s = group_idle_s
+        self._group_max_age_s = group_max_age_s
+        self._group_timers: dict[str, threading.Timer] = {}
+        self._finished_groups: dict[
+            str, tuple[tuple[str, str | None], Future[GroupCommitResult]]
+        ] = {}
         # Read the opt-ins once, here, rather than per dispatch: the callback
         # is fixed for the dispatcher's lifetime, and the worker loop is on
         # the write path.
@@ -127,6 +167,9 @@ class WriteCallbackDispatcher:
         # at a time — grouping is an optimisation the callback opts into, never
         # a contract change third-party callbacks must absorb.
         self._accepts_batch = bool(getattr(on_write, ACCEPTS_BATCH_ATTR, False))
+        self._accepts_group = self._accepts_batch and bool(
+            getattr(on_write, COMMIT_GROUP_ATTR, False)
+        )
         self._accepts_primary_paths = bool(
             getattr(on_write, ACCEPTS_PRIMARY_PATHS_ATTR, False)
         )
@@ -156,6 +199,7 @@ class WriteCallbackDispatcher:
         # ``close`` has queued the sentinel.
         self._worker_lock = threading.Lock()
         self._closed = False
+        self._scopes_with_writes: set[int] = set()
 
     def fire(
         self,
@@ -166,7 +210,8 @@ class WriteCallbackDispatcher:
     ) -> None:
         """Queue a callback invocation, starting the worker if needed.
 
-        No-op when no callback is configured. After :meth:`close`, this is a
+        Without a callback, only grouped history paths are tracked. After
+        :meth:`close`, this is a
         logged no-op — it does not resurrect a worker or enqueue an item that
         would never be drained.
 
@@ -191,7 +236,9 @@ class WriteCallbackDispatcher:
         provenance is snapshotted here for the same reason; it changes only
         the subject hint sent to a callback that opts into primary paths.
         """
-        if self._on_write is None:
+        if self._on_write is None and (
+            current_commit_group() is None or self.group_event is None
+        ):
             return
         principal = current_principal()
         # Snapshotted here for the same reason as the principal above: ``fire``
@@ -204,29 +251,312 @@ class WriteCallbackDispatcher:
         # pay for one. Attaching the scope unconditionally would buffer its
         # writes for the length of the tool call and then replay them one by
         # one — the delay and the retained state of grouping, with none of it.
-        scope = current_commit_scope() if self._accepts_batch else None
-        with self._worker_lock:
-            if self._closed:
-                logger.warning(
-                    "write_callback_fired_after_close path=%s operation=%s",
-                    abs_path,
-                    operation,
+        scope = (current_commit_group() if self._accepts_group else None) or (
+            current_commit_scope() if self._accepts_batch else None
+        )
+        # Serialize enqueue with group closure so writes after its marker do
+        # not become an orphaned buffer. Later callbacks use the ordinary path.
+        with self._group_lock:
+            bound_group = current_commit_group()
+            if bound_group is not None:
+                group = next(
+                    (
+                        g
+                        for g in self._groups.values()
+                        if g.scope.token == bound_group.token
+                    ),
+                    None,
                 )
+                if group is not None:
+                    if group.closed and not is_auxiliary_commit_write():
+                        from markdown_vault_mcp._okf_log_event import end_event_deferral
+
+                        end_event_deferral()
+                    principal = group.principal
+                    if not group.closed:
+                        group.paths.add(abs_path)
+                        if old_path is not None:
+                            group.paths.add(old_path)
+                    if group.closed:
+                        scope = current_commit_scope() if self._accepts_batch else None
+            if self._on_write is None:
                 return
-            self._ensure_worker_locked()
-            # Enqueue under the lock so close() cannot slip the sentinel in
-            # ahead of this item (which would leave it permanently undrained).
-            self._queue.put(
-                (
-                    abs_path,
-                    content,
-                    operation,
-                    old_path,
-                    principal,
-                    scope,
-                    is_auxiliary_commit_write(),
+            with self._worker_lock:
+                if self._closed:
+                    logger.warning(
+                        "write_callback_fired_after_close path=%s operation=%s",
+                        abs_path,
+                        operation,
+                    )
+                    return
+                self._ensure_worker_locked()
+                if scope is not None:
+                    self._scopes_with_writes.add(scope.token)
+                self._queue.put(
+                    (
+                        abs_path,
+                        content,
+                        operation,
+                        old_path,
+                        principal,
+                        scope,
+                        is_auxiliary_commit_write(),
+                    )
                 )
+
+    @contextmanager
+    def guard_open_groups(self) -> Iterator[bool]:
+        """Prevent groups opening during automatic pulls and index recovery.
+
+        The gate precedes the file-write lock; callers must not open a group
+        while holding that lock.
+
+        Yields:
+            Whether a group is open.
+        """
+        with self._group_pull_gate:
+            with self._group_lock:
+                open_groups = any(not group.closed for group in self._groups.values())
+            yield open_groups
+
+    def open_group(self, description: str, principal: Principal | None) -> CommitGroup:
+        """Open a group under an opaque handle for the given principal."""
+        if current_commit_group() is not None:
+            raise CommitGroupError("Nested groups are not supported")
+        with self._group_pull_gate, self._group_lock:
+            group = make_group(description, principal)
+            if self._groups_closed:
+                raise CommitGroupError("Dispatcher is closed")
+            self._schedule_group(group)
+            self._groups[group.handle] = group
+        return group
+
+    def _get_group(self, handle: str, principal: Principal | None) -> CommitGroup:
+        group = self._groups.get(handle)
+        if group is None or group.closed or group.owner != owner_key(principal):
+            raise CommitGroupError(
+                "Unknown or unavailable group; use the handle begin_transaction returned"
             )
+        return group
+
+    @contextmanager
+    def bind_group(self, handle: str, principal: Principal | None) -> Iterator[None]:
+        """Bind a group for writes in this context."""
+        from markdown_vault_mcp._okf_log_event import deferred_event
+
+        if current_commit_group() is not None:
+            raise CommitGroupError("Nested groups are not supported")
+        with self._group_lock:
+            finished = self._finished_groups.get(handle)
+            if finished is not None and finished[0] == owner_key(principal):
+                raise CommitGroupError(
+                    "Group already closed; call end_transaction for the result"
+                )
+            group = self._get_group(handle, principal)
+            now = time.monotonic()
+            if self._groups_closed:
+                raise CommitGroupError("Dispatcher is closed")
+            if now >= group.created + self._group_max_age_s or (
+                not group.active and now >= group.touched + self._group_idle_s
+            ):
+                self.close_group(handle, group.principal, _automatic=True)
+                raise CommitGroupError(
+                    "Group already closed; call end_transaction for the result"
+                )
+            group.active += 1
+            group.touched = time.monotonic()
+        try:
+            with bound_commit_group(group.scope), deferred_event():
+                yield
+        finally:
+            with self._group_lock:
+                group.active -= 1
+                group.touched = time.monotonic()
+                if group.closed:
+                    finished = self._finished_groups.get(handle)
+                    if (
+                        group.active == 0
+                        and finished is not None
+                        and finished[1].done()
+                    ):
+                        self._groups.pop(handle, None)
+                elif not group.closing and not self._groups_closed:
+                    self._schedule_group(group)
+
+    def close_group(
+        self, handle: str, principal: Principal | None, *, _automatic: bool = False
+    ) -> Future[GroupCommitResult]:
+        """Close a group and return a future for its commit result.
+
+        Automatically closed results remain available to the same owner.
+
+        Args:
+            handle: Opaque group handle.
+            principal: Calling identity.
+            _automatic: Retain the result for a later explicit close.
+        """
+        with self._group_lock:
+            finished = self._finished_groups.get(handle)
+            if finished is not None and finished[0] == owner_key(principal):
+                return finished[1]
+            group = self._get_group(handle, principal)
+            if group.active and not _automatic:
+                raise CommitGroupError("Group has active writes; retry when they end")
+            with self._worker_lock:
+                if self._closed and self._worker and self._worker.is_alive():
+                    raise CommitGroupError(
+                        "Group result unavailable while dispatcher is closing"
+                    )
+            result: Future[GroupCommitResult] = Future()
+            result.set_running_or_notify_cancel()
+            self._finished_groups[handle] = (group.owner, result)
+            group.closing = True
+            timer = self._group_timers.pop(handle, None)
+            if timer is not None:
+                timer.cancel()
+            day = date.today()
+            thread = threading.Thread(
+                target=self._finish_group,
+                args=(group, result, _automatic, day),
+                daemon=True,
+                name="group-finalizer",
+            )
+            thread.start()
+            return result
+
+    def _finish_group(
+        self,
+        group: CommitGroup,
+        result: Future[GroupCommitResult],
+        automatic: bool,
+        day: date,
+    ) -> None:
+        """Write group history before its end marker, outside the group lock."""
+        done: Future[None] | None = None
+        try:
+            record_history = bool(
+                self.group_event is not None and self.group_event_enabled()
+            )
+            with self.group_write_scope() if record_history else nullcontext():
+                try:
+                    with self._group_lock:
+                        paths = group.paths.copy()
+                    if record_history and paths and self.group_event is not None:
+                        identity = (
+                            bound_principal(group.principal)
+                            if group.principal
+                            else nullcontext()
+                        )
+                        with (
+                            identity,
+                            bound_commit_group(group.scope),
+                            auxiliary_commit_writes(),
+                        ):
+                            self.group_event(group, paths, day)
+                finally:
+                    done = self._end_group(group)
+        except Exception:
+            logger.error("group_history_failed action=close_group", exc_info=True)
+            with self._group_lock:
+                group.record(
+                    GroupCommitResult(None, 0, "no_changes", history_failed=True)
+                )
+                if not group.closed:
+                    done = self._end_group(group)
+
+        def finish(_done: Future[None] | None = None) -> None:
+            with self._group_lock:
+                result.set_result(group.result)
+                if not automatic:
+                    self._finished_groups.pop(group.handle, None)
+                if not group.active:
+                    self._groups.pop(group.handle, None)
+
+        if done is None:
+            finish()
+        else:
+            done.add_done_callback(finish)
+
+    def _end_group(self, group: CommitGroup) -> Future[None] | None:
+        """Queue one end marker and always establish the close boundary."""
+        with self._group_lock:
+            try:
+                return self._enqueue_scope_end(group.scope)
+            except Exception:
+                logger.error(
+                    "group_commit_queue_failed action=close_group", exc_info=True
+                )
+                group.record(GroupCommitResult(None, 0, "failed"))
+                return None
+            finally:
+                group.closed = True
+
+    def close_owner_groups(
+        self, principal: Principal | None, handle: str | None = None
+    ) -> list[Future[GroupCommitResult]]:
+        """Close the caller's open groups and collect its pending group commits.
+
+        Args:
+            principal: Calling identity, used to select and validate groups.
+            handle: Optional handle to validate, including an auto-closed group.
+
+        Returns:
+            Futures for each group's commit result.
+
+        Raises:
+            CommitGroupError: If the handle is unavailable or a group is active.
+        """
+        with self._group_lock:
+            owner = owner_key(principal)
+            groups = [
+                g for g in self._groups.values() if g.owner == owner and not g.closing
+            ]
+            pending = {
+                h: future
+                for h, (key, future) in self._finished_groups.items()
+                if key == owner and (not future.done() or h == handle)
+            }
+            if handle is not None and handle not in pending:
+                self._get_group(handle, principal)
+            if any(g.active for g in groups):
+                raise CommitGroupError("Group has active writes; retry when they end")
+            pending.update(
+                {g.handle: self.close_group(g.handle, principal) for g in groups}
+            )
+            return list(pending.values())
+
+    def _schedule_group(self, group: CommitGroup) -> None:
+        old = self._group_timers.get(group.handle)
+        deadline = group.created + self._group_max_age_s
+        if not group.active:
+            deadline = min(deadline, group.touched + self._group_idle_s)
+        timer = threading.Timer(
+            max(0.001, deadline - time.monotonic()),
+            self._expire_group,
+            args=(group.handle,),
+        )
+        timer.daemon = True
+        timer.start()
+        self._group_timers[group.handle] = timer
+        if old is not None:
+            old.cancel()
+
+    def _expire_group(self, handle: str) -> None:
+        with self._group_lock:
+            group = self._groups.get(handle)
+            if self._groups_closed or group is None or group.closing:
+                return
+            now = time.monotonic()
+            deadline = min(
+                group.touched + self._group_idle_s,
+                group.created + self._group_max_age_s,
+            )
+            if now < deadline or (
+                group.active and now < group.created + self._group_max_age_s
+            ):
+                self._schedule_group(group)
+            else:
+                self.close_group(handle, group.principal, _automatic=True)
 
     def end_scope(self, scope: CommitScope) -> None:
         """Close *scope*, committing everything fired under it as one group.
@@ -242,12 +572,29 @@ class WriteCallbackDispatcher:
             scope: The scope to close, as returned by
                 :func:`~markdown_vault_mcp._commit_scope.bound_commit_scope`.
         """
+        self._enqueue_scope_end(scope)
+
+    def _enqueue_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue the scope end and return its completion without blocking.
+
+        Args:
+            scope: The scope to close.
+
+        Returns:
+            A future for the callback attempt, or None when no wait is needed.
+        """
         if self._on_write is None or not self._accepts_batch:
-            return
+            return None
         with self._worker_lock:
+            wrote = scope.token in self._scopes_with_writes
+            self._scopes_with_writes.discard(scope.token)
             if self._closed or self._worker is None:
-                return
-            self._queue.put(_ScopeEnd(scope.token))
+                return None
+            if not wrote:
+                return None
+            marker = _ScopeEnd(scope.token)
+            self._queue.put(marker)
+        return marker.done
 
     def _flush_scope(self, token: int) -> None:
         """Dispatch one buffered scope's writes, then forget it.
@@ -262,11 +609,23 @@ class WriteCallbackDispatcher:
         on_write = self._on_write
         if not items or on_write is None:
             return
+        with self._group_lock:
+            group = next(
+                (g for g in self._groups.values() if g.scope.token == token), None
+            )
+        result = None
         try:
             # Only a callback that opted in is ever buffered (see ``fire``),
             # so reaching here means ``on_write_batch`` exists.
             with bound_folder_move(scope.folder_move):
-                if self._accepts_primary_paths:
+                if group is not None:
+                    result = getattr(on_write, "on_write_batch")(  # noqa: B009 -- callback opts in dynamically
+                        items,
+                        scope.tool_name,
+                        primary_paths=frozenset(primary_paths),
+                        group_subject=group.description,
+                    )
+                elif self._accepts_primary_paths:
                     primary_batch = cast("PrimaryAwareBatchWriteCallback", on_write)
                     primary_batch.on_write_batch(
                         items, scope.tool_name, primary_paths=frozenset(primary_paths)
@@ -281,6 +640,14 @@ class WriteCallbackDispatcher:
                 len(items),
                 exc_info=True,
             )
+        finally:
+            if group is not None:
+                with self._group_lock:
+                    group.record(
+                        result
+                        if isinstance(result, GroupCommitResult)
+                        else GroupCommitResult(None, 0, "failed")
+                    )
 
     def _flush_all_scopes(self) -> None:
         """Flush every open scope, newest last.
@@ -340,7 +707,7 @@ class WriteCallbackDispatcher:
     def _run(self) -> None:
         """Worker loop: drain the queue until the sentinel is dequeued."""
         # The worker is started only by ``fire`` (via ``_ensure_worker_locked``),
-        # and ``fire`` runs only when ``_on_write`` is not None. ``_on_write`` is
+        # and ``fire`` starts it only when ``_on_write`` is not None. ``_on_write`` is
         # set once in ``__init__`` and never reassigned, so it is non-None here.
         on_write = self._on_write
         assert on_write is not None
@@ -357,7 +724,10 @@ class WriteCallbackDispatcher:
                     item.event.set()
                     continue
                 if isinstance(item, _ScopeEnd):
-                    self._flush_scope(item.token)
+                    try:
+                        self._flush_scope(item.token)
+                    finally:
+                        item.done.set_result(None)
                     continue
                 abs_path, content, operation, old_path, principal, scope, auxiliary = (
                     item
@@ -449,6 +819,27 @@ class WriteCallbackDispatcher:
         )
         return False
 
+    def close_groups(self, timeout: float = 30.0) -> None:
+        """Finish open groups before their vault's index writer shuts down.
+
+        Args:
+            timeout: Maximum seconds to wait for finalization.
+
+        Raises:
+            TimeoutError: A group has not finished within the timeout.
+        """
+        from concurrent.futures import wait
+
+        with self._group_lock:
+            self._groups_closed = True
+            groups = [g for g in self._groups.values() if not g.closing]
+            pending = [future for _, future in self._finished_groups.values()]
+        pending.extend(
+            self.close_group(g.handle, g.principal, _automatic=True) for g in groups
+        )
+        if pending and wait(pending, timeout=timeout).not_done:
+            raise TimeoutError("Group finalization is still running")
+
     def close(self, timeout: float = 30.0) -> None:
         """Drain pending callbacks and join the worker (bounded by ``timeout``).
 
@@ -460,10 +851,16 @@ class WriteCallbackDispatcher:
         Args:
             timeout: Seconds to wait for the worker to drain and exit.
         """
+        with self._group_lock:
+            self._groups_closed = True
+            for timer in self._group_timers.values():
+                timer.cancel()
+            self._group_timers.clear()
         with self._worker_lock:
             if self._closed:
                 return
             self._closed = True
+            self._scopes_with_writes.clear()
             worker = self._worker
         if worker is not None and worker.is_alive():
             self._queue.put(None)  # sentinel

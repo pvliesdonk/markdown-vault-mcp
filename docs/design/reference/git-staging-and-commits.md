@@ -13,6 +13,10 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: git-ls-files
+    title: git-ls-files(1)
+    resource: https://git-scm.com/docs/git-ls-files
+    accessed: 2026-11-18
   - id: git-commit
     title: git-commit(1)
     resource: https://git-scm.com/docs/git-commit
@@ -168,6 +172,7 @@ repositories under `/tmp/gitref/`.
 - `REBASE_HEAD` is the commit being replayed and `REBASE_HEAD:<path>` reads its version; the ref outlives a successful `--continue`, so it is no in-progress signal. [source: gitrevisions] [source: git-rebase] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_ignores_stale_rebase_head_ref]
 - The merge backend keeps state in `$GIT_DIR/rebase-merge/` (`am` backend: `rebase-apply/`); both vanish on completion or `--abort`; `rev-parse --git-path rebase-merge` finds it in a linked worktree. [source: src-sequencer] (`rebase_path`) [source: git-rev-parse] [observed: git 2.43.0] [pins: tests/test_git.py::TestRebaseInProgress::test_detects_rebase_merge_directory]
 - In a rebase "ours" is the upstream side and "theirs" the replayed local commit ("the sides are swapped"), so `checkout --ours -- <path>` takes upstream; `rebase --continue` under `GIT_EDITOR=true` needs no editor. [source: git-rebase] (`--merge`) [observed: git 2.43.0]
+- `ls-files --unmerged -z -- <path>` lists only unmerged index entries with mode, object ID and stage before a tab and a NUL-terminated verbatim path; unmerged entries have up to three stages, with stage 2 for ours and stage 3 for theirs. In a modify/delete rebase conflict where upstream deleted the file, the local version is stage 3 and stage 2 is absent. [source: git-ls-files] [source: git-rebase] [observed: git 2.56.1, `tests/test_conflict_recovery_failures.py::test_upstream_deleted_generated_index_is_regenerated`] [pins: tests/test_conflict_recovery_failures.py::test_upstream_deleted_generated_index_is_regenerated]
 - Default markers `<<<<<<< HEAD` / `=======` / `>>>>>>> <sha> (<subject>)`; `merge.conflictStyle=diff3|zdiff3` add `||||||| parent of <sha> (<subject>)` with the base. [source: git-config] [observed: git 2.43.0]
 
 ## Where this project departs from the subject

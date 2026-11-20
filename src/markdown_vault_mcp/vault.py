@@ -7,10 +7,13 @@ LangChain wrappers, and CLI commands all go through this class.
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import json
 import logging
 import os
 import subprocess
 import threading
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 # Importing the backend module registers it; the vault then opens the index
@@ -18,6 +21,8 @@ from typing import TYPE_CHECKING, Any
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
 import markdown_vault_mcp.stores.sqlite_keyword
 import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
+from markdown_vault_mcp._commit_groups import CommitGroupError
+from markdown_vault_mcp.bundle_inventory import InspectionPolicy
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
@@ -42,13 +47,13 @@ from markdown_vault_mcp.facets import (
     SummarizeFacet,
     WriterFacet,
 )
+from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.okf import (
     OkfAuditReport,
     OkfDetector,
-    ReservedFrontmatterPolicy,
     audit_bundle,
 )
 from markdown_vault_mcp.scanner import (
@@ -58,7 +63,12 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
+)
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+_defer_navigation = contextvars.ContextVar("defer_navigation", default=False)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -69,6 +79,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git import PullResult, VersionedStore
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.indexing.head_reconciler import ReconcileOutcome
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.interfaces import EmbeddingStore, VectorBackend
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
@@ -295,9 +306,8 @@ class Vault:
     job to the single-owner
     :class:`~markdown_vault_mcp.indexing.IndexWriter` via
     :meth:`IndexFacet.build_index_async` and yields immediately. On a warm
-    restart the persisted FTS completeness sentinel (PR #526) causes
-    :meth:`IndexFacet.build_index_async` to return an already-resolved
-    ``Future`` in O(1) without touching the writer queue. On a cold
+    restart the persisted FTS completeness sentinel (PR #526) avoids an FTS
+    rebuild; the writer still runs an observation sweep. On a cold
     restart the writer thread runs the job asynchronously while the
     lifespan yields; bucket-3/4 MCP tool *clients* block on the
     :class:`markdown_vault_mcp._server_queryable.needs_queryable`
@@ -352,6 +362,7 @@ class Vault:
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
         vector_store: An open vector store to use instead of opening one;
             the caller owns it: the vault never rebuilds or closes it.
+        inspection_policy: Optional inventory-only access boundaries.
         vector_backend: The backend the vault opens its vector store with,
             instead of the one ``settings.embedding_store`` names; the vault
             owns and closes the store it opens.
@@ -379,6 +390,7 @@ class Vault:
         chunk_strategy: str | ChunkStrategy = "heading",
         vector_store: EmbeddingStore | None = None,
         vector_backend: VectorBackend | None = None,
+        inspection_policy: InspectionPolicy | None = None,
     ) -> None:
         if settings is None:
             settings = VaultSettings()
@@ -390,7 +402,7 @@ class Vault:
         self._injected_vector_store = vector_store
         self._injected_vector_backend = vector_backend
         self._configure(settings, chunk_strategy)
-        self._build_managers(settings)
+        self._build_managers(settings, inspection_policy)
         self._build_facets(settings)
 
     def _configure(
@@ -426,6 +438,13 @@ class Vault:
         # once (design okf.md §3). A vault that declares OKF mid-session
         # gains annotations immediately but indexed OKF tags only on the
         # next startup.
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        self._okf_capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
+        self._okf_write_alias = settings.okf_write
         self._okf = OkfDetector(self._source_dir, settings.okf_mode)
         configured_field_count = len(settings.indexed_frontmatter_fields or [])
         self._indexed_frontmatter_fields: list[str] = settings.effective_indexed_fields(
@@ -531,12 +550,29 @@ class Vault:
             store=self._injected_vector_store,
         )
 
-    def _build_managers(self, settings: VaultSettings) -> None:
+    def _reserved_exempt(self) -> bool | None:
+        """Return whether reserved files skip the field gate, or ``None`` if no gate.
+
+        Raises:
+            OSError: When the OKF scope could not be read, so the caller keeps
+                its last confirmed admission instead of treating it as inactive.
+        """
+        if not self._required_frontmatter:
+            return None
+        state = self._okf.state()
+        if state.probe_error:
+            raise OSError("OKF scope probe failed")
+        return state.active
+
+    def _build_managers(
+        self, settings: VaultSettings, inspection_policy: InspectionPolicy | None
+    ) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
 
         Args:
             settings: The resolved construction settings (search-ranking
                 knobs and the OKF write toggle are consumed here).
+            inspection_policy: Optional policy independent of the opened index.
         """
         # Sub-module construction.
         keyword_backend = get_backend("keyword", "sqlite")(
@@ -562,6 +598,7 @@ class Vault:
         # serialises ONLY the read-modify-write of files in DocumentManager
         # so two MCP write tools racing on the same path don't tear.
         self._file_write_lock = threading.RLock()
+        self._pause_depth = threading.local()
 
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.document import DocumentManager
@@ -585,7 +622,52 @@ class Vault:
         #    see one store.  No write_lock — the IndexWriter thread is the
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
+
+        from markdown_vault_mcp.bundle_inventory import BundleInspector
+        from markdown_vault_mcp.indexing.observations import ObservationLedger
+
+        observation_path = (
+            self._state_path.with_name(self._state_path.name + ".observations.json")
+            if self._state_path is not None
+            else None
+        )
+        self._okf_checkpoint_path = (
+            self._state_path.with_name(self._state_path.name + ".index-applied.json")
+            if self._state_path is not None
+            else None
+        )
+        policy = InspectionPolicy(
+            settings.conventions_file,
+            tuple(
+                p
+                for p in (self._state_path, observation_path, self._okf_checkpoint_path)
+                if p is not None
+            ),
+            self._embeddings_path,
+            self._index_path,
+        )
+        if inspection_policy is not None:
+            policy = replace(
+                inspection_policy,
+                state_paths=inspection_policy.state_paths
+                + tuple(
+                    p
+                    for p in (observation_path, self._okf_checkpoint_path)
+                    if p is not None
+                ),
+            )
+        observations = ObservationLedger(
+            observation_path,
+            BundleInspector(
+                self._source_dir,
+                self._exclude_patterns or [],
+                effective_attachment_extensions(self._attachment_extensions),
+                self._max_note_read_bytes,
+                policy,
+            ),
+        )
         self._index_mgr = IndexManager(
+            observations=observations,
             fts=self._fts,
             tracker=self._tracker,
             source_dir=self._source_dir,
@@ -594,6 +676,7 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
+            okf_admission_active=self._reserved_exempt,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
@@ -658,31 +741,41 @@ class Vault:
         # callback runs on a background worker so write methods return after
         # the disk write and index submission.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
-        self._write_callback = WriteCallbackDispatcher(self._on_write)
+        self._write_callback = WriteCallbackDispatcher(
+            self._on_write,
+            group_idle_s=settings.git_group_idle_s,
+            group_max_age_s=settings.git_group_max_age_s,
+        )
         # #571: let the puller pause new writes and drain pending commits
         # before a merge so it runs on a clean tree. Wired here (not in start())
         # so the interactive force_pull is covered even when the periodic pull
         # loop is disabled. drain is late-bound to the dispatcher just built.
         if self._git_strategy is not None:
+            if isinstance(self._git_strategy, GitWriteStrategy):
+                self._git_strategy.set_group_pull_guard(
+                    self._write_callback.guard_open_groups
+                )
             self._git_strategy.set_write_quiescer(
                 pause_writes=self.pause_writes,
                 drain_writes=self._write_callback.drain,
             )
 
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
-        from markdown_vault_mcp._okf_write import (
-            build_okf_write_enrich,
-            package_version,
+        self._okf_write_configured = settings.okf_write
+        from markdown_vault_mcp.okf_capabilities import designated_index_path
+
+        capabilities = self._okf_capabilities
+        from markdown_vault_mcp._okf_convention import IndexDesignation
+
+        designation = IndexDesignation(
+            capabilities.folders, lambda: self._okf.state().active
         )
 
-        # OKF enforced-write enrichment (#964): None (zero overhead) unless
-        # OKF_WRITE is on; when on, it stamps provenance and clears verification
-        # for write/edit on an OKF-active vault.
-        self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=settings.okf_write,
-            detector=self._okf,
-            version=package_version(),
-        )
+        def designated_index(path: str) -> bool:
+            return self._okf.state().active and designated_index_path(
+                self._source_dir, path, capabilities.folders
+            )
+
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -691,14 +784,19 @@ class Vault:
             read_only=self._read_only,
             write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
+            protected_paths=settings.protected_paths,
+            designated_index=designated_index if capabilities.index else None,
+            designation=designation if capabilities.index else None,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
             sync_index=self._coordinator.prepare_index_read,
             title_field=self._title_field,
-            okf_write_enrich=self._okf_write_enrich,
             submodule_guard=self._build_submodule_guard(),
+            inventory_ready=self._coordinator.is_queryable,
+            observations=observations,
+            inspection_policy=policy,
         )
 
     def _build_submodule_guard(self) -> SubmoduleGuard | None:
@@ -738,8 +836,17 @@ class Vault:
             settings: The resolved construction settings (the OKF write
                 toggle gates the convention maintainer).
         """
+        from markdown_vault_mcp._okf_receipts import ReceiptStore
+        from markdown_vault_mcp.managers.citations import CitationManager
         from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
         from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
+
+        receipt_store = ReceiptStore(
+            self._state_path.with_name(self._state_path.name + ".receipts.json")
+            if self._state_path is not None
+            else None,
+            self._source_dir,
+        )
 
         # Facets (#604): thin views over the shared managers/coordinator, exposed via the reader/writer/graph/index accessors.
         self._reader_facet = ReaderFacet(
@@ -747,15 +854,10 @@ class Vault:
             doc_mgr=self._doc_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
+            citation_mgr=CitationManager(self._fts, lambda: self._okf.state().active),
+            receipt_store=receipt_store,
             okf_audit=self._okf_audit,
             okf_write_state=lambda: self.okf_write_state(active=True),
-        )
-        # The reserved files the OKF generators write are subject to this
-        # vault's own required-frontmatter gate, so the generators need the
-        # gate's terms to produce files that survive it (#1174, #1175).
-        reserved_frontmatter = ReservedFrontmatterPolicy(
-            title_field=self._title_field,
-            required_fields=tuple(self._required_frontmatter or ()),
         )
         self._okf_migrate = OkfMigrationManager(
             doc_mgr=self._doc_mgr,
@@ -763,28 +865,52 @@ class Vault:
             search_mgr=self._search_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
-            reserved_frontmatter=reserved_frontmatter,
         )
-        # OKF enforced-write convention maintenance (#964, phase 5b): built only
-        # under OKF_WRITE (mirroring the enricher gating). On a successful
-        # write/edit it appends to the folder's log.md and refreshes its
-        # index.md as secondary writes; failures degrade to a WARNING.
+        # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        if settings.okf_write:
+        capabilities = self._okf_capabilities
+        if not settings.read_only and (
+            capabilities.index or capabilities.log == "writes"
+        ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
+            from markdown_vault_mcp._okf_index_checkpoint import IndexCheckpoint
+
+            scope = json.dumps(sorted(capabilities.folders))
 
             self._okf_convention = ConventionMaintainer(
                 doc_mgr=self._doc_mgr,
                 okf_migrate=self._okf_migrate,
                 detector=self._okf,
                 write_lock=self._file_write_lock,
-                reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
+                capabilities=capabilities,
+                checkpoint=IndexCheckpoint(self._okf_checkpoint_path, scope),
             )
+        if self._okf_convention is not None and isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            self._git_strategy.set_generated_index_policy(self._is_generated_index)
+        from markdown_vault_mcp._okf_log_event import record_group_events
+
+        event_policy = (
+            capabilities.folders,
+            lambda: self.okf_capability_report(active=self._okf.state().active)["log"],
+        )
+        self._write_callback.group_write_scope = self._doc_mgr.write_scope
+        self._write_callback.group_event_enabled = lambda: bool(
+            event_policy[1]()["effective"]
+        )
+        self._write_callback.group_event = lambda group, paths, day: (
+            record_group_events(
+                self._doc_mgr, paths, group.description, event_policy, day
+            )
+        )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
+            receipt_store=receipt_store,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
+            event_policy=event_policy,
             # The overwrite breadcrumb (#1137) reads git state, so it is the
             # git-query manager's answer — bound here rather than handing the
             # write facet the store itself.
@@ -804,7 +930,14 @@ class Vault:
             okf_detector=self._okf,
         )
         self._index_facet = IndexFacet(
-            coordinator=self._coordinator, index_mgr=self._index_mgr
+            coordinator=self._coordinator,
+            index_mgr=self._index_mgr,
+            paused=lambda: getattr(self._pause_depth, "value", 0) > 0,
+            after_reindex=(
+                self._converge_okf_indexes
+                if self._okf_convention is not None and capabilities.index
+                else None
+            ),
         )
         self._head_reconciler = self._build_head_reconciler()
         # Summarize facet is present only when a backend was supplied (the
@@ -878,16 +1011,76 @@ class Vault:
         return self._okf
 
     def okf_write_state(self, *, active: bool) -> tuple[bool, bool]:
-        """Return configured and effective OKF write-layer state.
+        """Return configured and effective state of the ``OKF_WRITE`` alias.
+
+        The alias defaults ``OKF_AUTHOR`` to enabled unless explicitly
+        overridden, and stamps nothing (#1443).
 
         Args:
             active: The current OKF detection result.
 
         Returns:
-            Configured OKF write flag and whether the layer is effective.
+            Configured alias flag and whether it is effective: configured, OKF
+            active, and the vault writable.
         """
-        configured = self._okf_write_enrich is not None
+        configured = self._okf_write_configured
         return configured, configured and active and not self._read_only
+
+    def okf_stats_report(self) -> dict[str, Any]:
+        """Return OKF capability reporting with any active-bundle aggregates.
+
+        Returns:
+            A capability report and, when OKF is active, its statistics.
+        """
+        section = self.reader.okf_stats()
+        active = section is not None
+        if section is None:
+            section = {}
+        section["capabilities"] = self.okf_capability_report(active=active)
+        return section
+
+    def okf_capability_report(self, *, active: bool) -> dict[str, Any]:
+        """Report configured and effective OKF authority for this vault.
+
+        Args:
+            active: The current OKF detection result.
+
+        Returns:
+            Capability entries and the configured folder designation scope.
+        """
+        caps = self._okf_capabilities
+
+        def entry(name: str, configured: bool | str) -> dict[str, Any]:
+            reason = None
+            enabled = configured is True or (
+                isinstance(configured, str) and configured != "off"
+            )
+            if self._read_only:
+                reason = "read_only"
+            elif enabled:
+                if not active and not (name == "verify" and self._okf_write_alias):
+                    reason = "okf_inactive"
+                elif (
+                    name == "author"
+                    or (name == "verify" and configured not in ("elicit", "trust-auth"))
+                    or (name == "log" and configured not in ("events", "writes"))
+                ):
+                    reason = "not_implemented"
+                elif name == "index" and not caps.folders:
+                    reason = "not_designated"
+            return {
+                "configured": configured,
+                "effective": enabled and reason is None,
+                "reason": reason,
+            }
+
+        return {
+            "author": entry("author", caps.author),
+            "verify": entry("verify", caps.verify),
+            "index": entry("index", caps.index),
+            "log": entry("log", caps.log),
+            "folders": list(caps.folders),
+        }
 
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
@@ -952,7 +1145,12 @@ class Vault:
         unblocked at the Python level.
         """
         with self._file_write_lock:
-            yield
+            depth = getattr(self._pause_depth, "value", 0)
+            self._pause_depth.value = depth + 1
+            try:
+                yield
+            finally:
+                self._pause_depth.value = depth
 
     def sync_from_remote_before_index(self) -> None:
         """One-time git fetch + ff-only update before build_index().
@@ -960,8 +1158,8 @@ class Vault:
         Intended to run during server startup before the initial index build.
         No reindex is triggered here: on a cold start build_index() will scan
         the updated working tree, but on a warm restart build_index_async()
-        short-circuits in O(1) on the existing FTS sentinel and scans
-        nothing. In that case the boot reindex (gated by
+        reuses the existing FTS index while sweeping observations. In that
+        case the boot reindex (gated by
         ``config.boot_reindex``, see #1535) is what actually indexes the tree
         this pull just updated — with it disabled, the server accepts the
         index at the resulting HEAD and only reindexes once HEAD moves on.
@@ -988,7 +1186,7 @@ class Vault:
 
     def _reconcile_on_tick(self) -> None:
         """Pull-loop hook: reconcile the index with HEAD after every tick."""
-        self.reconcile_index_with_head(source="pull_loop")
+        self.reconcile_index_with_head(source="pull_loop", defer_group_recovery=True)
 
     def git_head(self) -> str | None:
         """Return the working tree's current git HEAD.
@@ -1005,24 +1203,141 @@ class Vault:
             logger.debug("git_head_unreadable path=%s", self._source_dir, exc_info=True)
             return None
 
-    def reconcile_index_with_head(self, *, source: str) -> ReconcileOutcome:
+    def reconcile_index_with_head(
+        self, *, source: str, defer_group_recovery: bool = False
+    ) -> ReconcileOutcome:
         """Reindex when the index does not yet reflect the current git HEAD.
 
         Level-triggered (#1532): a reindex lost after a pull (the index still
         building, a writer error, a pull reported as not applied although
         HEAD advanced) is retried by the next call instead of waiting for the
         next pull that moves HEAD.  Called by the pull loop on every tick, by
-        webhook deliveries and by the ``git_sync`` tool.
+        webhook deliveries and by the ``git_sync`` tool. Unless the reindex ran
+        (and swept), the ledger is swept too, even after a failed search reconcile;
+        at an unchanged HEAD, configured navigation reindexes. A failed sweep is ``"failed"``.
 
         Args:
             source: Which caller asked, for the log line.
+            defer_group_recovery: Leave generated-index repair pending while
+                a group is open; automatic triggers use this policy.
 
         Returns:
             What happened; ``"current"`` without a git strategy.
         """
         if self._head_reconciler is None:
             return "current"
-        return self._head_reconciler.reconcile(source=source)
+        guard = (
+            self._write_callback.guard_open_groups()
+            if defer_group_recovery
+            else contextlib.nullcontext(False)
+        )
+        with guard as open_groups:
+            token = _defer_navigation.set(open_groups)
+            try:
+                outcome = self._head_reconciler.reconcile(source=source)
+                if outcome != "reindexed" and not self._sweep_observations(
+                    source, outcome
+                ):
+                    return "failed"
+                if not open_groups and outcome in ("current", "reindexed"):
+                    self._regenerate_recovered_indexes(defer_group_recovery=False)
+                return outcome
+            finally:
+                _defer_navigation.reset(token)
+
+    def _converge_okf_indexes(self) -> None:
+        """Apply observed changes to generated navigation on the caller's thread."""
+        maintainer = self._okf_convention
+        if (
+            maintainer is None
+            or _defer_navigation.get()
+            or not self._okf.state().active
+        ):
+            return
+        try:
+            with self._file_write_lock:
+                if (observed := self._doc_mgr.observed_inputs()) is not None:
+                    maintainer.converge_indexes(*observed)
+        except Exception:
+            logger.warning("okf_index_convergence_failed", exc_info=True)
+
+    def _observe_unchanged_head(self, ledger: ObservationLedger, outcome: str) -> None:
+        """Observe the tree at an unchanged HEAD, reindexing when listings converge.
+
+        Convergence reads current search inputs, so an unchanged HEAD with
+        configured navigation takes a reindex (which also sweeps); otherwise
+        only the ledger is swept.
+        """
+        converging = self._okf_convention is not None and self._okf_capabilities.index
+        if outcome == "current" and converging:
+            with self.pause_writes():
+                self._index_facet.reindex()
+        else:
+            ledger.sweep()
+
+    def _sweep_observations(self, source: str, outcome: str = "") -> bool:
+        """Sweep the ledger outside a reindex; report failure without raising."""
+        if self._index_mgr.observations is None:
+            return True
+        try:
+            self._observe_unchanged_head(self._index_mgr.observations, outcome)
+        except Exception:
+            logger.error("observation_sweep_failed source=%s", source, exc_info=True)
+            return False
+        return True
+
+    def _is_generated_index(self, path: Path) -> bool:
+        """Identify a designated index eligible for recovery."""
+        maintainer = self._okf_convention
+        if (
+            maintainer is None
+            or path.name != "index.md"
+            or not self._okf_capabilities.index
+        ):
+            return False
+        try:
+            folder = maintainer._canonical(str(path.parent))
+            return self._okf.state().active and maintainer._may_index(folder)
+        except ValueError:
+            return False
+
+    def _refresh_recovered_indexes(self, paths: list[Path]) -> None:
+        """Repair recovered indexes through the current index generator."""
+        from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
+        from markdown_vault_mcp._okf_write import okf_write_suppressed
+
+        maintainer = self._okf_convention
+        if maintainer is None:
+            return
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            for path in paths:
+                if self._is_generated_index(path):
+                    folder = maintainer._canonical(str(path.parent))
+                    if maintainer._has_index(folder):
+                        maintainer._refresh_index(folder, maintainer._may_index)
+
+    def _regenerate_recovered_indexes(self, *, defer_group_recovery: bool) -> None:
+        """Repair recovered indexes, deferring for open groups when requested."""
+        if self._okf_convention is None or not isinstance(
+            self._git_strategy, GitWriteStrategy
+        ):
+            return
+        guard = (
+            self._write_callback.guard_open_groups()
+            if defer_group_recovery
+            else contextlib.nullcontext(False)
+        )
+        with guard as open_groups:
+            if open_groups:
+                return
+            pending = self._git_strategy.take_generated_indexes()
+            if not pending:
+                return
+            try:
+                self._refresh_recovered_indexes(pending)
+            except Exception:
+                logger.warning("git_pending_index_regeneration_failed", exc_info=True)
+            self._write_callback.drain()
 
     def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
         """Count the submitted boot reindex as the reconcile of *head*.
@@ -1052,16 +1367,16 @@ class Vault:
     def force_pull(self) -> PullResult | None:
         """Pull from the git remote synchronously.
 
-        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`
-        used by the GitHub webhook handler so the store stays an implementation
-        detail.
+        Thin public facade over :meth:`~markdown_vault_mcp.git.Syncer.force_pull`.
 
         The strategy self-quiesces around its own merge: it pauses new writes
         (via the :meth:`pause_writes` callable wired in :meth:`__init__` through
         ``set_write_quiescer``) and drains the deferred-commit queue before the
         merge, so a write that landed just before the pull is committed first
         and the merge runs on a clean tree (#571). This facade therefore no
-        longer wraps ``pause_writes`` itself.
+        longer wraps ``pause_writes`` itself. A successful pull also sweeps
+        the observation ledger. If that sweep fails, Git has already completed;
+        the error propagates and search is not reconciled by this facade.
 
         Returns:
             :class:`~markdown_vault_mcp.git.PullResult` from the strategy, or
@@ -1071,7 +1386,31 @@ class Vault:
             return None
         # The strategy now self-quiesces (pause + drain) around the merge (#571),
         # so the previous outer pause_writes() wrap here is redundant.
-        return self._git_strategy.force_pull()
+        return self._observe_pull_result(self._git_strategy.force_pull())
+
+    def _observe_pull_result(self, result: PullResult) -> PullResult:
+        """Sweep observations after an applied direct or automatic pull."""
+        if result.applied and self._index_mgr.observations is not None:
+            try:
+                self._index_mgr.observations.sweep()
+            except Exception:
+                logger.exception(
+                    "git_pull_observation_failed applied=%s from_sha=%s to_sha=%s reason=%s",
+                    result.applied,
+                    result.from_sha,
+                    result.to_sha,
+                    result.reason,
+                )
+                raise
+        return result
+
+    def _automatic_pull(self) -> PullResult | None:
+        """Run a webhook pull with the automatic group deferral policy."""
+        if self._git_strategy is None:
+            return None
+        if isinstance(self._git_strategy, GitWriteStrategy):
+            return self._observe_pull_result(self._git_strategy.automatic_pull())
+        return self._observe_pull_result(self._git_strategy.force_pull())
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.
@@ -1096,12 +1435,19 @@ class Vault:
         """
         self._write_callback.end_scope(scope)
 
+    def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue a scope's end and return its callback-attempt future."""
+        return self._write_callback._enqueue_scope_end(scope)
+
     def close(self) -> None:
         """Release what the vault opened.
 
         Stops the pull loop :meth:`start` started, drains the index writer
         (deferred embeddings included) and the pending write callbacks,
-        then closes the stores. A writer job still running after the drain
+        then closes the stores. Group finalization still pending after 30 seconds
+        logs an error and leaves stores open. A later ``close()`` can retry, but
+        service shutdown does not retry and closes Git, which may make the group
+        commit fail. A writer job still running after the drain
         timeout keeps the keyword index and the vector store open: closing
         either would cut the job's writes short (#1896). They then keep
         their connections and writer locks until the job ends and they are
@@ -1115,6 +1461,19 @@ class Vault:
         # 0. Stop the pull loop start() launched: its ticks call back into
         # this vault, and the strategy object itself stays its owner's (#1765).
         self.stop()
+
+        if hasattr(self, "_write_callback"):
+            try:
+                self._write_callback.close_groups(timeout=30.0)
+            except (TimeoutError, CommitGroupError):
+                logger.error(
+                    "group_finalize_timeout outcome=may_be_lost timeout_s=30",
+                    exc_info=True,
+                )
+                return
+
+        if hasattr(self, "_index_facet"):
+            self._index_facet._close()
 
         # 1. Close the coordinator: it closes the single-owner IndexWriter,
         # draining pending jobs, and reports whether the worker stopped.

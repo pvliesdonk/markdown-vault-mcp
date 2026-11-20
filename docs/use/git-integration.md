@@ -61,9 +61,61 @@ OKF updates share that commit. Folder names with control characters, boundary
 whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
 to keep the subject identifiable on one line.
 
+With Git commits enabled, a writing MCP call waits up to 30 seconds for its
+local commit attempt before returning; on timeout or failure, the result returns
+and the commit may be late or absent. Push remains deferred.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
+
+## Group writes into one commit
+
+Call `begin_transaction` with a commit description, pass its handle as
+`transaction` to each `write`, `edit`, `append`, `delete`, `rename` or
+`move_folder`, then call `end_transaction`. The files change immediately and
+are not rolled back. A write without the handle commits separately. Uploads,
+`fetch` and OKF tools do not accept a handle and stay outside the group.
+If a request is cancelled after its write starts, the write continues. While
+its group remains open, `end_transaction` and `git_sync` refuse until the write
+finishes; cancellation does not roll it back.
+
+`end_transaction` returns `committed`, `no_changes` or `failed` with a SHA
+when available and a file count. Without Git commit support, a group with writes
+returns `failed`; the files remain written. An empty group returns `no_changes`.
+A real `git_sync` closes the caller's open
+groups and waits for their commits already under way. A failed commit stops
+sync; inspect the Git index to recover staged work. Both tools wait up to 30
+seconds; if a commit is still pending, it continues in the background and no
+sync leg runs. Check the server log, Git index and history for the outcome.
+A later `git_sync` waits only while the commit is still pending. A
+`git_sync` dry run leaves groups open; omit the transaction handle for a preview.
+Completed automatic-close results are available to their owner by handle until
+the server restarts; an implicit sync does not inspect earlier results.
+On an OKF vault with event or write logging enabled, closing a group records its description once per touched log; see [OKF logging](okf.md#keeping-logmd-and-indexmd-current). A history write failure sets `history_failed` separately from the Git status and appears in the server log. A sync that closes or waits for an affected transaction reports `history_failed: true` while continuing the Git sync. Git stages the whole log file, so concurrent groups sharing a log can put entries in another group's commit; an event written by a separate write before its scope ends can also enter a group commit.
+Unauthenticated clients share the local principal and its transaction groups.
+An interactive `git_sync` pull by another principal can flush an open group,
+splitting its writes across commits.
+
+Groups close automatically after five minutes of inactivity or one hour after
+opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
+bounds. A group can close while a write is active. New attempts to bind an
+closed group are refused. A write already bound to the group can continue; later
+callbacks use the ordinary per-call commit path under the opener's identity.
+Git stages current on-disk content, which can include a write whose callback is
+still pending.
+
+Timer and webhook pulls defer while any group remains open. After three
+consecutive deferrals shared across timer and webhook attempts, even across
+back-to-back groups, the fourth automatic attempt pulls and drains pending
+writes, which can split an open group into multiple commits. Once groups close,
+the next timer tick, subsequent push event, or deliberate sender redelivery
+retries the pull. A webhook-only vault with no subsequent trigger remains
+deferred. Explicit `git_sync` and force pulls continue immediately and can
+also split a group. A deferred webhook returns HTTP 503. Deferred timer ticks
+and webhooks still reconcile search with HEAD; their generated-index repair
+waits until no group is open. Explicit sync repairs immediately.
 
 ## Uncommitted files at startup
 
@@ -291,10 +343,10 @@ so a test delivery pulls exactly as a push does.
   here rather than lost.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event
   returns 200 and does nothing.
-- A delivery whose pull did not apply returns 503, so the host retries it
-  instead of marking it delivered. A pull that keeps failing, such as an
-  unresolved conflict, exhausts the retries and waits for the next
-  periodic tick. Divergent history is not a failure: it flows through the
+- A delivery whose pull did not apply returns 503. A later timer tick,
+  push event, or deliberate sender redelivery can retry the pull. A pull
+  that keeps failing, such as an unresolved conflict, waits for a later
+  trigger. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   [`git_sync`](#manual-sync-git_sync-tool) below.
 - A delivery to a server with no managed remote returns 200, not 503. No
@@ -318,9 +370,8 @@ so a test delivery pulls exactly as a push does.
     This is a no-op rather than a failure as of 4.1. Before that the pull
     path ignored the sync switch unmanaged mode turns off and ran
     `git fetch origin` anyway: a checkout with no reachable `origin`
-    failed that fetch and answered 503, burning the host's retries on every
-    push, and against a vault that was not a git repository at all the
-    pull raised out of the handler.
+    failed that fetch and answered 503 on every push. Against a vault that
+    was not a git repository at all, the pull raised out of the handler.
 
 Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.
@@ -401,15 +452,44 @@ commits) reports `would_apply=false`. The push leg has no safe local
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
-      path; their vault-relative paths are listed in
-      `pull.conflict_files`.
+      path; their repository-relative paths are listed in
+      `pull.conflict_files`. The `conflict_with` frontmatter paths are also
+      repository-relative.
     - `pull.commits_pulled` is `0` on this path because the rebase
       replays your local commits *on top of* the remote tip — the
       counting model only reports linear-history catch-ups.
 
+    An authored `index.md` or any `log.md` keeps the local bytes in a
+    sibling without adding `conflict_with` or `conflict_date` to either copy.
+    A designated generated index takes the upstream copy when present and is regenerated
+    after the search index catches up. A generated-only conflict, including a
+    deletion on either side, reports `rebased` with no siblings. When upstream
+    deleted the index, the local copy supplies its root `okf_version` until
+    regeneration. A failure to regenerate is logged; the next write into the folder or
+    `okf_generate_index` heals the listing, as it does after a restart. An
+    aborted rebase (more than 50 conflicting replays, or a stop that is not a
+    conflict) keeps the local index. The next pull attempts the rebase again,
+    and the same history can abort it again. If upstream deleted an authored
+    index or log, its local bytes are preserved in a sibling and the original
+    stays deleted. An unsaved non-generated conflict reports failure even when
+    other paths are regenerated or saved as siblings. The server drains
+    regenerated writes before a following push in the same `git_sync`. A
+    callback timeout or commit failure follows the ordinary write path; the
+    drain does not confirm commit success. Preserved siblings appear in search
+    and generated listings until manually reconciled and deleted. They can also
+    produce `missing_type` validation findings; a root index sibling carrying
+    `okf_version` can produce `misplaced_okf_version`. When upstream has a root
+    index, its `okf_version` wins, so a local-only change is not preserved.
+
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
-    `delete` the sibling once merged.
+    `delete` the sibling once merged. If the vault is a subdirectory, strip
+    the repository-to-vault prefix from these paths before passing them to
+    vault read or delete tools. For example, use `note.conflict-mcp-….md`
+    for a returned path of `vault/note.conflict-mcp-….md` when the vault is
+    `vault/`. If the prefix is unknown, locate the sibling in the vault with
+    `list_documents` or `search`. A sibling outside the vault requires access
+    to the repository checkout; vault tools cannot read or delete it.
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is

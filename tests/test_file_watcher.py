@@ -175,6 +175,111 @@ def test_mutating_events_schedule(tmp_path: Path) -> None:
         assert calls == [1], f"{type(event).__name__} should schedule a reindex"
 
 
+def test_hidden_child_parent_notice_does_not_schedule(tmp_path: Path) -> None:
+    """watchdog's parent DirModifiedEvent for a hidden child is not a vault change.
+
+    Every emitter queues ``DirModifiedEvent(parent)`` right after a child is
+    created or deleted, so a hidden scratch directory in a visible folder would
+    otherwise reindex the vault through that notice.
+    """
+    parent = str(tmp_path / "a" / "sub")
+    hidden = str(tmp_path / "a" / "sub" / ".scratch")
+    handler, calls = _record_handler(tmp_path)
+    for event in (
+        DirCreatedEvent(hidden),
+        DirModifiedEvent(parent),
+        DirDeletedEvent(hidden),
+        DirModifiedEvent(parent),
+    ):
+        handler.on_any_event(event)
+    assert calls == []
+
+
+def test_hidden_move_parent_notices_do_not_schedule(tmp_path: Path) -> None:
+    """A move between hidden names notifies both visible parents; both are absorbed."""
+    src = tmp_path / "a" / ".old"
+    dest = tmp_path / "b" / ".new"
+    handler, calls = _record_handler(tmp_path)
+    for event in (
+        FileMovedEvent(str(src), str(dest)),
+        DirModifiedEvent(str(src.parent)),
+        DirModifiedEvent(str(dest.parent)),
+    ):
+        handler.on_any_event(event)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        pytest.param(
+            [DirModifiedEvent("{p}")],
+            id="bare-dir-modified-keeps-close-write-signal",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                DirModifiedEvent("{p}"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="notice-absorbed-once",
+        ),
+        pytest.param(
+            [DirCreatedEvent("{p}/.h"), DirModifiedEvent("{q}")],
+            id="other-directory-not-absorbed",
+        ),
+        pytest.param(
+            [DirCreatedEvent("{p}/.h"), FileCreatedEvent("{p}/n.md")],
+            id="visible-sibling-event",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                FileCreatedEvent("{q}/n.md"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="visible-event-clears-pending-notice",
+        ),
+        pytest.param(
+            [FileMovedEvent("{p}/.h", "{p}/n.md"), DirModifiedEvent("{p}")],
+            id="hidden-to-visible-move",
+        ),
+        pytest.param(
+            [FileModifiedEvent("{p}/.h"), DirModifiedEvent("{p}")],
+            id="hidden-modify-does-not-arm-close-only-notice",
+        ),
+        pytest.param(
+            [DirModifiedEvent("{p}/.h"), DirModifiedEvent("{p}")],
+            id="hidden-dir-modify-does-not-arm-close-only-notice",
+        ),
+        pytest.param(
+            [
+                DirCreatedEvent("{p}/.h"),
+                FileModifiedEvent("{p}/.h/x"),
+                DirModifiedEvent("{p}"),
+            ],
+            id="hidden-modify-clears-pending-notice",
+        ),
+    ],
+)
+def test_real_changes_still_schedule_after_hidden_changes(
+    tmp_path: Path, events: list[FileSystemEvent]
+) -> None:
+    """Only the notice derived from a hidden change is absorbed."""
+    p, q = str(tmp_path / "a"), str(tmp_path / "b")
+    handler, calls = _record_handler(tmp_path)
+    for event in events:
+        resolved = type(event)(
+            *(
+                path.format(p=p, q=q)
+                for path in (event.src_path, getattr(event, "dest_path", None))
+                if path
+            )
+        )
+        handler.on_any_event(resolved)
+    assert calls, "a real change must schedule a reindex"
+
+
 def _capture_watch_subscriptions(
     source_dir: Path, root_floor: bool = True
 ) -> list[tuple[Path, bool, list[type[FileSystemEvent]] | None]]:
@@ -579,6 +684,31 @@ def test_nested_hidden_dir_changes_are_ignored(tmp_path: Path) -> None:
         watcher.stop()
 
 
+def test_hidden_scratch_dir_in_nested_folder_is_ignored(tmp_path: Path) -> None:
+    """Creating and removing a hidden scratch dir below a visible folder is quiet."""
+    folder = tmp_path / "a" / "sub"
+    folder.mkdir(parents=True)
+    called = threading.Event()
+    watcher = _make_watcher(tmp_path, lambda: called.set())
+    watcher.start()
+    try:
+        # FSEvents can replay the folder's own creation; let that settle first.
+        called.wait(timeout=0.5)
+        called.clear()
+        scratch = folder / ".probe-scratch"
+        scratch.mkdir()
+        (scratch / "Aé").touch()
+        (scratch / "Aé").unlink()
+        scratch.rmdir()
+        assert not called.wait(timeout=0.6), (
+            "on_change must not fire for a hidden dir created and removed in a folder"
+        )
+        (folder / "real.md").write_text("content")
+        assert called.wait(timeout=2.0), "a real note still triggers on_change"
+    finally:
+        watcher.stop()
+
+
 def test_visible_file_after_hidden_change_triggers_callback(tmp_path: Path) -> None:
     """A visible file change after a hidden-dir change still triggers on_change."""
     called = threading.Event()
@@ -750,13 +880,24 @@ def test_from_env_file_watcher_debounce_nonpositive_raises(
         ProjectConfig.from_env()
 
 
-def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
+@pytest.mark.parametrize("observation", [False, True])
+def test_fire_exception_in_on_change_is_logged(
+    tmp_path: Path, observation: bool
+) -> None:
     """Exception raised by on_change is caught and logged, not propagated."""
 
     def bad_callback() -> None:
         raise RuntimeError("callback failure")
 
-    watcher = _make_watcher(tmp_path, bad_callback, debounce_s=0.05)
+    watcher = VaultFileWatcher(
+        tmp_path,
+        (lambda: None) if observation else bad_callback,
+        debounce_s=0.05,
+        on_observation=bad_callback if observation else None,
+    )
+    if observation:
+        watcher._fire()
+        return
     watcher.start()
     try:
         (tmp_path / "note.md").write_text("hello")
@@ -793,6 +934,481 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
             mock_stop.assert_called_once()
 
     asyncio.run(_run())
+
+
+def test_search_directory_file_glob_and_excluded_close_notice(tmp_path: Path) -> None:
+    """A file glob cannot prune a directory; excluded close notices stay quiet."""
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,
+        exclude_patterns=["visible/folder.md", "visible/private/note.md"],
+        on_observation=lambda: None,
+    )
+    root = tmp_path / "visible"
+    calls: list[int] = []
+    handler = _VaultEventHandler(
+        lambda: calls.append(1), root, watcher._search_filter(_WatchRoot(root, True))
+    )
+    handler.on_any_event(DirDeletedEvent(str(root / "folder.md")))
+    assert calls == [1]
+    calls.clear()
+    handler.on_any_event(FileModifiedEvent(str(root / "private" / "note.md")))
+    handler.on_any_event(DirModifiedEvent(str(root / "private")))
+    assert calls == []
+    handler.on_any_event(FileModifiedEvent(str(root / "private" / "visible.md")))
+    assert calls == [1]
+
+
+def test_derive_observation_isolates_refused_child(tmp_path: Path) -> None:
+    """One unstatable child does not suppress siblings or the root floor."""
+    from markdown_vault_mcp import _file_watcher
+
+    (tmp_path / "denied").mkdir()
+    (tmp_path / "excluded").mkdir()
+    original = _file_watcher.is_directory
+
+    def stat_child(path: Path) -> bool:
+        if path.name == "denied":
+            raise PermissionError("fixture")
+        return original(path)
+
+    with patch.object(_file_watcher, "is_directory", side_effect=stat_child):
+        roots = _derive_watch_roots(tmp_path, ["excluded/**"], observe=True)
+    assert {(root.path.name, root.recursive) for root in roots} == {
+        ("excluded", True),
+        (tmp_path.name, False),
+    }
+
+
+def test_derive_observation_does_not_follow_excluded_symlink(tmp_path: Path) -> None:
+    """The added observation route does not widen inventory symlink access."""
+    target = tmp_path / "target"
+    target.mkdir()
+    (tmp_path / "excluded").symlink_to(target, target_is_directory=True)
+    roots = _derive_watch_roots(tmp_path, ["excluded/**"], observe=True)
+    assert sum(root.path == target.resolve() for root in roots) == 1
+
+
+def test_indexed_aliases_of_excluded_target_refresh_search(tmp_path: Path) -> None:
+    """An edit to an excluded target refreshes every indexed symlink alias."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    if sys.version_info < (3, 13):
+        pytest.skip("indexing follows directory symlink aliases from Python 3.13")
+    source = tmp_path / "vault"
+    target = source / "excluded"
+    target.mkdir(parents=True)
+    (target / "note.md").write_text("originalword")
+    for alias in ("visible", "another"):
+        (source / alias).symlink_to(target, target_is_directory=True)
+    config = ProjectConfig(
+        source_dir=source,
+        state_path=tmp_path / "state.json",
+        exclude=["excluded/**"],
+        file_watcher_debounce_s=0.08,
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            expected = {"visible/note.md", "another/note.md"}
+            assert {
+                r.path for r in vault.reader.search("originalword", mode="keyword")
+            } == expected
+            await asyncio.sleep(0.5)
+            (source / "visible" / "note.md").write_text("replacementword")
+            digest = hashlib.sha256(b"replacementword").hexdigest()
+            for _ in range(100):
+                row = vault._index_mgr.observations.rows().get("excluded/note.md")
+                if row is not None and row.content_digest == digest:
+                    break
+                await asyncio.sleep(0.05)
+            assert row is not None and row.content_digest == digest
+            for _ in range(60):
+                hits = {
+                    r.path
+                    for r in vault.reader.search("replacementword", mode="keyword")
+                }
+                if hits == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert hits == expected
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("patterns", "names", "allowed"),
+    [
+        (["shared/**", "a/**"], ("b",), True),
+        (["shared/**", "a/**", "b/**"], (), False),
+        (["shared/skip/**", "a/skip/**"], ("a", "b", "shared"), True),
+        (["shared/skip/**", "a/skip/**", "b/skip/**"], ("a", "b", "shared"), False),
+    ],
+)
+def test_alias_spellings_authorize_search_per_indexed_alias(
+    tmp_path: Path, patterns: list[str], names: tuple[str, ...], allowed: bool
+) -> None:
+    """Search runs when any indexed spelling of the changed path is eligible."""
+    target = tmp_path / "shared"
+    (target / "skip").mkdir(parents=True)
+    for alias in ("a", "b"):
+        (tmp_path / alias).symlink_to(target, target_is_directory=True)
+    root = next(
+        r
+        for r in _derive_watch_roots(tmp_path, patterns, observe=True)
+        if r.path == target.resolve()
+    )
+    watcher = VaultFileWatcher(
+        tmp_path, lambda: None, exclude_patterns=patterns, on_observation=lambda: None
+    )
+    event = FileModifiedEvent(str(target.resolve() / "skip" / "n.md"))
+    assert root.names == names
+    assert watcher._search_event_allowed(event, root) is allowed
+
+
+def test_outside_vault_symlink_root_keeps_search(tmp_path: Path) -> None:
+    """A symlink farm target outside the vault is never classified by excludes."""
+    source = tmp_path / "vault"
+    outside = tmp_path / "outside"
+    source.mkdir()
+    outside.mkdir()
+    (source / "farm").symlink_to(outside, target_is_directory=True)
+    roots = _derive_watch_roots(source, ["*.md"], observe=True)
+    root = next(r for r in roots if r.path == outside.resolve())
+    watcher = VaultFileWatcher(
+        source, lambda: None, exclude_patterns=["*.md"], on_observation=lambda: None
+    )
+    event = FileModifiedEvent(str(outside.resolve() / "n.md"))
+    assert watcher._search_event_allowed(event, root) is True
+
+
+def test_observation_tree_isolates_refused_entry(tmp_path: Path) -> None:
+    """A refused entry does not hide a readable sibling in the same walk."""
+    from contextlib import contextmanager
+
+    from markdown_vault_mcp import _file_watcher
+
+    (tmp_path / "good").mkdir()
+    (tmp_path / "other").mkdir()
+    assert _file_watcher._tree_roots(tmp_path) == [_WatchRoot(tmp_path, True, False)]
+    original = _file_watcher.os.scandir
+
+    class Refused:
+        name = "denied"
+        path = str(tmp_path / name)
+
+        def stat(self, *, follow_symlinks: bool) -> None:
+            assert follow_symlinks is False
+            raise PermissionError("fixture")
+
+    @contextmanager
+    def scan(path: Path):  # type: ignore[no-untyped-def]
+        with original(path) as entries:
+            yield [Refused(), *entries] if path == tmp_path else list(entries)
+
+    with patch.object(_file_watcher.os, "scandir", side_effect=scan):
+        roots = _file_watcher._tree_roots(tmp_path)
+    assert _WatchRoot(tmp_path, False, False) in roots
+    assert _WatchRoot(tmp_path / "good", True, False) in roots
+    _exercise_internal_directory_resplit(tmp_path)
+
+
+def test_search_owned_root_keeps_inherited_recursive_watch(tmp_path: Path) -> None:
+    """Observation does not change native subscriptions for indexed roots."""
+    root = tmp_path / "visible"
+    (root / "nested" / ".git").mkdir(parents=True)
+    watcher = VaultFileWatcher(tmp_path, lambda: None, on_observation=lambda: None)
+    with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+        watcher.start()
+        registrations = [
+            (Path(call.args[1]), call.kwargs["recursive"])
+            for call in factory.return_value.schedule.call_args_list
+        ]
+        watcher.stop()
+    assert (root.resolve(), True) in registrations
+
+
+def _exercise_internal_directory_resplit(tmp_path: Path) -> None:
+    """An internal directory created after startup retires its recursive watch."""
+    folder = tmp_path / "excluded"
+    (folder / "project").mkdir(parents=True)
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,
+        exclude_patterns=["excluded/**"],
+        on_observation=lambda: None,
+    )
+    internal = (folder / "project" / ".git").resolve()
+    internal.mkdir()
+    with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+        watcher.start()
+        registrations = [
+            (Path(c.args[1]), c.kwargs["recursive"])
+            for c in factory.return_value.schedule.call_args_list
+        ]
+        assert all(
+            path != internal and not (recursive and internal.is_relative_to(path))
+            for path, recursive in registrations
+        )
+        watcher.stop()
+    internal.rmdir()
+    with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+        observer = factory.return_value
+        watcher.start()
+        handler = next(
+            call.args[0]
+            for call in observer.schedule.call_args_list
+            if Path(call.args[1]) == folder.resolve()
+        )
+        (folder / "project" / ".git").mkdir()
+        with patch.object(watcher, "_queue") as queue:
+            handler.on_any_event(DirCreatedEvent(str(folder / "project" / ".git")))
+        queue.assert_called_once_with(search=False)
+        assert observer.unschedule.called
+        roots = [item[0] for item in watcher._watches.values()]
+        internal = (folder / "project" / ".git").resolve()
+        assert all(
+            root.path != internal
+            and not (root.recursive and internal.is_relative_to(root.path))
+            for root in roots
+            if not root.search
+        )
+        watcher.stop()
+
+
+def test_observation_handler_ignores_non_notes_and_internal_paths(
+    tmp_path: Path,
+) -> None:
+    """Noise and internal files do not request a full inventory sweep."""
+    calls: list[int] = []
+    handler = _VaultEventHandler(
+        lambda: None,
+        tmp_path,
+        observe=lambda: calls.append(1),
+        root_info=_WatchRoot(tmp_path, True, False),
+    )
+    for name in (
+        "image.png",
+        ".obsidian/settings.json",
+        ".git/note.md",
+        ".markdown_vault_mcp/a.md",
+    ):
+        handler.on_any_event(FileModifiedEvent(str(tmp_path / name)))
+    assert calls == []
+    search: list[int] = []
+    hidden_handler = _VaultEventHandler(
+        lambda: search.append(1), tmp_path, observe=lambda: calls.append(1)
+    )
+    hidden_handler.on_any_event(
+        FileMovedEvent(
+            str(tmp_path.parent / "outside"), str(tmp_path / ".notes" / "n.md")
+        )
+    )
+    assert search == []
+    assert calls == [1]
+
+
+def test_observation_and_search_share_debounce_and_stop(tmp_path: Path) -> None:
+    """A search event subsumes pending observation."""
+    search = threading.Event()
+    observed = threading.Event()
+    watcher = VaultFileWatcher(
+        tmp_path, search.set, debounce_s=0.08, on_observation=observed.set
+    )
+    watcher._schedule_observation()
+    watcher._schedule()
+    assert search.wait(2)
+    assert not observed.wait(0.2)
+    watcher.stop()
+
+
+def test_root_notice_without_changed_registrations_does_not_sweep(
+    tmp_path: Path,
+) -> None:
+    """Source-floor notices from state writes do not re-arm observation."""
+    calls: list[int] = []
+    handler = _VaultEventHandler(
+        lambda: None,
+        tmp_path,
+        observe=lambda: calls.append(1),
+        root_info=_WatchRoot(tmp_path, False, True),
+        sync=lambda _path, _rebuild: False,
+    )
+    handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+    assert calls == []
+
+
+def _observation_case(tmp_path: Path, case: str) -> tuple[Path, Path | None, list[str]]:
+    folder = tmp_path / (
+        "excluded"
+        if case == "top_excluded"
+        else "visible/excluded"
+        if case == "nested_exclude"
+        else "visible"
+    )
+    folder.mkdir(parents=True)
+    (folder / "note.md").write_text("before")
+    state = folder / "state" / "state.json" if case == "nested_state" else None
+    if state is not None:
+        state.parent.mkdir()
+    excludes = [] if state is not None else [f"{folder.relative_to(tmp_path)}/**"]
+    return folder, state, excludes
+
+
+@pytest.mark.parametrize("case", ["top_excluded", "nested_exclude", "nested_state"])
+def test_lifespan_observation_routing(tmp_path: Path, case: str) -> None:
+    """Excluded or internal-holding roots update the ledger without reindex."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder, state, excludes = _observation_case(tmp_path, case)
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        exclude=excludes,
+        state_path=state,
+        file_watcher_debounce_s=0.08,
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.5)
+            with patch.object(
+                vault.index, "reindex", wraps=vault.index.reindex
+            ) as reindex:
+                note = folder / "note.md"
+                note.write_text("after")
+                key = note.relative_to(tmp_path).as_posix()
+                expected = hashlib.sha256(b"after").hexdigest()
+                for _ in range(100):
+                    row = ledger.rows().get(key)
+                    if row is not None and row.content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert row is not None and row.content_digest == expected
+                await asyncio.sleep(0.4)
+                assert reindex.call_count == 0
+
+    asyncio.run(run())
+
+
+def test_new_indexable_root_only_watches_observations(tmp_path: Path) -> None:
+    """A late top-level root retains the pre-existing search watch boundary."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    (tmp_path / "baseline.md").write_text("baseline")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            await asyncio.sleep(0.4)
+            folder = tmp_path / "new"
+            folder.mkdir()
+            await asyncio.sleep(0.5)
+            ledger = vault._index_mgr.observations
+            with patch.object(
+                vault.index, "reindex", wraps=vault.index.reindex
+            ) as reindex:
+                (folder / "note.md").write_text("observation only")
+                expected = hashlib.sha256(b"observation only").hexdigest()
+                for _ in range(100):
+                    row = ledger.rows().get("new/note.md")
+                    if row and row.content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert row and row.content_digest == expected
+                await asyncio.sleep(0.3)
+                assert reindex.call_count == 0
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
+@pytest.mark.parametrize("remove", ["delete", "move"])
+def test_recreated_excluded_root_is_watched(
+    tmp_path: Path, remove: str, kind: str
+) -> None:
+    """A replacement directory receives a fresh native subscription."""
+    import asyncio
+    import hashlib
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / kind
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(
+        source_dir=tmp_path, exclude=["excluded/**"], file_watcher_debounce_s=0.08
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.5)
+            if remove == "delete":
+                shutil.rmtree(folder)
+            else:
+                folder.rename(tmp_path / "moved")
+            await asyncio.sleep(0.4)
+            folder.mkdir()
+            await asyncio.sleep(0.4)
+            (folder / "note.md").write_text("replacement")
+            expected = hashlib.sha256(b"replacement").hexdigest()
+            for _ in range(100):
+                if ledger.rows()[f"{kind}/note.md"].content_digest == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert ledger.rows()[f"{kind}/note.md"].content_digest == expected
+
+    asyncio.run(run())
+
+
+def test_lifespan_reindex_failure_still_observes(tmp_path: Path) -> None:
+    """A failing search refresh does not lose the observation route."""
+    import asyncio
+    import hashlib
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    note = tmp_path / "note.md"
+    note.write_text("before")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            ledger = vault._index_mgr.observations
+            await asyncio.sleep(0.4)
+            with patch.object(
+                vault.index, "reindex", side_effect=RuntimeError("failed")
+            ):
+                note.write_text("after")
+                expected = hashlib.sha256(b"after").hexdigest()
+                for _ in range(100):
+                    if ledger.rows()["note.md"].content_digest == expected:
+                        break
+                    await asyncio.sleep(0.05)
+                assert ledger.rows()["note.md"].content_digest == expected
+
+    asyncio.run(run())
 
 
 def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> None:
@@ -1622,3 +2238,557 @@ def test_root_floor_false_ignores_root_level_file(tmp_path: Path) -> None:
         )
     finally:
         watcher.stop()
+
+
+def test_observation_metadata_events_route_without_search(tmp_path: Path) -> None:
+    """Metadata and directory notices in excluded trees request reconciliation."""
+    import watchdog.events as events
+
+    if not hasattr(events, "FileAttribEvent"):
+        pytest.skip("watchdog before attribute event classes")
+    calls: list[str] = []
+    handler = _VaultEventHandler(
+        lambda: calls.append("search"),
+        tmp_path,
+        observe=lambda: calls.append("observe"),
+        root_info=_WatchRoot(tmp_path, True, False),
+        sync=lambda _path, _rebuild: False,
+    )
+    handler.on_any_event(events.FileAttribEvent(str(tmp_path / "note.md")))
+    handler.on_any_event(events.DirAttribEvent(str(tmp_path / "locked")))
+    handler.on_any_event(DirModifiedEvent(str(tmp_path / "locked")))
+    assert calls == ["observe", "observe", "observe"]
+
+
+def test_search_root_self_move_is_replaced_observation_only(tmp_path: Path) -> None:
+    """A self move retires the old watch and adopts an observation-only root."""
+    root = tmp_path / "visible"
+    root.mkdir()
+    watcher = VaultFileWatcher(tmp_path, lambda: None, on_observation=lambda: None)
+    with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+        watcher.start()
+        handler = next(
+            c.args[0]
+            for c in factory.return_value.schedule.call_args_list
+            if Path(c.args[1]) == root
+        )
+        handler.on_any_event(DirMovedEvent(str(root), str(tmp_path / "moved")))
+        assert not watcher._watches[root][0].search
+        assert factory.return_value.unschedule.called
+        watcher.stop()
+
+
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
+@pytest.mark.parametrize("event_kind", ["file_attrib", "dir_attrib", "dir_modified"])
+def test_metadata_queue_reconciles_ledger_without_search(
+    tmp_path: Path, event_kind: str, kind: str
+) -> None:
+    """Backend metadata deliveries reach inventory through the real event filter."""
+    import watchdog.events as events
+    from watchdog.observers.api import EventEmitter, EventQueue, ObservedWatch
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    if event_kind.endswith("attrib") and not hasattr(events, "FileAttribEvent"):
+        pytest.skip("watchdog before attribute event classes")
+    source = tmp_path / "vault"
+    folder = source / kind
+    folder.mkdir(parents=True)
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            state_path=tmp_path / "state", exclude_patterns=["excluded/**"]
+        ),
+    )
+    vault.index.build_index()
+    ledger = vault._index_mgr.observations
+    swept = threading.Event()
+    searches: list[int] = []
+
+    def observe() -> None:
+        ledger.sweep()
+        swept.set()
+
+    watcher = VaultFileWatcher(
+        source,
+        lambda: searches.append(1),
+        debounce_s=0.01,
+        exclude_patterns=["excluded/**"],
+        on_observation=observe,
+        root_floor=False,
+    )
+    try:
+        with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+            watcher.start()
+            call = next(
+                c
+                for c in factory.return_value.schedule.call_args_list
+                if Path(c.args[1]) == folder.resolve()
+            )
+            handler = call.args[0]
+            queue = EventQueue()
+            emitter = EventEmitter(
+                queue,
+                ObservedWatch(str(folder), recursive=True),
+                event_filter=call.kwargs["event_filter"],
+            )
+            note = folder / "note.md"
+            note.write_text("newly readable")
+            if event_kind == "file_attrib":
+                event = events.FileAttribEvent(str(note))
+            elif event_kind == "dir_attrib":
+                event = events.DirAttribEvent(str(folder))
+            else:
+                event = DirModifiedEvent(str(folder))
+            emitter.queue_event(event)
+            queued, _ = queue.get_nowait()
+            handler.on_any_event(queued)
+            assert swept.wait(3)
+            assert f"{kind}/note.md" in ledger.rows()
+            assert not searches
+            watcher.stop()
+    finally:
+        watcher.stop()
+        vault.close()
+
+
+@pytest.mark.parametrize("kind", ["excluded", "indexed"])
+@pytest.mark.parametrize("locked", ["file", "directory"])
+def test_native_permission_restoration_observes_note(
+    tmp_path: Path, locked: str, kind: str
+) -> None:
+    """A native permission restoration makes a note observable."""
+    import os
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "vault"
+    folder = source / kind
+    folder.mkdir(parents=True)
+    note = folder / "note.md"
+    note.write_text("visible after chmod")
+    target = note if locked == "file" else folder
+    target.chmod(0)
+    if os.access(target, os.R_OK):
+        target.chmod(0o755 if locked == "directory" else 0o644)
+        pytest.skip("permissions do not restrict this user")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            state_path=tmp_path / "state", exclude_patterns=["excluded/**"]
+        ),
+    )
+    watcher = VaultFileWatcher(
+        source,
+        vault._index_mgr.observations.sweep,
+        debounce_s=0.05,
+        exclude_patterns=["excluded/**"],
+        on_observation=vault._index_mgr.observations.sweep,
+    )
+    try:
+        vault.index.build_index()
+        ledger = vault._index_mgr.observations
+        assert f"{kind}/note.md" not in ledger.rows()
+        watcher.start()
+        target.chmod(0o755 if locked == "directory" else 0o644)
+        deadline = time.monotonic() + 5
+        while f"{kind}/note.md" not in ledger.rows() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert f"{kind}/note.md" in ledger.rows()
+    finally:
+        target.chmod(0o755 if locked == "directory" else 0o644)
+        watcher.stop()
+        vault.close()
+
+
+def test_non_note_churn_converges(tmp_path: Path) -> None:
+    """Non-note changes settle, and later permission and note edits sweep."""
+    folder = tmp_path / "priv"
+    sub = folder / "sub"
+    sub.mkdir(parents=True)
+    observed = threading.Event()
+    calls: list[int] = []
+
+    def observe() -> None:
+        calls.append(1)
+        observed.set()
+
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,
+        debounce_s=0.05,
+        exclude_patterns=["priv/**"],
+        on_observation=observe,
+    )
+    watcher.start()
+    try:
+        for name in ("a.png", "b.png", "c.png", ".DS_Store", "state.tmp"):
+            (sub / name).write_text("x")
+            observed.wait(0.3)
+            observed.clear()
+        (sub / "state.tmp").rename(sub / "state.json")
+        observed.wait(0.5)
+        observed.clear()
+        assert not observed.wait(0.5)
+        before = len(calls)
+        observed.clear()
+        sub.chmod(0o700)
+        assert observed.wait(3) and len(calls) > before
+        before = len(calls)
+        observed.clear()
+        (sub / "note.md").write_text("note")
+        assert observed.wait(3) and len(calls) > before
+    finally:
+        watcher.stop()
+
+
+def test_recreated_indexed_root_immediately_is_watched(tmp_path: Path) -> None:
+    """An immediate replacement is adopted before subsequent note edits."""
+    import asyncio
+    import hashlib
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(source_dir=tmp_path, file_watcher_debounce_s=0.08)
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            watcher = ctx["service"]._file_watcher
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            shutil.rmtree(folder)
+            folder.mkdir()
+            for _ in range(100):
+                entry = watcher._watches.get(folder.resolve())
+                if entry and not entry[0].search:
+                    break
+                await asyncio.sleep(0.05)
+            assert entry and not entry[0].search
+            (folder / "note.md").write_text("replacement")
+            ledger = vault._index_mgr.observations
+            expected = hashlib.sha256(b"replacement").hexdigest()
+            for _ in range(100):
+                row = ledger.rows().get("docs/note.md")
+                if row and row.content_digest == expected:
+                    break
+                await asyncio.sleep(0.05)
+            assert row and row.content_digest == expected
+
+    asyncio.run(run())
+
+
+def test_floor_off_search_root_delete_records_removal(tmp_path: Path) -> None:
+    """The opt-out retains no source watch but records a watched root deletion."""
+    import asyncio
+    import shutil
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "note.md").write_text("before")
+    config = ProjectConfig(
+        source_dir=tmp_path, file_watcher_root_floor=False, file_watcher_debounce_s=0.08
+    )
+
+    async def run() -> None:
+        async with _make_test_lifespan(config)(None) as ctx:  # type: ignore[operator]
+            vault = ctx["vault"]
+            watcher = ctx["service"]._file_watcher
+            await asyncio.to_thread(vault.index.wait_until_queryable, 10)
+            assert tmp_path.resolve() not in watcher._watches
+            ledger = vault._index_mgr.observations
+            shutil.rmtree(folder)
+            for _ in range(100):
+                if ledger.rows()["docs/note.md"].presence == "removed":
+                    break
+                await asyncio.sleep(0.05)
+            assert ledger.rows()["docs/note.md"].presence == "removed"
+            assert tmp_path.resolve() not in watcher._watches
+
+    asyncio.run(run())
+
+
+def test_refused_root_stat_keeps_existing_watch(tmp_path: Path) -> None:
+    """An inaccessible ancestor must not kill dispatch or retire the watch."""
+    import os
+
+    import watchdog.events as events
+
+    if not hasattr(events, "DirAttribEvent"):
+        pytest.skip("watchdog before attribute event classes")
+    source = tmp_path / "vault"
+    root = source / "excluded"
+    root.mkdir(parents=True)
+    watcher = VaultFileWatcher(
+        source,
+        lambda: None,
+        exclude_patterns=["excluded/**"],
+        on_observation=lambda: None,
+    )
+    with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+        watcher.start()
+        handler = next(
+            c.args[0]
+            for c in factory.return_value.schedule.call_args_list
+            if Path(c.args[1]) == root
+        )
+        source.chmod(0)
+        try:
+            if os.access(root, os.F_OK):
+                pytest.skip("fixture user can traverse mode-zero parent")
+            handler.dispatch(events.DirAttribEvent(str(root)))
+            assert root in watcher._watches
+        finally:
+            source.chmod(0o755)
+            watcher.stop()
+
+
+def test_floor_off_restored_observation_root_keeps_watching(tmp_path: Path) -> None:
+    """A root made unreadable and restored retains its only native watch."""
+    import hashlib
+    import os
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "vault"
+    root = source / "excluded"
+    root.mkdir(parents=True)
+    note = root / "note.md"
+    note.write_text("before")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            state_path=tmp_path / "state", exclude_patterns=["excluded/**"]
+        ),
+    )
+    vault.index.build_index()
+    ledger = vault._index_mgr.observations
+    swept = threading.Event()
+
+    def sweep() -> None:
+        ledger.sweep()
+        swept.set()
+
+    watcher = VaultFileWatcher(
+        source,
+        lambda: None,
+        debounce_s=0.05,
+        exclude_patterns=["excluded/**"],
+        root_floor=False,
+        on_observation=sweep,
+    )
+    try:
+        watcher.start()
+        assert source not in watcher._watches
+        root.chmod(0)
+        if os.access(root, os.R_OK):
+            pytest.skip("fixture user can read mode-zero directory")
+        assert swept.wait(5)
+        assert root in watcher._watches
+        swept.clear()
+        root.chmod(0o755)
+        assert swept.wait(5), "restoration sweep did not finish"
+        assert root in watcher._watches
+        swept.clear()
+        note.write_text("after")
+        assert swept.wait(5), "later note edit did not trigger observation"
+        expected = hashlib.sha256(b"after").hexdigest()
+        deadline = time.monotonic() + 5
+        while (
+            ledger.rows()["excluded/note.md"].content_digest != expected
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.05)
+        assert ledger.rows()["excluded/note.md"].content_digest == expected
+    finally:
+        root.chmod(0o755)
+        watcher.stop()
+        vault.close()
+
+
+def test_coalesced_directory_notice_reveals_newly_readable_subtree(
+    tmp_path: Path,
+) -> None:
+    """A legacy parent notice discovers a restored, previously unwatched tree."""
+    import os
+
+    root = tmp_path / "excluded"
+    locked = root / "locked"
+    locked.mkdir(parents=True)
+    locked.chmod(0)
+    if os.access(locked, os.R_OK):
+        locked.chmod(0o755)
+        pytest.skip("fixture user can read mode-zero directory")
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,
+        exclude_patterns=["excluded/**"],
+        on_observation=lambda: None,
+    )
+    try:
+        with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+            watcher.start()
+            assert locked not in watcher._watches
+            handler = next(
+                c.args[0]
+                for c in factory.return_value.schedule.call_args_list
+                if Path(c.args[1]) == root
+            )
+            locked.chmod(0o755)
+            (locked / "other.png").write_text("x")
+            handler.on_any_event(FileCreatedEvent(str(locked / "other.png")))
+            handler.on_any_event(DirModifiedEvent(str(locked)))
+            assert locked in watcher._watches
+            child_handler = next(
+                c.args[0]
+                for c in factory.return_value.schedule.call_args_list
+                if Path(c.args[1]) == locked
+            )
+            with patch.object(watcher, "_queue") as queue:
+                child_handler.on_any_event(FileModifiedEvent(str(locked / "note.md")))
+                queue.assert_called_once_with(search=False)
+    finally:
+        locked.chmod(0o755)
+        watcher.stop()
+
+
+def test_search_and_floor_register_before_excluded_tree(tmp_path: Path) -> None:
+    """Observation-only roots cannot consume the first native watch slots."""
+    excluded = tmp_path / "excluded"
+    visible = tmp_path / "visible"
+    excluded.mkdir()
+    visible.mkdir()
+    roots = [
+        _WatchRoot(excluded, True, False),
+        _WatchRoot(visible, True),
+        _WatchRoot(tmp_path, False),
+    ]
+    watcher = VaultFileWatcher(tmp_path, lambda: None, on_observation=lambda: None)
+    with (
+        patch(
+            "markdown_vault_mcp._file_watcher._derive_watch_roots", return_value=roots
+        ),
+        patch("markdown_vault_mcp._file_watcher.Observer") as factory,
+    ):
+        watcher.start()
+        paths = [Path(c.args[1]) for c in factory.return_value.schedule.call_args_list]
+        assert paths == [visible, tmp_path, excluded]
+        watcher.stop()
+
+
+def test_access_restoration_coalesced_with_child_notice(tmp_path: Path) -> None:
+    """An adjacent child event cannot hide newly readable inventory."""
+    import os
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "vault"
+    folder = source / "excluded" / "locked"
+    folder.mkdir(parents=True)
+    note = folder / "note.md"
+    note.write_text("before")
+    note.chmod(0)
+    if os.access(note, os.R_OK):
+        note.chmod(0o644)
+        pytest.skip("fixture user can read mode-zero note")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            state_path=tmp_path / "state", exclude_patterns=["excluded/**"]
+        ),
+    )
+    completed = threading.Event()
+
+    def observe() -> None:
+        vault._index_mgr.observations.sweep()
+        completed.set()
+
+    try:
+        vault.index.build_index()
+        assert "excluded/locked/note.md" not in vault._index_mgr.observations.rows()
+        handler = _VaultEventHandler(
+            lambda: None,
+            source / "excluded",
+            observe=observe,
+            root_info=_WatchRoot(source / "excluded", True, False),
+            sync=lambda _path, _rebuild: False,
+        )
+        note.chmod(0o644)
+        handler.on_any_event(FileCreatedEvent(str(folder / "image.png")))
+        handler.on_any_event(DirModifiedEvent(str(folder)))
+        assert completed.wait(2)
+        assert "excluded/locked/note.md" in vault._index_mgr.observations.rows()
+    finally:
+        note.chmod(0o644)
+        vault.close()
+
+
+def test_nonrecursive_observation_root_own_notice_reveals_note(tmp_path: Path) -> None:
+    """A split observation root's own metadata still sweeps its direct notes."""
+    import os
+
+    from watchdog.observers.api import EventEmitter, EventQueue, ObservedWatch
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "vault"
+    root = source / "excluded"
+    (root / ".git").mkdir(parents=True)
+    note = root / "note.md"
+    note.write_text("visible after restore")
+    note.chmod(0)
+    if os.access(note, os.R_OK):
+        note.chmod(0o644)
+        pytest.skip("fixture user can read mode-zero note")
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            state_path=tmp_path / "state", exclude_patterns=["excluded/**"]
+        ),
+    )
+    vault.index.build_index()
+    ledger = vault._index_mgr.observations
+    done = threading.Event()
+
+    def observe() -> None:
+        ledger.sweep()
+        done.set()
+
+    watcher = VaultFileWatcher(
+        source,
+        lambda: None,
+        debounce_s=0.01,
+        exclude_patterns=["excluded/**"],
+        root_floor=False,
+        on_observation=observe,
+    )
+    try:
+        with patch("markdown_vault_mcp._file_watcher.Observer") as factory:
+            watcher.start()
+            call = next(
+                c
+                for c in factory.return_value.schedule.call_args_list
+                if Path(c.args[1]) == root
+            )
+            assert call.kwargs["recursive"] is False
+            queue = EventQueue()
+            emitter = EventEmitter(
+                queue,
+                ObservedWatch(str(root), recursive=False),
+                event_filter=call.kwargs["event_filter"],
+            )
+            note.chmod(0o644)
+            emitter.queue_event(DirModifiedEvent(str(root)))
+            event, _ = queue.get_nowait()
+            call.args[0].on_any_event(event)
+            assert done.wait(2)
+            assert "excluded/note.md" in ledger.rows()
+    finally:
+        note.chmod(0o644)
+        watcher.stop()
+        vault.close()

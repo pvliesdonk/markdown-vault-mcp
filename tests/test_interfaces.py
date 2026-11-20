@@ -23,6 +23,7 @@ from markdown_vault_mcp.interfaces import (
     KeywordGraphIndex,
     KeywordIndex,
     ListsNoteStates,
+    ReportsRowState,
     RunsExactQueries,
 )
 from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery, PathQuery
@@ -50,6 +51,7 @@ class TestFTSIndexConformance:
             KeywordGraphIndex,
             RunsExactQueries,
             ListsNoteStates,
+            ReportsRowState,
             IteratesChunks,
         ],
         ids=[
@@ -58,6 +60,7 @@ class TestFTSIndexConformance:
             "combined",
             "exact-queries",
             "note-states",
+            "row-state",
             "chunk-pages",
         ],
     )
@@ -106,6 +109,7 @@ class TestFacetsAreIndependent:
         assert not isinstance(object(), GraphStore)
         assert not isinstance(object(), RunsExactQueries)
         assert not isinstance(object(), ListsNoteStates)
+        assert not isinstance(object(), ReportsRowState)
         assert not isinstance(object(), IteratesChunks)
 
 

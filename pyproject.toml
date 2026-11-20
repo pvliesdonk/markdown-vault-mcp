@@ -83,6 +83,7 @@ dependencies = [
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
     "python-frontmatter>=1.0",
+    "markdown-it-py>=3,<5",
     "requests>=2.33.0",
     # PROJECT-DEPS-END
 ]
@@ -438,6 +439,7 @@ max-statements = 50
 testpaths = ["tests"]
 addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
+faulthandler_timeout = 300
 markers = [
     "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
     # PROJECT-MARKERS-START — this project's pytest markers; kept across
@@ -525,11 +527,12 @@ strict = true
 
 # The summarize tool registers only when an OpenAI-compatible endpoint is
 # configured, the transfer-link tools only with a base URL, git_sync only for
-# a vault with a remote, and okf_verify only with OKF writes on; set each so
+# a vault with a remote, and OKF authoring and review only when enabled; set each so
 # the generated reference documents them in every environment, CI included.
 [tool.docs-reference.env]
 MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
 MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL = "https://example.invalid/v1"
 MARKDOWN_VAULT_MCP_GIT_REPO_URL = "https://example.invalid/vault.git"
 MARKDOWN_VAULT_MCP_OKF_WRITE = "true"
+MARKDOWN_VAULT_MCP_OKF_AUTHOR = "true"
 # PROJECT-DOCS-CHECKS-END

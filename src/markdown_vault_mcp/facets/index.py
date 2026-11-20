@@ -13,15 +13,19 @@ internal surface (``close``, ``writer``, ``require_built``,
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from concurrent.futures import Future
+    from collections.abc import Callable
 
     from markdown_vault_mcp.indexing import IndexWriteCoordinator
     from markdown_vault_mcp.managers.index import IndexManager
     from markdown_vault_mcp.types import IndexStats, ReindexResult, SkippedFile
+
+
+_T = TypeVar("_T")
 
 
 class IndexFacet:
@@ -36,6 +40,8 @@ class IndexFacet:
         *,
         coordinator: IndexWriteCoordinator,
         index_mgr: IndexManager,
+        after_reindex: Callable[[], None] | None = None,
+        paused: Callable[[], bool] | None = None,
     ) -> None:
         """Hold the collaborators the index operations delegate to.
 
@@ -44,9 +50,23 @@ class IndexFacet:
                 root. Only its public operations are surfaced here.
             index_mgr: The shared :class:`IndexManager`, queried by
                 :meth:`IndexFacet.embeddings_status`.
+            after_reindex: Optional convergence callback run after a reindex.
+            paused: Whether this caller holds the vault write pause.
         """
         self._coordinator = coordinator
         self._index_mgr = index_mgr
+        self._after_reindex = after_reindex
+        self._paused = paused
+        self._convergence_executor = (
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="okf-converge")
+            if after_reindex is not None
+            else None
+        )
+
+    def _close(self) -> None:
+        """Wait for asynchronous reindex continuations before closing the writer."""
+        if self._convergence_executor is not None:
+            self._convergence_executor.shutdown(wait=True)
 
     def is_queryable(self) -> bool:
         """Return True when the FTS index is queryable (precondition snapshot).
@@ -141,15 +161,18 @@ class IndexFacet:
         """Scan source_dir and build the FTS index.
 
         A warm restart (a complete, populated index whose provenance still
-        matches, ``force=False``) is an O(1) no-op keyed on FTS state. An
+        matches, ``force=False``) reuses FTS and sweeps observation state. An
         index that cannot be reused (changed provenance, or no completion
         sentinel) gets a full build that drops the rows its walk did not find
-        (#1965). ``force=True`` drops and rebuilds unconditionally.
+        (#1965). ``force=True`` rebuilds and runs configured convergence.
 
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
         """
-        return self._coordinator.build_index(force=force)
+        result = self._coordinator.build_index(force=force)
+        if force and self._after_reindex is not None:
+            self._after_reindex()
+        return result
 
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
@@ -160,7 +183,10 @@ class IndexFacet:
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
         """
-        return self._coordinator.reindex()
+        result = self._coordinator.reindex()
+        if self._after_reindex is not None:
+            self._after_reindex()
+        return result
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -182,11 +208,10 @@ class IndexFacet:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Submit a full FTS index build and return the Future.
 
-        Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
-        short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`IndexFacet.build_index`. The Future includes the
-        completion-marker write and readiness publication; failure in either
-        fails the build. Pending work can be cancelled before execution begins.
+        Caller may ``.result()`` to wait or fire-and-forget. A warm build
+        queues an observation sweep without rebuilding FTS. When convergence is
+        configured, a forced build returns a detached Future; cancelling it does not
+        cancel accepted work. Inside a write pause it may finish inline before returning.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
@@ -194,7 +219,8 @@ class IndexFacet:
         Returns:
             ``concurrent.futures.Future`` carrying the :class:`IndexStats`.
         """
-        return self._coordinator.build_index_async(force=force)
+        pending = self._coordinator.build_index_async(force=force)
+        return self._converge_after(pending) if force else pending
 
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
@@ -202,8 +228,39 @@ class IndexFacet:
         Does not require :meth:`IndexFacet.build_index` first — the writer's FIFO queue
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
         failures are surfaced via :meth:`IndexFacet.get_index_status` (#561).
+        Configured convergence finishes inline if submitted inside a write pause.
         """
-        return self._coordinator.reindex_async()
+        return self._converge_after(self._coordinator.reindex_async())
+
+    def _converge_after(self, pending: Future[_T]) -> Future[_T]:
+        if self._convergence_executor is None:
+            return pending
+
+        def finish() -> _T:
+            result = pending.result()
+            if self._after_reindex is not None:
+                self._after_reindex()
+            return result
+
+        result: Future[_T] = Future()
+        if self._paused is not None and self._paused():
+            try:
+                result.set_result(finish())
+            except BaseException as exc:
+                result.set_exception(exc)
+            return result
+        continuation = self._convergence_executor.submit(finish)
+
+        def publish(done: Future[_T]) -> None:
+            if not result.set_running_or_notify_cancel():
+                return
+            try:
+                result.set_result(done.result())
+            except BaseException as exc:
+                result.set_exception(exc)
+
+        continuation.add_done_callback(publish)
+        return result
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.

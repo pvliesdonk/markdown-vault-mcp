@@ -29,6 +29,8 @@ from __future__ import annotations
 #: ``create_upload_link`` (registered by ``_transfer_links``)
 #: additionally requires an HTTP transport.
 WRITE_TOOL_NAMES: tuple[str, ...] = (
+    "begin_transaction",
+    "end_transaction",
     "write",
     "edit",
     "append",
@@ -41,6 +43,8 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "okf_generate_index",
     "okf_seed_log",
     "okf_verify",
+    "okf_author",
+    "okf_log_event",
     "create_upload_link",
 )
 
