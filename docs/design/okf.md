@@ -207,9 +207,10 @@ frontmatter blob; not persisted):
   as one malformed entry. No source fetching or reviewer authentication occurs.
 - `review_applicability`: `{state, basis}` stating whether a supplied review
   applies to the current content. No review is bound to a content snapshot,
-  so a supplied `verified` value always reports `state: unknown`: entries,
-  malformed ones included, with `basis: no_snapshot_binding`, and a malformed
-  outer value with `basis: malformed_review`. `review` reports entry validity;
+  so a `verified` value with entries, or one that is malformed, reports
+  `state: unknown`: entries, malformed ones included, with
+  `basis: no_snapshot_binding`, and a malformed outer value with
+  `basis: malformed_review`. `review` reports entry validity;
   timestamps and extensions never establish coverage. An absent or empty
   `verified` reports `state: none` with `basis: no_review_supplied`. This
   assessment is separate from freshness.

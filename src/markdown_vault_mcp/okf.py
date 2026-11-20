@@ -454,10 +454,10 @@ def derive_annotation(
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
         truth or applicability to this revision. ``review_applicability``
-        reports that separately as ``{state, basis}``: ``unknown`` for any
-        supplied review, ``none`` when absent or empty. Full reads additionally
-        carry ``recorded`` with supplied expiry/reviews as parsed, including
-        malformed values; omitted keys remain absent. ``malformed_sources``
+        reports that separately as ``{state, basis}``: ``unknown`` when
+        ``verified`` has entries or is malformed, ``none`` when absent or
+        empty. Full reads additionally carry ``recorded`` with supplied
+        expiry/reviews as parsed, including malformed values; omitted keys remain absent. ``malformed_sources``
         and ``malformed_generated`` appear only when true: present sources
         must be a list of mappings, and generated a mapping containing
         ``by``. These advisory flags leave source projections unchanged.

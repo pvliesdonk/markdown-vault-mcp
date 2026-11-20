@@ -1996,8 +1996,8 @@ the spec itself says, dated and sourced, in
   evidence and its basis; `review` counts usable and malformed records with
   `basis: supplied_metadata_only`. Neither certifies truth or applicability.
   `review_applicability` (`{state, basis}`) reports applicability apart from
-  the recorded claims: `unknown` for any supplied `verified` value, `none`
-  when absent or empty; it never infers snapshot coverage from timestamps.
+  the recorded claims: `unknown` for a `verified` value with entries or a
+  malformed one, `none` when absent or an empty list; it never infers snapshot coverage from timestamps.
   Full reads additionally expose supplied expiry/reviews under `recorded`,
   preserving parsed values, while compact results omit that projection.
   The exact contract and supported timestamp subset are in `okf.md` §3.
@@ -2026,7 +2026,9 @@ the spec itself says, dated and sourced, in
   is explicitly unknown; no timestamp comparison, history inference, byte
   comparison or metadata rewrite is performed. JSON/agent payloads and
   filters are unchanged by the presentation slice; the structured
-  `review_applicability` field above carries the same `unknown` to them.
+  `review_applicability` field above carries the same `unknown` to them,
+  except for an empty `verified` list, which the app labels unknown and the
+  field reports as `none`.
   Assessment after observed changes remains #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust

@@ -118,9 +118,10 @@ On an active OKF bundle, whole-document reads also carry
 an 'okf' dict (type, status, stale, `trust_tier` for recorded review
 metadata, freshness, review, `review_applicability`, recorded, and the
 note's 'sources' list when present). `review_applicability`.state is
-"unknown" for any supplied review (no snapshot binding) and "none"
-when no review is supplied. Optional `malformed_sources` and
-`malformed_generated` flags appear only when true; section reads
+"unknown" when verified has entries or is malformed (no snapshot
+binding) and "none" when it is absent or an empty list. Optional
+`malformed_sources` and `malformed_generated` flags appear only
+when true; section reads
 omit the annotation because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
