@@ -24,6 +24,8 @@ okf_version: "0.2"
 # My bundle
 ```
 
+Versions 0.1, 0.2, and 0.3 are recognized; unknown versions are still served best-effort with a warning. Recognition does not imply full v0.3 conformance.
+
 This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
 
 | Value | Behaviour |

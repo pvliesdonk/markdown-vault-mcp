@@ -74,6 +74,17 @@ class TestOkfDetector:
         assert state.active is True
         assert state.declared_version == "0.2"
 
+    @pytest.mark.parametrize("version", ["0.1", "0.2", "0.3"])
+    def test_known_version_detected_without_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, version: str
+    ) -> None:
+        _write_root_index(tmp_path, f'---\nokf_version: "{version}"\n---\n')
+        with caplog.at_level(logging.WARNING):
+            state = OkfDetector(tmp_path, mode="auto").state()
+        assert state.active is True
+        assert state.declared_version == version
+        assert not [r for r in caplog.records if "okf_unknown_version" in r.message]
+
     def test_malformed_json_root_index_reports_undeclared(self, tmp_path: Path) -> None:
         # The probe guards yaml.YAMLError only, so a `{` block the JSON
         # handler rejects escaped it and broke detection outright (#1408).

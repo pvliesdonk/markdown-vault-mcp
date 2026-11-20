@@ -1,10 +1,10 @@
 """OKF (Open Knowledge Format) support: detection and read-side annotations.
 
-OKF (`GoogleCloudPlatform/knowledge-catalog`, ``okf/SPEC.md``) is a bundle
-convention over markdown-with-frontmatter. What the spec says — in both texts
-of "Version 0.2", since it was amended in place on 2026-08-21 — is recorded
-with sources and dates in ``docs/design/reference/okf-v0.2.md``; read it
-before changing a rule here. This module implements phase 1 of
+OKF is a bundle convention over markdown-with-frontmatter. The current spec
+is recorded in ``docs/design/reference/okf-v0.3.md``; the historical v0.2
+text is in ``docs/design/reference/okf-v0.2.md``. Recognizing a version does
+not imply full conformance; read the references before changing a rule here.
+This module implements phase 1 of
 `docs/design/okf.md`: the vault-side detection probe (``okf_version`` declared
 in the bundle-root ``index.md``) and the pure derivation of per-note read
 annotations (``type`` / ``status`` / staleness / trust tier).
@@ -50,12 +50,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# --- OKF v0.2 field-mapping table (data, not code) --------------------------
+# --- OKF field-mapping table (data, not code) --------------------------
 
 #: Spec revisions this implementation knows; anything else logs a warning
 #: and is still treated as detected (permissive-consumer behavior extends
 #: to the marker itself).
-KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2")
+KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2", "0.3")
 
 #: Scalar frontmatter keys promoted into ``document_tags`` when detection
 #: is on (feeds the phase-2 filters; harmless to index ahead of them).
