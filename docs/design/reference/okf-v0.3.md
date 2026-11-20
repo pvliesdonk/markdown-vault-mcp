@@ -33,7 +33,7 @@ implements all of it. For the previous text see [v0.2](okf-v0.2.md).
 ## Server scope
 
 The server recognizes 0.1, 0.2 and 0.3 declarations and keeps unknown
-versions active with a warning. Recognition alone does not implement the
+versions active with a warning. Recognition alone does not implement
 all other v0.3 rules above. Date-only expiry and review timestamps use UTC,
 and null or empty expiry is absent. Other path resolution, trust, timestamp,
 YAML parsing and conformance alignment remain in planned V-slices. See the
