@@ -523,6 +523,7 @@ max-statements = 50
 testpaths = ["tests"]
 addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
+faulthandler_timeout = 300
 markers = [
     "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
     # PROJECT-MARKERS-START — this project's pytest markers; kept across
