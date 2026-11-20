@@ -401,15 +401,52 @@ commits) reports `would_apply=false`. The push leg has no safe local
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
-      path; their vault-relative paths are listed in
-      `pull.conflict_files`.
+      path; their repository-relative paths are listed in
+      `pull.conflict_files`. The `conflict_with` frontmatter paths are also
+      repository-relative.
     - `pull.commits_pulled` is `0` on this path because the rebase
       replays your local commits *on top of* the remote tip — the
       counting model only reports linear-history catch-ups.
 
+    An authored `index.md` keeps the local bytes in a sibling without adding
+    conflict metadata. A `log.md` conflict unions complete entries by date
+    when both versions have compatible frontmatter and preambles and only
+    bullet-list entries. Identical complete entries under the same date are
+    deduplicated. Equal reference definitions in the preamble or list entries are supported; differing definitions
+    and invalid or out-of-order dates cause a fallback. The union reads each
+    side in working-tree form; Git applies its clean filter when staging. If the
+    merge is unsafe or the rebase aborts, the local log is saved as a verbatim
+    sibling. This two-way union does not use Git’s available merge base, so an
+    entry edited or deleted on one side can return.
+    A designated generated index takes the upstream copy when present and is regenerated
+    after the search index catches up. A generated-only conflict, including a
+    deletion on either side, reports `rebased` with no siblings. When upstream
+    deleted the index, the local copy supplies its root `okf_version` until
+    regeneration. A failure to regenerate is logged; the next write into the folder or
+    `okf_generate_index` heals the listing, as it does after a restart. An
+    aborted rebase (more than 50 conflicting replays, or a stop that is not a
+    conflict) keeps the local index. The next pull attempts the rebase again,
+    and the same history can abort it again. If upstream deleted an authored
+    index or log, its local bytes are preserved in a sibling and the original
+    stays deleted. An unsaved non-generated conflict reports failure even when
+    other paths are regenerated or saved as siblings. The server drains
+    regenerated writes before a following push in the same `git_sync`. A
+    callback timeout or commit failure follows the ordinary write path; the
+    drain does not confirm commit success. Preserved siblings appear in search
+    and generated listings until manually reconciled and deleted. They can also
+    produce `missing_type` validation findings; a root index sibling carrying
+    `okf_version` can produce `misplaced_okf_version`. When upstream has a root
+    index, its `okf_version` wins, so a local-only change is not preserved.
+
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
-    `delete` the sibling once merged.
+    `delete` the sibling once merged. If the vault is a subdirectory, strip
+    the repository-to-vault prefix from these paths before passing them to
+    vault read or delete tools. For example, use `note.conflict-mcp-….md`
+    for a returned path of `vault/note.conflict-mcp-….md` when the vault is
+    `vault/`. If the prefix is unknown, locate the sibling in the vault with
+    `list_documents` or `search`. A sibling outside the vault requires access
+    to the repository checkout; vault tools cannot read or delete it.
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is
