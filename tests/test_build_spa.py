@@ -7,7 +7,9 @@ subprocess-against-the-tree approach).
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -160,3 +162,67 @@ def test_find_spa_dir_errors_when_multiple(
         (d / "shell.html").write_text("<!DOCTYPE html>\n", encoding="utf-8")
     with pytest.raises(SystemExit, match=r"multiple .*shell\.html found"):
         build_spa._find_spa_dir()
+
+
+def test_binary_include_embeds_bytes(spa_copy: Path) -> None:
+    """Binary markers embed the exact asset bytes as base64."""
+    (spa_copy / "sample.woff2").write_bytes(b"\x00\xfftest")
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", "/*@@B64:sample.woff2@@*/")
+    assert "AP90ZXN0" in build_spa.assemble(spa_copy)
+
+
+@pytest.mark.parametrize(
+    ("path", "error"),
+    [
+        ("../escape.woff2", "escapes spa/ dir"),
+        ("missing.woff2", "invalid or missing WOFF2"),
+        ("styles.css", "invalid or missing WOFF2"),
+    ],
+)
+def test_binary_include_rejects_invalid_paths(
+    spa_copy: Path, tmp_path: Path, path: str, error: str
+) -> None:
+    """Binary includes must be existing WOFF2 files inside the SPA."""
+    (tmp_path / "escape.woff2").write_bytes(b"outside")
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", f"/*@@B64:{path}@@*/")
+    with pytest.raises(SystemExit, match=error):
+        build_spa.assemble(spa_copy)
+
+
+def test_font_sources_match_hashes() -> None:
+    """Each font in the provenance manifest exists and matches its hash."""
+    fonts = _REAL_SPA / "fonts"
+    sources = (fonts / "SOURCES.md").read_text()
+    entries = re.findall(
+        r"^- `([^`]+\.woff2)` — `[^`]+` — `([0-9a-f]{64})`$",
+        sources,
+        re.MULTILINE,
+    )
+    assert len(entries) == 5
+    assert len({name for name, _ in entries}) == 5
+    assert {name for name, _ in entries} == {
+        font.name for font in fonts.glob("*.woff2")
+    }
+    for name, expected in entries:
+        assert hashlib.sha256((fonts / name).read_bytes()).hexdigest() == expected
+
+
+@pytest.mark.parametrize(
+    "asset", ["newsreader-latin-opsz-normal.woff2", "OFL-newsreader.txt"]
+)
+def test_check_detects_changed_font_assets(
+    spa_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, asset: str
+) -> None:
+    """Changes to font data or its license invalidate the assembled source."""
+    (tmp_path / "app.src.html").write_text(build_spa.assemble(spa_copy))
+    monkeypatch.setattr(build_spa, "_find_spa_dir", lambda: spa_copy)
+    path = spa_copy / "fonts" / asset
+    path.write_bytes(path.read_bytes() + b"x")
+    assert build_spa.main(["build_spa.py", "--check"]) == 1
+
+
+def test_assemble_rejects_malformed_binary_marker(spa_copy: Path) -> None:
+    """A malformed binary marker cannot survive into the output."""
+    _patch_shell(spa_copy, "/*@@FILE:core.js@@*/", "/*@@B64 missing.woff2@@*/")
+    with pytest.raises(SystemExit, match="@@B64 include marker survived"):
+        build_spa.assemble(spa_copy)

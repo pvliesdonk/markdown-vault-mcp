@@ -6498,11 +6498,17 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 - `DOMPurify`: XSS sanitization for all rendered HTML
 - `@modelcontextprotocol/ext-apps`: MCP Apps SDK lifecycle and theming
 
-**Web fonts** are the one dependency the app does not bundle inline: the "Paper"
-theme's type families (Newsreader, Public Sans, IBM Plex Mono) load at runtime from
-Google Fonts via a `<link>` in the shell, so the served `app.html` keeps a
-single external network dependency. The font stacks declare system fallbacks, so
-a load failure degrades to system fonts with no loss of function.
+**Web fonts** are embedded as binary `FontFace` sources by `scripts/build_spa.py`.
+Newsreader, Public Sans and IBM Plex Mono use Latin files with system fallback
+for other glyphs. Variable faces retain their original files but advertise
+Newsreader weights 400–600 and Public Sans 400–700, matching the earlier
+stylesheet so existing font matching stays the same. IBM Plex Mono keeps
+400, 500 and 600 for code and metadata. Embedding raises `app.html` from
+1,245,371 to 1,541,964 bytes (+296,593, about 24%); keeping the full variable
+files preserves Newsreader optical sizing and the weights the interface uses.
+Full OFL notices accompany the assets and are included in
+the served HTML. IBM's own unmodified files preserve its reserved name. The
+[CSP reference](reference/mcp-apps-fonts.md) records the browser behavior.
 
 **Source layout and build**: the SPA is authored as partials under `src/markdown_vault_mcp/static/spa/` (`shell.html`, `styles.css`, `core.js`, and one `views/*.js` per view). `scripts/build_spa.py` assembles them into `static/app.src.html` via recursive `/*@@FILE:path@@*/` include markers, then `scripts/vendor_spa.py` embeds the vendored libraries into the served `static/app.html`. Both `app.src.html` and `app.html` are generated, committed artifacts; edit the partials, not the generated files. Each script has a `--check` mode enforced in pre-commit and gating merges in CI, so a stale artifact fails fast: `vendor_spa.py --check` runs in the template-owned ci.yml `lint` job (part of the required `CI Success` aggregate), while `build_spa.py --check` runs in the domain-owned `spa-source-check.yml` workflow (#942), whose "SPA source up-to-date" check the branch rulesets require via the `extra_required_checks` copier answer (template v5.4.0's domain seam).
 

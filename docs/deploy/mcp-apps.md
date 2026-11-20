@@ -29,5 +29,5 @@ The app shell is `src/markdown_vault_mcp/static/app.html`, built from `app.src.h
 Two details differ from the description above:
 
 - **The sandbox domain.** With `APP_DOMAIN` unset, this server doesn't use the host of `BASE_URL`. It derives the domain as the first 32 hex characters of `sha256(BASE_URL + HTTP_PATH)`, under `.claudemcpcontent.com`.
-- **Fonts.** The interface loads its web fonts from Google Fonts when it opens, and falls back to system fonts when it can't.
+- **Fonts.** The interface embeds its Latin web fonts and falls back to system fonts for other glyphs or if a font fails to load.
 <!-- DOMAIN-MCP-APPS-EXTRA-END -->

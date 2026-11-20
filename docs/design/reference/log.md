@@ -12,6 +12,8 @@
 
 ## 2026-11-16
 
+- New: [MCP Apps font loading under CSP](mcp-apps-fonts.md), for #1198. Read the MCP Apps and CSS Font Loading specifications and package licenses; checked Chromium under a strict font policy. Next review: 2027-05-16.
+
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
   shapes; checked variants against the chosen patterns. Next review: 2027-05-16.

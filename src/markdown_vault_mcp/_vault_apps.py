@@ -29,18 +29,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Origins the served SPA loads sub-resources from, declared so a host that
-#: builds its iframe CSP from ``resourceDomains`` permits them (#1181). Every
-#: script dependency is vendored inline (see scripts/vendor_spa.py), but the
-#: three typefaces are still fetched: the stylesheet from ``fonts.googleapis``
-#: and the font files it references from ``fonts.gstatic``. Keep this list and
-#: what ``static/app.html`` actually requests in step — a declaration that
-#: omits an origin fails silently, with the host simply dropping the request.
-#: ``tests/test_apps_vendoring.py`` asserts the two agree in both directions.
-_CDN_RESOURCE_DOMAINS: list[str] = [
-    "https://fonts.googleapis.com",
-    "https://fonts.gstatic.com",
-]
+#: Fonts and scripts are inline; the SPA drift test checks this stays true.
+_CDN_RESOURCE_DOMAINS: list[str] = []
 
 
 def _compute_claude_app_domain() -> str | None:
