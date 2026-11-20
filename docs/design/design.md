@@ -459,9 +459,10 @@ configuring structured filters activates it too:
    but not searchable" (the `CONVENTIONS_FILE=none` idiom).
    Date/time-typed values are ISO-coerced (matching `_json_default`) so they
    stay searchable and identical across the build and convergence paths.
-   Configuring this field **also** activates context-enriched embeddings
-   (format v2, knob 5) even when `EMBED_CONTEXT` is unset, so it triggers a
-   one-time full re-embed on the next startup.
+   By default, configuring these fields also activates context-enriched
+   embeddings (knob 5), even when `EMBED_CONTEXT` is unset. Set
+   `MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS=false` to keep the same keyword
+   search and filters without adding the field values to embedding input.
 3. **Weighted BM25** (`MARKDOWN_VAULT_MCP_FTS_WEIGHTS`). Per-column weights
    are persisted into the FTS5 rank configuration
    (`INSERT INTO notes_fts(notes_fts, rank) VALUES('rank', 'bm25(...)')`)
@@ -478,21 +479,24 @@ configuring structured filters activates it too:
    multiplicative in hybrid). Query-time only; `get_similar`/`get_context`
    are deliberately unaffected.
 5. **Context-enriched embeddings** (`MARKDOWN_VAULT_MCP_EMBED_CONTEXT`, or
-   any effective `SEARCHABLE_FIELDS` — including the set inherited from
-   `INDEXED_FIELDS` when `SEARCHABLE_FIELDS` is unset, #927). Format v2 is
-   active when either knob is set. A
-   single shared `EmbedTextBuilder` (constructed once in `Vault.__init__`)
-   prefixes embedding input with the note title, chunk heading, and — first
-   chunk only — the searchable-field preamble. `EMBED_CONTEXT` forces v2 even
-   with no searchable fields (title + heading only). Every embedding site (hot
-   reindex, cold build, boot convergence, deferred flush) uses the builder,
-   so convergence cannot "heal" enriched vectors back to plain; the chunk's
-   preamble participates in the convergence signature so offline
-   summary-only edits re-embed. The active format token
-   (`v1` / `v2;fields=...`) is part of the embedding store's identity;
-   a mismatch at open raises `StoreIncompatibleError`, which on a store the
-   vault owns routes to the existing `build_embeddings(force=True)`
-   self-heal.
+   any effective `SEARCHABLE_FIELDS` when
+   `MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS` is true, its default). A single
+   shared `EmbedTextBuilder` (constructed once in `Vault.__init__`) prefixes
+   input with the resolved note title, chunk heading when present, and on the
+   first chunk only, scalar values from effective searchable fields. Setting
+   `EMBED_SEARCHABLE_FIELDS=false` omits that preamble and prevents searchable
+   fields from implicitly enabling context. `EMBED_CONTEXT=true` still adds
+   the title and any heading. Leave it false for body-only input.
+   Every embedding site (hot reindex, cold build, boot convergence, deferred
+   flush) uses the builder. The reconciler reuses vectors when the input
+   matches stored rows, so changes confined to metadata don't need new
+   provider requests in body-only mode. The active format token
+   (`v1` / `v2;fields=...`) is part of the embedding store's identity and
+   depends on the effective input configuration, not the keyword field list
+   alone. Unchanged formats retain their existing tokens, including v1 for
+   body-only and `v2;fields=` for title and heading only. A mismatch at open
+   raises `StoreIncompatibleError`, which on a store the vault owns routes to
+   the existing `build_embeddings(force=True)` recovery.
 
 `TITLE_FIELD`, `SEARCHABLE_FIELDS`, and `INDEXED_FIELDS` are recorded in
 the FTS chunking provenance (alongside the embedding model and char-cap
@@ -6218,7 +6222,8 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | Comma-separated frontmatter fields indexed into the FTS `summary` column | defaults to `INDEXED_FIELDS` |
 | `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | Folder-prefix score multipliers (`prefix:weight,...`) | none |
 | `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | Per-column BM25 weights (`column:weight,...`) | all `1.0` |
-| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | Enrich embedding input with title/heading/searchable-field context | `false` |
+| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | Add title and heading context even when searchable fields do not enrich embedding input | `false` |
+| `MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS` | Let searchable fields activate embedding context and supply the first-chunk preamble | `true` |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | Comma-separated required frontmatter fields | none |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | Comma-separated glob patterns to exclude | none |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | Relative folder path for note templates used by `create_from_template` | `_templates` |

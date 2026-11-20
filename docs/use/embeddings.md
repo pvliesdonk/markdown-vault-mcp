@@ -529,25 +529,46 @@ It refuses, changing no vectors, and prints one line saying what to do when:
 
 The [CLI reference](../reference/cli.md#markdown-vault-mcp-admin-embeddings-import) lists every option of `admin embeddings import`.
 
+### Keep frontmatter keyword-searchable without embedding it
+
+To keep descriptions searchable by keyword and types and tags available as
+filters while embedding only the Markdown body, use these settings:
+
+```bash { .config data-expect="embed_searchable_fields=False,embed_context=False" }
+MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS=title,description
+MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,tags
+MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS=false
+MARKDOWN_VAULT_MCP_EMBED_CONTEXT=false
+```
+
+Set `MARKDOWN_VAULT_MCP_EMBED_CONTEXT=true` if you also want the resolved
+note title and chunk heading, when present. The title can come from
+frontmatter. Other searchable fields still stay out of the embedding input
+unless the same text appears in the Markdown body.
+
+Existing configurations keep their current behavior. By default, configuring
+searchable fields also adds title and heading context and sends those fields'
+scalar values with the first chunk. Switching to a different embedding input
+format re-embeds the vault once. In body-only mode, editing just the frontmatter
+updates keyword search and filter results without re-embedding unchanged
+Markdown chunks, including when the server picks up the edit after a restart.
+
+These settings control what the server sends when it embeds notes, not where
+it stores indexes or what it sends when it embeds a search query. Use
+`mode="keyword"` to search without sending the query text to the embedding
+provider. See the [security model](../security-model.md#what-an-authenticated-caller-can-reach).
+
 ### Notes with no body
 
-A note with no body is indexed for keyword search but is not embedded. This
-covers zero-byte files, notes that are nothing but frontmatter, and notes
-whose body is only whitespace. These notes hold no text to embed, so they
-carry no semantic signal either way.
+In body-only mode, the server indexes notes with no body for keyword search
+but doesn't embed them. This includes zero-byte files, notes with only
+frontmatter, and notes whose body is only whitespace. A note can still get a
+vector without a body if its configured embedding context supplies text.
 
-The server skips these notes deliberately. Embedding providers reject an empty
-input string with HTTP 400 (Voyage reports `Input cannot contain empty strings
-or empty lists`), and the rejection fails the whole request, so a single
-body-less note used to stop a batch of unrelated notes from being embedded as
-well. On version 3.1.0 it could hold the entire index stale until the file was
-excluded. See issue [#1087](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087).
-
-Nothing is required of you. The notes still appear in keyword search and in
-`list_documents`, and they gain vectors as soon as they get a body. If you set
-`MARKDOWN_VAULT_MCP_EMBED_CONTEXT` or `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`,
-the enriched input carries the title and frontmatter values, so those notes are
-embedded as before.
+The server skips empty inputs because embedding providers reject them with
+HTTP 400, which can fail the whole batch. On version 3.1.0, a single body-less
+note could hold the entire index stale until it was excluded. See issue
+[#1087](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087).
 
 ### Slow or CPU-only backends
 

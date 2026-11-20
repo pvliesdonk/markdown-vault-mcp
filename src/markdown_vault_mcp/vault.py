@@ -476,6 +476,7 @@ class Vault:
         )
         self._embed_builder = EmbedTextBuilder(
             embed_context=settings.embed_context,
+            embed_searchable_fields=settings.embed_searchable_fields,
             searchable_fields=tuple(self._searchable_frontmatter_fields),
         )
         self._git_pull_interval_s = settings.git_pull_interval_s

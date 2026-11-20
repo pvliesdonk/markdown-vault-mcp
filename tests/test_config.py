@@ -2317,6 +2317,7 @@ class TestCuratedRankingEnvParsing:
             "MARKDOWN_VAULT_MCP_TITLE_FIELD",
             "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
             "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
+            "MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS",
             "MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS",
             "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
         ):
@@ -2333,16 +2334,18 @@ class TestCuratedRankingEnvParsing:
         assert settings.title_field == "title"
         assert settings.searchable_frontmatter_fields is None
         assert settings.embed_context is False
+        assert settings.embed_searchable_fields is True
         assert settings.folder_weights is None
         assert settings.fts_weights is None
 
-    def test_to_vault_settings_threads_the_five_knobs(
+    def test_to_vault_settings_threads_ranking_knobs(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TITLE_FIELD", "name")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", "summary")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBED_CONTEXT", "1")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS", "false")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS", "sessions:0.5")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FTS_WEIGHTS", "summary:3")
 
@@ -2350,6 +2353,7 @@ class TestCuratedRankingEnvParsing:
         assert settings.title_field == "name"
         assert settings.searchable_frontmatter_fields == ("summary",)
         assert settings.embed_context is True
+        assert settings.embed_searchable_fields is False
         # Vault takes plain dicts.
         assert settings.folder_weights == {"sessions": 0.5}
         assert settings.fts_weights == {"summary": 3.0}

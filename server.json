@@ -216,7 +216,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup."
+          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable. By default these values also enrich the first chunk sent to the embedding provider. Inherits INDEXED_FIELDS when unset; none means no searchable fields."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
@@ -357,9 +357,15 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
-          "description": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
+          "description": "Prefix each embedding input with the resolved note title and chunk heading. Searchable fields also activate this context unless EMBED_SEARCHABLE_FIELDS is false.",
           "format": "boolean",
           "default": "false"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS",
+          "description": "Include searchable frontmatter values on the first chunk sent to the embedding provider. Set to false to keep the fields searchable without sending their values. EMBED_CONTEXT can still add the resolved title and chunk heading.",
+          "format": "boolean",
+          "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
@@ -873,7 +879,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup."
+          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable. By default these values also enrich the first chunk sent to the embedding provider. Inherits INDEXED_FIELDS when unset; none means no searchable fields."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
@@ -1014,9 +1020,15 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
-          "description": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
+          "description": "Prefix each embedding input with the resolved note title and chunk heading. Searchable fields also activate this context unless EMBED_SEARCHABLE_FIELDS is false.",
           "format": "boolean",
           "default": "false"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_SEARCHABLE_FIELDS",
+          "description": "Include searchable frontmatter values on the first chunk sent to the embedding provider. Set to false to keep the fields searchable without sending their values. EMBED_CONTEXT can still add the resolved title and chunk heading.",
+          "format": "boolean",
+          "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",

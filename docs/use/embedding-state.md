@@ -96,7 +96,7 @@ The `postgres` store's space is covered in [Space](postgresql.md#space).
 Each of these asks the provider for every section of every note, which a paid provider bills:
 
 - no `MARKDOWN_VAULT_MCP_INDEX_PATH` or `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` with a `numpy` or `sqlite` store, so the vectors live in memory and are embedded again at each start;
-- a change of embedding provider, model or dimensions;
+- a change of embedding provider, model, dimensions, or effective [embedding input format](embeddings.md#keep-frontmatter-keyword-searchable-without-embedding-it);
 - a switch of `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` without `admin embeddings import`, which includes leaving it unset on an edge build whose only store is a `numpy` one (`index-db-embeddings.v2.json` with no 5.x files beside it): run `embeddings import --from numpy` first, or set `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy`;
 - `markdown-vault-mcp admin index --force`, or the `build_embeddings` tool with `force`;
 - deleting the store with no backup, or recreating an empty `postgres` schema;
