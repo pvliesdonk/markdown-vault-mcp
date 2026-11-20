@@ -331,7 +331,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     Raises:
         PublicationRefused: If strict or review publication fails the report.
         ValueError: If review options or the scope are invalid, or inventory cannot enumerate it,
-            including failures under otherwise omitted hidden paths, or if an
+            including failures under omitted dot-paths, or if an
             outside body or frontmatter destination collides with an exported
             file or directory, the external URL prefix is invalid, or the Git
             snapshot cannot be read.

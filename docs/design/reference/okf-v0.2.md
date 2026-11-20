@@ -33,10 +33,6 @@ sources:
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a0954/okf/SPEC.md
     accessed: 2026-09-06
-  - id: draft-v03
-    title: Open Knowledge Format v0.3 draft, SPEC.md at commit 9506f310 (2026-10-23)
-    resource: https://github.com/open-knowledge-format/open-knowledge-format/blob/9506f310ed17c4f7c4ec942fb5a4aadce6152629/SPEC.md
-    accessed: 2026-11-17
   - id: spec-july
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 3fcbb9f8 (2026-07-24, the text v0.2 was published with)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/3fcbb9f828/okf/SPEC.md
@@ -71,7 +67,7 @@ revision [source: spec] (§1, §12), it was amended without a version bump,
 and the repository carries no tags, so this page's `stale_after` is six
 months, not twelve.
 
-On 2026-11-20, the current [v0.3 specification §3.2](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81af/SPEC.md#32-concepts-assets-and-other-files) excludes dot-paths from bundles. V5 adopts that exclusion for export. This v0.2 page remains a historical reference and the baseline for other unchanged behaviour pending later v0.3 slices; V5 does not adopt the other v0.3 changes.
+On 2026-11-20, v0.3 specification §3.2 was checked for the bundle boundary: it excludes dot-paths from bundles. [source: neutral-v03] This project adopts that exclusion for export. This v0.2 page remains a historical reference and the baseline for other unchanged behaviour; other v0.3 changes are separate work.
 
 ## Scope
 
