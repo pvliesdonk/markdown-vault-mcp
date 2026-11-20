@@ -255,10 +255,7 @@ class ReaderFacet:
             )
         note = self.read(path)
         if note is None:
-            raise DocumentNotFoundError(
-                f"No note at path {path!r}. Find a path with search or list_documents "
-                "and pass it to inspect_citations."
-            )
+            raise DocumentNotFoundError.note(path)
         # read() may carry metadata/hash from an earlier disk read. Only this
         # one returned content string is allowed to supply the join and digest.
         try:
