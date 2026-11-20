@@ -225,7 +225,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool(
-        icons=_TOOL_ICONS["read"],
+        icons=_TOOL_ICONS["inspect_citations"],
         annotations={
             "title": "Inspect Note Citations",
             "read_only_hint": True,
