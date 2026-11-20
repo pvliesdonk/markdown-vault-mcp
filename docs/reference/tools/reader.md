@@ -202,19 +202,27 @@ exact ID join. Source support remains unchecked. See [syntax coverage](../../use
 
 **Find Citing Notes.** Read-only. Idempotent.
 
-Find indexed notes citing an exact source resource and unresolved labels.
+Find indexed notes whose footnote labels cite an exact source resource.
+
+Use `inspect_citations` for the sources one known note cites. The resource
+matches exactly, with no URL normalization; plain body links do not count.
 
 **Parameters**
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `resource` | `string` | required | Exact source resource string from a note's sources. |
+| `resource` | `string` | required | Exact resource string of a source record in a note's sources. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
 
-Citing notes with labels and counts, unresolved diagnostics, and
-`unconverted_notes`: indexed notes not yet re-read for citations.
+Citing notes with their titles, labels and occurrence counts;
+diagnostics for unmatched, ambiguous and invalid-resource labels in
+notes that declare the resource; `unconverted_notes`, the count of
+indexed notes not yet re-read under the current citation rules and so
+left out; and the syntax and scope fields describing coverage. A
+matched label is attribution, not evidence that the source supports a
+claim.
 
 <!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

@@ -270,7 +270,7 @@ def register(mcp: FastMCP) -> None:
         return asdict(report)
 
     @mcp.tool(
-        icons=_TOOL_ICONS["read"],
+        icons=_TOOL_ICONS["find_citing_notes"],
         annotations={
             "title": "Find Citing Notes",
             "read_only_hint": True,
@@ -286,15 +286,23 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Find indexed notes citing an exact source resource and unresolved labels.
+        """Find indexed notes whose footnote labels cite an exact source resource.
+
+        Use inspect_citations for the sources one known note cites. The resource
+        matches exactly, with no URL normalization; plain body links do not count.
 
         Args:
-            resource: Exact source resource string from a note's sources.
-            wait_for_pending_writes: Wait for pending writes to reach the index.
+            resource: Exact resource string of a source record in a note's sources.
+            wait_for_pending_writes: Wait for recent index writes before answering.
 
         Returns:
-            Citing notes with labels and counts, unresolved diagnostics, and
-            unconverted_notes: indexed notes not yet re-read for citations.
+            Citing notes with their titles, labels and occurrence counts;
+            diagnostics for unmatched, ambiguous and invalid-resource labels in
+            notes that declare the resource; unconverted_notes, the count of
+            indexed notes not yet re-read under the current citation rules and so
+            left out; and the syntax and scope fields describing coverage. A
+            matched label is attribution, not evidence that the source supports a
+            claim.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "find_citing_notes"
