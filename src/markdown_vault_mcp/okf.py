@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# --- OKF field-mapping table (data, not code) --------------------------
+# --- OKF v0.2 field-mapping table (data, not code) --------------------------
 
 #: Spec revisions this implementation knows; anything else logs a warning
 #: and is still treated as detected (permissive-consumer behavior extends

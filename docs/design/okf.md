@@ -9,7 +9,7 @@ ref) implemented; their design has
 graduated into `design.md` ("OKF Read Semantics"). Later phases remain
 proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
-**Spec targeted:** OKF v0.2
+**Historical spec for this design:** OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
 Apache 2.0; announced 2026-06-12 on the
 [Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)).
@@ -17,7 +17,9 @@ What the spec actually says, with sources, dates and the in-place amendment
 of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 `stale_after` an instant), is the reference page
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
-document decides are listed there.
+document decides are listed there. The current pinned specification is
+[OKF v0.3](reference/okf-v0.3.md); server alignment with v0.3 remains
+incomplete.
 
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
@@ -57,7 +59,7 @@ What is missing is *semantics*: the server indexes OKF frontmatter as opaque
 metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
 `generated`/`verified`, or the reserved files `index.md`/`log.md`.
 
-### OKF v0.2 in brief (normative source: SPEC.md)
+### Historical OKF v0.2 summary (source: SPEC.md)
 
 - **Conformance:** every non-reserved `.md` has parseable YAML frontmatter
   with a non-empty `type` (free vocabulary). Nothing else is required.
@@ -95,7 +97,7 @@ OKF is pre-1.0 and has one breaking change behind it already
 (v0.1→v0.2: `timestamp` → `generated.at`, body `# Citations` → `sources`).
 Consequence for this design: **the OKF field mapping is data, not code** — a
 single module-level table (field name → indexing/annotation behavior) so a
-v0.3 rename is a table edit plus tests, not a refactor.
+future rename is a table edit plus tests, not a refactor.
 
 ---
 

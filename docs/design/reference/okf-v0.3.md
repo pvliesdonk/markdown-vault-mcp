@@ -7,9 +7,6 @@ valid_for: "OKF 0.3 at commit 527e81af"
 generated:
   by: process:researching-references
   at: 2026-11-20T11:23:20+00:00
-verified:
-  - by: process:researching-references-refute
-    at: 2026-11-20T11:23:20+00:00
 stale_after: 2027-11-20
 status: stable
 sources:
