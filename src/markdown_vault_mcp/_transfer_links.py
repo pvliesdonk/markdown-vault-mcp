@@ -13,8 +13,8 @@ Two entry points share one route mount and one token store:
   DOMAIN-WIRING block). ``register_transfer_routes`` is
   ``build_transfer_links`` plus the two tools.
 
-``TransferConfig`` still comes from pvl-core through the shim, until #2321
-moves it; the instructions builder until #2305.
+The instructions builder still comes from pvl-core through the shim, until
+#2305 moves it.
 
 How FastMCP builds the tool descriptions, parameter descriptions and
 instructions snippets registered here, and how clients read them, is in
@@ -34,7 +34,6 @@ from mcp.types import Icon, ToolAnnotations
 from markdown_vault_mcp._pvl_core import (
     InstructionRole,
     ServerConfig,
-    TransferConfig,
     instructions_for,
 )
 from markdown_vault_mcp._tool_boundary import tool_boundary
@@ -50,6 +49,7 @@ if TYPE_CHECKING:
         TransferSink,
         TransferValidator,
     )
+    from markdown_vault_mcp.config_sections import TransferConfig
 
 # Lucide icons (MIT): raw SVG markup, base64-encoded once at import time into
 # data URIs, so the tools carry icons with no file-system or network

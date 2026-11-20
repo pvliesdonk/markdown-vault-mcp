@@ -17,7 +17,7 @@ Path validation runs at link-creation time in :meth:`VaultTransferSink.validate`
 (the ``TransferValidator``), so a bad ref is rejected before a token is minted.
 A rejection is a ``ToolError`` at INFO telling the model what to pass instead;
 anything else the hook raises is a server fault (#1623).
-The upstream error and retry contract is recorded in
+The error and retry contract the routes apply is recorded in
 ``docs/design/reference/fastmcp-transfer.md``.
 """
 

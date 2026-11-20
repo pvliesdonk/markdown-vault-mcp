@@ -234,10 +234,10 @@ def make_server(
     # be served under stdio) and, at build time, base_url — pvl-core raises
     # ConfigurationError when it is unset, so gate only on the transport and let
     # that error surface a misconfigured deployment rather than silently
-    # dropping the feature. Requires fastmcp-pvl-core >= 4.8.0.
+    # dropping the feature.
     #
-    # First compose a TransferConfig into ProjectConfig (config.py): add
-    # ``TransferConfig`` to its ``from markdown_vault_mcp._pvl_core import (...)`` block, then
+    # First compose a TransferConfig into ProjectConfig (config.py): import
+    # ``TransferConfig`` from ``markdown_vault_mcp.config_sections``, then
     # a ``transfer: TransferConfig = field(default_factory=TransferConfig)`` field
     # in CONFIG-FIELDS and ``transfer=TransferConfig.from_env(_ENV_PREFIX),`` in
     # CONFIG-FROM-ENV. The second line is required — without it the

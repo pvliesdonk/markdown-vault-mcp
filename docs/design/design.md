@@ -2246,8 +2246,9 @@ clamp, and the per-upload size cap. It was a hand-rolled in-memory subsystem
 in this repo (`transfer/`) until #979 adopted `fastmcp-pvl-core`'s shared
 framework, and #2241 folds that back in: the registration and the link tools
 are `_transfer_links.py` (#2318), the route handler `_transfer_routes.py` and
-the sink contract `_transfer_contract.py` (#2319), and the token store
-`_transfer_store.py` (#2320). The domain part
+the sink contract `_transfer_contract.py` (#2319), the token store
+`_transfer_store.py` (#2320) and the settings `config_sections.TransferConfig`
+(#2321). The domain part
 is a `VaultTransferSink` (`_transfer_sink.py`) implementing the `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
 vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
@@ -2334,8 +2335,8 @@ route logs only the status and class, so the sink logs the reason itself
 The route releases the token reservation on these errors without extending its
 expiry; another upload will still conflict while the destination exists. Any
 other failure still maps to 500. See the versioned
-[pvl-core transfer reference](reference/fastmcp-transfer.md) for the upstream
-error and retry contract.
+[transfer reference](reference/fastmcp-transfer.md) for the error and retry
+contract, recorded against pvl-core before the fold and ported unchanged.
 
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.

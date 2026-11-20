@@ -20,7 +20,6 @@ from fastmcp_pvl_core import (
     HealthCheck,
     InstructionRole,
     ServerConfig,
-    TransferConfig,
     apply_tool_visibility,
     build_auth,
     build_bearer_auth,
@@ -75,6 +74,4 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # The transfer settings (#2321).
-    "TransferConfig",
 ]
