@@ -82,6 +82,12 @@ try:
             EVENT_TYPE_DELETED,
         }
     )
+
+    # The inotify emitter queues DirModifiedEvent(parent) directly after each of
+    # these, so only they can leave a derived parent notice pending.
+    _PARENT_NOTICE_EVENT_TYPES = frozenset(
+        {EVENT_TYPE_CREATED, EVENT_TYPE_DELETED, EVENT_TYPE_MOVED}
+    )
 except ImportError:
     _WATCHDOG_AVAILABLE = False
 
@@ -134,6 +140,70 @@ def _is_hidden_relative_to_root(abs_path: str, watch_root: Path) -> bool:
         # Not under this root; it belongs to a different watch, so ignore here.
         return True
     return _has_hidden_component(rel.parts)
+
+
+class _HiddenChangeNotices:
+    """Absorb the parent-directory notice that follows an ignored hidden change.
+
+    The inotify emitter queues ``DirModifiedEvent(parent)`` immediately after a
+    child's create, delete or move. When that child is hidden the handler already
+    ignores it, but the notice names a visible folder, so a hidden scratch
+    directory created and removed there would reindex the vault. Only those three
+    event types arm a notice, and the notice for that parent is absorbed once.
+    Every other event, hidden modifications included, forgets the pending
+    notices, so a bare ``DirModifiedEvent`` (the ``IN_CLOSE_WRITE`` signal the
+    subscription keeps) still schedules.
+    """
+
+    def __init__(self) -> None:
+        self._parents: set[str] = set()
+
+    def note_hidden(self, event: FileSystemEvent, paths: Sequence[str]) -> None:
+        """Arm the parents of an ignored create, delete or move; clear otherwise.
+
+        Args:
+            event: The ignored hidden event.
+            paths: Its endpoint paths.
+        """
+        if event.event_type in _PARENT_NOTICE_EVENT_TYPES:
+            self._parents = {str(Path(path).parent) for path in paths}
+        else:
+            self._parents.clear()
+
+    def absorbs(self, event: FileSystemEvent) -> bool:
+        """Return whether *event* is the notice derived from a hidden change.
+
+        Args:
+            event: A mutating event that was not itself hidden.
+
+        Returns:
+            ``True`` once per noted parent for its ``DirModifiedEvent``.
+        """
+        path = str(event.src_path)
+        if (
+            event.is_directory
+            and event.event_type == EVENT_TYPE_MODIFIED
+            and path in self._parents
+        ):
+            self._parents.discard(path)
+            return True
+        self._parents.clear()
+        return False
+
+
+def _event_paths(event: FileSystemEvent) -> list[str]:
+    """Return the endpoint paths of *event*: source, plus destination on a move.
+
+    Args:
+        event: A watchdog filesystem event.
+
+    Returns:
+        The paths the event concerns.
+    """
+    paths = [getattr(event, "src_path", "") or ""]
+    if event.event_type == EVENT_TYPE_MOVED:
+        paths.append(getattr(event, "dest_path", "") or "")
+    return paths
 
 
 @dataclass(frozen=True)
@@ -608,25 +678,31 @@ if _WATCHDOG_AVAILABLE:
             super().__init__()
             self._schedule = schedule
             self._watch_root = watch_root
+            self._notices = _HiddenChangeNotices()
+
+        def _concerns_vault(self, event: FileSystemEvent) -> bool:
+            """Return whether a mutating event is a visible, non-derived change."""
+            paths = _event_paths(event)
+            if all(
+                _is_hidden_relative_to_root(path, self._watch_root) for path in paths
+            ):
+                self._notices.note_hidden(event, paths)
+                return False
+            return not self._notices.absorbs(event)
 
         def on_any_event(self, event: FileSystemEvent) -> None:
             """Schedule a mutating event when an endpoint belongs to this root.
 
             Moves consider both endpoints; other mutations consider only source.
+            The parent notice watchdog derives from a hidden change is absorbed.
 
             Args:
                 event: The filesystem event delivered under this watch root.
             """
-            if event.event_type not in _MUTATING_EVENT_TYPES:
-                return
-            paths = [getattr(event, "src_path", "") or ""]
-            if event.event_type == EVENT_TYPE_MOVED:
-                paths.append(getattr(event, "dest_path", "") or "")
-            if all(
-                _is_hidden_relative_to_root(path, self._watch_root) for path in paths
+            if event.event_type in _MUTATING_EVENT_TYPES and self._concerns_vault(
+                event
             ):
-                return
-            self._schedule()
+                self._schedule()
 
 else:
 

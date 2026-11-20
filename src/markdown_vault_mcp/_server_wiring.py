@@ -11,8 +11,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from fastmcp.server.middleware import Middleware
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from fastmcp import FastMCP
+    from fastmcp.server.middleware import CallNext, MiddlewareContext
+    from fastmcp.tools import Tool
+    from mcp import types as mt
 
     from markdown_vault_mcp.config import ProjectConfig
 
@@ -56,6 +63,42 @@ def wire_domain(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
     _hide_by_mode(mcp, config)
     _register_jobs(mcp, config)
     _hide_by_feature(mcp, config)
+
+
+class _AuthorDiscovery(Middleware):
+    """List ``okf_author`` only while the vault's OKF bundle is active.
+
+    Whether a bundle is declared can change after startup, so the static
+    visibility rules cannot decide it; each listing consults the live vault.
+    """
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mt.ListToolsRequest],
+        call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        """Drop the authoring tool from a listing while OKF is inactive."""
+        from markdown_vault_mcp._tools._common import okf_active
+        from markdown_vault_mcp.domain import get_vault
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        tools = await call_next(context)
+        if context.fastmcp_context is None:
+            return tools
+        try:
+            if await okf_active(get_vault(context.fastmcp_context)):
+                return tools
+        except (ConfigurationError, RuntimeError):
+            return tools  # no vault to consult: list as configured
+        return [tool for tool in tools if "okf-author" not in tool.tags]
+
+
+def _gate_author(mcp: FastMCP, config: ProjectConfig) -> None:
+    """Hide ``okf_author`` unless configured, then unless the bundle is active."""
+    if config.content.okf_capabilities.author:
+        mcp.add_middleware(_AuthorDiscovery())
+    else:
+        mcp.disable(tags={"okf-author"})
 
 
 def _register_scope_and_prompts(mcp: FastMCP, config: ProjectConfig) -> None:
@@ -133,6 +176,7 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
             ),
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,
+            okf_capabilities=config.content.okf_capabilities,
             boot_reindex=config.boot_reindex,
         ),
     )
@@ -152,7 +196,10 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
     if transport == "stdio" or not config.server.base_url:
         return
     from markdown_vault_mcp._transfer_links import register_transfer_routes
-    from markdown_vault_mcp._transfer_sink import VaultTransferSink
+    from markdown_vault_mcp._transfer_sink import (
+        OKF_BUNDLE_DOWNLOAD_NOTE,
+        VaultTransferSink,
+    )
 
     transfer_sink = VaultTransferSink(config)
     register_transfer_routes(
@@ -165,13 +212,7 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
             "For this server, ref is a vault-relative path to an existing "
             "note (a .md file) or attachment."
             # The bundle refs work only where the sink accepts them (#1695).
-            + (
-                ""
-                if config.content.okf_mode == "off"
-                else " Or pass okf-bundle for the whole vault as an Open "
-                "Knowledge Format bundle (a zip); prefix a folder path with "
-                "okf-bundle: (okf-bundle:projects) for one folder."
-            )
+            + ("" if config.content.okf_mode == "off" else OKF_BUNDLE_DOWNLOAD_NOTE)
         ),
         upload_note=(
             "ref is a vault-relative path for a note (.md) or an allowed "
@@ -278,11 +319,7 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
         # OKF semantics vetoed by the operator: hide the OKF tool surface
         # entirely (same pattern as the apps-ui toggle).
         mcp.disable(tags={"okf"})
-    if not config.content.okf_write or config.content.okf_verify == "off":
-        # The enforced-write layer (#964) is opt-in: hide its tool surface
-        # (okf_verify) unless OKF_WRITE is enabled. Provenance stamping and
-        # verification invalidation are behaviours gated in the write path,
-        # not tools, so they need no disable pass here. OKF_VERIFY=off (#990)
-        # hides okf_verify even with the layer on, so attestation happens
-        # solely via external tooling beyond the model's reach.
+    _gate_author(mcp, config)
+    if config.content.okf_capabilities.verify == "off":
+        # Verification is configurable independently of authoring.
         mcp.disable(tags={"okf-enforce"})

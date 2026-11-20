@@ -18,12 +18,23 @@ indistinguishable from a note that was empty at that revision and its caller is
 about to write the result back; :func:`committed_revision` returns ``None``,
 which is what it returns for every other unanswerable case.  Internal helpers
 (:func:`resolve_path_at_ref` among them) require a resolved ``git_root``.
+
+The OKF export snapshot (:func:`git_export_snapshot` and its helpers) is the
+exception to both rules: it discovers the repository from the vault path, and
+it runs Git with its own environment, which drops the variables that route Git
+to another repository, and with a ``cat-file --batch`` process that it closes
+when the export ends.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import re
 import subprocess
+from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -35,7 +46,11 @@ from markdown_vault_mcp.git._run import (
     run_git_capturing,
 )
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
-from markdown_vault_mcp.utils.fs import path_exists
+from markdown_vault_mcp.utils.fs import (
+    open_directory_nofollow,
+    path_exists,
+    read_regular_nofollow,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -85,6 +100,302 @@ _RENAME_LIMIT = "diff.renameLimit=2000"
 # filename legally may, git has no framing that would let a block boundary be
 # found without a marker of some kind.
 _HISTORY_SENTINEL = "\x1e"
+
+
+@dataclass(frozen=True)
+class GitExportSnapshot:
+    """Immutable Git tree selected for a vault export."""
+
+    commit: str
+    entries: dict[str, tuple[str, str]]
+    changed: set[str]
+    root: Path
+    sizes: dict[str, int]
+    flagged: dict[str, bool] = field(default_factory=dict)
+    children: dict[str, tuple[Path, str]] = field(default_factory=dict)
+    repos: dict[str, Path] = field(default_factory=dict)
+    source: Path | None = None
+    _process: dict[Path, subprocess.Popen[bytes]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+
+    @cached_property
+    def ordered(self) -> list[tuple[str, tuple[str, str]]]:
+        """Return entries sorted once for all pages.
+
+        Returns:
+            The snapshot entries in full-path order.
+        """
+        return sorted(self.entries.items())
+
+    def read(self, path: str) -> bytes:
+        """Read a selected blob; an LFS pointer yields the live bytes it pins."""
+        blob = self._read_object(path)
+        pinned = _lfs_object(blob)
+        return self._lfs_content(path, pinned) if pinned else blob
+
+    def size(self, path: str) -> int:
+        """Content size; an LFS pointer is sized by the object it pins."""
+        size = self.sizes[path]
+        if size >= _LFS_POINTER_LIMIT:
+            return size
+        pinned = _lfs_object(self._read_object(path))
+        return pinned[1] if pinned else size
+
+    def _lfs_content(self, path: str, pinned: tuple[str, int]) -> bytes:
+        """Return the live file only if it is the object the pointer names."""
+        live = None
+        if self.source is not None:
+            parts = path.split("/")
+            try:
+                with open_directory_nofollow(self.source, parts[:-1]) as parent:
+                    live = read_regular_nofollow(parent, parts[-1], pinned[1] + 1)
+            except OSError:
+                pass
+        if (
+            live is not None
+            and len(live) == pinned[1]
+            and hashlib.sha256(live).hexdigest() == pinned[0]
+        ):
+            return live
+        raise ValueError(
+            f"Git LFS object for {path} is not available as its committed pointer "
+            "names it; fetch it with git lfs pull, restore the file, and retry."
+        )
+
+    def _read_object(self, path: str) -> bytes:
+        """Read a selected tree blob without interpreting its path as a revision."""
+        oid = self.entries[path][1]
+        root = self.repos.get(path, self.root)
+        try:
+            return self._read_blob(oid, root)
+        except (OSError, ValueError) as exc:
+            if root != self.root:
+                raise ValueError(
+                    "Git submodule object is unavailable; run git submodule update --init and retry."
+                ) from exc
+            raise
+
+    def _read_blob(self, oid: str, root: Path) -> bytes:
+        if root not in self._process:
+            # Only Git-generated object IDs are sent over the batch protocol.
+            self._process[root] = subprocess.Popen(  # noqa: S603, RUF100
+                ["git", "-C", str(root), "cat-file", "--batch"],  # noqa: S607, RUF100
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=_export_env(),
+            )
+        process = self._process[root]
+        if process.stdin is None or process.stdout is None:
+            raise OSError("Git batch stream unavailable")
+        process.stdin.write(oid.encode("ascii") + b"\n")
+        process.stdin.flush()
+        header = process.stdout.readline().split()
+        if len(header) != 3 or header[1] != b"blob":
+            raise ValueError("Git snapshot blob unavailable")
+        size = int(header[2])
+        raw = process.stdout.read(size)
+        if len(raw) != size or process.stdout.read(1) != b"\n":
+            raise OSError("Git snapshot blob stream ended early")
+        return raw
+
+    def close(self) -> None:
+        """Close the batch reader, if started."""
+        while self._process:
+            _, process = self._process.popitem()
+            if process.stdin is not None:
+                process.stdin.close()
+            if process.stdout is not None:
+                process.stdout.close()
+            process.wait()
+
+
+# Variables that route Git to another repository, index or object store. An
+# export finds its repository from the vault path, so these never apply to it.
+_REPOSITORY_ROUTING = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+)
+
+
+def _export_env() -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in _REPOSITORY_ROUTING}
+    return {
+        **env,
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_LAZY_FETCH": "1",
+        "LC_ALL": "C",
+    }
+
+
+def _export_git(
+    root: Path, *args: str, check: bool = True, input_data: bytes | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    # The executable is the configured Git CLI and arguments are never interpreted by a shell.
+    return subprocess.run(  # noqa: S603, RUF100
+        ["git", "-C", str(root), *args],  # noqa: S607, RUF100
+        capture_output=True,
+        check=check,
+        input=input_data,
+        env=_export_env(),
+    )
+
+
+def _tree_entries(root: Path, commit: str) -> Iterator[tuple[str, str, str, int]]:
+    tree = _export_git(root, "ls-tree", "--full-name", "-r", "-l", "-z", commit).stdout
+    for record in tree.split(b"\0"):
+        if record:
+            info, name = record.split(b"\t", 1)
+            mode, _kind, oid, size = info.split()
+            yield (
+                os.fsdecode(name),
+                mode.decode("ascii"),
+                oid.decode("ascii"),
+                (int(size) if size != b"-" else 0),
+            )
+
+
+# Discovery distinguishes absent Git, unsafe worktrees, and unavailable commits.
+def git_export_snapshot(source: Path) -> GitExportSnapshot | None:  # noqa: C901, RUF100
+    """Pin a vault's Git commit and enumerate its blobs.
+
+    Args:
+        source: Vault root, which may be nested within a repository.
+
+    Returns:
+        Commit and vault-relative tree entries, or None outside a Git worktree.
+
+    Raises:
+        ValueError: If a repository exists but its snapshot cannot be read.
+    """
+    try:
+        probe = _export_git(source, "rev-parse", "--show-toplevel", check=False)
+    except FileNotFoundError as exc:
+        if any(path_exists(parent / ".git") for parent in (source, *source.parents)):
+            raise ValueError("Git is required to export a Git snapshot") from exc
+        return None
+    if probe.returncode:
+        if b"not a git repository" in probe.stderr:
+            return None
+        reason = probe.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"Cannot locate Git worktree for export: {reason}")
+    root = Path(os.fsdecode(probe.stdout.removesuffix(b"\n")))
+    prefix = source.resolve().relative_to(root.resolve()).as_posix()
+    prefix = "" if prefix == "." else prefix + "/"
+    head = _export_git(
+        root, "rev-parse", "--verify", "-q", "HEAD^{commit}", check=False
+    )
+    if head.returncode == 1:
+        raise ValueError(
+            "Git snapshot has no readable commit; if the repository has no commits, create one with git commit."
+        )
+    if head.returncode:
+        reason = head.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"Cannot resolve Git snapshot HEAD for export: {reason}")
+    try:
+        commit = head.stdout.decode("ascii").strip()
+        entries: dict[str, tuple[str, str]] = {}
+        sizes: dict[str, int] = {}
+        for path, mode, oid, size in _tree_entries(source, commit):
+            if path.startswith(prefix):
+                entries[path[len(prefix) :]] = (mode, oid)
+                sizes[path[len(prefix) :]] = size
+        snapshot = GitExportSnapshot(commit, entries, set(), root, sizes, source=source)
+        _expand_gitlinks(source, snapshot)
+        return snapshot
+    except (subprocess.SubprocessError, UnicodeError, ValueError) as exc:
+        raise ValueError("Cannot read Git snapshot for export") from exc
+
+
+def _expand_gitlinks(source: Path, snapshot: GitExportSnapshot) -> None:
+    pending = [path for path, (mode, _) in snapshot.entries.items() if mode == "160000"]
+    while pending:
+        path = pending.pop()
+        oid = snapshot.entries[path][1]
+        parts = tuple(path.split("/"))
+        if len(parts) > 32:
+            continue
+        child = source.joinpath(*parts)
+        try:
+            with open_directory_nofollow(source, parts):
+                pass
+            root = _export_git(child, "rev-parse", "--show-toplevel").stdout.rstrip(
+                b"\n"
+            )
+            if Path(os.fsdecode(root)).resolve() != child.resolve():
+                continue
+            _export_git(child, "cat-file", "-e", f"{oid}^{{commit}}")
+            tree = list(_tree_entries(child, oid))
+        except (OSError, subprocess.SubprocessError):
+            continue
+        del snapshot.entries[path]
+        snapshot.sizes.pop(path)
+        snapshot.children[path] = (child, oid)
+        for name, mode, blob, size in tree:
+            entry_path = path + "/" + name
+            snapshot.entries[entry_path] = (mode, blob)
+            snapshot.sizes[entry_path] = size
+            snapshot.repos[entry_path] = child
+            if mode == "160000":
+                pending.append(entry_path)
+
+
+def git_snapshot_changes(source: Path, commit: str) -> tuple[set[str], dict[str, bool]]:
+    """Observe changed and index-flagged names against a pinned commit."""
+    try:
+        options = ("--no-ext-diff", "--no-renames", "--relative", "--name-only", "-z")
+        diff = _export_git(
+            source, "diff", "--ignore-submodules=dirty", *options, commit, "--", "."
+        ).stdout
+        staged = _export_git(
+            source,
+            "diff",
+            "--cached",
+            "--ignore-submodules=none",
+            *options,
+            commit,
+            "--",
+            ".",
+        ).stdout
+        untracked = _export_git(source, "ls-files", "--others", "-z", "--", ".").stdout
+        flagged_raw = _export_git(source, "ls-files", "-v", "-z", "--", ".").stdout
+        changed = {
+            os.fsdecode(name)
+            for name in (diff + staged + untracked).split(b"\0")
+            if name
+        }
+        flagged = {
+            os.fsdecode(row[2:]): row[:1] in {b"S", b"s"}
+            for row in flagged_raw.split(b"\0")
+            if row[:1] in {b"h", b"S", b"s"}
+        }
+        return changed, flagged
+    except subprocess.SubprocessError as exc:
+        raise ValueError("Cannot read Git snapshot for export") from exc
+
+
+def _git_snapshot_hash(
+    snapshot: GitExportSnapshot, source: Path, path: str, raw: bytes
+) -> str:
+    """Hash safely read working bytes with Git's path-specific clean conversion."""
+    root = snapshot.repos.get(path, snapshot.root)
+    relative = (source.resolve() / path).relative_to(root.resolve()).as_posix()
+    try:
+        return (
+            _export_git(
+                root, "hash-object", f"--path={relative}", "--stdin", input_data=raw
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
+    except (subprocess.SubprocessError, UnicodeError) as exc:
+        raise ValueError("Cannot normalize Git working-tree content") from exc
 
 
 def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] | None:
@@ -1737,10 +2048,38 @@ def _per_commit_diffs(
 # Revision reads (#1137)
 # ---------------------------------------------------------------------------
 
-# First line of a Git LFS pointer file.  An LFS-tracked note's blob holds this
-# stand-in, not the note; the working tree gets the real bytes only because the
-# smudge filter ran at checkout, which a revision read does not go through.
-_LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
+# First line of a Git LFS pointer file, in the current and the pre-release
+# spelling.  An LFS-tracked note's blob holds this stand-in, not the note; the
+# working tree gets the real bytes only because the smudge filter ran at
+# checkout, which a revision read does not go through.
+_LFS_POINTER_PREFIXES = (
+    b"version https://git-lfs.github.com/spec/v1",
+    b"version https://hawser.github.com/spec/v1",
+)
+
+
+# A pointer file is under 1024 bytes, so no larger blob needs reading to size it.
+_LFS_POINTER_LIMIT = 1024
+
+
+def is_lfs_pointer(blob: bytes) -> bool:
+    """Whether *blob* is a Git LFS pointer in either supported spelling."""
+    return _lfs_object(blob) is not None
+
+
+def _lfs_object(blob: bytes) -> tuple[str, int] | None:
+    """Return the SHA-256 and size a pointer names, or None if it names none."""
+    oid = re.search(rb"^oid sha256:([0-9a-f]{64})$", blob, re.MULTILINE)
+    size = re.search(rb"^size (\d+)$", blob, re.MULTILINE)
+    if (
+        len(blob) >= _LFS_POINTER_LIMIT
+        or blob.split(b"\n", 1)[0] not in _LFS_POINTER_PREFIXES
+        or not oid
+        or not size
+    ):
+        return None
+    return oid[1].decode("ascii"), int(size[1])
+
 
 # Git's file mode for a symlink.  The blob behind one holds the link *target*
 # as text, not the linked note's content, so a revision read refuses rather
@@ -2072,7 +2411,7 @@ def _note_text(blob: bytes, path: str, where: str) -> str:
         raise DocumentUnreadableError(
             path, f"its content as {where} is not valid UTF-8"
         ) from exc
-    if text.startswith(_LFS_POINTER_PREFIX):
+    if is_lfs_pointer(blob):
         raise DocumentUnreadableError(
             path,
             f"{where} is stored in Git LFS, so git holds a pointer "

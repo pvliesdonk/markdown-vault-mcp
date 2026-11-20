@@ -1,10 +1,24 @@
 # Reference research log
 
+## 2026-11-18
+
+- Extended [Git history and revision queries](git-history-queries.md) for the
+  OKF export snapshot (H5, #1448): read the git 2.56.1 documentation for
+  `hash-object --path`, gitattributes, `update-index` flags, `ls-files -v`,
+  `diff --ignore-submodules` and gitmodules. Observed `hash-object --path
+  --stdin` normalization, flagged files hidden from `diff`, and a staged
+  gitlink hidden under `ignore=all`. Other claims, `generated` and the
+  refute review dates unchanged.
+
+- Rechecked the [OKF reference](okf-v0.2.md) against the neutral repository v0.3 draft; retained the v0.2 baseline.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
   observed `next` URL host for #1853, from a full pagination of both sources.
   Other claims and review date unchanged.
+- Updated: [OKF v0.2](okf-v0.2.md), after rechecking the sources. The neutral
+  repository contains a v0.3 draft; this project retains its v0.2 baseline.
 - Updated: [File creation permissions and default ACLs](file-creation-permissions.md),
   for #2054. Rechecked acl(5)'s permission-bit correspondence for a default
   ACL without a mask; the runtime now reads the default-ACL xattr instead of
@@ -24,6 +38,9 @@
 
 ## 2026-11-15
 
+- **Update**: Rechecked the canonical OKF specification's source/footnote join
+  semantics for exact-note citation inspection; recorded the dated subsection
+  in [Open Knowledge Format v0.2](okf-v0.2.md#citation-joins-checked-2026-11-15).
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
   Cross-checked the technique against paper v2, §§1, 3–4.2 and 7.1,
   and the upstream README. No implementation or deployment benchmark.

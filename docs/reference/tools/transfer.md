@@ -20,7 +20,7 @@ Create a download URL for a file; returns url and `expires_in_s`.
 Use it to hand a file to the user or another program instead of
 returning its bytes in a tool result.
 
-For this server, ref is a vault-relative path to an existing note (a .md file) or attachment. Or pass okf-bundle for the whole vault as an Open Knowledge Format bundle (a zip); prefix a folder path with okf-bundle: (okf-bundle:projects) for one folder.
+For this server, ref is a vault-relative path to an existing note (a .md file) or attachment. Or pass okf-bundle for an Open Knowledge Format ZIP, or okf-bundle:projects for a folder. Add options before the colon, as in okf-bundle?strict&`include_hidden`:projects. Options are strict, `include_hidden`, `include_index_excluded`, `require_review`, `require_check`=<kind>, `review_evidence`=binding or `local_receipt`, and `external_base`=<percent-encoded URL>. Review selectors require `require_review`. A refused export downloads as application/json named okf-export-refusal.json with HTTP 200 instead of a ZIP; fix the reported cause and mint a new link.
 
 **Parameters**
 
