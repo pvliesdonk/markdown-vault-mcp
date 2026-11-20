@@ -229,8 +229,8 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
-          "description": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions.",
-          "default": "_conventions.md"
+          "description": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). The default falls back to _conventions.md when absent. Set to none to disable folder conventions.",
+          "default": ".conventions.md"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
@@ -886,8 +886,8 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
-          "description": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions.",
-          "default": "_conventions.md"
+          "description": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). The default falls back to _conventions.md when absent. Set to none to disable folder conventions.",
+          "default": ".conventions.md"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OKF_MODE",

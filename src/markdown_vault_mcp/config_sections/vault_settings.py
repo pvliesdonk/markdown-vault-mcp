@@ -44,6 +44,26 @@ _DEFAULT_STATE_SUFFIX = ".state.json"
 _DEFAULT_EMBEDDINGS_SUFFIX = "-embeddings"
 
 
+DEFAULT_CONVENTIONS_FILE = ".conventions.md"
+LEGACY_CONVENTIONS_FILE = "_conventions.md"
+
+
+def conventions_filenames(name: str | None) -> tuple[str, ...]:
+    """Return the ordered filenames used for the configured conventions name.
+
+    Args:
+        name: Configured filename, or None when conventions are disabled.
+
+    Returns:
+        The primary filename and, for the default, its legacy fallback.
+    """
+    if name is None:
+        return ()
+    if name == DEFAULT_CONVENTIONS_FILE:
+        return (name, LEGACY_CONVENTIONS_FILE)
+    return (name,)
+
+
 @dataclasses.dataclass(frozen=True)
 class VaultSettings:
     """Config-derived construction settings for a :class:`~markdown_vault_mcp.vault.Vault`.
@@ -180,7 +200,7 @@ class VaultSettings:
             configuration (``None`` or all-``1.0`` keeps the default).
         conventions_file: Well-known per-folder conventions filename resolved
             by :attr:`~markdown_vault_mcp.vault.Vault.conventions`
-            (default ``"_conventions.md"``); ``None``
+            (default ``".conventions.md"``); ``None``
             disables folder conventions. When set, the filename is
             automatically appended to *exclude_patterns* (in both fnmatch
             forms) so convention files stay out of the index while remaining
@@ -231,7 +251,7 @@ class VaultSettings:
     embedding_batch_size: int = 4
     folder_weights: dict[str, float] | None = None
     fts_weights: dict[str, float] | None = None
-    conventions_file: str | None = "_conventions.md"
+    conventions_file: str | None = DEFAULT_CONVENTIONS_FILE
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
@@ -385,8 +405,11 @@ class VaultSettings:
             )
         return [
             *(self.exclude_patterns or []),
-            self.conventions_file,
-            f"**/{self.conventions_file}",
+            *(
+                pattern
+                for name in conventions_filenames(self.conventions_file)
+                for pattern in (name, f"**/{name}")
+            ),
         ]
 
     def effective_embeddings_path(self) -> Path | None:

@@ -17,6 +17,7 @@ This guide assumes you're working with a PARA vault through Claude (or another M
 The four PARA prompts and five templates this guide uses are example files in the repository's [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para) folder. No install channel ships them: not the package, the Docker image or the Claude Code plugin. Download the folder, then:
 
 - Copy `templates/` into the vault as `_templates/`. The template prompt looks for templates in that vault folder by default (`MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`, vault-relative).
+- Copy the contents of `conventions/` into the vault root. The shipped `_conventions.md` files work through the default fallback wherever `.conventions.md` is absent.
 - Keep `prompts/` outside the vault, so the prompt files stay out of search results. Point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at it. For Claude Desktop:
 
 ```json
@@ -54,7 +55,7 @@ vault/
 
 The numeric prefixes (`0-`, `1-`, `…`) keep the buckets sorting in the canonical PARA order in any file explorer. `0-Inbox/` is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.
 
-**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root `_conventions.md` (the sample in `examples/para/conventions/` lists the layout above) and ask you for any the file doesn't name.
+**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root conventions file (the `_conventions.md` sample in `examples/para/conventions/` lists the layout above) and ask you for any the file doesn't name.
 
 ### Frontmatter schemas
 
@@ -174,13 +175,15 @@ same authoring behavior: a Resource note about a regulation should stay
 self-contained and timeless, while the LLM's instinct is to weave in your
 current projects ("this relates to yesterday's slide deck…"). Per-folder
 [convention files](../reference/tools/reader.md#get_conventions) fix this: drop a
-`_conventions.md` into a folder and the server surfaces it to the client at
+`.conventions.md` into a folder and the server surfaces it to the client at
 write time (in the results of `write`, `edit`, `append` and `fetch`, and through the `get_conventions` tool).
 The files are excluded from search results but stay readable.
 
+The default `.conventions.md` falls back to `_conventions.md` in each folder when the hidden file is absent. A present primary wins even when empty; the legacy file is used only when the primary is absent. Custom filenames do not use the fallback.
+
 Two example files that encode PARA's linking directionality:
 
-`3-Resources/_conventions.md`:
+`3-Resources/.conventions.md`:
 
 ```markdown
 Reference material. Notes here are self-contained and timeless:
@@ -192,7 +195,7 @@ Reference material. Notes here are self-contained and timeless:
   `## References`.
 ```
 
-`1-Projects/_conventions.md`:
+`1-Projects/.conventions.md`:
 
 ```markdown
 Active project notes. Link out freely to 3-Resources for background
@@ -205,7 +208,7 @@ The reverse-linking rule costs nothing: `get_backlinks` (and Obsidian's
 backlinks pane) recover the project→resource references from the resource's
 side, so the resource never needs to mention the projects that cite it.
 
-A root-level `_conventions.md` holds vault-wide rules (heading style, tag
+A root-level `.conventions.md` holds vault-wide rules (heading style, tag
 hygiene) and names the folder for each PARA bucket; nested files add to it.
 Every shipped prompt reads these conventions: the PARA prompts take their
 folders from them, the built-in `propose-links` prompt skips or reverses link

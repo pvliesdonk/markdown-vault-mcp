@@ -592,7 +592,7 @@ answers while the index is still building.
 returns the conventions that apply, root first:
 
 ```json
-{"path": "3-Resources/topic.md", "conventions": [{"folder": "", "path": "_conventions.md", "content": "…"}, {"folder": "3-Resources", "path": "3-Resources/_conventions.md", "content": "Keep notes self-contained; do not link out to project notes."}]}
+{"path": "3-Resources/topic.md", "conventions": [{"folder": "", "path": ".conventions.md", "content": "…"}, {"folder": "3-Resources", "path": "3-Resources/.conventions.md", "content": "Keep notes self-contained; do not link out to project notes."}]}
 ```
 <!-- DOMAIN-EXAMPLE-get_conventions-END -->
 
