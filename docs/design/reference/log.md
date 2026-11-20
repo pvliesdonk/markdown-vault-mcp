@@ -12,6 +12,11 @@
 
 ## 2026-11-16
 
+- New: [MCP Apps tool results](mcp-apps-tool-results.md), for #1640. Checked
+  ext-apps 1.7.4's `callServerTool` and request handling against its source;
+  pinned `isError` result handling to the synthetic-host browser regression.
+  Next review: 2027-05-16.
+
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
   shapes; checked variants against the chosen patterns. Next review: 2027-05-16.

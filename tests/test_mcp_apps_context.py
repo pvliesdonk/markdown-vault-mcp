@@ -195,15 +195,6 @@ class TestShowContextTool:
             # the host filters them out of the model view by this declaration.
             assert by_name["vault_context"].meta["ui"]["visibility"] == ["app"]
 
-    async def test_missing_note_returns_error_summary(self) -> None:
-        server = make_server()
-        async with Client(server) as client:
-            await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool("show_context", {"path": "nonexistent.md"})
-            data = _parse_tool_data(result)
-            assert data["view"] == "context"
-            assert "not found" in data["summary"].lower()
-
 
 # ---------------------------------------------------------------------------
 # No hardcoded colors (AC7)

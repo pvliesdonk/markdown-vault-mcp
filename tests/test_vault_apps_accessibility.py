@@ -95,6 +95,25 @@ def test_context_heading_through_tool_lifecycle(page: Page) -> None:
             card.wait_for(state="hidden")
 
 
+def test_context_tool_error_result_shows_message(page: Page) -> None:
+    """An isError result reaches the context placeholder."""
+    frame = _open_vault(page)
+    frame.evaluate("void window.loadContext('x.md')")
+    page.wait_for_function("window.pending.length === 1")
+    page.evaluate(
+        "result => window.respond(result)",
+        {
+            "isError": True,
+            "content": [{"type": "text", "text": "Document not found: 'x.md'"}],
+        },
+    )
+    placeholder = frame.locator("#context-placeholder")
+    placeholder.get_by_text(
+        "Error loading context: Document not found: 'x.md'"
+    ).wait_for()
+    assert not frame.locator("#context-card").is_visible()
+
+
 def test_search_name_survives_populated_value(page: Page) -> None:
     """Typing and clearing do not remove the search field's accessible name."""
     frame = _open_vault(page)
