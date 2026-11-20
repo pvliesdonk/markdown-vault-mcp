@@ -31,8 +31,9 @@ def machine_review_env(
         "OKF_MACHINE_REVIEW": "true",
     }.items():
         monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{key}", value)
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "checker")
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "checker")
     monkeypatch.setattr(
-        "fastmcp_pvl_core.get_claims", lambda: {"sub": "checker", "idtyp": "app"}
+        "markdown_vault_mcp._subject.get_claims",
+        lambda: {"sub": "checker", "idtyp": "app"},
     )
     return vault_root
