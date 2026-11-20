@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement,
     compute_new_raw_target,
@@ -207,3 +209,40 @@ class TestApplyLinkReplacement:
         content = "[[old]] and [[old]]"
         result = apply_link_replacement(content, "wikilink", "old", "new")
         assert result == "[[new]] and [[new]]"
+
+
+@pytest.mark.parametrize(
+    ("link_type", "content", "expected"),
+    [
+        ("markdown", "[a](a.md) [b](b.md)", "[a](b.md) [b](a.md)"),
+        ("reference", "[a]: a.md\n[b]: b.md\n", "[a]: b.md\n[b]: a.md\n"),
+        ("wikilink", "[[a.md|A]] [[b.md]]", "[[b.md|A]] [[a.md]]"),
+        ("wikilink", r"[[a.md\|A]]", r"[[b.md\|A]]"),
+        ("wikilink", "[[ a.md |A]]", "[[ b.md |A]]"),
+        ("wikilink", "[[a.md|multi\nline]]", "[[b.md|multi\nline]]"),
+        ("reference", "  [r]: a.md\n", "  [r]: b.md\n"),
+        ("reference", r"  [r\]x]: a.md" + "\n", r"  [r\]x]: b.md" + "\n"),
+        ("reference", "  [r]:\n  a.md\n", "  [r]:\n  b.md\n"),
+        (
+            "reference",
+            "[r]: a.md\n`[r]: a.md`\n```md\n[r]: a.md\n```\n",
+            "[r]: b.md\n`[r]: a.md`\n```md\n[r]: a.md\n```\n",
+        ),
+        (
+            "markdown",
+            '[x](a.md "a `title` survives")\n`[x](a.md)`\n```md\n[x](a.md)\n```\n',
+            '[x](b.md "a `title` survives")\n`[x](a.md)`\n```md\n[x](a.md)\n```\n',
+        ),
+    ],
+)
+def test_batch_rewrites_swap_original_destinations(
+    link_type: str, content: str, expected: str
+) -> None:
+    from markdown_vault_mcp.utils.links import rewrite_link_destinations
+
+    assert (
+        rewrite_link_destinations(content, link_type, {"a.md": "b.md", "b.md": "a.md"})[
+            0
+        ]
+        == expected
+    )
