@@ -684,6 +684,10 @@ put both tracks' first cuts directly after `025`, `027 first-class-library`
 became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 `033`. Each milestone keeps its identity and membership:
 
+`derived` — The list shows the packages as re-cut on 20 November 2026, after
+that statement (§ Revisions); the OKF entries no longer have their 18 November
+membership.
+
 - **[026 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
   (major): capability settings, gating and reporting ([#2380][2380],
   [#1411][1411], [#1432][1432]), then inventory ([#1442][1442], [#1421][1421],
@@ -1304,6 +1308,10 @@ request graph between issues in different cuts. Two edges were left out:
 [#1448][1448] would wait on [#1413][1413] only through a slice that follows its
 own closing pull request.
 
+`derived` — One placement differs from the confirmed list: E1 [#2211][2211]
+stays in `027` rather than `034`. It fixes [#2224][2224], which is already in
+`027`, and it needs nothing later than `027`.
+
 `derived` — Publication needs only inventory and [#1241][1241] until its
 review-assurance slice, so it could ship directly after `026`. It stays
 after `036` as confirmed.
@@ -1511,3 +1519,4 @@ after `036` as confirmed.
 [2380]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2380
 [2381]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2381
 [2270]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2270
+[2211]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2211
