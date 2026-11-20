@@ -1,0 +1,12 @@
+# Project settings the generators read: scripts/gen_config_surface.py (the
+# configuration reference, the .env examples and the config wizard spec) and
+# scripts/gen_reference.py (the tool, resource, prompt and CLI reference).
+# This file is the project's. It replaced the values those scripts used to
+# read from .copier-answers.yml (#2247). A `when_answer:` key in
+# config-presentation*.yml names a boolean below.
+env_prefix: MARKDOWN_VAULT_MCP
+python_module: markdown_vault_mcp
+project_name: markdown-vault-mcp
+human_name: Markdown Vault MCP
+docker_registry: ghcr.io/pvliesdonk
+enable_authorization: false
