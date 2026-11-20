@@ -19,7 +19,8 @@ import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp import config as config_module
-from markdown_vault_mcp._pvl_core import ConfigurationError, domain_env_surface
+from markdown_vault_mcp._config_surface import domain_env_surface
+from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp.cli import app
 from markdown_vault_mcp.config import ProjectConfig
 

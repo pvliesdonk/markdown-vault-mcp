@@ -1,7 +1,7 @@
 """Guards for the background-task backend wiring in `make_server`.
 
 `MARKDOWN_VAULT_MCP_TASKS_URL` is documented automatically — the config-surface
-generator reads it from `fastmcp_pvl_core.server_config_surface()`, whether or
+generator reads it from `_config_surface.server_config_surface()`, whether or
 not anything wires it.  Documentation without wiring is exactly how a feature
 ships inert, so these tests assert the wiring itself: that `make_server` calls
 `configure_task_backend` on the very server it returns, and that the config

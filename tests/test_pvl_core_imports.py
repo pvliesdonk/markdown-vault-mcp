@@ -18,8 +18,6 @@ CORE = "fastmcp_pvl_core"
 #: Files allowed to import pvl-core directly, with the reason.
 ALLOWED = {
     SHIM: "the shim itself",
-    # Its config-surface introspection still comes from pvl-core until #2289.
-    REPO_ROOT / "scripts" / "gen_config_surface.py": "introspection until #2289",
 }
 
 _PATCHERS = {"setattr", "patch", "delattr", "setitem"}

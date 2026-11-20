@@ -1377,7 +1377,7 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
     ``env`` in ``config.py`` or breaking the sub-config recursion would silently
     drop these from the config-wizard drift gate's coverage check.
     """
-    from markdown_vault_mcp._pvl_core import domain_env_suffixes
+    from markdown_vault_mcp._config_surface import domain_env_suffixes
 
     suffixes = domain_env_suffixes(ProjectConfig)
     assert {

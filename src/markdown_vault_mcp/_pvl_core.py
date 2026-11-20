@@ -16,17 +16,18 @@ from __future__ import annotations
 from fastmcp_pvl_core import (
     ConfigurationError,
     ServerConfig,
-    domain_env_suffixes,
-    domain_env_surface,
+    server_config_env_suffixes,
 )
 from fastmcp_pvl_core import __version__ as CORE_VERSION
+from fastmcp_pvl_core._config import DEFAULT_BEARER_SUBJECT
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
     "ConfigurationError",
+    # ServerConfig and its readers (#2288).
+    "DEFAULT_BEARER_SUBJECT",
     "ServerConfig",
-    "domain_env_suffixes",
-    "domain_env_surface",
+    "server_config_env_suffixes",
     # The installed pvl-core version get_server_info reports (#2283).
     "CORE_VERSION",
 ]

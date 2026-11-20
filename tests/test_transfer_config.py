@@ -13,7 +13,7 @@ import dataclasses
 
 import pytest
 
-from markdown_vault_mcp._pvl_core import domain_env_suffixes, domain_env_surface
+from markdown_vault_mcp._config_surface import domain_env_suffixes, domain_env_surface
 from markdown_vault_mcp.config_sections import TransferConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
