@@ -19,7 +19,8 @@ of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
 document decides are listed there. The current pinned specification is
 [OKF v0.3](reference/okf-v0.3.md); server alignment with v0.3 remains
-incomplete.
+incomplete. The superseded v0.2 reference remains a historical account of
+semantics that have not yet been aligned, including timestamps and trust tiers.
 
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
