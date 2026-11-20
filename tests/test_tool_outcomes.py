@@ -1,8 +1,8 @@
-"""Every registered tool ends through pvl-core's tool boundary (template-owned).
+"""Every registered tool ends through the tool boundary (template-owned).
 
 A tool call that raises anything but a ``ToolError`` reaches FastMCP's own
 handler: an ERROR traceback there, and under ``mask_error_details`` a model
-that learns nothing about what to do next.  ``fastmcp_pvl_core.tool_boundary``
+that learns nothing about what to do next.  ``_tool_boundary.tool_boundary``
 turns such an exception into one logged server fault and a fixed message
 telling the model the request was fine; the ``designing-tool-outcomes`` skill
 says how to raise every other outcome.  This test fails a tool registered
@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastmcp.tools import FunctionTool
-from fastmcp_pvl_core import is_tool_boundary
 
+from markdown_vault_mcp._tool_boundary import is_tool_boundary
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ def test_every_tool_is_wrapped_in_tool_boundary(server: FastMCP) -> None:
         if not (isinstance(tool, FunctionTool) and is_tool_boundary(tool.fn))
     )
     assert not unwrapped, (
-        "tools registered without fastmcp_pvl_core.tool_boundary; put "
+        "tools registered without _tool_boundary.tool_boundary; put "
         "@tool_boundary directly under @mcp.tool and raise "
         "ToolError(msg, log_level=logging.INFO) for outcomes the model can act "
         f"on (the designing-tool-outcomes skill): {unwrapped}"

@@ -479,6 +479,10 @@ skill turns these facts into a recipe; this page holds the evidence.
 
 ### pvl-core's instructions builder and the measured surface
 
+Since #2305 this builder is `_instructions_builder.py` in this repository,
+ported unchanged from pvl-core 10.2.0; the claims below describe it, and the
+pvl-core source is its provenance.
+
 - `instructions_for(mcp)` composes snippets by `InstructionRole`; the
   render order is identity, routing, instance, policy, capabilities,
   workflows, documentation, and a snippet whose `requires_tools` are absent
