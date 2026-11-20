@@ -183,7 +183,8 @@ def test_owner_settlement_preflights_and_selects_closes(
     def complete(handle: str) -> None:
         with condition:
             assert condition.wait_for(lambda: handle in completions, timeout=5)
-            completions[handle].set_result(None)
+            future = completions[handle]
+        future.set_result(None)
 
     monkeypatch.setattr(dispatcher, "_enqueue_scope_end", enqueue)
     try:
@@ -196,8 +197,7 @@ def test_owner_settlement_preflights_and_selects_closes(
         manual_result = dispatcher.close_group(manual.handle, alice)
         auto_result = dispatcher.close_group(automatic.handle, alice, _automatic=True)
         other_result = dispatcher.close_group(other.handle, bob, _automatic=True)
-        results = dispatcher.close_owner_groups(alice)
-        assert len(results) == 3
+        assert len(results := dispatcher.close_owner_groups(alice)) == 3
         assert {manual_result, auto_result} < set(results)
         assert dispatcher.close_group(manual.handle, alice) is manual_result
         complete(manual.handle)
