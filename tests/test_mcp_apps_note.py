@@ -84,14 +84,6 @@ class TestNotePreviewFrontmatter:
         # marked.parse receives the stripped body, not the raw content.
         assert "marked.parse(body)" in html
 
-    async def test_strip_regex_matches_server_fence_grammar(self) -> None:
-        html = await get_app_html()
-        # The server's python-frontmatter parser fences on ``^-{3,}\\s*$``; the
-        # strip regex must at least cover the realistic cases (3+ dashes, then
-        # optional spaces/tabs) else a ``----`` or ``--- `` fence renders the
-        # frontmatter twice.
-        assert "-{3,}[ \\t]*\\r?\\n" in html
-
     async def test_collapsible_properties(self) -> None:
         html = await get_app_html()
         assert "preview-props" in html

@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:f2d555dd8693d2ce110da1527e5056ebed5f3d73238e43b14a1bb3709959b51c -->
+<!-- vendor-spa-source-sha256:242fe83d9f2a3a303670fb2c31de08f72e13942e69b62489362f534a6dc00621 -->
 </head>
 <body>
 <div class="app-container">
@@ -1709,14 +1709,10 @@ app.onteardown = () => {
 
   const previewEl = document.getElementById('browser-preview');
 
-  // Strip a leading YAML frontmatter block so it isn't rendered twice: the
-  // frontmatter already shows in the properties panel, and vault_read's
-  // `content` is the whole file including frontmatter. The server's parser
-  // (python-frontmatter) fences on `^-{3,}\s*$`; this deliberately narrower
-  // `-{3,}[ \t]*` covers the realistic cases (`----` and `--- ` fences) so
-  // they strip too, while never over-stripping real body content.
+  // The properties panel shows YAML metadata; hide its exact delimiter block
+  // from the body using the same first-line, optional BOM and CRLF rule.
   function stripFrontmatter(text) {
-    return String(text || '').replace(/^﻿?-{3,}[ \t]*\r?\n[\s\S]*?\r?\n-{3,}[ \t]*\r?\n?/, '');
+    return String(text || '').replace(/^\uFEFF?---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
   }
 
   function normalizeTags(fm) {

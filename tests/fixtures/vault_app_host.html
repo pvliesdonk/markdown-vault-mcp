@@ -20,7 +20,7 @@ window.addEventListener('message', ({data, source}) => {
     source.postMessage({jsonrpc: '2.0', method: 'ui/notifications/tool-input',
       params: {arguments: {view: 'context'}}}, location.origin);
   } else if (data.method === 'tools/call') {
-    if (data.params.name.endsWith('vault_context')) window.pending.push({id: data.id, source});
+    if (data.params.name.endsWith('vault_context') || data.params.name.endsWith('vault_read')) window.pending.push({id: data.id, source});
     else reply({content: [{type: 'text', text: data.params.name.endsWith('vault_search')
       ? '[]' : '{"folders":[],"notes":[]}'}]});
   } else if (data.id !== undefined) reply({});

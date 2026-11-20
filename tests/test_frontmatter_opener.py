@@ -30,24 +30,24 @@ def test_yaml_boundaries(text: str, metadata: dict[str, str], body: str | None) 
 
 
 @pytest.mark.parametrize(
-    ("text", "state", "parse_state", "reason"),
+    "text",
     [
-        ("\n---\ntype: Metric\n---\n", "inspected", "valid", None),
-        ("\n---\ntype: [\n---\n", "inspected", "valid", None),
-        ("\n---\ntype: *alias\n---\n", "inspected", "valid", None),
+        "\n---\ntype: Metric\n---\n",
+        "\n---\ntype: [\n---\n",
+        "\n---\ntype: *alias\n---\n",
     ],
 )
 def test_public_inventory_uses_frontmatter_boundaries(
-    tmp_path: Path, text: str, state: str, parse_state: str | None, reason: str | None
+    tmp_path: Path, text: str
 ) -> None:
     (tmp_path / "metric.md").write_text(text)
     vault = Vault(source_dir=tmp_path)
     try:
         result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
         entry = result.entries[0]
-        assert entry.state == state
-        assert entry.parse_state == parse_state
-        assert entry.reason == reason
+        assert entry.state == "inspected"
+        assert entry.parse_state == "valid"
+        assert entry.reason is None
         assert not entry.is_concept
     finally:
         vault.close()

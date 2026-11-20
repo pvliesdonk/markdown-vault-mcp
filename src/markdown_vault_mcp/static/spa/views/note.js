@@ -21,14 +21,10 @@
 
   const previewEl = document.getElementById('browser-preview');
 
-  // Strip a leading YAML frontmatter block so it isn't rendered twice: the
-  // frontmatter already shows in the properties panel, and vault_read's
-  // `content` is the whole file including frontmatter. The server's parser
-  // (python-frontmatter) fences on `^-{3,}\s*$`; this deliberately narrower
-  // `-{3,}[ \t]*` covers the realistic cases (`----` and `--- ` fences) so
-  // they strip too, while never over-stripping real body content.
+  // The properties panel shows YAML metadata; hide its exact delimiter block
+  // from the body using the same first-line, optional BOM and CRLF rule.
   function stripFrontmatter(text) {
-    return String(text || '').replace(/^﻿?-{3,}[ \t]*\r?\n[\s\S]*?\r?\n-{3,}[ \t]*\r?\n?/, '');
+    return String(text || '').replace(/^\uFEFF?---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
   }
 
   function normalizeTags(fm) {
