@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from frontmatter.default_handlers import YAMLHandler
 
-from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.scanner import _split_frontmatter, parse_frontmatter
 from markdown_vault_mcp.stores._legacy import matrix_sequence
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.content_kind import is_allowed_artifact, is_note
@@ -238,16 +238,11 @@ def _role(name: str, conventions_file: str | None) -> Role:
 
 
 def _metadata_too_complex(text: str) -> bool:
-    """Bound YAML work before construction, using the existing delimiter handler."""
-    handler = YAMLHandler()
-    stripped = text.strip()
-    if not handler.detect(stripped):
+    """Bound YAML work before construction using the shared block boundaries."""
+    block = _split_frontmatter(text)
+    if block is None or not isinstance(block[0], YAMLHandler):
         return False
-    try:
-        header, _body = handler.split(stripped)
-    except ValueError:
-        # An unclosed block is ordinary text to the existing parser.
-        return False
+    _, header, _ = block
     depth = 0
     for ordinal, event in enumerate(yaml.parse(header, Loader=yaml.SafeLoader)):
         if ordinal >= 4096 or isinstance(event, yaml.events.AliasEvent):

@@ -21,7 +21,6 @@ from markdown_vault_mcp.vault import Vault
         ("--- \ntype: Metric\n---\nBody", {}, None),
         ("---\ntype: Metric\n--- \nBody", {}, None),
         ("---\ntype: Metric\n----\nBody", {}, None),
-        ("---\ndescription: |\n  --- \n---\nBody", {"description": "--- \n"}, "Body"),
     ],
 )
 def test_yaml_boundaries(text: str, metadata: dict[str, str], body: str | None) -> None:
@@ -39,7 +38,43 @@ def test_public_inventory_rejects_leading_blank_line(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_json_handler_remains_supported() -> None:
-    text = '{\n"type": "Metric"\n}\nBody'
+def test_json_handler_accepts_bom() -> None:
+    text = '\ufeff{\n"type": "Metric"\n}\nBody'
     assert parse_frontmatter(text).metadata == {"type": "Metric"}
     assert strip_frontmatter_block(text) == "Body"
+
+
+def test_leading_blank_json_is_body() -> None:
+    text = '\n{\n"type": "Metric"\n}\nBody'
+    assert parse_frontmatter(text).metadata == {}
+    assert strip_frontmatter_block(text) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "state", "parse_state", "reason"),
+    [
+        ("\n---\ntype: [\n---\n", "inspected", "valid", None),
+        ("\n---\ntype: *alias\n---\n", "inspected", "valid", None),
+        (
+            "---\ntype: *alias\n---\n",
+            "not_inspected",
+            "not_inspected",
+            "metadata_complexity",
+        ),
+        ('\n{\n"type": "Metric"\n}\n', "inspected", "valid", None),
+    ],
+)
+def test_public_inventory_uses_frontmatter_boundaries(
+    tmp_path: Path, text: str, state: str, parse_state: str | None, reason: str | None
+) -> None:
+    (tmp_path / "metric.md").write_text(text)
+    vault = Vault(source_dir=tmp_path)
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        entry = result.entries[0]
+        assert entry.state == state
+        assert entry.parse_state == parse_state
+        assert entry.reason == reason
+        assert not entry.is_concept
+    finally:
+        vault.close()

@@ -805,7 +805,6 @@ def _split_frontmatter(text: str) -> tuple[BaseHandler, str, str] | None:
     if _YAML_BOUNDARY.match(candidate):
         handler = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
     else:
-        candidate = text.lstrip()
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
         if handler is None or isinstance(handler, YAMLHandler):
             return None

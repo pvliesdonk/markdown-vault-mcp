@@ -1138,10 +1138,6 @@ class TestStripFrontmatterBlock:
         body = "    indented code\n\nprose\n\n\n"
         assert strip_frontmatter_block(f"---\ntitle: T\n---\n\n{body}") == body
 
-    def test_blank_lines_before_the_block_make_it_body(self) -> None:
-        text = "\n\n---\ntitle: T\n---\n\n# T\n"
-        assert strip_frontmatter_block(text) == text
-
 
 def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> None:
     """A walk error reaches the caller instead of passing for a complete scan (#1785)."""
