@@ -66,6 +66,82 @@ defaults to 100 items (maximum 1000). Unicode retains direct matching with `str.
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search
 continues to support computed OKF filters.
 
+### Selected bundle inspection
+
+`inspect_bundle` reads one explicitly selected directory without building or
+querying an index. Untyped and malformed Markdown remain visible even when
+index admission requires frontmatter fields. See the [security model](../../security-model.md)
+for the filesystem boundary.
+
+```python { .fragment }
+from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest
+
+observation = vault.reader.inspect_bundle(
+    BundleInspectionRequest(root="knowledge", directory="concepts", entry_limit=100)
+)
+# Check observation.state and observation.enumeration before treating entries as complete.
+```
+
+`root` is vault-relative and required; `root=""` explicitly selects the vault.
+`directory` is relative to that root. Absolute paths, parent components, NUL bytes,
+backslashes and empty or dot components are rejected with `ValueError`.
+
+The frozen `BundleInspection` contains the request, sorted `BundleEntry` values,
+`state`, `enumeration`, `interpretation="caller_selected"`, and
+`search_state="not_evaluated"`. Scope states distinguish `inspected`, `missing`
+and `unavailable`. A missing configured source is `unavailable`; only a missing
+directory within an accessible source is `missing`.
+
+Each entry contains its vault-relative `path`, filename-based `role`, `state`,
+`reason`, `parse_state`, `type_state`, `visibility` and `hidden_path`. Exact
+`index.md` and `log.md` names mean `navigation` and `history`; the configured
+conventions filename has role `support` unless it is `index.md` or `log.md`;
+other `.md` files are `concept_candidate`.
+Directories and allowed regular attachments have `directory` and `supporting`
+roles. Roles describe observations and grant no conformance or write authority.
+
+Complete Markdown reads distinguish `valid`, `invalid_encoding` and
+`malformed_metadata`. A valid parse reports `type_state` as `absent`, `invalid`
+or `present`; present means a nonempty string, without validating its vocabulary.
+Content that was not inspected retains `not_inspected`. No body, metadata values or symlink
+targets are returned.
+
+Enumeration is `complete`, `entry_limit`, `unavailable` or `not_inspected`.
+`complete` covers only immediate policy-visible enumeration, even if individual
+entries remain unavailable or not inspected. Paths matching index exclusions
+are labelled `index_excluded`, and dot paths have `hidden_path=true`; neither
+label prevents inspection. Non-directory filenames outside the attachment
+allowlist, `.git`, server-owned state directories and files, and
+permission-denied children are omitted. The change-tracker file is omitted by exact path and the keyword index
+by its own lock and journal files, so neighboring notes and other same-named
+siblings stay visible. Alternate spellings of internal paths follow filesystem identity rules. A denied child makes enumeration unavailable without hiding readable
+siblings, including when the note-read budget has been exhausted; a refused stat or open
+consumes none of that budget. A directory
+entry's visibility describes its own name, not the admission of its subtree. Visible symlinks and special files remain unavailable and are
+never followed or read. When a stat failure prevents determining whether an
+omitted name is a visible directory, enumeration is `unavailable`.
+
+The entry limit defaults to 100 (maximum 1000). Every visited entry, including
+omitted entries, consumes the limit; one additional entry detects truncation.
+No omitted-entry counts are returned. Markdown reads use at most 64 KiB per
+file, or the smaller configured nonzero note-read limit, plus one additional
+byte to detect oversized content. The aggregate cap is 1 MiB including these
+additional bytes. Capped files remain
+`not_inspected` with `note_limit` or `byte_budget` reasons. YAML metadata with
+aliases, more than 4096 parsing events, or collection nesting deeper than 32
+remains `not_inspected` with reason `metadata_complexity`, before metadata is
+constructed. This limit does not classify such content as malformed. The check
+uses only YAML frontmatter, leaving body text and other supported formats alone.
+Numeric overflow or recursion limits during parsing also retain this outcome.
+Other unexpected parser failures produce `state="unavailable"` with reason
+`unexpected_parser_error`; sibling observations remain available. Exception
+details are omitted.
+
+This is a live observation with no snapshot, pagination or stable truncated
+subset guarantee. It does not descend into child directories, evaluate search admission, detect global
+OKF mode, serve navigation bodies or create navigation files. Unsupported
+no-follow filesystem primitives produce `unavailable`.
+
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet
 <!-- vale on -->

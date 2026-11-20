@@ -35,6 +35,8 @@ An authenticated caller has every tool the instance exposes. Each tool runs with
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach -->
 Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
+The library's [selected bundle inspection](reference/api/facets.md#selected-bundle-inspection) reads accessible Markdown even when index excludes or dot components keep it out of search. It does not follow symlinks or enter `.git` or server state directories, and omits the change-tracker file, the keyword index with its lock and journal files, and vector store files, but not their same-named neighbors. Filesystem permission refusals omit denied child names.
+
 Some tools send data beyond the vault:
 
 - **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.

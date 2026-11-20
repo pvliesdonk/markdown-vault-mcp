@@ -16,6 +16,7 @@ import logging
 import os
 import stat
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -307,3 +308,115 @@ def iter_markdown_files(
         for filename in filenames:
             if is_note(filename):
                 yield base / filename
+
+
+# Inventory must fail closed on platforms lacking descriptor-relative access.
+_NOFOLLOW_SUPPORTED = (
+    hasattr(os, "O_NOFOLLOW")
+    and hasattr(os, "O_DIRECTORY")
+    and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.stat in os.supports_follow_symlinks
+    and os.scandir in os.supports_fd
+)
+
+
+def is_subtree_excluded(path: str, patterns: Sequence[str]) -> bool:
+    """Return whether the existing prune rules exclude every descendant.
+
+    Args:
+        path: Original vault-relative directory spelling.
+        patterns: Effective vault exclude patterns.
+    """
+    return _should_prune_dir(path, *_dir_prune_rules(patterns))
+
+
+def _open_directory_at(name: str, parent: int | None = None) -> int:
+    try:
+        return os.open(
+            name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+        )
+    except OSError as exc:
+        # O_DIRECTORY reports ENOTDIR for symlinks on some systems. It must
+        # never turn a refused link into evidence of an absent directory.
+        if exc.errno == errno.ENOTDIR:
+            mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
+            if stat.S_ISLNK(mode):
+                raise OSError(errno.ELOOP, "Symlink refused") from exc
+        raise
+
+
+def _descend_directory(descriptor: int, components: Sequence[str]) -> int:
+    """Transfer descriptor ownership through no-follow components, closing on failure."""
+    try:
+        for component in components:
+            child = _open_directory_at(component, descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+@contextmanager
+def open_directory_nofollow(
+    source: Path, components: Sequence[str], *, source_resolved: bool = False
+) -> Iterator[int]:
+    """Hold a directory descriptor beneath a once-resolved source root.
+
+    Args:
+        source: Configured root; its own aliases may resolve once.
+        components: Validated plain relative components, never dot or parent.
+        source_resolved: Source is an already resolved absolute root.
+
+    Yields:
+        Owned descriptor; callers must not close it.
+
+    Raises:
+        OSError: Unsupported primitives, unavailable root, or refused traversal.
+    """
+    if not _NOFOLLOW_SUPPORTED:
+        raise OSError(errno.ENOTSUP, "No-follow access unavailable")
+    try:
+        resolved = source if source_resolved else source.resolve(strict=True)
+        # Opening the absolute pathname once only protects its last component.
+        # Anchor from the filesystem root so swapped ancestors cannot redirect us.
+        descriptor = _descend_directory(
+            _open_directory_at(resolved.anchor), resolved.parts[1:]
+        )
+    except (OSError, RuntimeError) as exc:
+        raise OSError(errno.EIO, "Source unavailable") from exc
+    descriptor = _descend_directory(descriptor, components)
+    try:
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def read_regular_nofollow(parent: int, name: str, limit: int) -> bytes:
+    """Read at most *limit* bytes from a descriptor-relative regular file.
+
+    Args:
+        parent: Open containing directory descriptor.
+        name: One plain filename.
+        limit: Maximum bytes to read, including any caller's lookahead.
+
+    Raises:
+        OSError: Open failure or a symlink/nonregular replacement.
+    """
+    descriptor = os.open(
+        name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+    )
+    with os.fdopen(descriptor, "rb", buffering=0) as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise OSError(errno.EINVAL, "Regular file required")
+        chunks: list[bytes] = []
+        remaining = limit
+        while remaining:
+            chunk = stream.read(remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
