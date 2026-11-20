@@ -293,7 +293,7 @@ def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
         vault.close()
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.namelist() == ["normal.md"]
-    assert result.report.omitted["hidden"] == 1
+    assert result.report.omitted["not_part_of_bundle"] == 1
     assert ".hidden.md" in result.report.snapshot.uncommitted_paths
     assert "unsupported.xyz" not in result.report.snapshot.uncommitted_paths
     assert (

@@ -98,13 +98,12 @@ def _omission_reasons(
     config: ProjectConfig,
     *,
     include_index_excluded: bool,
-    include_hidden: bool,
 ) -> list[str]:
     reasons = []
     if item.visibility == "index_excluded" and not include_index_excluded:
         reasons.append("index_excluded")
-    if item.hidden_path and not include_hidden:
-        reasons.append("hidden")
+    if item.hidden_path:
+        reasons.append("not_part_of_bundle")
     # Reserved names retain navigation/history roles even when conventions.
     if config.content.conventions_file == item.path.rsplit("/", 1)[-1]:
         reasons.append("conventions")
@@ -304,7 +303,6 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     *,
     folder: str = "",
     include_index_excluded: bool = False,
-    include_hidden: bool = False,
     external_base: str | None = None,
     strict: bool = False,
     require_review: bool = False,
@@ -318,7 +316,6 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         config: Convention and template configuration.
         folder: Vault-relative scope root, or empty for the entire vault.
         include_index_excluded: Include paths omitted from the search index.
-        include_hidden: Include dot-paths other than internal state.
         external_base: Absolute HTTP(S) URL prefix without a query or fragment
             for body and frontmatter destinations outside the selection.
         strict: Refuse publication unless the completed report meets the contract.
@@ -347,7 +344,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             vault,
             config,
             snapshot,
-            (folder, include_index_excluded, include_hidden, external_base),
+            (folder, include_index_excluded, external_base),
             policy,
         )
     report = result.report
@@ -373,10 +370,10 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     vault: Vault,
     config: ProjectConfig,
     snapshot: GitExportSnapshot | None,
-    options: tuple[str, bool, bool, str | None],
+    options: tuple[str, bool, str | None],
     review_policy: tuple[bool, str, str],
 ) -> OkfBundleResult:
-    folder, include_index_excluded, include_hidden, external_base = options
+    folder, include_index_excluded, external_base = options
     folder = _scope(folder)
     active = bool(
         snapshot
@@ -419,7 +416,6 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                     item,
                     config,
                     include_index_excluded=include_index_excluded,
-                    include_hidden=include_hidden,
                 )
                 for reason in reasons:
                     report.omitted[reason] = report.omitted.get(reason, 0) + 1

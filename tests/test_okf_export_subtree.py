@@ -822,14 +822,8 @@ def test_hidden_wikilink_winner_is_selection_independent(tmp_path):
         # Remove the indexed source so only a new, unindexed note is exported.
         (tmp_path / "guides/a.md").unlink()
         (tmp_path / "guides/new.md").write_text("[[b]]")
-        for include_hidden in (False, True):
-            with pytest.raises(ValueError, match="collision"):
-                build_okf_bundle(
-                    vault,
-                    ProjectConfig(source_dir=tmp_path),
-                    folder="guides",
-                    include_hidden=include_hidden,
-                )
+        with pytest.raises(ValueError, match="collision"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), folder="guides")
     finally:
         vault.close()
 

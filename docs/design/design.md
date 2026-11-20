@@ -2220,7 +2220,7 @@ the spec itself says, dated and sourced, in
   unless an omission policy applies,
   non-conformant notes included, reproducible bytes, never mutating the vault;
   gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
-  independent of search admission. The library result reports omitted classes,
+  independent of search admission. Dot-path files and directories never enter the bundle; omitted files count as `not_part_of_bundle`. This reverses #1610's export opt-in while inventory continues to list dot-paths. The library result reports omitted classes,
   last-observed index admission, artifact v0.2 format findings and uninspected
   content or metadata (including metadata of files included in the archive).
   Subtree frontmatter path fields are relocated with the same outside-path rules.
@@ -2232,8 +2232,8 @@ the spec itself says, dated and sourced, in
   `metadata_encoding` when export cannot parse or re-encode a header; unrecognised
   grammars are copied without an entry. A file may also be `transformed` when
   its bytes change; neither entry identifies which fields relocated.
-  Incomplete inventory enumeration refuses export, even under default-omitted
-  hidden paths. Strict publication refuses a nonconformant or incomplete artifact, outside or ambiguous references, broken links, inconsistent snapshots, and failed reference or relocation inspection. Root metadata is inspected without rewriting it. The CLI uses a scratch keyword index, refuses destinations in the vault, including symlink aliases, and atomically replaces external destinations only on success. It warns when a pinned Git snapshot omits uncommitted paths. The CLI and download ref accept selection, strict and review options. Review selectors require the review gate; the effective defaults are `human-review` and `binding`. A scope without concepts satisfies the review policy. A source override uses local receipts only if it resolves to the configured vault. A strict or review refusal carries the completed report; a collision stops before audit and carries no report. The CLI exits nonzero without writing a ZIP. The transfer sink returns a JSON refusal as HTTP 200 because the core error contract sends no body; the filename and media type distinguish it from a ZIP. Subtree links in
+  Incomplete inventory enumeration refuses export, even under omitted
+  dot-paths. Strict publication refuses a nonconformant or incomplete artifact, outside or ambiguous references, broken links, inconsistent snapshots, and failed reference or relocation inspection. Root metadata is inspected without rewriting it. The CLI uses a scratch keyword index, refuses destinations in the vault, including symlink aliases, and atomically replaces external destinations only on success. It warns when a pinned Git snapshot omits uncommitted paths. The CLI and download ref accept selection, strict and review options. Review selectors require the review gate; the effective defaults are `human-review` and `binding`. A scope without concepts satisfies the review policy. A source override uses local receipts only if it resolves to the configured vault. A strict or review refusal carries the completed report; a collision stops before audit and carries no report. The CLI exits nonzero without writing a ZIP. The transfer sink returns a JSON refusal as HTTP 200 because the core error contract sends no body; the filename and media type distinguish it from a ZIP. Subtree links in
   unindexed notes are handled independently of index admission. The final ZIP
   is audited for parseable YAML and non-empty type on nonreserved Markdown,
   index frontmatter and entry structure, and ISO log date headings. The format

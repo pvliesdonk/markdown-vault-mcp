@@ -87,8 +87,8 @@ _OKF_BUNDLE_REF = "okf-bundle"
 OKF_BUNDLE_DOWNLOAD_NOTE = (
     " Or pass okf-bundle for an Open Knowledge Format ZIP, or "
     "okf-bundle:projects for a folder. Add options before the colon, "
-    "as in okf-bundle?strict&include_hidden:projects. Options are strict, "
-    "include_hidden, include_index_excluded, require_review, require_check=<kind>, "
+    "as in okf-bundle?strict&include_index_excluded:projects. Options are strict, "
+    "include_index_excluded, require_review, require_check=<kind>, "
     "review_evidence=binding or local_receipt, and external_base=<percent-encoded URL>. "
     "Review selectors require require_review. "
     "A refused export downloads as application/json named okf-export-refusal.json "
@@ -166,7 +166,6 @@ def _bundle_options(ref: str) -> tuple[str, dict[str, Any]] | None:
         key, equals, value = part.partition("=")
         if key in values or key not in {
             "strict",
-            "include_hidden",
             "include_index_excluded",
             "external_base",
             "require_review",

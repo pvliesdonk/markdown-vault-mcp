@@ -30,7 +30,6 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         None,
         help="Evidence: binding (default) or local_receipt; requires `--require-review`.",
     ),
-    include_hidden: bool = typer.Option(False, help="Include hidden paths."),
     include_index_excluded: bool = typer.Option(
         False, help="Include index exclusions."
     ),
@@ -46,7 +45,6 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
         require_review: Require a matching review for every concept.
         require_check: Required check kind.
         review_evidence: Accept bindings or require local receipts.
-        include_hidden: Include eligible hidden paths.
         include_index_excluded: Include paths excluded from the search index.
         external_base: HTTP(S) base URL for outside destinations.
     """
@@ -99,7 +97,6 @@ def export(  # noqa: PLR0913, RUF100 - CLI flags need separate arguments.
                 require_review=require_review,
                 require_check=require_check,
                 review_evidence=review_evidence,
-                include_hidden=include_hidden,
                 include_index_excluded=include_index_excluded,
                 external_base=external_base,
             )

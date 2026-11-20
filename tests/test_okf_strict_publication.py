@@ -185,7 +185,7 @@ def test_cli_never_exports_configured_server_state(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "json,sqlite")
     destination = tmp_path / "bundle.zip"
     result = CliRunner().invoke(
-        app, ["export", str(destination), "--source-dir", str(root), "--include-hidden"]
+        app, ["export", str(destination), "--source-dir", str(root)]
     )
     assert result.exit_code == 0, result.output
     with zipfile.ZipFile(io.BytesIO(destination.read_bytes())) as archive:
@@ -215,7 +215,7 @@ def test_strict_refuses_changed_snapshot(tmp_path: Path, monkeypatch) -> None:
         vault.close()
 
 
-def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) -> None:
+def test_cli_options_externalize_collision(tmp_path: Path) -> None:
     import zipfile
 
     from typer.testing import CliRunner
@@ -255,14 +255,13 @@ def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) ->
             str(root),
             "--folder",
             "guides",
-            "--include-hidden",
             "--external-base",
             "https://example.org/vault",
         ],
     )
     assert result.exit_code == 0, result.output
     with zipfile.ZipFile(destination) as archive:
-        assert ".hidden.md" in archive.namelist()
+        assert ".hidden.md" not in archive.namelist()
         assert b"https://example.org/vault/b.md" in archive.read("a.md")
 
 
@@ -541,3 +540,15 @@ def test_metadata_path_validation(
             assert refused.value.report.dependencies[0].path == "note.md"
     finally:
         vault.close()
+
+
+def test_cli_rejects_removed_hidden_option(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+
+    result = CliRunner().invoke(
+        app, ["export", str(tmp_path / "out.zip"), "--include-hidden"]
+    )
+    assert result.exit_code != 0
+    assert "--include-hidden" in result.output

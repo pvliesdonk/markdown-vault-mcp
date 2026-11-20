@@ -146,20 +146,12 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         }
         assert "b.md" in {finding.path for finding in result.report.format_findings}
         assert result.report.omitted["index_excluded"] == 3
-        assert result.report.omitted["hidden"] == 1
+        assert result.report.omitted["not_part_of_bundle"] == 1
         assert result.report.omitted["conventions"] == 1
         assert result.report.omitted["templates"] == 1
-        both = build_okf_bundle(
-            vault, config, include_index_excluded=True, include_hidden=True
-        )
-        assert {"excluded.md", ".hidden.md"} <= _members(both.data)
-        hidden_only = _members(
-            build_okf_bundle(vault, config, include_hidden=True).data
-        )
         excluded_only = _members(
             build_okf_bundle(vault, config, include_index_excluded=True).data
         )
-        assert ".hidden.md" not in hidden_only and "excluded.md" not in hidden_only
         assert ".hidden.md" not in excluded_only and "excluded.md" in excluded_only
     finally:
         vault.close()
@@ -330,7 +322,7 @@ def test_omitted_hidden_inventory_failure(
     vault = Vault(source_dir=source_dir, settings=VaultSettings())
     try:
         result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
-        assert result.report.omitted["hidden"] == 1
+        assert result.report.omitted["not_part_of_bundle"] == 1
 
     finally:
         vault.close()
@@ -382,23 +374,11 @@ def test_reserved_conventions_omitted_with_options(
         vault.close()
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        (False, False, False, False, 1),
-        (True, False, False, False, 1),
-        (True, False, True, False, 1),
-        (True, True, False, False, 0),
-        (True, True, True, True, 0),
-        (False, True, False, True, 0),
-    ],
-)
+@pytest.mark.parametrize("excluded", [False, True])
+@pytest.mark.parametrize("include_index_excluded", [False, True])
 def test_hidden_symlink_selection(
-    source_dir: Path,
-    tmp_path: Path,
-    case: tuple[bool, bool, bool, bool, int],
+    source_dir: Path, tmp_path: Path, excluded: bool, include_index_excluded: bool
 ) -> None:
-    excluded, include_hidden, include_index_excluded, refuses, hidden_count = case
     bin_dir = source_dir / ".venv" / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
@@ -407,25 +387,14 @@ def test_hidden_symlink_selection(
         settings=VaultSettings(exclude_patterns=[".venv/**"] if excluded else []),
     )
     try:
-        config = ProjectConfig(source_dir=source_dir)
-        if refuses:
-            with pytest.raises(OSError, match=r"python3\.14: hidden_symlink"):
-                build_okf_bundle(
-                    vault,
-                    config,
-                    include_hidden=include_hidden,
-                    include_index_excluded=include_index_excluded,
-                )
-        else:
-            result = build_okf_bundle(
-                vault,
-                config,
-                include_hidden=include_hidden,
-                include_index_excluded=include_index_excluded,
-            )
-            assert "a.md" in _members(result.data)
-            assert ".venv/bin/python3.14" not in _members(result.data)
-            assert result.report.omitted.get("hidden", 0) == hidden_count
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=source_dir),
+            include_index_excluded=include_index_excluded,
+        )
+        assert "a.md" in _members(result.data)
+        assert ".venv/bin/python3.14" not in _members(result.data)
+        assert result.report.omitted["not_part_of_bundle"] == 1
     finally:
         vault.close()
 
@@ -437,7 +406,6 @@ def test_hidden_symlink_selection(
         "hidden_symlink",
         "nonregular",
         "directory_symlink",
-        "hidden_directory",
     ],
 )
 def test_selected_unavailable_entry_refuses(
@@ -449,8 +417,8 @@ def test_selected_unavailable_entry_refuses(
     if kind == "nonregular":
         path = source_dir / "x.md"
         os.mkfifo(path)
-    elif kind in {"directory_symlink", "hidden_directory"}:
-        path = source_dir / (".cache" if kind == "hidden_directory" else "alias")
+    elif kind == "directory_symlink":
+        path = source_dir / "alias"
         path.symlink_to(outside, target_is_directory=True)
     else:
         path = source_dir / ("escape.md" if kind == "symlink" else "data.bak")
@@ -458,9 +426,7 @@ def test_selected_unavailable_entry_refuses(
     vault = Vault(source_dir=source_dir, settings=VaultSettings())
     try:
         with pytest.raises(OSError, match=path.name + ":"):
-            build_okf_bundle(
-                vault, ProjectConfig(source_dir=source_dir), include_hidden=True
-            )
+            build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
     finally:
         vault.close()
 
@@ -519,5 +485,45 @@ def test_reserved_file_with_bounded_metadata_is_reported(
         assert result.report.uninspected[name] == "note_limit"
         assert name not in result.report.local_policy.non_admitted
         assert name not in result.report.local_policy.unknown
+    finally:
+        vault.close()
+
+
+def test_dot_paths_are_never_exported(source_dir: Path) -> None:
+    (source_dir / ".hidden.md").write_text("hidden")
+    (source_dir / ".private").mkdir()
+    (source_dir / ".private" / "note.md").write_text("hidden note")
+    (source_dir / ".private" / "image.png").write_bytes(b"image")
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(attachment_extensions=["png"])
+    )
+    try:
+        config = ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
+        result = build_okf_bundle(vault, config, include_index_excluded=True)
+        assert not any(
+            part.startswith(".")
+            for name in _members(result.data)
+            for part in name.split("/")
+        )
+        assert result.report.omitted["not_part_of_bundle"] == 3
+        scoped = build_okf_bundle(vault, config, folder=".private")
+        assert not _members(scoped.data)
+        assert scoped.report.omitted["not_part_of_bundle"] == 2
+    finally:
+        vault.close()
+
+
+def test_hidden_directory_symlink_is_not_followed(
+    source_dir: Path, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("secret")
+    (source_dir / ".alias").symlink_to(outside, target_is_directory=True)
+    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        assert "secret.md" not in _members(result.data)
+        assert ".alias" not in _members(result.data)
     finally:
         vault.close()

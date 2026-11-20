@@ -479,6 +479,7 @@ async def test_bundle_collision_returns_actionable_refusal(
     "ref",
     [
         "okf-bundle?unknown",
+        "okf-bundle?include_hidden",
         "okf-bundle?strict&strict",
         "okf-bundle?strict=1",
         "okf-bundle?external_base=broken",
@@ -516,9 +517,10 @@ async def test_bundle_selection_flags_reach_export(
     )
     try:
         sink = VaultTransferSink(config, vault_provider=lambda: vault)
-        result = await sink.read("okf-bundle?include_hidden&include_index_excluded")
+        result = await sink.read("okf-bundle?include_index_excluded")
         with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
-            assert {".hidden.md", "excluded.md"} <= set(archive.namelist())
+            assert "excluded.md" in archive.namelist()
+            assert ".hidden.md" not in archive.namelist()
     finally:
         vault.close()
 
