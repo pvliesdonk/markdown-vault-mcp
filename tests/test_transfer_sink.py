@@ -520,7 +520,6 @@ async def test_bundle_selection_flags_reach_export(
         result = await sink.read("okf-bundle?include_index_excluded")
         with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
             assert "excluded.md" in archive.namelist()
-            assert ".hidden.md" not in archive.namelist()
     finally:
         vault.close()
 

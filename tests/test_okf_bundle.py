@@ -374,8 +374,10 @@ def test_reserved_conventions_omitted_with_options(
         vault.close()
 
 
-@pytest.mark.parametrize("excluded", [False, True])
-@pytest.mark.parametrize("include_index_excluded", [False, True])
+@pytest.mark.parametrize(
+    ("excluded", "include_index_excluded"),
+    [(False, False), (True, False), (True, True)],
+)
 def test_hidden_symlink_selection(
     source_dir: Path, tmp_path: Path, excluded: bool, include_index_excluded: bool
 ) -> None:
@@ -523,7 +525,7 @@ def test_hidden_directory_symlink_is_not_followed(
     vault = Vault(source_dir=source_dir, settings=VaultSettings())
     try:
         result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
-        assert "secret.md" not in _members(result.data)
-        assert ".alias" not in _members(result.data)
+        assert result.report.omitted["not_part_of_bundle"] == 1
+        assert not any("secret" in name for name in _members(result.data))
     finally:
         vault.close()

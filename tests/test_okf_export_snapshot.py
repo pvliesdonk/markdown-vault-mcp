@@ -262,7 +262,7 @@ def test_missing_git_executable_keeps_plain_vault_usable(
     assert git_query.git_export_snapshot(tmp_path) is None
 
 
-def test_git_tree_policy_omits_state_and_preserves_hidden_policy(
+def test_git_tree_policy_omits_state_and_dot_paths(
     tmp_path: Path,
 ) -> None:
     _git(tmp_path, "init", "-q")

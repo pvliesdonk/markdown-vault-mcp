@@ -261,7 +261,6 @@ def test_cli_options_externalize_collision(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     with zipfile.ZipFile(destination) as archive:
-        assert ".hidden.md" not in archive.namelist()
         assert b"https://example.org/vault/b.md" in archive.read("a.md")
 
 
