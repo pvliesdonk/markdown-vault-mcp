@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from threading import Event
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -597,25 +598,24 @@ async def test_cancelled_write_keeps_transaction_active_until_worker_finishes(
 
 async def _prepare_automatic_close(
     vault: Any, handle: str, selection: str, monkeypatch: pytest.MonkeyPatch
-) -> Any:
+) -> Event | None:
     """Arrange a pending automatic close for the sync probe."""
     import asyncio
-    from threading import Event
 
+    if selection != "pending":
+        return None
     entered, release = Event(), Event()
-    if selection == "pending":
-        event = vault._write_callback.group_event
-        assert event is not None
+    event = vault._write_callback.group_event
+    assert event is not None
 
-        def paused(*args: Any) -> None:
-            entered.set()
-            assert release.wait(5)
-            event(*args)
+    def paused(*args: Any) -> None:
+        entered.set()
+        assert release.wait(5)
+        event(*args)
 
-        monkeypatch.setattr(vault._write_callback, "group_event", paused)
-    if selection == "pending":
-        vault._write_callback.close_group(handle, None, _automatic=True)
-        assert await asyncio.to_thread(entered.wait, 5)
+    monkeypatch.setattr(vault._write_callback, "group_event", paused)
+    vault._write_callback.close_group(handle, None, _automatic=True)
+    assert await asyncio.to_thread(entered.wait, 5)
     return release
 
 
@@ -667,7 +667,8 @@ async def test_sync_reports_settled_history_failures(
                 await asyncio.sleep(0.1)
                 assert not task.done()
         finally:
-            release.set()
+            if release is not None:
+                release.set()
         result = (await task).data
         assert result["push"]["applied"]
         assert result["history_failed"] is True

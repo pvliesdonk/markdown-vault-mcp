@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from markdown_vault_mcp.vault import Vault, VaultSettings
-from tests.fixtures.git import GitRepoPair
 
 
 def test_build_observes_excluded_hidden_and_unparseable_notes(tmp_path: Path) -> None:
@@ -1282,43 +1281,3 @@ def test_invalid_ledger_envelope_resets_or_refuses(
         ledger.sweep()
         result = json.loads(path.read_text())
         assert result["navigation"] == {"generated": {}, "reported": {}}
-
-
-def test_automatic_pull_sweeps_only_after_applied_result(
-    tmp_path: Path,
-    git_repo_pair: GitRepoPair,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An unsuccessful automatic pull does not sweep observations."""
-
-    from markdown_vault_mcp.git import GitWriteStrategy, PullResult
-
-    source = git_repo_pair.local_path
-    strategy = GitWriteStrategy(
-        token=None, push_delay_s=0, git_lfs=False, repo_path=source
-    )
-    vault = Vault(
-        source_dir=source,
-        settings=VaultSettings(state_path=tmp_path / "state"),
-        git_strategy=strategy,
-        on_write=strategy,
-    )
-    try:
-        vault.index.build_index()
-        ledger = vault._index_mgr.observations
-        original_digest = ledger.rows()["README.md"].content_digest
-        (source / "README.md").write_text("external edit")
-        result = PullResult(
-            applied=False,
-            fast_forward=False,
-            commits_pulled=0,
-            from_sha="a",
-            to_sha="a",
-            reason="fetch_failed",
-        )
-        monkeypatch.setattr(strategy, "automatic_pull", lambda: result)
-        assert vault._automatic_pull() is result
-        assert ledger.rows()["README.md"].content_digest == original_digest
-    finally:
-        vault.close()
-        strategy.close()

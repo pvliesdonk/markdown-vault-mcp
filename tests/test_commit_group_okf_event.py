@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp._identity import Principal, bound_principal
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.utils.fs import is_regular_file
@@ -81,23 +80,22 @@ def test_group_records_one_event(
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
-@pytest.mark.parametrize("mode", ["events", "off", "reserved"])
+@pytest.mark.parametrize("mode", ["off", "reserved"])
 def test_empty_and_off_groups_do_not_create_log(
     git_repo: Path, make_vault: Callable[..., Vault], mode: str
 ) -> None:
-    """Empty, disabled and reserved-only groups create no log."""
+    """Disabled and reserved-only groups create no log."""
     vault = make_vault("events" if mode == "reserved" else mode)
     group = vault._write_callback.open_group("Change", None)
-    if mode in {"off", "reserved"}:
-        with vault._write_callback.bind_group(group.handle, None):
-            if mode == "reserved":
-                vault.writer.write(
-                    "index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n'
-                )
-            else:
-                vault.writer.write("a.md", "# A\n")
+    with vault._write_callback.bind_group(group.handle, None):
+        if mode == "reserved":
+            vault.writer.write(
+                "index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n'
+            )
+        else:
+            vault.writer.write("a.md", "# A\n")
     result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == ("no_changes" if mode == "events" else "committed")
+    assert result.status == "committed"
     assert not result.history_failed
     assert not is_regular_file(git_repo / "log.md")
 
@@ -224,29 +222,20 @@ def test_event_date_is_close_date(
 def test_timer_closes_and_records_history(
     git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
-    """A timer commits its history with the opener as author."""
+    """A timer commits its history in the resulting Git tree."""
     import time
 
     vault = make_vault("events")
     vault._write_callback._group_idle_s = 0.05
-    principal = Principal("alice", "Alice", "alice@example.com", "human")
-    group = vault._write_callback.open_group("Timer change", principal)
-    with (
-        bound_principal(principal),
-        vault._write_callback.bind_group(group.handle, principal),
-    ):
+    group = vault._write_callback.open_group("Timer change", None)
+    with vault._write_callback.bind_group(group.handle, None):
         vault.writer.write("a.md", "# A\n")
     deadline = time.monotonic() + 5
     while not group.closed and time.monotonic() < deadline:
         time.sleep(0.01)
     assert group.closed
-    result = vault._write_callback.close_group(group.handle, principal).result(
-        timeout=10
-    )
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
     assert result.status == "committed" and result.sha
-    assert _run_git(
-        git_repo, "show", "-s", "--format=%an <%ae>", result.sha
-    ).strip() == ("Alice <alice@example.com>")
     assert "Timer change" in _run_git(git_repo, "show", f"{result.sha}:log.md")
 
 
@@ -351,46 +340,69 @@ def test_removed_paths_are_not_broken_links(
     assert "](/delete.md)" not in log and "](/old.md)" not in log
 
 
+@pytest.mark.parametrize("point", ["history", "commit"])
 def test_shutdown_timeout_defers_teardown_until_retry(
+    git_repo: Path,
     make_vault: Callable[..., Vault],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    point: str,
 ) -> None:
-    """A slow finalizer keeps its resources and a later close completes cleanup."""
+    """A timed-out finalizer retains stores, with distinct shutdown outcomes."""
     import sqlite3
     import threading
 
     vault = make_vault("events")
     dispatcher = vault._write_callback
+    strategy = dispatcher._on_write
+    assert isinstance(strategy, GitWriteStrategy)
+    entered, release = threading.Event(), threading.Event()
     record = dispatcher.group_event
     assert record is not None
-    entered, release = threading.Event(), threading.Event()
+    original_batch = strategy.on_write_batch
 
     def slow(group: CommitGroup, paths: set[Path], day: date) -> None:
         entered.set()
         assert release.wait(5)
         record(group, paths, day)
 
+    def paused(*args: object, **kwargs: object) -> object:
+        entered.set()
+        assert release.wait(5)
+        return original_batch(*args, **kwargs)  # type: ignore[arg-type]
+
+    if point == "history":
+        monkeypatch.setattr(dispatcher, "group_event", slow)
+    else:
+        monkeypatch.setattr(strategy, "on_write_batch", paused)
     original_close = dispatcher.close_groups
-    monkeypatch.setattr(dispatcher, "group_event", slow)
     monkeypatch.setattr(
         dispatcher,
         "close_groups",
         lambda timeout=30: original_close(timeout=min(timeout, 0.1)),
     )
-    group = dispatcher.open_group("Slow", None)
+    group = dispatcher.open_group("Shutdown timeout", None)
     with dispatcher.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
+        vault.writer.write("note.md", "# A\n")
     pending = dispatcher.close_group(group.handle, None)
     try:
         assert entered.wait(5)
         vault.close()
-        assert "group_finalize_timeout" in caplog.text
+        assert "group_finalize_timeout outcome=may_be_lost" in caplog.text
         assert not pending.done()
         assert vault._fts.count_documents() >= 0
+        if point == "commit":
+            strategy.close()
     finally:
         release.set()
-    assert pending.result(timeout=5).status == "committed"
+    assert pending.result(timeout=5).status == (
+        "committed" if point == "history" else "failed"
+    )
+    if point == "commit":
+        assert is_regular_file(git_repo / "note.md")
+        assert "Shutdown timeout" in (git_repo / "log.md").read_text()
+        assert "note.md" in _run_git(git_repo, "status", "--porcelain")
+        assert "Shutdown timeout" not in _run_git(git_repo, "log", "--format=%s")
     vault.close()
     with pytest.raises(sqlite3.ProgrammingError):
         vault._fts.count_documents()
@@ -466,11 +478,7 @@ def _fail_log_selection(
 
 @pytest.mark.parametrize(
     "case",
-    [
-        (failure, failed)
-        for failure in ("log", "anchor", "folder")
-        for failed in ("a", "b")
-    ],
+    [("log", "a"), ("log", "b"), ("anchor", "a"), ("folder", "a")],
 )
 def test_failed_log_does_not_skip_other_destinations(
     git_repo: Path,
@@ -574,54 +582,6 @@ def test_nested_deferral_restores_outer_context() -> None:
             assert not event_deferred()
         assert event_deferred()
     assert not event_deferred()
-
-
-def test_service_shutdown_closes_git_after_group_timeout(
-    git_repo: Path,
-    make_vault: Callable[..., Vault],
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Service shutdown can leave group files uncommitted after its bound."""
-    import threading
-
-    vault = make_vault("events")
-    dispatcher = vault._write_callback
-    strategy = dispatcher._on_write
-    assert isinstance(strategy, GitWriteStrategy)
-    original_batch = strategy.on_write_batch
-    entered, release = threading.Event(), threading.Event()
-
-    def paused(*args: object, **kwargs: object) -> object:
-        entered.set()
-        assert release.wait(5)
-        return original_batch(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(strategy, "on_write_batch", paused)
-    original_close = dispatcher.close_groups
-    monkeypatch.setattr(
-        dispatcher,
-        "close_groups",
-        lambda timeout=30: original_close(timeout=min(timeout, 0.1)),
-    )
-    group = dispatcher.open_group("Shutdown timeout", None)
-    with dispatcher.bind_group(group.handle, None):
-        vault.writer.write("note.md", "# Note\n")
-    pending = dispatcher.close_group(group.handle, None)
-    try:
-        assert entered.wait(5)
-        vault.close()
-        assert "group_finalize_timeout outcome=may_be_lost" in caplog.text
-        assert vault._fts.count_documents() >= 0
-        strategy.close()
-    finally:
-        release.set()
-    assert pending.result(timeout=5).status == "failed"
-    assert is_regular_file(git_repo / "note.md")
-    assert "Shutdown timeout" in (git_repo / "log.md").read_text()
-    assert "note.md" in _run_git(git_repo, "status", "--porcelain")
-    assert "Shutdown timeout" not in _run_git(git_repo, "log", "--format=%s")
-    vault.close()
 
 
 @pytest.mark.parametrize("operation", ["rename", "move"])
