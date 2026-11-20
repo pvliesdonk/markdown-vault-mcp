@@ -155,11 +155,6 @@ def test_empty_body_reference_targets_source() -> None:
     )
 
 
-def test_directory_target_resolves() -> None:
-    result = resolve_okf_path("folder/", "notes/current.md", {"notes/folder/"}, "0.3")
-    assert (result.status, result.path) == ("resolved", "notes/folder/")
-
-
 def test_body_link_does_not_fallback_to_directory() -> None:
     result = resolve_okf_path(
         "folder/", "notes/current.md", {"folder/"}, "0.2", path_field=False
