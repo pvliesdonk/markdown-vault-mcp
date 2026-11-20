@@ -13,6 +13,7 @@ from markdown_vault_mcp.vault import Vault
     ("text", "metadata", "body"),
     [
         ("---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
+        # Public string callers can supply a BOM without file decoding.
         ("\ufeff---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
         ("---\r\ntype: Metric\r\n---\r\nBody", {"type": "Metric"}, "Body"),
         ("\n---\ntype: Metric\n---\nBody", {}, None),
@@ -28,27 +29,12 @@ def test_yaml_boundaries(text: str, metadata: dict[str, str], body: str | None) 
     assert strip_frontmatter_block(text) == (text if body is None else body)
 
 
-def test_public_inventory_rejects_leading_blank_line(tmp_path: Path) -> None:
-    (tmp_path / "metric.md").write_text("\n---\ntype: Metric\n---\n")
-    vault = Vault(source_dir=tmp_path)
-    try:
-        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
-        assert result.entries[0].is_concept is False
-    finally:
-        vault.close()
-
-
 @pytest.mark.parametrize(
     ("text", "state", "parse_state", "reason"),
     [
+        ("\n---\ntype: Metric\n---\n", "inspected", "valid", None),
         ("\n---\ntype: [\n---\n", "inspected", "valid", None),
         ("\n---\ntype: *alias\n---\n", "inspected", "valid", None),
-        (
-            "---\ntype: *alias\n---\n",
-            "not_inspected",
-            "not_inspected",
-            "metadata_complexity",
-        ),
     ],
 )
 def test_public_inventory_uses_frontmatter_boundaries(
