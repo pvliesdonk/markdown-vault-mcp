@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import register_long_running_tool, tool_boundary
 
+from markdown_vault_mcp._job_tools import register_long_running_tool
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
@@ -18,7 +19,7 @@ from .._server_queryable import needs_queryable
 from ..domain import get_vault
 
 if TYPE_CHECKING:
-    from fastmcp_pvl_core import Jobs
+    from markdown_vault_mcp._jobs import Jobs
 
 
 def register(mcp: FastMCP) -> None:
