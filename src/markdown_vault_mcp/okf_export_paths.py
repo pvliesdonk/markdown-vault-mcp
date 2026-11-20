@@ -15,7 +15,7 @@ import yaml
 from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-from markdown_vault_mcp._okf_paths import resolve_okf_path
+from markdown_vault_mcp._okf_paths import OkfPathResult, resolve_okf_path
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import (
@@ -439,8 +439,8 @@ class ExportPaths:
     extensions: frozenset[str] = field(
         default_factory=lambda: effective_attachment_extensions(None)
     )
-    version: str | None = None
-    artifact_version: str | None = None
+    declared: Callable[[str], str | None] = lambda _path: None
+    source_file: Callable[[str], bool] = lambda _path: False
     _candidates: dict[str, set[str]] | None = field(default=None, init=False)
     _archive_members: set[str] = field(default_factory=set, init=False)
     _directories: set[str] = field(default_factory=set, init=False)
@@ -631,7 +631,7 @@ class ExportPaths:
         except UnicodeDecodeError:
             refused = True
         target, _ = _resolve_link_path(path, source)
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        archive_source = self._archive_path(source)
         apparent, _ = _resolve_link_path(path, archive_source)
         directory_form = path.endswith("/") or path.rsplit("/", 1)[-1] in {".", ".."}
         root_path = posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
@@ -671,7 +671,7 @@ class ExportPaths:
         changes: list[tuple[ScalarNode, str]] = []
         dependencies: list[Dependency] = []
         fallback: list[Dependency] = []
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        archive_source = self._archive_path(source)
         root_index = archive_source == "index.md"
         licenses = _mapping_values(root, "license", {}) if root_index else []
         descriptors = _source_resources(root, root_index)
@@ -693,6 +693,21 @@ class ExportPaths:
                 changes.append((node, rewritten + trailing))
         return changes, dependencies, fallback
 
+    def _archive_path(self, source: str) -> str:
+        return source[len(self.scope) + 1 :] if self.scope else source
+
+    def _versioned_result(
+        self, value: str, source: str, available: set[str], declaration: str | None
+    ) -> OkfPathResult:
+        result = resolve_okf_path(value, source, available, None)
+        if result.status != "root_fallback":
+            return result
+        try:
+            version = self.declared(declaration) if declaration is not None else None
+        except ValueError as exc:
+            raise _FieldInventoryError(str(exc)) from exc
+        return resolve_okf_path(value, source, available, version)
+
     def _bare_field(
         self,
         value: str,
@@ -702,22 +717,39 @@ class ExportPaths:
     ) -> str | None:
         dependencies, fallback = observations
         license_field, scope_descriptor = field_flags
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
-        result = resolve_okf_path(value, source, self._selected_fields, self.version)
-        if result.status == "external":
-            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value):
-                return None
+        archive_source = self._archive_path(source)
+        written = _field_parts(value)[0]
+        result = resolve_okf_path(value, source, self._selected_fields, None)
+        if result.status == "external" and not re.match(
+            r"^[A-Za-z][A-Za-z0-9+.-]*:", value
+        ):
             return self._field_replacement(value, source, dependencies)
-        if result.status == "absent":
+        if result.status in {"external", "absent"}:
             return None
-        if result.status == "unresolved" and (
-            (license_field and _is_spdx_license(value))
-            or (scope_descriptor and any(char.isspace() for char in value))
+        if (
+            result.status != "resolved"
+            and scope_descriptor
+            and (
+                any(char.isspace() for char in value)
+                or (
+                    "/" not in written
+                    and not written.lower().endswith(".md")
+                    and not names_attachment(written, self.extensions)
+                )
+            )
         ):
             return None
-        if result.status != "resolved":
-            result = resolve_okf_path(
-                value, source, self._available_fields(), self.version
+        if result.status != "resolved" and license_field and _is_spdx_license(value):
+            candidates = {posixpath.join(posixpath.dirname(source), value), value}
+            available = self._selected_fields | {
+                path for path in candidates if self.source_file(path)
+            }
+            result = self._versioned_result(value, source, available, "index.md")
+            if result.status not in {"resolved", "root_fallback"}:
+                return None
+        elif result.status != "resolved":
+            result = self._versioned_result(
+                value, source, self._available_fields(), "index.md"
             )
         if result.status == "root_fallback":
             fallback.append(Dependency(archive_source, _safe_text(value)))
@@ -731,19 +763,18 @@ class ExportPaths:
         self, value: str, source: str, dependencies: list[Dependency]
     ) -> str | None:
         self._refuse_retarget(value, source)
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        archive_source = self._archive_path(source)
         if value.startswith(("./", "../")):
             return self._field_replacement(value, source, dependencies)
         dependencies.append(Dependency(archive_source, _safe_text(value)))
         return None
 
     def _refuse_retarget(self, value: str, source: str) -> None:
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
-        apparent = resolve_okf_path(
-            value,
-            archive_source,
-            self._artifact_fields,
-            self.artifact_version if self.scope else self.version,
+        archive_source = self._archive_path(source)
+        artifact_index = f"{self.scope}/index.md" if self.scope else "index.md"
+        declaration = artifact_index if artifact_index in self.members else None
+        apparent = self._versioned_result(
+            value, archive_source, self._artifact_fields, declaration
         )
         if apparent.status in {"resolved", "root_fallback"}:
             raise ExportCollisionError(
@@ -758,7 +789,7 @@ class ExportPaths:
         suffix: str,
         dependencies: list[Dependency],
     ) -> str | None:
-        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        archive_source = self._archive_path(source)
         written = _field_parts(value)[0]
         path = decode_link_target(written)
         apparent, _ = _resolve_link_path(path, archive_source)

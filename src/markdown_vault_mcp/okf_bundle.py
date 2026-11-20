@@ -14,6 +14,9 @@ from functools import cache
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+import frontmatter
+import yaml
+
 from markdown_vault_mcp.bundle_inventory import (
     _MALFORMED_METADATA,
     BundleTreeRequest,
@@ -287,22 +290,40 @@ def _declaration_bytes(vault: Vault, path: str) -> bytes | None:
         return None
 
 
-def _root_declaration(
-    vault: Vault, snapshot: GitExportSnapshot | None, path: str = "index.md"
-) -> str:
-    """Read an index declaration without following links or leaving the snapshot."""
+def _declaration_raw(
+    vault: Vault, snapshot: GitExportSnapshot | None, path: str
+) -> bytes | None:
     if snapshot is None:
-        raw = _declaration_bytes(vault, path)
-        return _declaration(raw) if raw is not None else ""
+        return _declaration_bytes(vault, path)
     entry = snapshot.entries.get(path)
     if entry is None:
-        return ""
+        return None
     if entry[0] not in {"100644", "100755"}:
         raise OSError(f"Cannot read OKF index declaration: {path}")
     root = replace(snapshot, entries={path: entry})
     if not _inspect_page(vault, "", root, limit=1).entries:
         raise OSError(f"Cannot inspect OKF index declaration: {path}")
-    return _declaration(snapshot.read(path))
+    return snapshot.read(path)
+
+
+def _declared_version(vault: Vault, raw: bytes | None) -> str | None:
+    if raw is None:
+        return None
+    text = _declaration(raw)
+    if len(text) == _MAX_READ_CHARS and text.startswith(("---\n", "---\r\n")):
+        handler = frontmatter.detect_format(text, frontmatter.handlers)
+        if handler is not None:
+            try:
+                handler.split(text)
+            except ValueError as exc:
+                raise ValueError(
+                    "OKF index declaration exceeds the read limit"
+                ) from exc
+    try:
+        parse_frontmatter(text)
+    except yaml.YAMLError as exc:
+        raise ValueError("Invalid OKF index declaration") from exc
+    return vault.okf._probe(text)[0]
 
 
 def _review_policy(
@@ -355,8 +376,7 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         review_evidence: Requires review; binding by default or local_receipt.
 
     Returns:
-        Archive bytes, counts, and an artifact conformance report. The report
-        records live source-index changes as snapshot inconsistencies.
+        Archive bytes, counts, and an artifact conformance report.
 
     Raises:
         PublicationRefused: If strict or review publication fails the report.
@@ -364,9 +384,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             including failures under otherwise omitted hidden paths, or if an
             outside body or frontmatter destination collides with an exported
             file or directory, the external URL prefix is invalid, or the Git
-            snapshot cannot be read or an index declaration is undecodable.
-        OSError: If a selected file or index declaration cannot be read, or the
-            live root index changes before its bytes are captured.
+            snapshot cannot be read or a needed index declaration is invalid.
+        OSError: If a selected file or needed index declaration cannot be read.
     """
     policy = _review_policy(require_review, require_check, review_evidence)
     snapshot = git_export_snapshot(vault.source_dir)
@@ -405,16 +424,11 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
-    root_bytes = _declaration_bytes(vault, "index.md") if snapshot is None else None
-    declaration = (
-        (_declaration(root_bytes) if root_bytes is not None else "")
-        if snapshot is None
-        else _root_declaration(vault, snapshot)
-    )
-    version, _ = vault.okf._probe(declaration)
-    active = bool(
-        snapshot and vault._required_frontmatter and vault.okf.state(declaration).active
-    )
+    active = False
+    if snapshot and vault._required_frontmatter:
+        raw = _declaration_raw(vault, snapshot, "index.md")
+        declaration = _declaration(raw) if raw is not None else ""
+        active = vault.okf.state(declaration).active
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
@@ -497,25 +511,41 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
                 if snapshot is not None
                 else _read_safe(vault.source_dir, artifact_index)
             )
-        if (
-            snapshot is None
-            and artifact_index == "index.md"
-            and artifact_raw is not None
-            and artifact_raw[: _MAX_READ_CHARS * 4 + 4] != root_bytes
-        ):
-            raise OSError("Root index changed during export")
-        artifact_declaration = (
-            _declaration(artifact_raw) if artifact_raw is not None else ""
-        )
-        artifact_version, _ = vault.okf._probe(artifact_declaration)
+
+        @cache
+        def declared(path: str) -> str | None:
+            try:
+                raw = (
+                    artifact_raw
+                    if path == artifact_index and artifact_raw is not None
+                    else _declaration_raw(vault, snapshot, path)
+                )
+                return _declared_version(vault, raw)
+            except (OSError, ValueError) as exc:
+                raise type(exc)(f"Cannot read declaration {path}: {exc}") from exc
+
+        @cache
+        def source_file(path: str) -> bool:
+            if snapshot is not None:
+                entry = snapshot.entries.get(path)
+                return bool(entry and entry[0] in {"100644", "100755"})
+            parts = path.split("/")
+            try:
+                with open_directory_nofollow(vault.source_dir, parts[:-1]) as parent:
+                    return parts[-1] in os.listdir(parent) and stat.S_ISREG(  # noqa: PTH208 -- descriptor-relative, no-follow lookup
+                        os.lstat(parts[-1], dir_fd=parent).st_mode
+                    )
+            except (FileNotFoundError, NotADirectoryError):
+                return False
+
         paths = ExportPaths(
             folder,
             {item.path for item in selected},
             external_base,
             inventory,
             extensions,
-            version,
-            artifact_version,
+            declared,
+            source_file,
         )
         admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}
@@ -629,14 +659,6 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
         dirty = replace(snapshot, changed=changed, flagged=flagged)
         page = _inspect_page(vault, folder, dirty, limit=1)
         report.snapshot.uncommitted_paths.extend(page.uncommitted)
-    if snapshot is None and "index.md" not in digests:
-        try:
-            current_root = _declaration_bytes(vault, "index.md")
-        except OSError:
-            report.snapshot.inconsistent_paths.append("index.md")
-        else:
-            if current_root != root_bytes:
-                report.snapshot.inconsistent_paths.append("index.md")
     for path, digest in digests.items():
         try:
             current = hashlib.sha256(_read_safe(vault.source_dir, path)).digest()

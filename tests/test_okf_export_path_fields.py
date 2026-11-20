@@ -668,7 +668,12 @@ def test_root_spdx_license_is_not_a_missing_path(license_value):
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
-    paths = ExportPaths("", {"index.md"}, None, version="0.3")
+    def unavailable():
+        raise AssertionError("SPDX metadata must not scan inventory")
+
+    paths = ExportPaths(
+        "", {"index.md"}, None, inventory=unavailable, declared=lambda _: "0.3"
+    )
     report = OkfExportReport()
     text = f"---\nlicense: {license_value}\n---\n"
     assert paths.relocate_frontmatter(text, "index.md", report) == text
@@ -680,7 +685,7 @@ def test_missing_root_license_path_is_reported(license_value):
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
-    paths = ExportPaths("", {"index.md"}, None, version="0.3")
+    paths = ExportPaths("", {"index.md"}, None, declared=lambda _: "0.3")
     report = OkfExportReport()
     text = f"---\nlicense: {license_value}\n---\n"
     assert paths.relocate_frontmatter(text, "index.md", report) == text
@@ -721,30 +726,13 @@ def test_root_export_does_not_create_false_collision():
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
-    paths = ExportPaths("", {"index.md", "target.md", "a.md"}, None, version="0.3")
+    paths = ExportPaths(
+        "", {"index.md", "target.md", "a.md"}, None, declared=lambda _: "0.3"
+    )
     report = OkfExportReport()
     text = "---\nresource: arget.md\n---\n"
     assert paths.relocate_frontmatter(text, "a.md", report) == text
     assert [(x.path, x.target) for x in report.dependencies] == [("a.md", "arget.md")]
-
-
-@pytest.mark.parametrize("failure", ["invalid", "symlink"])
-def test_live_index_bounded_read_rejects_invalid_utf8(tmp_path, failure):
-    from markdown_vault_mcp.okf_bundle import _root_declaration
-
-    index = tmp_path / "index.md"
-    if failure == "invalid":
-        index.write_bytes(b'---\nokf_version: "0.3"\n---\n\xff')
-    else:
-        target = tmp_path / "target.md"
-        target.write_text('---\nokf_version: "0.3"\n---\n')
-        index.symlink_to(target)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
-    try:
-        with pytest.raises(ValueError if failure == "invalid" else OSError):
-            _root_declaration(vault, None)
-    finally:
-        vault.close()
 
 
 @pytest.mark.parametrize(
@@ -864,7 +852,7 @@ def test_root_directory_does_not_create_false_collision():
     from markdown_vault_mcp.okf_export_paths import ExportPaths
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
-    paths = ExportPaths("", {"a.md", "guides/b.md"}, None, version="0.3")
+    paths = ExportPaths("", {"a.md", "guides/b.md"}, None, declared=lambda _: "0.3")
     report = OkfExportReport()
     text = "---\nresource: uides/\n---\n"
     assert paths.relocate_frontmatter(text, "a.md", report) == text
@@ -878,7 +866,7 @@ def test_sources_descriptor_preserves_resolvable_spaces():
     from markdown_vault_mcp.okf_export_report import OkfExportReport
 
     paths = ExportPaths(
-        "guides", {"guides/a.md", "guides/real file.md"}, None, version="0.3"
+        "guides", {"guides/a.md", "guides/real file.md"}, None, declared=lambda _: "0.3"
     )
     report = OkfExportReport()
     text = "---\nresource: unresolved with spaces\nsources:\n  - resource: all queries in BigQuery project X\n  - resource: real file.md\n---\n"
@@ -904,68 +892,6 @@ def test_sources_descriptor_preserves_resolvable_spaces():
     assert [(item.path, item.target) for item in shared_report.dependencies] == [
         ("a.md", "unresolved with spaces")
     ]
-
-
-@pytest.mark.parametrize("strict", [False, True])
-@pytest.mark.parametrize("failure", ["changed", "unreadable"])
-def test_live_unselected_root_change_is_inconsistent(
-    tmp_path, monkeypatch, strict, failure
-):
-    from markdown_vault_mcp import okf_bundle
-    from markdown_vault_mcp.okf_export_report import PublicationRefused
-
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n')
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text("---\ntype: Note\n---\n")
-    original = okf_bundle._declaration_bytes
-    calls = 0
-
-    def change_after_read(vault, path):
-        nonlocal calls
-        calls += 1
-        if calls > 1 and failure == "unreadable":
-            raise PermissionError("declaration became unreadable")
-        raw = original(vault, path)
-        if calls == 1 and failure == "changed":
-            index.write_text('---\nokf_version: "0.3"\n---\n')
-        return raw
-
-    monkeypatch.setattr(okf_bundle, "_declaration_bytes", change_after_read)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
-    try:
-        config = ProjectConfig(source_dir=tmp_path)
-        if strict:
-            with pytest.raises(PublicationRefused) as exc:
-                build_okf_bundle(vault, config, folder="guides", strict=True)
-            report = exc.value.report
-        else:
-            report = build_okf_bundle(vault, config, folder="guides").report
-        assert "index.md" in report.snapshot.inconsistent_paths
-    finally:
-        vault.close()
-
-
-def test_live_root_index_change_before_capture_refuses(tmp_path, monkeypatch):
-    from markdown_vault_mcp import okf_bundle
-
-    index = tmp_path / "index.md"
-    index.write_text('---\nokf_version: "0.2"\n---\n')
-    (tmp_path / "a.md").write_text("note")
-    original = okf_bundle._declaration_bytes
-
-    def change_after_read(vault, path):
-        raw = original(vault, path)
-        index.write_text('---\nokf_version: "0.3"\n---\n')
-        return raw
-
-    monkeypatch.setattr(okf_bundle, "_declaration_bytes", change_after_read)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
-    try:
-        with pytest.raises(OSError, match="changed during export"):
-            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
-    finally:
-        vault.close()
 
 
 def test_selected_index_version_comes_from_packed_bytes(tmp_path, monkeypatch):
@@ -1002,60 +928,6 @@ def test_selected_index_version_comes_from_packed_bytes(tmp_path, monkeypatch):
     assert result.report.dependencies[0].target == "shared.md"
 
 
-@pytest.mark.usefixtures("isolated_git")
-@pytest.mark.parametrize(
-    "failure", ["unreadable", "invalid", "git-symlink", "git-inspection"]
-)
-@pytest.mark.parametrize("strict", [False, True])
-def test_declaration_failure_never_enables_legacy(
-    tmp_path, monkeypatch, failure, strict
-):
-    from markdown_vault_mcp import okf_bundle
-
-    index = tmp_path / "index.md"
-    index.write_bytes(
-        b'---\nokf_version: "0.3"\n---\n' + (b"\xff" if failure == "invalid" else b"")
-    )
-    (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text("---\ntype: Note\n---\n")
-    if failure in {"git-symlink", "git-inspection"}:
-        from tests.fixtures.git import _run_git
-
-        if failure == "git-symlink":
-            index.unlink()
-            index.symlink_to("missing-target")
-        _run_git(tmp_path, "init", "-q")
-        _run_git(tmp_path, "config", "user.name", "Fixture")
-        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
-        _run_git(tmp_path, "add", "index.md", "guides")
-        _run_git(tmp_path, "commit", "-qm", "fixture")
-        if failure == "git-inspection":
-            from types import SimpleNamespace
-
-            monkeypatch.setattr(
-                okf_bundle,
-                "_inspect_page",
-                lambda *_args, **_kwargs: SimpleNamespace(entries=[]),
-            )
-    if failure == "unreadable":
-
-        def deny(*_args):
-            raise PermissionError("unreadable declaration")
-
-        monkeypatch.setattr(okf_bundle, "read_regular_nofollow", deny)
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
-    try:
-        with pytest.raises((OSError, ValueError)):
-            build_okf_bundle(
-                vault,
-                ProjectConfig(source_dir=tmp_path),
-                folder="guides",
-                strict=strict,
-            )
-    finally:
-        vault.close()
-
-
 def test_unselected_declaration_read_is_bounded(tmp_path, monkeypatch):
     from markdown_vault_mcp import okf_bundle
 
@@ -1063,7 +935,8 @@ def test_unselected_declaration_read_is_bounded(tmp_path, monkeypatch):
         b'---\nokf_version: "0.3"\n---\n' + b"x" * 1_000_000
     )
     (tmp_path / "guides").mkdir()
-    (tmp_path / "guides/a.md").write_text("note")
+    (tmp_path / "target.md").write_text("target")
+    (tmp_path / "guides/a.md").write_text("---\nresource: target.md\n---\n")
     original = okf_bundle.read_regular_nofollow
     limits = []
 
@@ -1078,3 +951,368 @@ def test_unselected_declaration_read_is_bounded(tmp_path, monkeypatch):
     finally:
         vault.close()
     assert limits and max(limits) <= 4 * 65536 + 4
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("extensions", [None, ("*",)])
+@pytest.mark.parametrize("committed", [False, True])
+def test_r4_outside_extensionless_license_precedes_spdx(
+    tmp_path, extensions, committed
+):
+    import io
+    import zipfile
+
+    import yaml
+
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (tmp_path / "MIT").write_text("custom license")
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/index.md").write_text("---\nlicense: MIT\n---\n")
+    if committed:
+        from tests.fixtures.git import _run_git
+
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(tmp_path, "add", "index.md", "MIT", "guides")
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    settings = VaultSettings(okf_mode="off", attachment_extensions=extensions)
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path, attachment_extensions=extensions),
+            folder="guides",
+            external_base="https://example.org/v",
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        header = archive.read("index.md").decode().split("---")[1]
+    assert yaml.safe_load(header)["license"] == "https://example.org/v/MIT"
+    assert [(item.path, item.target) for item in result.report.dependencies] == [
+        ("index.md", "MIT")
+    ]
+    assert [(item.path, item.target) for item in result.report.v0_2_root_fallback] == [
+        ("index.md", "MIT")
+    ]
+
+
+@pytest.mark.parametrize("descriptor", ["production", "BigQuery"])
+def test_r4_single_word_sources_descriptor_passes_strict(tmp_path, descriptor):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text(
+        f"---\ntype: Note\nsources: [{{resource: {descriptor}}}]\n---\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides", strict=True
+        )
+    finally:
+        vault.close()
+    assert not result.report.dependencies
+
+
+def test_r4_malformed_declaration_refuses_version_dependent_fallback(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\nbad: [\n---\n')
+    (tmp_path / "guides/sub").mkdir(parents=True)
+    (tmp_path / "guides/b.md").write_text("target")
+    (tmp_path / "guides/sub/a.md").write_text("---\nresource: guides/b.md\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        with pytest.raises((ValueError, OSError)):
+            build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path), folder="guides")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("failure", ["invalid_utf8", "malformed_yaml", "unreadable"])
+def test_r4_unusable_omitted_root_without_fields_can_export(
+    tmp_path, monkeypatch, failure
+):
+    from markdown_vault_mcp import okf_bundle
+
+    raw = {
+        "invalid_utf8": b"\xff\xfe invalid",
+        "malformed_yaml": b'---\nokf_version: "0.3"\nbad: [\n---\n',
+        "unreadable": b'---\nokf_version: "0.3"\n---\n',
+    }[failure]
+    (tmp_path / "index.md").write_bytes(raw)
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("---\ntype: Note\n---\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    if failure == "unreadable":
+
+        def deny(*_args):
+            raise PermissionError("fixture unreadable root declaration")
+
+        monkeypatch.setattr(okf_bundle, "read_regular_nofollow", deny)
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+    finally:
+        vault.close()
+    assert result.data.startswith(b"PK")
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        (committed, mode, selected_root)
+        for committed in (False, True)
+        for mode in ("off", "auto")
+        for selected_root in (False, True)
+    ],
+)
+@pytest.mark.parametrize("kind", ["invalid", "malformed", "overlong"])
+@pytest.mark.parametrize("reference", ["none", "selected", "unresolved", "fallback"])
+def test_replan2_declaration_is_read_only_for_fallback(
+    tmp_path, scenario, kind, reference
+):
+    committed, mode, selected_root = scenario
+    from tests.fixtures.git import _run_git
+
+    raw = {
+        "invalid": b"\xff invalid",
+        "malformed": b'---\nokf_version: "0.3"\nbad: [\n---\n',
+        "overlong": b'---\nokf_version: "0.3"\nbig: ' + b"x" * 70000 + b"\n---\n",
+    }[kind]
+    (tmp_path / "index.md").write_bytes(raw)
+    (tmp_path / "target.md").write_text("target")
+    folder = "" if selected_root else "guides"
+    directory = tmp_path / ("sub" if selected_root else "guides/sub")
+    directory.mkdir(parents=True)
+    (directory / "local.md").write_text("target")
+    value = {
+        "none": "",
+        "selected": "local.md",
+        "unresolved": "missing.md",
+        "fallback": "target.md",
+    }[reference]
+    resource = f"resource: {value}\n" if value else ""
+    (directory / "a.md").write_text(f"---\ntype: Note\n{resource}---\n")
+    if committed:
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(
+            tmp_path,
+            "add",
+            "index.md",
+            "target.md",
+            "sub" if selected_root else "guides",
+        )
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=mode))
+    try:
+        if reference == "fallback":
+            with pytest.raises((ValueError, OSError), match=r"index\.md"):
+                build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder=folder
+                )
+        else:
+            result = build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder=folder
+            )
+            assert result.data.startswith(b"PK")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("value", ["b.md", "tables/b.md", "my%20note.md", "b.md?x=1"])
+def test_replan2_path_shaped_source_is_a_dependency(tmp_path, value):
+    from markdown_vault_mcp.okf_export_report import PublicationRefused
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text(
+        f"---\ntype: Note\nsources: [{{resource: '{value}'}}]\n---\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        with pytest.raises(PublicationRefused) as exc:
+            build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder="guides", strict=True
+            )
+        assert [(d.path, d.target) for d in exc.value.report.dependencies] == [
+            ("a.md", value)
+        ]
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize("version", [None, "unversioned", "0.2", "0.3", "9.0"])
+def test_replan2_absent_unversioned_and_unknown_declaration(tmp_path, version):
+    if version is not None:
+        header = (
+            "title: Index" if version == "unversioned" else f'okf_version: "{version}"'
+        )
+        (tmp_path / "index.md").write_text(f"---\n{header}\n---\n")
+    (tmp_path / "target.md").write_text("target")
+    text = "---\nresource: target.md\n---\n"
+    output, report = export(tmp_path, text, source="sub/c.md")
+    if version in (None, "unversioned", "0.2"):
+        assert [(d.path, d.target) for d in report.v0_2_root_fallback] == [
+            ("sub/c.md", "target.md")
+        ]
+        assert report.dependencies[0].target == "target.md"
+    else:
+        assert output == text
+        assert not report.v0_2_root_fallback
+        assert report.dependencies[0].target == "target.md"
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("mode", ["off", "auto"])
+def test_replan2_selected_bad_index_only_refuses_archive_fallback(
+    tmp_path, fallback, committed, mode
+):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    (tmp_path / "guides/sub").mkdir(parents=True)
+    (tmp_path / "guides/index.md").write_text("---\nbad: [\n---\n")
+    (tmp_path / "guides/target.md").write_text("target")
+    field = "resource: target.md\n" if fallback else ""
+    (tmp_path / "guides/sub/a.md").write_text(f"---\ntype: Note\n{field}---\n")
+    if committed:
+        from tests.fixtures.git import _run_git
+
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(tmp_path, "add", "index.md", "guides")
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=mode))
+    try:
+        if fallback:
+            with pytest.raises(ValueError, match=r"guides/index\.md"):
+                build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+                )
+        else:
+            assert build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+            ).data.startswith(b"PK")
+    finally:
+        vault.close()
+
+
+def test_replan2_license_probe_does_not_follow_symlink(tmp_path):
+    import io
+    import zipfile
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.write_text("custom")
+    (root / "MIT").symlink_to(outside)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    (root / "guides").mkdir()
+    (root / "guides/index.md").write_text("---\nlicense: MIT\n---\n")
+    vault = Vault(source_dir=root, settings=VaultSettings(okf_mode="off"))
+    try:
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=root),
+            folder="guides",
+            external_base="https://example.org/v",
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert b"license: MIT" in archive.read("index.md")
+    assert not result.report.dependencies
+
+
+@pytest.mark.parametrize("version", ["0.2", "0.3"])
+def test_replan2_whole_vault_same_name_uses_local_target(tmp_path, version):
+    import io
+    import zipfile
+
+    (tmp_path / "index.md").write_text(f'---\nokf_version: "{version}"\n---\n')
+    for folder in ("first", "second"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "b.md").write_text(f"{folder} target")
+    original = "---\ntype: Note\nresource: b.md\n---\n"
+    (tmp_path / "first/a.md").write_text(original)
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        result = build_okf_bundle(vault, ProjectConfig(source_dir=tmp_path))
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("first/a.md").decode() == original
+    assert not result.report.dependencies
+    assert not result.report.v0_2_root_fallback
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("mode", ["off", "auto"])
+@pytest.mark.parametrize("fallback", [False, True])
+def test_replan2_unreadable_omitted_root_only_refuses_fallback(
+    tmp_path, monkeypatch, committed, mode, fallback
+):
+    from markdown_vault_mcp import okf_bundle
+    from tests.fixtures.git import _run_git
+
+    root_index = tmp_path / "index.md"
+    if committed:
+        root_index.symlink_to("unreadable-target")
+    else:
+        root_index.write_text('---\nokf_version: "0.3"\n---\n')
+    (tmp_path / "target.md").write_text("target")
+    (tmp_path / "guides/sub").mkdir(parents=True)
+    field = "resource: target.md\n" if fallback else ""
+    (tmp_path / "guides/sub/a.md").write_text(f"---\ntype: Note\n{field}---\n")
+    if committed:
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(tmp_path, "add", "index.md", "target.md", "guides")
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=mode))
+    if not committed:
+
+        def deny(*_args):
+            raise PermissionError("fixture inaccessible declaration")
+
+        monkeypatch.setattr(okf_bundle, "read_regular_nofollow", deny)
+    try:
+        if fallback:
+            with pytest.raises(OSError, match=r"index\.md"):
+                build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+                )
+        else:
+            assert build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+            ).data.startswith(b"PK")
+    finally:
+        vault.close()
+
+
+def test_replan2_selected_extensionless_license_is_included(tmp_path):
+    import io
+    import zipfile
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/index.md").write_text("---\nlicense: MIT\n---\n")
+    (tmp_path / "guides/MIT").write_text("custom license")
+    settings = VaultSettings(okf_mode="off", attachment_extensions=["*"])
+    vault = Vault(source_dir=tmp_path, settings=settings)
+    try:
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path, attachment_extensions=("*",)),
+            folder="guides",
+        )
+    finally:
+        vault.close()
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert archive.read("MIT") == b"custom license"
+        assert b"license: MIT" in archive.read("index.md")
+    assert not result.report.dependencies
