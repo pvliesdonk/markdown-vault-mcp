@@ -60,7 +60,10 @@ def resolve_okf_path(
     match = re.search(r"[?#]", value)
     raw_path = value[: match.start()] if match else value
     suffix = value[match.start() :] if match else ""
-    decoded = unquote(raw_path)
+    try:
+        decoded = unquote(raw_path, errors="strict")
+    except UnicodeDecodeError:
+        return OkfPathResult("unresolved", suffix=suffix)
     rooted = raw_path.startswith("/")
     base = () if rooted else tuple(PurePosixPath(source).parts[:-1])
     candidate = source if not raw_path else _within_root(base, decoded)

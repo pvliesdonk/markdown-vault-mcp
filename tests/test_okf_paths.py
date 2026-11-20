@@ -93,3 +93,12 @@ def test_parent_path_within_bundle_resolves() -> None:
 def test_fallback_cannot_escape_root() -> None:
     result = resolve_okf_path("../missing.md", "notes/current.md", set(), "0.2")
     assert result.status == "unresolved"
+
+
+def test_invalid_utf8_never_resolves_replacement_character() -> None:
+    result = resolve_okf_path(
+        "bad%FF.md?view#part", "notes/current.md", {"notes/bad�.md", "bad�.md"}, "0.2"
+    )
+    assert result.status == "unresolved"
+    assert result.path is None
+    assert result.suffix == "?view#part"
