@@ -348,3 +348,53 @@ class TestFileBytes:
                 file_bytes(d / "a")
         finally:
             d.chmod(0o755)
+
+
+@pytest.mark.parametrize("limit", [sys.maxsize, 1500003])
+def test_read_regular_nofollow_bounds_each_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int
+) -> None:
+    from markdown_vault_mcp.utils.fs import (
+        open_directory_nofollow,
+        read_regular_nofollow,
+    )
+
+    content = bytes(range(256)) * 9000
+    (tmp_path / "note.md").write_bytes(content)
+    (tmp_path / "link.md").symlink_to("note.md")
+    original_fdopen = os.fdopen
+    requests: list[int] = []
+
+    class GuardedStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size):
+            requests.append(size)
+            if size > 1 << 20:
+                raise OverflowError("simulated oversized Linux read")
+            return self.stream.read(size)
+
+    def guarded_fdopen(*args, **kwargs):
+        return GuardedStream(original_fdopen(*args, **kwargs))
+
+    with (
+        open_directory_nofollow(tmp_path, ()) as parent,
+        monkeypatch.context() as patch,
+    ):
+        patch.setattr(os, "fdopen", guarded_fdopen)
+        assert read_regular_nofollow(parent, "note.md", limit) == content[:limit]
+        assert len(requests) >= 2
+        assert max(requests) <= 1 << 20
+        with pytest.raises(OSError):
+            read_regular_nofollow(parent, "link.md", limit)

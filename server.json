@@ -135,6 +135,10 @@
           "default": "true"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
+          "description": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",
           "description": "Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged.",
           "format": "boolean",
@@ -203,7 +207,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-          "description": "Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index."
+          "description": "Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EXCLUDE",
@@ -792,6 +796,10 @@
           "default": "true"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_PROTECTED_PATHS",
+          "description": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",
           "description": "Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged.",
           "format": "boolean",
@@ -860,7 +868,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-          "description": "Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index."
+          "description": "Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EXCLUDE",

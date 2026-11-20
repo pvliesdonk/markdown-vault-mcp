@@ -24,8 +24,8 @@ The error and retry contract the routes apply is recorded in
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -248,8 +248,8 @@ class VaultTransferSink:
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
                 not exist, an upload destination inside a git submodule or
-                nested repository, or an existing upload destination when
-                overwrite protection is enabled.
+                nested repository, a protected upload destination, or an existing
+                upload destination when overwrite protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.
@@ -266,10 +266,11 @@ class VaultTransferSink:
         else:
             destination = _validate_destination(ref, source_dir, exts)
             try:
+                await asyncio.to_thread(vault._doc_mgr.refuse_protected, ref)
                 await asyncio.to_thread(
                     vault._doc_mgr.refuse_folder_in_submodule, ref, "ref"
                 )
-            except SubmodulePathError as exc:
+            except (SubmodulePathError, InvalidRequestError) as exc:
                 raise _reject(str(exc)) from None
             if self._config.write_protect_existing and is_regular_file(destination):
                 logger.info(
@@ -364,7 +365,7 @@ class VaultTransferSink:
             logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
             return TransferReadResult(body, _MARKDOWN_MEDIA_TYPE, filename)
         try:
-            att = await asyncio.to_thread(vault.reader.read_attachment, handle)
+            body = await asyncio.to_thread(vault.reader.read_attachment_bytes, handle)
         except DocumentNotFoundError as exc:
             # The file is gone; validate confirmed it at mint time, so this is a
             # 410 Gone, not a 500. A refused read is a plain ValueError and
@@ -373,16 +374,15 @@ class VaultTransferSink:
             raise TransferResourceGoneError(
                 f"attachment no longer available: {handle}"
             ) from exc
-        body = base64.b64decode(att.content_base64)
-        media_type = att.mime_type or _OCTET_STREAM
+        media_type = mimetypes.guess_type(handle)[0] or _OCTET_STREAM
         logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
         return TransferReadResult(body, media_type, filename)
 
     async def _read_bundle(self, scope: str) -> TransferReadResult:
         """Generate and serve an OKF bundle zip for a bundle-ref download.
 
-        The bundle is built from live vault state (never mutating it); a large
-        vault runs off the event loop via :func:`asyncio.to_thread`.
+        The bundle is built from a Git commit or the vault (never mutating
+        it); a large vault runs off the event loop via :func:`asyncio.to_thread`.
 
         Args:
             scope: ``""`` for the whole vault, else a folder subtree.
@@ -431,8 +431,8 @@ class VaultTransferSink:
                 file created after validation or by a prior upload (409
                 Conflict); a note upload whose body is not valid UTF-8 (415
                 Unsupported Media Type); or a body the vault refuses to write,
-                such as one the OKF enforced-write layer cannot stamp (422
-                Unprocessable Content). Each leaves the link usable.
+                such as a protected path or one the OKF enforced-write layer
+                cannot stamp (422 Unprocessable Content). Each leaves the link usable.
         """
         vault = self._resolve_vault()
         try:
