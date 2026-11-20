@@ -482,7 +482,8 @@ class ReaderFacet:
                 ``yesterday``, or integer second/minute/hour/day/week/month/year
                 quantities ending in ``ago`` (e.g. ``"1 week ago"``). Quantities
                 use at most eight digits without leading zeros and must stay
-                after 1970 within git's numeric limits. Passed as ``--since``.
+                after 1970. ``today`` means local midnight. Passed as
+                ``--since``.
                 ``None`` disables the filter.
             until: A supported date in the same forms as *since*, passed as
                 ``--until`` to ``git log``.  ``None`` disables the filter.

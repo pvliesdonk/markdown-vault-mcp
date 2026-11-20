@@ -112,26 +112,45 @@ def _valid_calendar_date(value: str) -> bool:
         return False
 
 
-def _validate_date(name: str, value: str | None) -> None:
+def _validate_date(
+    name: str, value: str | None, *, now: datetime | None = None
+) -> str | None:
     """Refuse unsupported date text before git can silently reinterpret it.
 
     ISO calendar dates/times are checked for valid fields. Relative dates use
-    an explicit subset of git's grammar; accepted text is forwarded unchanged,
-    preserving git's local-time, relative-date and inclusive-boundary semantics.
+    an explicit subset of git's grammar. Accepted text is forwarded unchanged,
+    preserving git's local-time, relative-date and inclusive-boundary
+    semantics, except ``today``: git before 2.56 ignores that word and reads
+    it as the current time, so it is sent as today's local midnight, the
+    meaning git 2.56 gives it.
+
+    Args:
+        name: The argument's name, quoted in the refusal.
+        value: The caller's date text, or ``None`` for no filter.
+        now: The local time ``today`` is resolved against; defaults to now.
+
+    Returns:
+        The text to pass to git, or ``None`` when *value* is ``None``.
 
     Raises:
         InvalidRequestError: If *value* is not a supported date expression.
     """
+    if value is not None and value.lower() == "today":
+        midnight = (now or datetime.now()).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return midnight.strftime("%Y-%m-%dT%H:%M:%S")
     if value is None or _valid_relative_date(value) or _valid_calendar_date(value):
-        return
+        return value
     tool = "get_diff" if name == "since_timestamp" else "get_history"
     raise InvalidRequestError(
         f"{name} {value!r} is not a supported date. Call {tool} with {name} "
         "as an ISO calendar date/time within 1970-2099 "
         "(such as '2026-04-01T00:00:00Z'), "
-        "'now', 'today', 'yesterday', or integer time quantities ending in "
-        "'ago' (such as '1 week ago'), staying after 1970 and within "
-        "git's numeric limits."
+        "'now', 'today', 'yesterday', or whole numbers of seconds to years "
+        "followed by 'ago' (such as '1 week ago'), each number at most eight "
+        "digits without leading zeros and the total reaching no further back "
+        "than 1970."
     )
 
 
@@ -232,8 +251,8 @@ class GitQueryManager:
         """
         if self._git_strategy is None:
             return []
-        _validate_date("since", since)
-        _validate_date("until", until)
+        since = _validate_date("since", since)
+        until = _validate_date("until", until)
         abs_path: Path | None = None
         is_dir = False
         if path is not None:
@@ -319,7 +338,7 @@ class GitQueryManager:
             raise InvalidRequestError(
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
-        _validate_date("since_timestamp", since_timestamp)
+        since_timestamp = _validate_date("since_timestamp", since_timestamp)
 
         abs_path = validate_history_path(
             path, self._source_dir, self._attachment_extensions

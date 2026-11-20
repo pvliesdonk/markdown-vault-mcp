@@ -52,6 +52,9 @@ def test_malformed_date_does_not_return_plausible_history(tmp_path: Path) -> Non
         "1 \u017fecond ago",
         "2026-01-01T00:00:00+01:99",
         "last Friday",
+        "last friday",
+        "June 1 2020",
+        "@1600000000",
         "1960-01-01T00:00:00Z",
         "9999-01-01T00:00:00Z",
         "1970-01-01T00:00:00+01:00",
@@ -158,3 +161,40 @@ def test_accepted_relative_quantities_mean_the_same_to_git(
         text=True,
     )
     assert int(parsed.removeprefix("--max-age=")) == now - seconds
+
+
+@pytest.mark.parametrize("argument", ["since", "until", "since_timestamp"])
+@pytest.mark.parametrize("value", ["today", "Today", "TODAY"])
+def test_today_is_sent_as_local_midnight(
+    tmp_path: Path, argument: str, value: str
+) -> None:
+    """Git before 2.56 reads an unknown ``today`` as now, so it never reaches git."""
+    from datetime import datetime
+
+    backend = MagicMock()
+    manager = GitQueryManager(backend, tmp_path)
+    midnight = datetime.now().strftime("%Y-%m-%dT00:00:00")
+    if argument == "since_timestamp":
+        manager.get_diff("note.md", since_timestamp=value)
+        sent = backend.get_file_diff.call_args.kwargs["since_timestamp"]
+    else:
+        manager.get_history(**{argument: value})
+        call = backend.get_file_history.call_args
+        sent = call.args[2] if argument == "since" else call.kwargs["until"]
+    assert sent == midnight
+
+
+def test_today_rewrite_means_midnight_to_git(git_repo: Path) -> None:
+    from datetime import datetime
+
+    from markdown_vault_mcp.managers.git_query import _validate_date
+
+    now = datetime(2026, 11, 16, 12, 34, 56)
+    sent = _validate_date("since", "today", now=now)
+    assert sent == "2026-11-16T00:00:00"
+    parsed = subprocess.check_output(
+        ["git", "-C", str(git_repo), "rev-parse", f"--since={sent}"], text=True
+    )
+    assert int(parsed.removeprefix("--max-age=")) == int(
+        datetime(2026, 11, 16).timestamp()
+    )
