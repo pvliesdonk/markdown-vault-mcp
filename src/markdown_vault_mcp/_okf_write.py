@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -64,13 +64,15 @@ class OkfWriteIntent:
     """The current request's OKF write intent, carried across ``to_thread``.
 
     Attributes:
-        actor: The provenance actor to stamp (``human:<subject>`` or a tool actor).
+        actor: The supplied provenance actor, or ``None`` for the native default.
         suppress: When ``True`` the enricher is a no-op — used by ``okf_verify``,
             which sets ``verified`` on purpose and must not have it cleared.
+        path: Current native write target, or ``None`` for ordinary semantics.
     """
 
-    actor: str
+    actor: str | None
     suppress: bool = False
+    path: str | None = None
 
 
 _intent_var: ContextVar[OkfWriteIntent | None] = ContextVar(
@@ -90,6 +92,26 @@ def okf_write_intent(intent: OkfWriteIntent) -> Iterator[None]:
         yield
     finally:
         _intent_var.reset(token)
+
+
+@contextmanager
+def okf_write_path(path: str) -> Iterator[None]:
+    """Bind the native target while preserving the caller's actor and suppression.
+
+    Args:
+        path: Vault-relative target of the current enrichment call.
+
+    Yields:
+        With the current target bound; restores the prior intent on exit.
+    """
+    intent = current_okf_intent()
+    scoped = (
+        replace(intent, path=path)
+        if intent is not None
+        else OkfWriteIntent(None, path=path)
+    )
+    with okf_write_intent(scoped):
+        yield
 
 
 @contextmanager
@@ -185,7 +207,16 @@ def build_okf_write_enrich(
             return text
         if not detector.state().active:
             return text
-        actor = intent.actor if intent is not None else default_actor
-        return apply_okf_write_stamp(text, actor=actor, now=datetime.now(UTC))
+        actor = (
+            intent.actor
+            if intent is not None and intent.actor is not None
+            else default_actor
+        )
+        return apply_okf_write_stamp(
+            text,
+            actor=actor,
+            now=datetime.now(UTC),
+            path=intent.path if intent is not None else None,
+        )
 
     return enrich

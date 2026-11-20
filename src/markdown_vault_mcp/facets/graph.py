@@ -184,22 +184,23 @@ class GraphFacet:
     def _node_label(
         self, path: str, *, include_type: bool = False
     ) -> tuple[str, str, str | None]:
-        """Return ``(label, folder, note_type)`` from indexed metadata.
+        """Return indexed labels and folders with interpreted ``note_type``.
 
-        Only indexed metadata (title/folder/frontmatter) is consulted —
-        reading the full document would load it into memory and, for a note
-        over ``MAX_NOTE_READ_BYTES``, raise and fail the whole graph. Falls
-        back to the filename stem for unindexed paths. ``note_type`` is the
+        Labels and folders use indexed metadata, falling back to the filename
+        stem for unindexed paths. Active skill types read typed frontmatter
+        without the whole-note read cap. ``note_type`` is the
         OKF ``type`` frontmatter value and is extracted only when
-        *include_type* is set (an active OKF bundle); it costs nothing
-        extra — the metadata row is already in hand.
+        *include_type* is set (an active OKF bundle), resolving filesystem
+        identity and reading current typed skill families.
         """
         meta = self._search_mgr.get_metadata(path)
         label = meta.title if meta else path.rsplit("/", 1)[-1].replace(".md", "")
         folder = meta.folder if meta else ""
         note_type: str | None = None
         if include_type and meta is not None:
-            raw = meta.frontmatter.get("type")
+            raw = self._search_mgr._effective_okf_metadata(
+                meta.frontmatter, path, okf_active=include_type
+            ).get("type")
             if isinstance(raw, str) and raw.strip():
                 note_type = raw.strip()
         return label, folder, note_type

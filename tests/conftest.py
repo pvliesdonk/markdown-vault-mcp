@@ -29,6 +29,7 @@ from tests.fixtures.logging import (  # noqa: F401
     isolated_root_logging,
     restore_logging_topology,
 )
+from tests.fixtures.okf_skills import alias_note, constant_embeddings  # noqa: F401
 from tests.fixtures.permissions import (  # noqa: F401
     acl_directory,
     minimal_acl_directory,

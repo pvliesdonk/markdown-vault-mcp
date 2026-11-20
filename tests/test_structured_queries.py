@@ -260,7 +260,7 @@ def test_persisted_empty_fields_override_constructor(
 ) -> None:
     """Persisted empty fields override constructor."""
     index._conn().execute(
-        "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', '')"
+        "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields_json', '[]')"
     )
     index._conn().commit()
     unconfigured = NoteQuery(filters={field: "x"})
@@ -441,3 +441,67 @@ def test_query_functions_follow_a_replaced_thread_connection(index: FTSIndex) ->
     assert index.count_documents_matching(request).total == 1
     index._registry.local.conn = None  # the registry opens a fresh connection
     assert index.count_documents_matching(request).total == 1
+
+
+@pytest.mark.parametrize("projection", ["page", "count", "group"])
+@pytest.mark.parametrize("fields", [["category"], ["category,kind"], []])
+def test_upgrade_rebuild_uses_current_exact_query_fields(
+    tmp_path: Path, projection: str, fields: list[str]
+) -> None:
+    """A real legacy rebuild replaces exact registration, including comma/empty names."""
+    import sqlite3
+    from contextlib import closing
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\ntype: Legacy\ncategory: ops\ncategory,kind: ops\nmetadata: {type: Runbook}\n---\n# Zebra\n"
+    )
+    db = tmp_path / "index.sqlite"
+    with closing(
+        Vault(
+            source_dir=source,
+            settings=VaultSettings(
+                index_path=db, okf_mode="off", indexed_frontmatter_fields=["type"]
+            ),
+        )
+    ) as owner:
+        owner.index.build_index()
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM meta WHERE key='indexed_frontmatter_fields_json'")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta VALUES ('indexed_frontmatter_fields', 'type')"
+        )
+        conn.execute("UPDATE meta SET value='11' WHERE key='index_semantics_version'")
+    with closing(
+        Vault(
+            source_dir=source,
+            settings=VaultSettings(
+                index_path=db, okf_mode="off", indexed_frontmatter_fields=fields
+            ),
+        )
+    ) as owner:
+        assert owner.index.build_index().chunks_indexed > 0
+        spec = NoteQuery(filters={fields[0]: "ops"} if fields else {})
+        if projection == "page":
+            result = owner.reader.query_documents(spec)
+            assert [item["path"] for item in result.items] == ["SKILL.md"]
+        elif projection == "count":
+            result = owner.reader.count_documents_matching(spec)
+        else:
+            result = owner.reader.aggregate_documents(
+                spec,
+                NoteGrouping(by="tag", field=fields[0])
+                if fields
+                else NoteGrouping(by="folder"),
+            )
+            if fields:
+                assert result.buckets == [{"key": "ops", "count": 1}]
+        assert result.total == 1
+        with pytest.raises(InvalidRequestError, match="not configured"):
+            owner.reader.count_documents_matching(NoteQuery(filters={"type": "Legacy"}))
+        if fields == ["category,kind"]:
+            with pytest.raises(InvalidRequestError, match="not configured"):
+                owner.reader.query_documents(NoteQuery(filters={"category": "ops"}))

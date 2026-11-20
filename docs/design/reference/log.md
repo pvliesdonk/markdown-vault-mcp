@@ -31,6 +31,11 @@
 
 ## 2026-11-14
 
+- New: [Agent Skills frontmatter](agent-skills.md), checked against the primary
+  specification for #2062. Records the string-map contract and the deliberate
+  tolerance of structured OKF metadata. Next review: 2027-05-14.
+
+
 - New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
   Tagged observer, inotify and FSEvents sources establish mutation masks and
   the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and

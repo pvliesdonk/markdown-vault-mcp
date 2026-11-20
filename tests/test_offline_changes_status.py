@@ -186,20 +186,61 @@ class TestCoordinatorReportsIt:
         finally:
             _close(coord)
 
+    @pytest.mark.parametrize("force", [False, True])
     def test_a_queued_build_cancelled_before_it_runs_is_not_reconciled(
-        self, tmp_path: Path
+        self, tmp_path: Path, force: bool
     ) -> None:
         coord = make_coordinator(tmp_path)
         queued: Future[object] = Future()
         try:
             with patch.object(coord.writer, "submit", return_value=queued):
-                build = coord.build_index_async()
-            assert coord.get_index_status()["offline_changes"] == "reconciling"
+                build = coord.build_index_async(force=force)
+            expected = "reconciling" if force else "not_reconciled"
+            assert coord.get_index_status()["offline_changes"] == expected
             queued.cancel()
             assert build.cancelled()
             assert coord.get_index_status()["offline_changes"] == "not_reconciled"
         finally:
             _close(coord)
+
+
+def test_cold_scan_tracking_starts_after_warm_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An eligible request counts as discovery only once validation rejects reuse."""
+    import threading
+
+    coord = make_coordinator(tmp_path)
+    probing, release_probe = threading.Event(), threading.Event()
+    scanning, release_scan = threading.Event(), threading.Event()
+    original = coord._writer_ctx.index_manager.build_index
+
+    def cold_probe() -> bool:
+        probing.set()
+        assert release_probe.wait(5)
+        return False
+
+    def held_scan(*, force: bool = False) -> IndexStats:
+        scanning.set()
+        assert release_scan.wait(5)
+        return original(force=force)
+
+    monkeypatch.setattr(coord._builds, "_is_warm", cold_probe)
+    monkeypatch.setattr(coord._writer_ctx.index_manager, "build_index", held_scan)
+    try:
+        future = coord.build_index_async()
+        assert probing.wait(5)
+        assert coord.get_index_status()["offline_changes"] == "not_reconciled"
+        release_probe.set()
+        assert scanning.wait(5)
+        assert coord.get_index_status()["offline_changes"] == "reconciling"
+        release_scan.set()
+        future.result(timeout=5)
+        assert coord.get_index_status()["offline_changes"] == "reconciled"
+    finally:
+        release_probe.set()
+        release_scan.set()
+        _close(coord)
 
 
 @pytest.mark.skipif(

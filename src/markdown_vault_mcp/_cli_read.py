@@ -205,13 +205,15 @@ def _path_payload(vault: Vault, arguments: dict[str, Any]) -> dict[str, Any]:
         raise ReadPayloadError(str(exc)) from exc
     data = asdict(vault.reader.search_paths(request))
     annotate_hits(
-        data["items"], derive_annotation if vault.okf.state().active else None
+        data["items"],
+        derive_annotation if vault.okf.state().active else None,
+        source_dir=vault.source_dir,
     )
     return data
 
 
 def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
-    from markdown_vault_mcp.okf import derive_annotation
+    from markdown_vault_mcp.okf import derive_annotation, resolved_okf_metadata
 
     try:
         conventions = [asdict(entry) for entry in vault.conventions.for_path(path)]
@@ -221,7 +223,11 @@ def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
     if conventions:
         data["conventions"] = conventions
     if vault.okf.state().active:
-        data["okf"] = derive_annotation(data["frontmatter"])
+        data["okf"] = derive_annotation(
+            resolved_okf_metadata(
+                data["frontmatter"], path=path, source_dir=vault.source_dir
+            )
+        )
 
 
 def read_payload(
@@ -245,7 +251,7 @@ def read_payload(
     from dataclasses import asdict
 
     from markdown_vault_mcp.exceptions import DocumentNotFoundError
-    from markdown_vault_mcp.okf import derive_annotation
+    from markdown_vault_mcp.okf import derive_annotation, effective_okf_metadata
     from markdown_vault_mcp.utils import is_note
 
     if revision is not None:
@@ -257,7 +263,10 @@ def read_payload(
         raise DocumentNotFoundError.note(path)
     data = asdict(note)
     if section is None and vault.okf.state().active:
-        data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+        data["okf"] = derive_annotation(
+            effective_okf_metadata(note.frontmatter, path=note.path),
+            include_sources=True,
+        )
     return data
 
 
@@ -292,6 +301,8 @@ def _query_payload(
         return asdict(vault.reader.aggregate_documents(query, grouping))
     data = asdict(vault.reader.query_documents(query))
     annotate_hits(
-        data["items"], derive_annotation if vault.okf.state().active else None
+        data["items"],
+        derive_annotation if vault.okf.state().active else None,
+        source_dir=vault.source_dir,
     )
     return data

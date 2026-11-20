@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
 
@@ -91,19 +92,32 @@ def parse_filters(values: list[str]) -> dict[str, str]:
 def annotate_hits(
     results: list[dict[str, Any]],
     annotation: Callable[[dict[str, Any]], dict[str, Any]] | None,
+    *,
+    source_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Attach the native OKF hit annotation when a bundle is active.
 
     Args:
         results: Serialized hits, mutated in place.
         annotation: Native annotation function, or None for an inactive bundle.
+        source_dir: Vault root for identity and typed skill-family reads. Without
+            a root, the callback receives held frontmatter without native imports.
 
     Returns:
         Hits with native annotations; ordinary vaults remain unchanged.
     """
     if annotation is not None:
         for hit in results:
-            hit["okf"] = annotation(hit.get("frontmatter") or {})
+            metadata = hit.get("frontmatter") or {}
+            if source_dir is not None:
+                from markdown_vault_mcp.okf import resolved_okf_metadata
+
+                metadata = resolved_okf_metadata(
+                    metadata,
+                    path=hit.get("path"),
+                    source_dir=source_dir,
+                )
+            hit["okf"] = annotation(metadata)
     return results
 
 

@@ -474,9 +474,8 @@ def test_lifespan_cold_start_handshake_does_not_block_on_build(
 def test_lifespan_warm_start_skips_background(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Warm-start lifespan submits a BuildIndex job that short-circuits in
-    O(1) via the FTS sentinel; status reaches queryable shortly after the
-    server starts handling requests (#559)."""
+    """Warm startup validates metadata on the writer; status becomes queryable
+    after validation while the server starts handling requests (#559)."""
     from markdown_vault_mcp.server import make_server
     from tests.conftest import wait_for_mcp_writer_drain
 
@@ -1016,13 +1015,7 @@ def test_synchronous_build_index_clears_prior_background_error(
 
 
 def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
-    """build_index_async returns an already-resolved Future on warm restart (#559).
-
-    The async path must mirror the synchronous build_index() short-circuit: a
-    populated FTS + the persisted completeness sentinel must yield an
-    already-resolved Future carrying the existing document count without
-    submitting a job to the writer queue.
-    """
+    """Warm validation completes on the writer with existing rows and no chunks."""
     vault = _vault(tmp_path)
     _seed(vault)
     index_path = tmp_path / "fts.db"
@@ -1032,14 +1025,14 @@ def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
     pre.index.build_index()
     pre.close()
 
-    # Phase 2: fresh Vault sees the warm sentinel; async submission
-    # must short-circuit.
+    # Phase 2: fresh Vault validates the warm sentinel on the writer.
     col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     future = col.index.build_index_async()
-    assert future.done(), "warm-restart short-circuit must return resolved Future"
-    stats = future.result(timeout=0.1)
+    stats = future.result(timeout=5)
+    assert stats.chunks_indexed == 0
     assert stats.documents_indexed >= 1
-    # Writer should NOT be processing a BuildIndex job.
+    assert col.index.wait_for_drain(timeout=5)
+    # Validation has completed and the writer has drained.
     assert col._coordinator.writer.get_status()["in_flight"] is None
     # Vault is queryable and the background-build event is set.
     assert col.index.is_queryable() is True

@@ -92,12 +92,12 @@ class QueryExecutor:
         """
         self.conn, self.spec = conn, spec
         stored = conn.execute(
-            "SELECT value FROM meta WHERE key='indexed_frontmatter_fields'"
+            "SELECT value FROM meta WHERE key='indexed_frontmatter_fields_json'"
         ).fetchone()
         if stored is None:
             self.fields = set(fields)
         else:
-            self.fields = set(stored[0].split(",")) if stored[0] else set()
+            self.fields = set(json.loads(stored[0]))
 
     def _field(self, key: str) -> None:
         if key in ("status", "stale", "trust_tier"):

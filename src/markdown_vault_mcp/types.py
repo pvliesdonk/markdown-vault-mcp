@@ -115,6 +115,8 @@ class ParsedNote:
             the chunker drops some (a short note, a heading with no body, a
             parent split at its sub-headings), so an outline read from chunks
             misses them (#2033).
+        okf_authority_path: Resolved parser identity for OKF slot selection;
+            separate from the lexical row path and never persisted.
     """
 
     path: str
@@ -126,6 +128,7 @@ class ParsedNote:
     links: list[LinkInfo] = field(default_factory=list)
     content_chars: int = 0
     headings: list[TocEntry] = field(default_factory=list)
+    okf_authority_path: str | None = None
 
 
 @dataclass

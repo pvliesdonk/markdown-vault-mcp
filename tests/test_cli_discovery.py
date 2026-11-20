@@ -896,3 +896,193 @@ def test_reader_backend_valueerror_is_not_input_refusal(
     assert type(result.exception) is ValueError
     assert str(result.exception) == "Synthetic stored-data fault"
     assert result.stdout == ""
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_skill_read_annotation_preserves_raw_metadata(
+    discovery_source: Path, monkeypatch: pytest.MonkeyPatch, active: bool
+) -> None:
+    """CLI whole-note/context/hit annotations project identity only when OKF is active."""
+    from markdown_vault_mcp.scanner import parse_frontmatter
+    from tests.fixtures.okf_skills import SKILL
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on" if active else "off")
+    path = discovery_source / "SKILL.md"
+    path.write_text(SKILL)
+    raw = dict(parse_frontmatter(SKILL).metadata)
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    with reader_backend(False) as connection:
+        for arguments in (
+            ["read", "SKILL.md"],
+            ["context", "SKILL.md", "--similar-limit", "0"],
+            ["search", "zebra"],
+        ):
+            result = CliRunner().invoke(app, [*arguments, *connection, "--json"])
+            assert result.exit_code == 0, result.output
+            payload = json.loads(result.stdout)
+            data = (
+                next(item for item in payload if item["path"] == "SKILL.md")
+                if isinstance(payload, list)
+                else payload
+            )
+            assert data["frontmatter"] == raw
+            assert ("okf" in data) is active
+            if active:
+                assert data["okf"]["type"] == "Skill"
+                if arguments[0] == "read":
+                    assert data["okf"]["generated"] == raw["metadata"]["generated"]
+                    assert data["okf"]["sources"] == raw["metadata"]["sources"]
+        section = CliRunner().invoke(
+            app, ["read", "SKILL.md", "--section", "Steps", *connection, "--json"]
+        )
+        assert section.exit_code == 0, section.output
+        assert "okf" not in json.loads(section.stdout)
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_alias_annotations_reach_local_search(
+    tmp_path: Path, alias_note, monkeypatch: pytest.MonkeyPatch, active: bool
+) -> None:
+    """Local CLI hit, path, exact and context adapters share resolved authority."""
+    target, alias, raw, expected = alias_note
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on" if active else "off")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type")
+    before = ((tmp_path / target).read_bytes(), (tmp_path / target).stat().st_mtime_ns)
+    for arguments in (
+        ["read", alias],
+        ["context", alias, "--similar-limit", "0"],
+        ["search", "zebra"],
+        ["query", "path", alias],
+        ["query", "metadata", "--filter", "type=Literal"],
+    ):
+        result = CliRunner().invoke(app, [*arguments, "--local", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        if isinstance(data, list):
+            data = next(h for h in data if h["path"] == alias)
+        elif "items" in data:
+            data = next(h for h in data["items"] if h["path"] == alias)
+        assert data["path"] == (target if arguments[0] == "read" else alias)
+        assert data["frontmatter"] == raw
+        assert ("okf" in data) is active
+        if active:
+            annotation = data["okf"]
+            assert annotation["type"] == expected["type"]
+            assert annotation["status"] == expected["status"]
+            assert annotation["stale"] is (expected["type"] == "Runbook")
+            assert annotation["trust_tier"] == (
+                "human-reviewed"
+                if expected["type"] == "Runbook"
+                else "machine-confirmed"
+            )
+            if arguments[0] == "read":
+                assert annotation["generated"] == expected["generated"]
+                assert annotation["sources"] == expected["sources"]
+            else:
+                assert annotation["sources_count"] == len(expected["sources"])
+                assert "generated" not in annotation and "sources" not in annotation
+    assert (
+        (tmp_path / target).read_bytes(),
+        (tmp_path / target).stat().st_mtime_ns,
+    ) == before
+
+
+def test_remote_annotations_never_resolve_server_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote results retain server identity without consulting client paths."""
+    from fastmcp import FastMCP
+
+    from tests.fixtures.cli_http import serve_http
+
+    server = FastMCP("resolved-remote")
+    payload = [
+        {
+            "path": "server/SKILL.md",
+            "title": "Remote",
+            "score": 1.0,
+            "frontmatter": {},
+            "okf": {"type": "RemoteType"},
+        }
+    ]
+
+    @server.tool()
+    def search(
+        query: str, limit: int = 10, folder: str | None = None, mode: str | None = None
+    ) -> list[dict[str, Any]]:
+        assert (query, limit, folder, mode) == ("zebra", 10, None, "keyword")
+        return payload
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("remote annotation must not resolve on client")
+
+    monkeypatch.setattr("markdown_vault_mcp.okf.resolved_okf_metadata", forbidden)
+    with serve_http(server.http_app()) as origin:
+        result = CliRunner().invoke(
+            app, ["search", "zebra", "--server", origin + "/mcp", "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == payload
+
+
+@pytest.mark.parametrize("stored", ["legacy11", "namespace12", "compatible"])
+@pytest.mark.parametrize("predicate", ["type=Runbook", "type=Reference"])
+def test_disk_search_adopts_compatible_tag_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stored: str, predicate: str
+) -> None:
+    """Local search refuses unreadable tag namespaces without writing shared files."""
+    import sqlite3
+
+    from markdown_vault_mcp.vault import Vault, VaultSettings
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(
+        "---\ntype: Literal\nmetadata: {type: Runbook}\n---\n# Zebra\n\nzebra instructions\n"
+    )
+    (source / "ordinary.md").write_text(
+        "---\ntype: Reference\n---\n# Zebra\n\nzebra reference\n"
+    )
+    index = tmp_path / "index.sqlite"
+    vault = Vault(
+        source_dir=source,
+        settings=VaultSettings(
+            okf_mode="on",
+            index_path=index,
+            indexed_frontmatter_fields=["type"],
+        ),
+    )
+    try:
+        vault.index.build_index()
+    finally:
+        vault.close()
+    if stored == "legacy11":
+        # Reproduce the old producer's literal rows and semantics marker.
+        with sqlite3.connect(index) as conn:
+            conn.execute(
+                "UPDATE meta SET value='11' WHERE key='index_semantics_version'"
+            )
+            conn.execute("DELETE FROM document_tags WHERE tag_key != 'type'")
+            conn.execute("DELETE FROM meta WHERE key='indexed_frontmatter_fields_json'")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(source))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+        "type,__okf__:type" if stored == "namespace12" else "type",
+    )
+    before = index.read_bytes()
+    result = CliRunner().invoke(
+        app, ["search", "zebra", "--local", "--json", "--filter", predicate]
+    )
+    assert index.read_bytes() == before
+    if stored == "compatible":
+        assert result.exit_code == 0, result.output
+        expected = ["SKILL.md"] if predicate == "type=Runbook" else ["ordinary.md"]
+        assert [hit["path"] for hit in json.loads(result.stdout)] == expected
+    else:
+        assert result.exit_code == 1, result.output
+        assert result.stdout == ""
+        assert "admin index" in result.stderr
