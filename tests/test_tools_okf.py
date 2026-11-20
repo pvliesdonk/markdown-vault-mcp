@@ -38,7 +38,7 @@ status: deprecated
 stale_after: 2020-01-01
 verified:
   - by: human:peter
-    at: 2026-01-01
+    at: "2026-01-01T00:00:00Z"
 sources:
   - resource: https://example.com/a
     id: a
@@ -152,9 +152,11 @@ async def _search(client: Client[Any], **kwargs: Any) -> list[dict[str, Any]]:
 
 @pytest.mark.usefixtures("_plain_env")
 class TestNonOkfBaseline:
-    """A vault without a declaration gets zero OKF payload changes."""
+    """An undeclared vault reports capabilities without note annotations."""
 
-    async def test_search_read_context_stats_carry_no_okf_key(self) -> None:
+    async def test_undeclared_notes_omit_okf_and_stats_report_capabilities(
+        self,
+    ) -> None:
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
@@ -163,7 +165,7 @@ class TestNonOkfBaseline:
             )
             assert "okf" not in read
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             context = _structured(
                 await client.call_tool(
                     "get_context",
@@ -200,6 +202,10 @@ class TestDeclaredBundle:
         assert playbook["status"] == "deprecated"
         assert playbook["stale"] is True
         assert playbook["trust_tier"] == "human-reviewed"
+        assert playbook["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert playbook["sources_count"] == 2
         assert "sources" not in playbook
         plain = by_path["guides/plain.md"]["okf"]
@@ -207,6 +213,14 @@ class TestDeclaredBundle:
             "status": "stable",
             "stale": False,
             "trust_tier": "unverified",
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     async def test_read_includes_full_sources(self) -> None:
@@ -215,7 +229,13 @@ class TestDeclaredBundle:
                 await client.call_tool("read", {"path": "guides/playbook.md"})
             )
         okf = read["okf"]
+        assert okf["snapshot"]["algo"] == "mvmcp-concept-v1"
+        assert len(okf["snapshot"]["digest"]) == 64
         assert okf["trust_tier"] == "human-reviewed"
+        assert okf["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
         assert [s["resource"] for s in okf["sources"]] == [
             "https://example.com/a",
             "https://example.com/b",
@@ -243,6 +263,10 @@ class TestDeclaredBundle:
                 )
             )
         assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["review_applicability"] == {
+            "snapshot": "unbound",
+            "basis": "no_snapshot_binding",
+        }
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
@@ -309,7 +333,7 @@ class TestModeOff:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
             stats = _structured(await client.call_tool("stats", {}))
-            assert "okf" not in stats
+            assert set(stats["okf"]) == {"capabilities"}
             assert "type" not in stats["indexed_frontmatter_fields"]
         server = make_server()
         assert server.instructions is not None
@@ -547,3 +571,193 @@ class TestOkfMigrationTools:
         async with Client(make_server()) as client:
             names = {t.name for t in await client.list_tools()}
         assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_review_prompt_and_facet_arguments(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.facets.writer import WriterFacet
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    snapshot = concept_snapshot(path.read_text(encoding="utf-8"))
+    prompts = []
+    calls = []
+    original = WriterFacet.okf_verify
+
+    def record(self: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append(args)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(WriterFacet, "okf_verify", record)
+
+    async def confirm(message: str, *_args: Any) -> bool:
+        prompts.append(message)
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        await client.call_tool(
+            "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+        )
+        await wait_for_mcp_writer_drain(client)
+    assert calls == [("guides/plain.md", "local", snapshot, "human-review")]
+    assert "guides/plain.md" in prompts[0] and snapshot["digest"][:12] in prompts[0]
+    assert "human-review" in prompts[0]
+
+
+@pytest.mark.usefixtures("_okf_env")
+@pytest.mark.parametrize("non_yaml", [False, True])
+async def test_review_rejects_stale_before_elicitation(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch, non_yaml: bool
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    snapshot = concept_snapshot(path.read_text(encoding="utf-8"))
+    text = '{\n"type": "concept"\n}\nBody\n' if non_yaml else "changed"
+    path.write_text(text, encoding="utf-8")
+    if non_yaml:
+        snapshot = concept_snapshot(text)
+    called = False
+
+    async def confirm(*_args: Any) -> bool:
+        nonlocal called
+        called = True
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        with pytest.raises(ToolError, match="YAML" if non_yaml else "snapshot"):
+            await client.call_tool(
+                "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+            )
+    assert not called
+    assert path.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.usefixtures("_okf_env")
+@pytest.mark.parametrize("excluded", [False, True])
+async def test_review_refuses_edit_during_confirmation(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch, excluded: bool
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    original = path.read_text(encoding="utf-8")
+    snapshot = concept_snapshot(original)
+    changed = (
+        "---\nx-mvmcp: {other: true}\n---\n" + original
+        if excluded
+        else "concurrent edit"
+    )
+    if excluded:
+        assert concept_snapshot(changed) == snapshot
+
+    async def confirm(*_args: Any) -> bool:
+        path.write_text(changed, encoding="utf-8")
+        return True
+
+    client = (
+        Client(make_server(), elicitation_handler=confirm)
+        if excluded
+        else Client(make_server(), mode="legacy", elicitation_handler=confirm)
+    )
+    async with client:
+        if excluded:
+            await client.call_tool(
+                "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+            )
+        else:
+            with pytest.raises(ToolError, match="snapshot"):
+                await client.call_tool(
+                    "okf_verify",
+                    {"path": "guides/plain.md", "reviewed_snapshot": snapshot},
+                )
+    if excluded:
+        assert "other: true" in path.read_text(encoding="utf-8")
+    else:
+        assert path.read_text(encoding="utf-8") == changed
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_modern_review_confirmation_rejects_changed_retry_snapshot(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    original = path.read_text(encoding="utf-8")
+    reviewed = concept_snapshot(original)
+    args: dict[str, Any] = {"path": "guides/plain.md", "reviewed_snapshot": reviewed}
+    changed = original + "\nUnreviewed revision\n"
+    prompts: list[str] = []
+
+    async def confirm(message: str, *_args: Any) -> bool:
+        prompts.append(message)
+        path.write_text(changed, encoding="utf-8")
+        args["reviewed_snapshot"] = concept_snapshot(changed)
+        return True
+
+    async with Client(make_server(), elicitation_handler=confirm) as client:
+        with pytest.raises(ToolError, match="confirmed"):
+            await client.call_tool("okf_verify", args)
+    assert len(prompts) == 1 and reviewed["digest"][:12] in prompts[0]
+    assert path.read_text(encoding="utf-8") == changed
+
+
+@pytest.mark.usefixtures("_okf_env")
+async def test_review_rejects_split_read_aba_during_confirmation(
+    okf_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    import markdown_vault_mcp.managers.document as document
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "elicit")
+    path = okf_vault / "guides" / "plain.md"
+    reviewed = path.read_text(encoding="utf-8")
+    newer = reviewed + "\nConcurrent edit\n"
+    read_text = document._read_text_utf8
+
+    async def confirm(*_args: Any) -> bool:
+        path.write_text(newer, encoding="utf-8")
+
+        def interleaved_read(target: Path) -> str:
+            target.write_text(reviewed, encoding="utf-8")
+            result = read_text(target)
+            target.write_text(newer, encoding="utf-8")
+            return result
+
+        monkeypatch.setattr(document, "_read_text_utf8", interleaved_read)
+        return True
+
+    async with Client(
+        make_server(), mode="legacy", elicitation_handler=confirm
+    ) as client:
+        snapshot = _parse_tool_data(
+            await client.call_tool("read", {"path": "guides/plain.md"})
+        )["okf"]["snapshot"]
+        with pytest.raises(ToolError, match="snapshot"):
+            await client.call_tool(
+                "okf_verify", {"path": "guides/plain.md", "reviewed_snapshot": snapshot}
+            )
+    assert path.read_text(encoding="utf-8") == newer
