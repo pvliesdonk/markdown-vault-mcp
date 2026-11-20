@@ -21,7 +21,8 @@ from markdown_vault_mcp._instructions_builder import (
     instructions_for,
     utf16_code_units,
 )
-from markdown_vault_mcp._pvl_core import ServerConfig, apply_tool_visibility
+from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp._tool_visibility import apply_tool_visibility
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 ALL = frozenset({"alpha", "beta", "gamma"})

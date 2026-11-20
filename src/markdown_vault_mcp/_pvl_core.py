@@ -17,7 +17,6 @@ from fastmcp_pvl_core import (
     ConfigurationError,
     HealthCheck,
     ServerConfig,
-    apply_tool_visibility,
     build_auth,
     build_bearer_auth,
     configure_logging_from_env,
@@ -35,7 +34,6 @@ from fastmcp_pvl_core import (
     wire_middleware_stack,
 )
 from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
-from fastmcp_pvl_core._visibility import effective_tool_names, registered_tool_names
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -54,11 +52,8 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "get_claims",
     "get_current_auth_mode",
     "get_subject",
-    # HTTP serving, health routes, server info and tool visibility (#2278).
+    # HTTP serving (#2335), health routes (#2334) and server info (#2333).
     "HealthCheck",
-    "apply_tool_visibility",
-    "effective_tool_names",
-    "registered_tool_names",
     "maybe_start_debugpy",
     "normalise_http_path",
     "register_health_routes",

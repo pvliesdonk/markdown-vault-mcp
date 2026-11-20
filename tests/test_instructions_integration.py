@@ -22,8 +22,9 @@ from markdown_vault_mcp._instructions_builder import (
 from markdown_vault_mcp._job_store import JOB_POLL_TOOL_NAME
 from markdown_vault_mcp._job_tools import register_job_tools, register_long_running_tool
 from markdown_vault_mcp._jobs import build_jobs
-from markdown_vault_mcp._pvl_core import ServerConfig, apply_tool_visibility
+from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._tasks import configure_task_backend
+from markdown_vault_mcp._tool_visibility import apply_tool_visibility
 from markdown_vault_mcp._transfer_contract import TransferReadResult
 from markdown_vault_mcp._transfer_links import register_transfer_routes
 from markdown_vault_mcp.config_sections import JobsConfig, TransferConfig
