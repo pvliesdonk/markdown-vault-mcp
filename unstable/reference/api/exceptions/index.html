@@ -3296,7 +3296,7 @@
 <p>All exceptions are importable from the <code>markdown_vault_mcp.exceptions</code> module.</p>
 <div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentNotFoundError</span><span class="p">,</span> <span class="n">ReadOnlyError</span>
 </code></pre></div>
-<p>Most exceptions inherit from <code>MarkdownMCPError</code>, so callers can catch the base class to handle any library error. The one exception is <code>ConfigurationError</code>, which is re-exported from <code>fastmcp-pvl-core</code> and is not a <code>MarkdownMCPError</code> subclass (see <a href="#configuration-errors">Configuration Errors</a>). Startup config failures are meant to fail hard rather than be caught by a library-error handler.</p>
+<p>Most exceptions inherit from <code>MarkdownMCPError</code>, so callers can catch the base class to handle any library error. The one exception is <code>ConfigurationError</code>, which is not a <code>MarkdownMCPError</code> subclass (see <a href="#configuration-errors">Configuration Errors</a>). Startup config failures are meant to fail hard rather than be caught by a library-error handler.</p>
 <h2 id="base-exception">Base Exception<a class="headerlink" href="#base-exception" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
 
@@ -4233,10 +4233,8 @@ a reason to rebuild.</p>
 </div><!-- vale on -->
 
 <h2 id="configuration-errors">Configuration Errors<a class="headerlink" href="#configuration-errors" title="Permanent link">&para;</a></h2>
-<p><code>markdown_vault_mcp.exceptions.ConfigurationError</code> is re-exported from
-<a href="https://github.com/pvliesdonk/fastmcp-pvl-core"><code>fastmcp-pvl-core</code></a>, the shared
-base library across the <code>*-mcp</code> server series, so the whole ecosystem raises one
-canonical config error. It is raised for invalid or out-of-range configuration at
+<p><code>markdown_vault_mcp.exceptions.ConfigurationError</code> is the server's one config
+error. It is raised for invalid or out-of-range configuration at
 startup (such as a non-numeric env var, a value outside its documented range, or a
 missing required variable). Unlike the other exceptions on this page it is not
 a subclass of <code>MarkdownMCPError</code>.</p>

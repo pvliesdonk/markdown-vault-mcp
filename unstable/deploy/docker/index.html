@@ -3572,7 +3572,7 @@ directories (default 1000/1000).</p>
 <p><strong>Build with the debug extra:</strong></p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">DEBUG</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-t<span class="w"> </span>markdown-vault-mcp:debug<span class="w"> </span>.
 </code></pre></div>
-<p>This installs the <code>[debug]</code> optional-dependency group (which pulls <code>debugpy</code> transitively from <code>fastmcp-pvl-core</code>). Default builds (<code>DEBUG=false</code>) skip it.</p>
+<p>This installs the <code>[debug]</code> optional-dependency group, which pulls in <code>debugpy</code>. Default builds (<code>DEBUG=false</code>) skip it.</p>
 </li>
 <li>
 <p><strong>Run with the debug env vars set and the port mapped:</strong></p>

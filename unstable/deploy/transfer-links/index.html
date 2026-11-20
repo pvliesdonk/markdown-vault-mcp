@@ -2888,7 +2888,7 @@
 <li><strong>The route.</strong> <code>/transfer/{token}</code> is registered beside the MCP endpoint and outside the authentication middleware. No bearer token or sign-in is asked for; the token in the URL is the authorization. It is 256 bits of randomness. A used or expired link answers like one that never existed.</li>
 <li><strong>The public URL.</strong> Links are built from <code>MARKDOWN_VAULT_MCP_BASE_URL</code>, which the server requires before it registers the route at all; under a path prefix the link carries the prefix, so the <a href="../reverse-proxy/#a-path-prefix">reverse proxy</a> must route <code>/transfer/</code> to the server the same way it routes the MCP path. Stdio has no route: the tools are absent there, not failing.</li>
 <li><strong>The store.</strong> Tokens live in the server's key-value store (<code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code>), so replicas that share the store share the links.</li>
-<li><strong>The variables.</strong> The five settings below are read from the environment under this server's prefix; the <a href="../../reference/configuration/">configuration reference</a> carries the authoritative list for this server, and the defaults here are fastmcp-pvl-core 10.1's.</li>
+<li><strong>The variables.</strong> The five settings below are read from the environment under this server's prefix; the <a href="../../reference/configuration/">configuration reference</a> carries the authoritative list for this server, and the defaults here are this server's.</li>
 </ul>
 <table>
 <thead>

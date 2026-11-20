@@ -3533,8 +3533,7 @@ tools an instance exposes. Hidden tools disappear from <code>tools/list</code> a
 rejected on <code>tools/call</code>; resources and prompts are unaffected. Setting both
 variables, or setting one to a value with no names in it, is a startup error.
 A name matching no registered tool is ignored, but an allowlist that matches
-nothing logs a startup warning, since the instance then exposes zero tools.
-See <code>fastmcp-pvl-core</code>'s README for the full semantics.</p>
+nothing logs a startup warning, since the instance then exposes zero tools.</p>
 <p><code>MARKDOWN_VAULT_MCP_HEALTH_DETAIL</code> decides how much the unauthenticated <code>/health</code>
 and <code>/health/ready</code> bodies say, since anyone who can reach the port can read
 them: <code>status</code> alone, the default <code>standard</code> with the server name, version and
@@ -3738,7 +3737,7 @@ for setup, mapped multi-subject tokens, and troubleshooting.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code></td>
 <td><code>file:///data/state</code></td>
-<td>Persistent-state backend URL shared by every pvl-core subsystem that needs state. <code>memory://</code> is in-process and lost on restart; <code>file:///path</code> persists on one server; <code>redis://</code>, <code>dynamodb://</code> and <code>mongodb://</code> each need their matching extra. When unset, defaults to <code>file:///data/state</code> (the volume family Docker images mount), or to <code>memory://</code> (with a warning) on a host where that directory is not usable.</td>
+<td>Persistent-state backend URL shared by every part of the server that needs state. <code>memory://</code> is in-process and lost on restart; <code>file:///path</code> persists on one server; <code>redis://</code>, <code>dynamodb://</code> and <code>mongodb://</code> each need their matching extra. When unset, defaults to <code>file:///data/state</code> (the volume family Docker images mount), or to <code>memory://</code> (with a warning) on a host where that directory is not usable.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EVENT_STORE_URL</code></td>
@@ -3839,7 +3838,7 @@ fields as keys, for a log collector. Unset, the server chooses by itself:
 <code>rich</code> when stderr is a terminal and <code>json</code> everywhere else, so a container
 and a systemd unit log JSON with no configuration. Neither the image nor the
 packaged unit sets anything.</p>
-<p>The choice applies to the whole process. pvl-core owns the root logger and
+<p>The choice applies to the whole process. The server owns the root logger and
 switches FastMCP's own handlers off, so this server's <code>markdown_vault_mcp.*</code>
 lines and FastMCP's render through the same chain, as do uvicorn's. Access
 lines from <code>uvicorn.access</code> are filtered rather than levelled: below <code>DEBUG</code>
