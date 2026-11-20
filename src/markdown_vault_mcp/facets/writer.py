@@ -9,9 +9,30 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from dataclasses import replace
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from markdown_vault_mcp.okf import is_okf_reserved_file
+import yaml
+
+from markdown_vault_mcp._okf_receipts import ReceiptNotRecordedError
+from markdown_vault_mcp._okf_review import concept_snapshot
+from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+    StoreUnsupportedSchemaError,
+)
+from markdown_vault_mcp.hashing import compute_etag
+from markdown_vault_mcp.okf import (
+    append_okf_verification,
+    is_okf_reserved_file,
+    okf_timestamp,
+    review_actor,
+    verified_entries,
+)
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
@@ -23,6 +44,7 @@ if TYPE_CHECKING:
         LogRepairPreview,
         LogRepairResult,
     )
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
@@ -35,17 +57,39 @@ if TYPE_CHECKING:
         DeleteResult,
         EditResult,
         MoveFolderResult,
+        NoteContent,
         RenameResult,
         WriteResult,
     )
 
 _R = TypeVar("_R", "WriteResult", "EditResult")
 
+_STALE_SNAPSHOT = (
+    "The reviewed snapshot is invalid or no longer current. Read the full "
+    "note, review it, and pass its snapshot to okf_verify."
+)
+
+
+def _from_one_read(note: NoteContent, raw: str) -> NoteContent:
+    """Rebuild *note* from one read of the file, so text, metadata and etag agree."""
+    text = raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        metadata = parse_frontmatter(text).metadata
+    except yaml.YAMLError as exc:  # the file changed after its first read
+        raise DocumentUnreadableError(note.path, str(exc)) from exc
+    return replace(
+        note,
+        content=text,
+        frontmatter=metadata,
+        etag=compute_etag(raw.encode("utf-8")),
+    )
+
 
 class WriterFacet:
     """Document-mutation operations, backed by :class:`DocumentManager`."""
 
-    def __init__(
+    # The facet receives independent write collaborators from the vault.
+    def __init__(  # noqa: PLR0913, RUF100
         self,
         doc_mgr: DocumentManager,
         *,
@@ -53,6 +97,7 @@ class WriterFacet:
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
         link_reporter: UnresolvedLinkReporter | None = None,
+        receipt_store: ReceiptStore | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -60,10 +105,10 @@ class WriterFacet:
             doc_mgr: The shared :class:`DocumentManager` owned by the root.
             okf_migrate: The OKF migration manager (#963); ``None`` leaves
                 the ``okf_*`` migration methods unavailable.
-            convention_maintainer: The OKF enforced-write convention
-                maintainer (#964); ``None`` (the default, and whenever
-                ``OKF_WRITE`` is off) disables ``log.md`` / ``index.md``
-                upkeep on ``write`` / ``edit``.
+            convention_maintainer: The OKF convention maintainer (#964);
+                ``None`` (the default, and whenever index and log maintenance
+                are off) disables ``log.md`` / ``index.md`` upkeep on
+                ``write`` / ``edit``.
             previous_revision: Resolves the revision holding a note's current
                 content, for the overwrite breadcrumb (#1137).  ``None`` (the
                 default, and on a vault without git) omits the breadcrumb.
@@ -73,6 +118,7 @@ class WriterFacet:
                 write path (OKF link conversion rewrites thousands of notes in
                 one call), and a git probe per file there would spend several
                 subprocesses each on a result nobody reads.
+            receipt_store: Supplies local storage for recorded review receipts.
             link_reporter: Answers ``report_unresolved_links=True`` on
                 :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
                 ``None`` (the default) makes such a call raise
@@ -83,6 +129,118 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+        self._receipt_store = receipt_store
+
+    def _current_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Read *path*, refuse a stale snapshot and check receipt storage."""
+        with self._doc_mgr.write_scope():
+            note = self._doc_mgr.read(path)
+            if note is None:
+                raise DocumentNotFoundError.note(path)
+            note = _from_one_read(note, self._doc_mgr._okf_author_snapshot(path)[1])
+        if concept_snapshot(note.content) != snapshot:
+            raise InvalidRequestError(_STALE_SNAPSHOT)
+        if self._receipt_store is None:
+            raise InvalidRequestError("Local review receipt storage is not configured")
+        self._receipt_store.check()
+        return note
+
+    def require_reviewable(self, path: str, snapshot: dict[str, str]) -> NoteContent:
+        """Check that a review of *snapshot* can be recorded, before confirmation.
+
+        Runs the review transform on the current text without writing, so an
+        unsupported header is refused before the user is asked.
+
+        Args:
+            path: Vault-relative note path.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+
+        Returns:
+            The current note.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is not configured or lies inside the vault, or the
+                note's header cannot take a review.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer.
+            OSError: If the note or receipt state cannot be read.
+        """
+        note = self._current_reviewable(path, snapshot)
+        append_okf_verification(
+            note.content,
+            subject="local",
+            now=datetime.now(UTC),
+            reviewed_snapshot=snapshot,
+        )
+        return note
+
+    def okf_verify(
+        self,
+        path: str,
+        subject: str,
+        snapshot: dict[str, str],
+        check: str = "human-review",
+    ) -> dict[str, Any]:
+        """Write a review of *snapshot* into the note, then its local receipt.
+
+        The receipt is evidence of a completed write, so it is appended only
+        after the guarded note write succeeds.
+
+        Args:
+            path: Vault-relative note path.
+            subject: Reviewer identity, without an actor prefix.
+            snapshot: Snapshot from the whole-note read that was reviewed.
+            check: Kind of review performed.
+
+        Returns:
+            The note path, the recorded verifier and the number of ``verified``
+            entries the note now holds.
+
+        Raises:
+            DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the snapshot is stale or malformed, receipt
+                storage is unusable, or the header cannot take the review
+                losslessly; nothing was written.
+            StoreUnsupportedSchemaError: If receipt state is corrupt or newer;
+                nothing was written.
+            ConcurrentModificationError: If the note changed after it was read;
+                nothing was written.
+            OSError: If writing the note, or a callback after it, failed; the
+                note may already hold the review, and no receipt was recorded.
+            ReceiptNotRecordedError: If the note holds the review but its
+                local receipt could not be saved.
+        """
+        note = self._current_reviewable(path, snapshot)
+        now = datetime.now(UTC)
+        text = append_okf_verification(
+            note.content,
+            subject=subject,
+            now=now,
+            reviewed_snapshot=snapshot,
+            check=check,
+        )
+        actor = review_actor(subject, check)
+        with okf_write_suppressed():
+            self.write(path, text, if_match=note.etag)
+        try:
+            cast("ReceiptStore", self._receipt_store).append(
+                {
+                    "path": note.path,
+                    "by": actor,
+                    "at": okf_timestamp(now),
+                    "check": check,
+                    "snapshot": dict(snapshot),
+                    "recorded_at": okf_timestamp(datetime.now(UTC)),
+                }
+            )
+        except (OSError, StoreUnsupportedSchemaError) as exc:
+            raise ReceiptNotRecordedError(path) from exc
+        return {
+            "path": path,
+            "verifier": actor,
+            "verified_count": len(verified_entries(note.frontmatter)) + 1,
+        }
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]
@@ -125,52 +283,119 @@ class WriterFacet:
         """
         return self._doc_mgr.okf_preview_log_repair(path)
 
-    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+    def okf_apply_log_repair(
+        self, path: str, *, etag: str, allow_protected: bool = False
+    ) -> LogRepairResult:
         """Apply an operator-reviewed legacy repair, retaining the complete original.
 
         Args:
             path: Exact log.md path used for the preview.
             etag: The ``etag`` of the preview the operator reviewed; a log
                 changed since then is refused.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             The resulting byte etag and adjacent recovery artifact path.
         """
-        return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
+        return self._doc_mgr.okf_apply_log_repair(
+            path, etag=etag, allow_protected=allow_protected
+        )
 
-    def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
+    def okf_convert_links(
+        self, *, folder: str | None = None, allow_protected: bool = False
+    ) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
 
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
                 whole vault.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
-        """
-        return self._migrate().convert_links(folder=folder)
 
-    def okf_generate_index(self, *, folder: str = "") -> OkfIndexResult:
-        """Generate a reserved ``index.md`` listing from the TOC (#963).
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+        """
+        return self._migrate().convert_links(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_generate_index(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfIndexResult:
+        """Generate a reserved ``index.md`` listing of visible notes (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
-        """
-        return self._migrate().generate_index(folder=folder)
 
-    def okf_seed_log(self, *, folder: str = "") -> OkfLogResult:
+        Raises:
+            InvalidRequestError: If the target is undesignated or protected paths are
+                skipped; eligible writes remain.
+        """
+        return self._migrate().generate_index(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_seed_log(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfLogResult:
         """Seed a reserved ``log.md`` from git history (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfLogResult`.
+
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
         """
-        return self._migrate().seed_log(folder=folder)
+        return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
+
+    def okf_author(
+        self,
+        path: str,
+        *,
+        if_match: str,
+        fields: dict[str, Any],
+        producer: str | None = None,
+    ) -> WriteResult:
+        """Apply named OKF fields to an existing, etag-guarded concept.
+
+        Args:
+            path: Vault-relative note path.
+            if_match: Etag of the note read by the caller.
+            fields: Editorial fields to set.
+            producer: Explicit OKF actor, or None to leave generation unchanged.
+
+        Returns:
+            The write result.
+        """
+        from markdown_vault_mcp._okf_author import author_text
+        from markdown_vault_mcp._okf_write import okf_write_suppressed
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        if not if_match:
+            raise InvalidRequestError("if_match is required")
+        self._doc_mgr.ensure_writable()
+        with self._doc_mgr.write_scope():
+            canonical, original = self._doc_mgr._okf_author_snapshot(path)
+            if is_okf_reserved_file(canonical):
+                raise InvalidRequestError(
+                    "Cannot author a reserved OKF file as a concept"
+                )
+            content = author_text(original, fields, producer)
+            with okf_write_suppressed(), self._doc_mgr.exact_byte_writes():
+                result = self.write(canonical, content, if_match=if_match)
+            if self._convention_maintainer is not None:
+                self._convention_maintainer.maintain(canonical, "write")
+            return result
 
     def write(
         self,
@@ -180,6 +405,7 @@ class WriterFacet:
         if_match: str | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -196,6 +422,7 @@ class WriterFacet:
                 modifications.  Pass ``None`` (default) to skip the check.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the write and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.  On an overwrite of
@@ -225,7 +452,11 @@ class WriterFacet:
             with self._doc_mgr.write_scope():
                 breadcrumb = self._breadcrumb_for(path)
                 result = self._doc_mgr.write(
-                    path, content, frontmatter=frontmatter, if_match=if_match
+                    path,
+                    content,
+                    frontmatter=frontmatter,
+                    if_match=if_match,
+                    allow_protected=allow_protected,
                 )
                 if not result.created:
                     result.previous_revision = breadcrumb
@@ -264,6 +495,7 @@ class WriterFacet:
         line_end: int | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -282,6 +514,7 @@ class WriterFacet:
             line_end: 1-based end line (inclusive) for line-range mode.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the edit and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.EditResult`.
@@ -307,6 +540,7 @@ class WriterFacet:
                 if_match=if_match,
                 line_start=line_start,
                 line_end=line_end,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
@@ -321,6 +555,7 @@ class WriterFacet:
         *,
         create_if_missing: bool = False,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Append text to the end of a document without reading it first (#980).
 
@@ -337,6 +572,7 @@ class WriterFacet:
             report_unresolved_links: When ``True``, wait for the index to take
                 in the append and set the result's ``unresolved_links``
                 (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -360,13 +596,16 @@ class WriterFacet:
                 content,
                 if_match=if_match,
                 create_if_missing=create_if_missing,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "edit")
         return result
 
-    def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
+    def delete(
+        self, path: str, if_match: str | None = None, *, allow_protected: bool = False
+    ) -> DeleteResult:
         """Delete a document or attachment.
 
         Removes the file from disk and purges its entries from the FTS and
@@ -376,6 +615,7 @@ class WriterFacet:
             path: Relative path of the document or attachment to remove.
             if_match: Optional etag for optimistic concurrency; see
                 :meth:`WriterFacet.write`.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
@@ -388,7 +628,9 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        result = self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(
+            path, if_match=if_match, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None and is_note(path):
             # The folder's listing still names the deleted note (#1609).
             self._convention_maintainer.refresh_indexes(
@@ -404,6 +646,7 @@ class WriterFacet:
         *,
         update_links: bool = False,
         tolerate_link_rewrites: bool = False,
+        allow_protected: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -425,6 +668,7 @@ class WriterFacet:
                 this vault made (#1492); the result's
                 ``link_rewrites_since_etag`` counts them.  Defaults to
                 ``False``, the strict whole-file check.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult`.
@@ -446,6 +690,7 @@ class WriterFacet:
             if_match=if_match,
             update_links=update_links,
             tolerate_link_rewrites=tolerate_link_rewrites,
+            allow_protected=allow_protected,
         )
         if (
             self._convention_maintainer is not None
@@ -454,9 +699,8 @@ class WriterFacet:
             and not is_okf_reserved_file(new_path)
         ):
             # The old folder still lists the note; the new one does not yet
-            # (#1609). Regenerating the nearest indexed level at or above the
-            # new folder lists it there and indexes every missing level below
-            # (#1647). A rename to or from a reserved name triggers nothing:
+            # (#1609). Refresh the designated anchor for the new folder.
+            # A rename to or from a reserved name triggers nothing:
             # regenerating would overwrite the file just placed, and a
             # reserved-file change never triggers itself (#1414).
             maintainer = self._convention_maintainer
@@ -467,7 +711,9 @@ class WriterFacet:
             )
         return result
 
-    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+    def move_folder(
+        self, old_dir: str, new_dir: str, *, allow_protected: bool = False
+    ) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
 
         Moves every file under *old_dir* (notes, attachments, and other
@@ -481,6 +727,7 @@ class WriterFacet:
         Args:
             old_dir: Relative source folder prefix (e.g. ``"drafts"``).
             new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.MoveFolderResult`.
@@ -500,21 +747,22 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(
+            old_dir, new_dir, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609). The
-            # nearest indexed level above the destination gets it listed, with
-            # every missing level between indexed (#1647).
+            # anchors of the destination and its parent list it.
             maintainer = self._convention_maintainer
-            new_root = new_dir.strip("/")
+            new_root, anchor = new_dir.strip("/"), maintainer.indexed_anchor
             maintainer.refresh_indexes(
                 [
                     *maintainer.subtree_folders(new_root),
                     folder_of(old_dir.strip("/")),
                 ],
                 trigger_paths=[old_dir, new_dir],
-                create=[maintainer.indexed_anchor(folder_of(new_root))],
+                create=[anchor(new_root), anchor(folder_of(new_root))],
             )
         return result
 
@@ -523,10 +771,18 @@ class WriterFacet:
         path: str,
         content: bytes,
         if_match: str | None = None,
+        *,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
         Delegates to :meth:`DocumentManager.write_attachment`.
+
+        Args:
+            path: Relative attachment path.
+            content: Attachment bytes.
+            if_match: Optional current etag.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -543,4 +799,6 @@ class WriterFacet:
             InvalidRequestError: If the path escapes the source directory or
                 has an extension not in the allowlist.
         """
-        return self._doc_mgr.write_attachment(path, content, if_match=if_match)
+        return self._doc_mgr.write_attachment(
+            path, content, if_match=if_match, allow_protected=allow_protected
+        )
