@@ -969,6 +969,14 @@
       "advancedGroup": "Git sync"
     },
     {
+      "id": "git_generate_commit_subjects",
+      "label": "Git Generate Commit Subjects",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS",
+      "help": "Send each auto-commit diff to the summarize endpoint; may incur charges. The generated subject persists in Git.",
+      "advancedGroup": "Git sync"
+    },
+    {
       "id": "git_lfs",
       "label": "Git Lfs",
       "type": "bool",

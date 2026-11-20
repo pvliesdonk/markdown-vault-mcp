@@ -6,6 +6,16 @@ last_edited: 2026-11-14
 
 > Generic markdown vault MCP with hybrid search.
 
+Auto-commit subjects can optionally use the configured summarize endpoint. The
+staged, scoped diff is sent only when the separate opt-in is enabled; generated
+subjects carry `[AI summary]` and retain the mechanical subject as a trailer.
+The marker is a claim, not proof of authorship; any Git writer can copy it.
+A bounded, single-flight generator falls back to the original message on failure.
+Generation and its Git checks can add up to about 11 seconds while holding the
+strategy lock.
+See [Git integration](../use/git-integration.md#model-written-auto-commit-subjects)
+for egress and timing details.
+
 ## OKF direction and implementation status
 
 The adopted [OKF north star](okf-north-star.md) governs the intended OKF end

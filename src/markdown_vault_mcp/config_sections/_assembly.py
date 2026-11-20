@@ -41,6 +41,8 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.utils.fs import is_directory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.git.interfaces import VersionedStore
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -170,6 +172,7 @@ def _build_git_strategy(
     managed: bool,
     enable_sync: bool,
     repo_url: str | None = None,
+    subject_writer: Callable[[str, str, Sequence[str]], str] | None = None,
 ) -> VersionedStore:
     """Build a GitWriteStrategy with the kwargs shared across all three git modes.
 
@@ -197,6 +200,7 @@ def _build_git_strategy(
             git_lfs=git.lfs,
         ),
         repo_path=config.source_dir,
+        subject_writer=subject_writer,
     )
 
 
@@ -374,7 +378,28 @@ def _resolve_summarizer(config: ProjectConfig) -> Summarizer | None:
         return None
 
 
-def _resolve_git(config: ProjectConfig) -> tuple[VersionedStore, int]:
+def _resolve_subject_writer(
+    config: ProjectConfig, summarizer: Summarizer | None
+) -> Callable[[str, str, Sequence[str]], str] | None:
+    if not config.git_generate_commit_subjects:
+        return None
+    if summarizer is None:
+        logger.warning(
+            "git_subject_backend_unavailable opt_in=%s api_key=%s base_url=%s outcome=mechanical",
+            "MARKDOWN_VAULT_MCP_GIT_GENERATE_COMMIT_SUBJECTS",
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY",
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
+        )
+        return None
+    from markdown_vault_mcp.git._subject import build_subject_writer
+
+    return build_subject_writer(config.summarize)
+
+
+def _resolve_git(
+    config: ProjectConfig,
+    subject_writer: Callable[[str, str, Sequence[str]], str] | None = None,
+) -> tuple[VersionedStore, int]:
     """Build the git strategy for the configured mode, with the pull interval.
 
     Args:
@@ -391,6 +416,7 @@ def _resolve_git(config: ProjectConfig) -> tuple[VersionedStore, int]:
             repo_url=config.git.repo_url,
             managed=True,
             enable_sync=True,
+            subject_writer=subject_writer,
         )
         return strategy, config.git.pull_interval_s
 
@@ -402,6 +428,7 @@ def _resolve_git(config: ProjectConfig) -> tuple[VersionedStore, int]:
             token=config.git.token,
             managed=False,
             enable_sync=True,
+            subject_writer=subject_writer,
         )
         return strategy, config.git.pull_interval_s
 
@@ -411,6 +438,7 @@ def _resolve_git(config: ProjectConfig) -> tuple[VersionedStore, int]:
         token=None,
         managed=False,
         enable_sync=False,
+        subject_writer=subject_writer,
     )
     return strategy, 0
 
@@ -444,7 +472,9 @@ def to_vault_instances(config: ProjectConfig) -> VaultInstances:
         email_claim=config.git.commit_email_claim,
     )
     configure_service_subjects(config.content.service_subjects)
-    git_strategy, git_pull_interval_s = _resolve_git(config)
+    git_strategy, git_pull_interval_s = _resolve_git(
+        config, _resolve_subject_writer(config, summarizer)
+    )
     return VaultInstances(
         embedding_provider=provider,
         summarizer=summarizer,

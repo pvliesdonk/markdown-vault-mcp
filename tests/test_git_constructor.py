@@ -173,11 +173,12 @@ def test_settings_contract() -> None:
         "commit_email",
         "git_lfs",
         "repo_path",
+        "subject_writer",
         "settings",
     ]
     assert [p.kind for p in params] == [inspect.Parameter.POSITIONAL_OR_KEYWORD] * 9 + [
         inspect.Parameter.KEYWORD_ONLY
-    ] * 3
+    ] * 4
     settings_fields = {field.name: field for field in fields(GitWriteSettings)}
     for param in params[:10]:
         assert settings_fields[param.name].default == param.default

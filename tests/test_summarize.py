@@ -336,7 +336,9 @@ def _install_fake_openai(
             api_key: str | None = None,
             base_url: str | None = None,
             timeout: float | None = None,
+            max_retries: int = 2,
         ) -> None:
+            captured["max_retries"] = max_retries
             captured["api_key"] = api_key
             captured["base_url"] = base_url
             captured["timeout"] = timeout
@@ -434,22 +436,66 @@ class TestOpenAISummarizer:
             summ.summarize("s", "u")
         assert len(captured["calls"]) == 1
 
+    @pytest.mark.parametrize(
+        "case", ["api", "refusal", "timeout", "empty", "reasoning", "tokens"]
+    )
     def test_api_error_becomes_runtime_error(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        case: str,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        _install_fake_openai(monkeypatch, raise_error="api")
-        summ = OpenAISummarizer("k", "m", max_tokens=10)
-        with pytest.raises(
-            RuntimeError, match="OpenAI-compatible summarization failed"
+        options: dict[str, Any] = {
+            "api": {"raise_error": "api"},
+            "refusal": {"refusal": "private refusal text"},
+            "timeout": {"raise_error": "timeout"},
+            "empty": {"content": None, "finish_reason": "private finish reason"},
+            "reasoning": {"reject_reasoning_effort": True},
+            "tokens": {"reject_max_completion_tokens": True},
+        }[case]
+        _install_fake_openai(monkeypatch, **options)
+        summ = OpenAISummarizer(
+            "k", "m", max_tokens=10, timeout=4.0, max_retries=0, private_logging=True
+        )
+        with caplog.at_level(logging.DEBUG):
+            if case in {"reasoning", "tokens"}:
+                assert summ.summarize("s", "u") == "SUMMARY"
+            else:
+                with pytest.raises(RuntimeError):
+                    summ.summarize("s", "u")
+        event = {
+            "api": "summarize_api_error",
+            "refusal": "summarize_refusal",
+            "timeout": "summarize_timeout",
+            "empty": "summarize_empty_response",
+            "reasoning": "summarize_reasoning_effort_fallback",
+            "tokens": "summarize_token_param_fallback",
+        }[case]
+        assert event in caplog.text
+        for secret in (
+            "upstream boom",
+            "private refusal text",
+            "private finish reason",
+            "Unsupported parameter",
         ):
-            summ.summarize("s", "u")
+            assert secret not in caplog.text
+        if case == "timeout":
+            assert "fixed_commit_subject_budget" in caplog.text
+            assert "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT" not in caplog.text
+        if case == "api":
+            normal = OpenAISummarizer("k", "m", max_tokens=10)
+            with pytest.raises(
+                RuntimeError, match="OpenAI-compatible summarization failed"
+            ):
+                normal.summarize("s", "u")
 
     def test_client_gets_configured_timeout(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured = _install_fake_openai(monkeypatch, content="ok")
-        OpenAISummarizer("k", "m", max_tokens=10, timeout=42.0)
+        OpenAISummarizer("k", "m", max_tokens=10, timeout=42.0, max_retries=0)
         assert captured["timeout"] == 42.0
+        assert captured["max_retries"] == 0
 
     def test_timeout_becomes_actionable_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch

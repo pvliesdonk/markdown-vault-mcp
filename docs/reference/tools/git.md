@@ -40,7 +40,8 @@ Envelope dict with the following fields:
     - `short_sha` (str): 7-character abbreviated SHA.
     - timestamp (str): ISO 8601 author timestamp.
     - author (str): Author name and email, such as `"Name <email>"`.
-    - message (str): First line of the commit message.
+    - message (str): First line of the commit message. See
+      [model-written subjects](../../use/git-integration.md#model-written-auto-commit-subjects).
     - `paths_changed` (list[str]): Files touched by the commit.
       Populated for vault-wide queries (path=None) and folder
       queries (the subtree files the commit touched). Always empty
@@ -97,7 +98,8 @@ Envelope dict whose shape depends on `per_commit`:
         - `sha` (str): Full commit SHA.
         - `short_sha` (str): Abbreviated SHA.
         - timestamp (str): ISO 8601 author timestamp.
-        - message (str): First line of commit message.
+        - message (str): First line of commit message. See
+          [model-written subjects](../../use/git-integration.md#model-written-auto-commit-subjects).
         - diff (str): Unified diff for this commit.
     - total (int): Count of entries in `commits` (always equals
       `len(commits)`; does NOT indicate how many commits exist

@@ -238,6 +238,7 @@ class GitWriteStrategy:
         *,
         git_lfs: bool = True,
         repo_path: Path | None = None,
+        subject_writer: Callable[[str, str, Sequence[str]], str] | None = None,
         settings: GitWriteSettings | None = None,
     ) -> None:
         legacy = GitWriteSettings(
@@ -267,6 +268,7 @@ class GitWriteStrategy:
         resolved = settings if settings is not None else legacy
         # Token is retained for GIT_ASKPASS credential forwarding in subprocesses.
         # This pattern is intentionally accepted and suppressed in CodeQL config.
+        self._subject_writer = subject_writer
         self._token = resolved.token
         self._username = resolved.username
         self._repo_url = resolved.repo_url
@@ -553,6 +555,7 @@ class GitWriteStrategy:
                         else None,
                     ),
                     primary_paths,
+                    self._subject_writer,
                 )
             if self._enable_push:
                 self._push_scheduler.schedule_push()
@@ -621,6 +624,7 @@ class GitWriteStrategy:
                     path,
                     operation,
                     old_path=old_path,
+                    describe=self._subject_writer,
                     commit_name=self._commit_name,
                     commit_email=self._commit_email,
                     author_name=effective_name
@@ -2427,6 +2431,7 @@ def _stage_and_commit(
     operation: WriteOperation,
     *,
     old_path: Path | None = None,
+    describe: Callable[[str, str, Sequence[str]], str] | None = None,
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
     author_name: str | None = None,
@@ -2479,6 +2484,7 @@ def _stage_and_commit(
         _write_subject(git_root, path, operation, old_path),
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
         scope,
+        describe,
     )
 
     logger.info("git_committed path=%s operation=%s", rel_path, operation)
@@ -2537,6 +2543,7 @@ def _stage_and_commit_batch(
     tool_name: str,
     identity: _CommitIdentity,
     primary_paths: frozenset[Path] | None = None,
+    describe: Callable[[str, str, Sequence[str]], str] | None = None,
 ) -> None:
     """Stage every write from one tool call and commit them together.
 
@@ -2573,6 +2580,7 @@ def _stage_and_commit_batch(
             path,
             operation,
             old_path=old_path,
+            describe=describe,
             commit_name=identity.commit_name,
             commit_email=identity.commit_email,
             author_name=identity.author_name,
@@ -2630,7 +2638,7 @@ def _stage_and_commit_batch(
     elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
         path, operation, old_path = primary[0]
         subject = _write_subject(git_root, path, operation, old_path)
-    _commit_staged(root, subject, identity, commit_scope)
+    _commit_staged(root, subject, identity, commit_scope, describe)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 
 
@@ -2639,6 +2647,7 @@ def _commit_staged(
     commit_msg: str,
     identity: _CommitIdentity,
     pathspec: Sequence[str],
+    describe: Callable[[str, str, Sequence[str]], str] | None = None,
 ) -> None:
     """Commit the operation's own paths, under the resolved identity.
 
@@ -2677,6 +2686,8 @@ def _commit_staged(
             the unscoped legacy rename branch produces it, and it has no
             narrower truth to offer.
     """
+    if describe is not None:
+        commit_msg = describe(root, commit_msg, pathspec)
     commit_name = identity.commit_name
     commit_email = identity.commit_email
     author_name = identity.author_name
