@@ -54,6 +54,7 @@ from markdown_vault_mcp._webhooks import (
 )
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import PullResult
+from markdown_vault_mcp.git.types import PULL_REASON_GROUP_OPEN
 from markdown_vault_mcp.vault import Vault
 
 SECRET = "test-webhook-secret-xyz"
@@ -95,7 +96,7 @@ def _mock_vault(
 ) -> MagicMock:
     col = MagicMock()
     col.index.is_queryable.return_value = queryable
-    col.force_pull.return_value = pull_result or _pull_result(
+    col._automatic_pull.return_value = pull_result or _pull_result(
         from_sha="aaa", to_sha="bbb"
     )
     return col
@@ -254,8 +255,29 @@ def test_webhook_push_triggers_pull_and_reindex():
         )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
-    col.force_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col._automatic_pull.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
+
+
+def test_webhook_uses_automatic_deferral() -> None:
+    """A deferred delivery reconciles without masquerading as a failed pull."""
+    result = PullResult(False, False, 0, "", "", reason=PULL_REASON_GROUP_OPEN)
+    col = _mock_vault(pull_result=result)
+    client = _make_client()
+    body = _push_body()
+    with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
+        resp = client.post(
+            "/github-webhook",
+            content=body,
+            headers={"X-Hub-Signature-256": _sign(body), "X-GitHub-Event": "push"},
+        )
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "pull deferred", "reason": "group_open"}
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_reconciles_when_already_up_to_date():
@@ -278,8 +300,10 @@ def test_webhook_push_reconciles_when_already_up_to_date():
             },
         )
     assert resp.status_code == 200
-    col.force_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col._automatic_pull.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_returns_503_when_pull_fails():
@@ -305,7 +329,9 @@ def test_webhook_push_returns_503_when_pull_fails():
         )
     assert resp.status_code == 503
     assert "error" in resp.json()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_runs_pull_and_reconciles_when_not_queryable():
@@ -329,8 +355,10 @@ def test_webhook_push_runs_pull_and_reconciles_when_not_queryable():
         )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
-    col.force_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
+    col._automatic_pull.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="github_webhook", defer_group_recovery=True
+    )
 
 
 def test_webhook_push_returns_503_when_singleton_not_initialized():
@@ -355,9 +383,9 @@ def test_webhook_push_returns_503_when_singleton_not_initialized():
 
 
 def test_webhook_push_no_git_strategy_returns_200():
-    """Vault has no git strategy — force_pull returns None; graceful no-op."""
+    """Vault has no git strategy — automatic pull returns None; graceful no-op."""
     col = _mock_vault()
-    col.force_pull.return_value = None  # no git strategy
+    col._automatic_pull.return_value = None  # no git strategy
     client = _make_client()
     body = _push_body()
     with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
@@ -541,7 +569,7 @@ def test_webhook_push_returns_200_when_pull_is_disabled() -> None:
     burned GitHub's full retry budget and then failed.
     """
     col = _mock_vault()
-    col.force_pull.return_value = PullResult(
+    col._automatic_pull.return_value = PullResult(
         applied=False,
         fast_forward=False,
         commits_pulled=0,
@@ -563,7 +591,7 @@ def test_webhook_push_returns_503_when_force_pull_raises() -> None:
     import subprocess
 
     col = _mock_vault()
-    col.force_pull.side_effect = subprocess.CalledProcessError(128, ["git"])
+    col._automatic_pull.side_effect = subprocess.CalledProcessError(128, ["git"])
     client = _make_client()
     with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
         resp = _post_push(client)
@@ -844,8 +872,10 @@ def test_gitlab_push_hook_pulls_and_reindexes() -> None:
 
     assert response.status_code == 200
     assert response.json()["commits_pulled"] == 1
-    col.force_pull.assert_called_once()
-    col.reconcile_index_with_head.assert_called_once_with(source="gitlab_webhook")
+    col._automatic_pull.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(
+        source="gitlab_webhook", defer_group_recovery=True
+    )
 
 
 def test_gitlab_non_push_event_is_ignored() -> None:
@@ -1027,7 +1057,7 @@ def test_gitlab_secret_token_authenticates_through_the_handler() -> None:
         )
 
     assert response.status_code == 200
-    col.force_pull.assert_called_once()
+    col._automatic_pull.assert_called_once()
 
 
 def test_gitlab_wrong_secret_token_is_rejected_through_the_handler() -> None:

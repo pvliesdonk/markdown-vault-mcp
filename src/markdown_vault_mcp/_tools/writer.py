@@ -105,6 +105,19 @@ _FETCH_UNCAPPED_BYTES = 2**63 - 1
 _REVIEW_RESPONSE_KEY = "review_confirmed"
 
 
+async def _require_review_authority(config: ProjectConfig, vault: Vault) -> None:
+    """Refuse independent review when the vault is not active."""
+    if (
+        not config.content.okf_write
+        and not (await asyncio.to_thread(vault.okf.state)).active
+    ):
+        raise ToolError(
+            "OKF is not active for this vault, so okf_verify cannot record a review. "
+            "Ask the operator to declare the bundle or enable OKF for this vault.",
+            log_level=logging.INFO,
+        )
+
+
 def _review_message(path: str) -> str:
     """Build the human-review confirmation prompt for *path*."""
     return (
@@ -352,6 +365,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds
                 `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
@@ -469,6 +483,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If parameter combination is invalid, or line
                 numbers are out of range.
             EditConflictError: If old_text is not found or appears more
@@ -560,6 +575,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ValueError: If content is empty.
             DocumentNotFoundError: If no file exists at the given path and
                 create_if_missing is false.
@@ -613,6 +629,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If no file exists at the given path.
             `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
@@ -673,6 +690,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If old_path does not exist.
             DocumentExistsError: If new_path already exists.
             ValueError: If the path fails traversal validation.
@@ -742,11 +760,13 @@ def register(mcp: FastMCP) -> None:
 
             - failed_links (list[str]): paths of notes whose links could not be
               rewritten; the move itself stands.
+            - hint (str, optional): guidance when protected link rewrites are skipped.
             - remote (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentNotFoundError: If no non-empty folder exists at old_dir.
             DocumentExistsError: If any destination file already exists; nothing
                 is moved.
@@ -781,7 +801,10 @@ def register(mcp: FastMCP) -> None:
                     "request was fine: call reindex so search matches the files, "
                     "then tell the user."
                 ) from exc
-        return attach_remote_health(vault, asdict(result))
+        payload = asdict(result)
+        if payload["hint"] is None:
+            del payload["hint"]
+        return attach_remote_health(vault, payload)
 
     @mcp.tool(
         tags={"write"},
@@ -843,6 +866,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             DocumentExistsError: If the server runs with
                 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path*
                 already exists while no *if_match* is supplied. The save
@@ -876,6 +900,7 @@ def register(mcp: FastMCP) -> None:
             path,
         )
         await asyncio.to_thread(vault._doc_mgr.refuse_folder_in_submodule, path, "path")
+        await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
         cap_bytes = (
             0
             if is_markdown or vault.max_attachment_size_mb <= 0
@@ -1024,6 +1049,7 @@ def register(mcp: FastMCP) -> None:
             left as it is and not counted.
 
         Raises:
+            InvalidRequestError: If a path is protected; eligible bulk writes remain.
             TimeoutError: If writes queued before the call have not reached the index
                 within 60 seconds; nothing is changed.
             IndexUnavailableError: If the index build failed; nothing is changed.
@@ -1075,6 +1101,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a path is protected; eligible bulk writes remain.
             TimeoutError: If writes queued before the call have not reached the index
                 within 60 seconds; nothing is changed.
             IndexUnavailableError: If the index build failed; nothing is changed.
@@ -1119,6 +1146,7 @@ def register(mcp: FastMCP) -> None:
               change is committed locally only.
 
         Raises:
+            InvalidRequestError: If a destination or changed path is protected.
             ToolError: If log.md already exists in the folder; nothing is written.
             DocumentUnreadableError: If log.md exists but cannot be read; it is left
                 untouched.
@@ -1151,7 +1179,8 @@ def register(mcp: FastMCP) -> None:
         tier to human-reviewed; returns the verifier recorded.
 
         The user may be asked to confirm the review. The record means a person looked,
-        not that the content is correct.
+        not that the content is correct. A retained review may describe an older
+        version of the note; it is not bound to the current content.
 
         Args:
             path: Path of the note the user reviewed.
@@ -1175,9 +1204,12 @@ def register(mcp: FastMCP) -> None:
                 ask the user, and the user's confirmation; under `trust-auth`,
                 an authenticated identity.
             DocumentNotFoundError: If the note does not exist.
+            InvalidRequestError: If the path is protected.
         """
+        await asyncio.to_thread(vault._doc_mgr.refuse_protected, path)
+        await _require_review_authority(config, vault)
         subject_or_request = await _resolve_verify_mode_subject(
-            mode=config.okf_verify, ctx=ctx, path=path
+            mode=config.content.okf_capabilities.verify, ctx=ctx, path=path
         )
         if isinstance(subject_or_request, InputRequiredResult):
             return subject_or_request
@@ -1194,6 +1226,7 @@ def register(mcp: FastMCP) -> None:
         # write/edit/delete in the window fails the attestation instead of
         # silently clobbering it or resurrecting a deleted note (#964). Suppress
         # the enricher so it does not clear the verification just added.
+        await _require_review_authority(config, vault)
         try:
             with okf_write_suppressed():
                 await asyncio.to_thread(

@@ -47,6 +47,27 @@ def _seed_remote_commit(
 class TestForcePull:
     """:meth:`GitWriteStrategy.force_pull` pulls from origin synchronously."""
 
+    @pytest.mark.parametrize("name", ["local ", "local\n", "local\r\n"])
+    def test_pull_from_root_with_trailing_whitespace(
+        self, git_repo_pair: GitRepoPair, name: str
+    ) -> None:
+        """Git root discovery preserves whitespace in the repository name."""
+        root = git_repo_pair.local_path.rename(git_repo_pair.local_path.with_name(name))
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="remote_update",
+            file_name="new.md",
+            body="remote\n",
+        )
+
+        result = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=root
+        ).force_pull()
+
+        assert result.applied is True
+        assert result.commits_pulled == 1
+        assert (root / "new.md").read_text() == "remote\n"
+
     def test_clean_fast_forward_returns_applied(
         self, git_repo_pair: GitRepoPair
     ) -> None:
