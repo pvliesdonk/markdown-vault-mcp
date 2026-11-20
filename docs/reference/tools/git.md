@@ -8,7 +8,10 @@ kind: reference
 # Git
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Generated index conflicts and compatible log conflicts can return `rebased`
+without siblings. Authored indexes and unsafe logs retain a local sibling
+without injected conflict metadata.
+See [Git integration](../../use/git-integration.md) for recovery details.
 <!-- DOMAIN-INTRO-END -->
 
 ## `get_history`
@@ -120,6 +123,8 @@ Envelope dict whose shape depends on `per_commit`:
 Pull from and push to the vault's git remote now; returns what each leg did.
 
 With direction "both" the pull runs first, and a failed pull skips the push.
+A real sync waits up to 30 seconds for your open or pending transaction
+commits. If one is pending or failed, no sync leg runs.
 
 **Parameters**
 
@@ -127,6 +132,7 @@ With direction "both" the pull runs first, and a failed pull skips the push.
 |---|---|---|---|
 | `direction` | `pull \| push \| both` | `"both"` | `pull`, `push` or `both` (default). |
 | `dry_run` | `boolean` | `false` | Report what a pull would do without changing anything; the push leg reports applied false without contacting the remote. |
+| `transaction` | `string \| null` | `null` | Handle to validate and close before syncing. Real sync closes your open transactions and waits for pending closes even when omitted. Omit for `dry_run`; previews leave transactions open. |
 
 **Returns**
 
@@ -155,14 +161,18 @@ Dict with the following fields:
     did not move, or the rebase completed and HEAD moved but
     committing the sibling files failed), or, on a dry run only,
     `"diverged"`.
-  - `conflict_files` (list[str], optional): the `.conflict-mcp-*`
-    sibling files written when the pull resolved conflicts.
+  - `conflict_files` (list[str], optional): repository-relative paths
+    of the `.conflict-mcp-*` siblings written to resolve conflicts.
+    Strip the repository-to-vault prefix before using vault tools.
+    If the prefix is unknown, locate the sibling with `list_documents`
+    or search. A sibling outside the vault requires access to the
+    repository checkout; vault tools cannot read or delete it.
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,
-    optional): present when the search index could not be
-    refreshed after the pull, so search serves stale results
-    until the next reindex.
+    optional): present when the search index or observation
+    state could not be refreshed after the pull, so search may serve
+    stale results until the next reindex.
 
 - push (dict | None): Payload from the push leg, or `None`
   when direction is `"pull"` or when the pull leg failed with

@@ -16,6 +16,7 @@ file, and keeping them true is part of the change that moves the code.
 
 ```
 src/markdown_vault_mcp/
+  _okf_log_merge.py  -- date-grouped log union for Git conflict recovery and explicit descendant-log migration
   __init__.py        -- minimal template-skeleton root (docstring + __version__); import from submodules, not the root (#665, #903)
   utils/
     __init__.py        -- shared path-traversal guard (resolve_inside + validate_path variants) + attachment/exclusion helpers re-exported for managers and facets (#876)
@@ -26,6 +27,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
+    citations.py       -- reverse citation attribution and scoped diagnostics (#1446)
     _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
@@ -34,14 +36,14 @@ src/markdown_vault_mcp/
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
     embedding_import.py -- import_embeddings: `embeddings import` from another store — source resolution (DSN from the environment only), the refusals in order, the dry-run count, ImportReport/ImportRefused (#1505)
-    document.py        -- DocumentManager: note CRUD, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
+    document.py        -- DocumentManager: note CRUD, byte-preserving `replace_body(path, body)` with an internal maintenance read, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
-    okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
+    okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (explicit recursive or designated folded listings, #1611), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
@@ -53,7 +55,7 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
-    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, matrix_sequence, numbered_files, report_unused_sidecar (#1505)
     _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     _quarantine.py     -- move_aside: a corrupt built-in store's files renamed to .corrupt-<UTC time> under one suffix, undone on a refused rename (StoreUnavailableError) (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as `{base}.v2.json` naming a per-persist `{base}.v2.m<N>.npy`; a release's or edge build's `{base}.json` is read only through `legacy_only=True`, read-only, as an upgrade or import source (#1505)
@@ -63,6 +65,7 @@ src/markdown_vault_mcp/
     sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
+    observations.py    -- instance-local versioned observation ledger and sweep reconciliation
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: query-readiness projection and compatibility transitions (#576, #1483)
     build_lifecycle.py -- BuildLifecycle: scheduling, per-attempt outcomes, marker writes and readiness publication; shared by sync/async/legacy entry points (#1483)
@@ -74,25 +77,25 @@ src/markdown_vault_mcp/
     donor.py           -- Donor: a read-only store whose compatible vectors a full build copies by embedding input, refusing an unknown or other identity (#1505)
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
-    reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
+    reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604), folder navigation (#1442)
     writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604)
     graph.py           -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
     index.py           -- IndexFacet: build/reindex/embeddings, readiness, writer + embeddings status (#604)
     summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)
   git/
     __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
-    _run.py            -- low-level git subprocess + credential plumbing; literal_pathspec (#1303)
+    _run.py            -- low-level git subprocess + credential plumbing; literal pathspecs, index-write scope, diff rendering and NUL stream decoding (#1303, #1310)
     interfaces.py      -- HistorySource/RevisionReader/SyncHealthReporter/Syncer/Versioner/VersionedStore: the versioning seam; GitWriteStrategy is the one implementation (#1229)
-    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock (#893)
+    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock; holds in-memory pending generated indexes (#893)
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     health.py          -- SyncHealthTracker: whether the clone is still reaching its remote; transition-logged, lock-free reads (#1287)
-    conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
+    conflict.py        -- rebase-conflict resolution (caller holds the strategy lock)
     submodules.py      -- SubmoduleGuard: which paths lie in or hold a submodule (cached index gitlinks) or nested repository (live structural .git resolution with strict gitfile reads), so write managers refuse them (#1564, #1949)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
@@ -105,15 +108,25 @@ src/markdown_vault_mcp/
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
+  citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442); descriptor-relative full observation traversal
+  okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
+  _cli_bundle.py       -- CLI adapter for bounded OKF inventory
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
-  _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
-  _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
+  _okf_review.py       -- versioned concept snapshot digest and lossless YAML review binding
+  _okf_receipts.py     -- versioned local review receipts and current concept comparison
+  _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
+  _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the designated anchor that owns the affected folder (#1647)
+  _okf_write.py        -- review subject resolution and maintenance suppression context
+  _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
+  _okf_index_collapse.py -- preview and apply legacy generated index collapse (#1611)
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
+  _commit_groups.py    -- Internal commit-group handles and accumulated status, SHA, and path counts (#1677)
   _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
   _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)
@@ -170,7 +183,9 @@ src/markdown_vault_mcp/
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
+    okf_inventory.py   -- bounded read-only bundle inventory and navigation tools
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
+    transactions.py    -- MCP transaction tools and explicit write binding (#1677)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations
     index.py           -- index/reindex/embeddings-status tool registrations

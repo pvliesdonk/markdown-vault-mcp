@@ -61,9 +61,49 @@ OKF updates share that commit. Folder names with control characters, boundary
 whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
 to keep the subject identifiable on one line.
 
+With Git commits enabled, a writing MCP call waits up to 30 seconds for its
+local commit attempt before returning; on timeout or failure, the result returns
+and the commit may be late or absent. Push remains deferred.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.
+
+## Group writes into one commit
+
+Call `begin_transaction` with a commit description, pass its handle as
+`transaction` to each `write`, `edit`, `append`, `delete`, `rename` or
+`move_folder`, then call `end_transaction`. The files change immediately and
+are not rolled back. A write without the handle commits separately. Uploads,
+`fetch` and OKF tools do not accept a handle and stay outside the group.
+If a request is cancelled after its write starts, the write continues. While
+its group remains open, `end_transaction` and `git_sync` refuse until the write
+finishes; cancellation does not roll it back.
+
+`end_transaction` returns `committed`, `no_changes` or `failed` with a SHA
+when available and a file count. Without Git commit support, a group with writes
+returns `failed`; the files remain written. An empty group returns `no_changes`.
+A real `git_sync` closes the caller's open
+groups and waits for their commits already under way. A failed commit stops
+sync; inspect the Git index to recover staged work. Both tools wait up to 30
+seconds; if a commit is still pending, it continues in the background and no
+sync leg runs. Check the server log, Git index and history for the outcome.
+A later `git_sync` waits only while the commit is still pending. A
+`git_sync` dry run leaves groups open; omit the transaction handle for a preview.
+Completed automatic-close results are available to their owner by handle until
+the server restarts; an implicit sync does not inspect earlier results.
+Unauthenticated clients share the local principal and its transaction groups.
+An interactive `git_sync` pull by another principal can flush an open group,
+splitting its writes across commits.
+
+Groups close automatically after five minutes of inactivity or one hour after
+opening. Set `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` and
+`MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` to positive seconds to adjust these
+bounds. A group can close while a write is active. New attempts to bind an
+closed group are refused. A write already bound to the group can continue; later
+callbacks use the ordinary per-call commit path under the opener's identity.
+Git stages current on-disk content, which can include a write whose callback is
+still pending.
 
 ## Uncommitted files at startup
 
@@ -401,15 +441,52 @@ commits) reports `would_apply=false`. The push leg has no safe local
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
-      path; their vault-relative paths are listed in
-      `pull.conflict_files`.
+      path; their repository-relative paths are listed in
+      `pull.conflict_files`. The `conflict_with` frontmatter paths are also
+      repository-relative.
     - `pull.commits_pulled` is `0` on this path because the rebase
       replays your local commits *on top of* the remote tip — the
       counting model only reports linear-history catch-ups.
 
+    An authored `index.md` keeps the local bytes in a sibling without adding
+    conflict metadata. A `log.md` conflict unions complete entries by date
+    when both versions have compatible frontmatter and preambles and only
+    bullet-list entries. Identical complete entries under the same date are
+    deduplicated. Equal reference definitions in the preamble or list entries are supported; differing definitions
+    and invalid or out-of-order dates cause a fallback. The union reads each
+    side in working-tree form; Git applies its clean filter when staging. If the
+    merge is unsafe or the rebase aborts, the local log is saved as a verbatim
+    sibling. This two-way union does not use Git’s available merge base, so an
+    entry edited or deleted on one side can return.
+    A designated generated index takes the upstream copy when present and is regenerated
+    after the search index catches up. A generated-only conflict, including a
+    deletion on either side, reports `rebased` with no siblings. When upstream
+    deleted the index, the local copy supplies its root `okf_version` until
+    regeneration. A failure to regenerate is logged; the next write into the folder or
+    `okf_generate_index` heals the listing, as it does after a restart. An
+    aborted rebase (more than 50 conflicting replays, or a stop that is not a
+    conflict) keeps the local index. The next pull attempts the rebase again,
+    and the same history can abort it again. If upstream deleted an authored
+    index or log, its local bytes are preserved in a sibling and the original
+    stays deleted. An unsaved non-generated conflict reports failure even when
+    other paths are regenerated or saved as siblings. The server drains
+    regenerated writes before a following push in the same `git_sync`. A
+    callback timeout or commit failure follows the ordinary write path; the
+    drain does not confirm commit success. Preserved siblings appear in search
+    and generated listings until manually reconciled and deleted. They can also
+    produce `missing_type` validation findings; a root index sibling carrying
+    `okf_version` can produce `misplaced_okf_version`. When upstream has a root
+    index, its `okf_version` wins, so a local-only change is not preserved.
+
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
-    `delete` the sibling once merged.
+    `delete` the sibling once merged. If the vault is a subdirectory, strip
+    the repository-to-vault prefix from these paths before passing them to
+    vault read or delete tools. For example, use `note.conflict-mcp-….md`
+    for a returned path of `vault/note.conflict-mcp-….md` when the vault is
+    `vault/`. If the prefix is unknown, locate the sibling in the vault with
+    `list_documents` or `search`. A sibling outside the vault requires access
+    to the repository checkout; vault tools cannot read or delete it.
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -15,19 +16,15 @@ if TYPE_CHECKING:
     from fastmcp.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
+_SCOPE_WAIT_TIMEOUT = 30.0
 
 
 class CommitScopeMiddleware(Middleware):
     """Bind a commit scope around every tool call, and close it afterward.
 
     Opening the scope is enough for the dispatcher to group the call's writes;
-    closing it is what makes the group commit. The close is enqueued rather
-    than awaited: the dispatcher runs off the write path, so the tool returns
-    before its writes drain, and the queue's FIFO order already guarantees the
-    end marker lands behind every write this call fired.
-
-    A tool that writes nothing produces an end marker with an empty group,
-    which the dispatcher discards.
+    closing it makes the group commit. A writing call waits for its callback
+    attempt, bounded by the middleware's timeout, without blocking the loop.
     """
 
     async def on_call_tool(
@@ -48,14 +45,14 @@ class CommitScopeMiddleware(Middleware):
             try:
                 return await call_next(context)
             finally:
-                self._close(context, scope)
+                await self._close(context, scope)
 
     @staticmethod
-    def _close(
+    async def _close(
         context: MiddlewareContext[mt.CallToolRequestParams],
         scope: CommitScope,
     ) -> None:
-        """Enqueue *scope*'s end marker, tolerating a vault that is not up.
+        """Close *scope*, tolerating a vault that is not up.
 
         The scope closes on the failure path too, so a tool that raises after
         writing still commits what it wrote rather than stranding the group.
@@ -66,7 +63,20 @@ class CommitScopeMiddleware(Middleware):
         try:
             from markdown_vault_mcp.domain import get_vault
 
-            get_vault(fastmcp_context).end_commit_scope(scope)
+            vault = get_vault(fastmcp_context)
+            done = vault._enqueue_commit_scope_end(scope)
+            if done is not None:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.wrap_future(done), _SCOPE_WAIT_TIMEOUT
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "commit_scope_wait_timeout tool=%s token=%s timeout_s=%s outcome=commit_pending",
+                        scope.tool_name,
+                        scope.token,
+                        _SCOPE_WAIT_TIMEOUT,
+                    )
         except Exception:
             # Deliberately broad, and deliberately swallowed. This runs in the
             # ``finally`` of on_call_tool, so ANY exception escaping here

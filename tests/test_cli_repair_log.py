@@ -61,9 +61,11 @@ def test_preview_without_a_candidate_says_so(vault: Path) -> None:
     assert "--apply" not in result.stdout
 
 
+@pytest.mark.parametrize("protected", ["guides/log.md", f"guides/{BACKUP}"])
 def test_apply_with_the_previewed_etag_repairs_and_keeps_the_original(
-    vault: Path,
+    vault: Path, monkeypatch: pytest.MonkeyPatch, protected: str
 ) -> None:
+    monkeypatch.setenv(f"{_ENV_PREFIX}_PROTECTED_PATHS", protected)
     result = _repair("--apply", compute_etag(STACKED))
     assert result.exit_code == 0, result.output
     assert "removed 2 blocks" in result.stdout

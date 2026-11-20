@@ -248,8 +248,8 @@ class VaultTransferSink:
                 download source, a disallowed attachment extension, a bundle
                 ref with OKF disabled, a bundle scope naming a folder that does
                 not exist, an upload destination inside a git submodule or
-                nested repository, or an existing upload destination when
-                overwrite protection is enabled.
+                nested repository, a protected upload destination, or an existing
+                upload destination when overwrite protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.
@@ -266,10 +266,11 @@ class VaultTransferSink:
         else:
             destination = _validate_destination(ref, source_dir, exts)
             try:
+                await asyncio.to_thread(vault._doc_mgr.refuse_protected, ref)
                 await asyncio.to_thread(
                     vault._doc_mgr.refuse_folder_in_submodule, ref, "ref"
                 )
-            except SubmodulePathError as exc:
+            except (SubmodulePathError, InvalidRequestError) as exc:
                 raise _reject(str(exc)) from None
             if self._config.write_protect_existing and is_regular_file(destination):
                 logger.info(
@@ -430,9 +431,8 @@ class VaultTransferSink:
             TransferSinkError: The protected destination exists, including a
                 file created after validation or by a prior upload (409
                 Conflict); a note upload whose body is not valid UTF-8 (415
-                Unsupported Media Type); or a body the vault refuses to write,
-                such as one the OKF enforced-write layer cannot stamp (422
-                Unprocessable Content). Each leaves the link usable.
+                Unsupported Media Type); or a body the vault refuses to write
+                (422 Unprocessable Content). Each leaves the link usable.
         """
         vault = self._resolve_vault()
         try:

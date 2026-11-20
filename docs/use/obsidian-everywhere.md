@@ -132,7 +132,7 @@ The PARA and Zettelkasten workflow prompts, and the built-in ones such as `propo
 
 ## Limitations & troubleshooting
 
-- Diverged branches: when both Obsidian and MCP commit on different files, the server rebases local commits onto upstream automatically. When the same file is edited on both sides, the server resolves the conflict by accepting the upstream version and saving the MCP version as a `*.conflict-mcp-YYYYMMDD-HHMMSS.md` file with `conflict_with` frontmatter on both files. Neither version is authoritative; reconcile manually or let the AI merge them.
+- Diverged branches: when both Obsidian and MCP commit on different files, the server rebases local commits onto upstream automatically. When the same file is edited on both sides, the server resolves the conflict by accepting the upstream version and saving the MCP version as a `*.conflict-mcp-YYYYMMDD-HHMMSS.md` file. Concept notes receive `conflict_with` frontmatter on both files; authored `index.md` preserves local text in a sibling without injecting metadata. Compatible `log.md` files merge entries by date; unsafe merges keep a verbatim local sibling. Reconcile manually or let the AI merge them. See [Git integration](git-integration.md) for generated indexes and recovery limits.
 - Squash/cherry-pick detection limitation: rewritten commit history may not map cleanly for duplicate detection.
 - Git LFS: large binary attachments may need explicit LFS setup on every client and server.
 - iOS: no equivalent GitSync workflow is documented here for private repositories.
