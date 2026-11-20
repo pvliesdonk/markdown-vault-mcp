@@ -49,8 +49,8 @@ List of result dicts ranked by file relevance. Each contains:
   the vault is an active OKF bundle. Carries `type` (when
   declared), `status` (defaults to `"stable"`), `stale`
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-  `"machine-confirmed"` / `"human-reviewed"`), and
-  `sources_count` (when the note cites sources).
+  `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
+  `review_applicability`, and `sources_count` (when the note cites sources).
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
 
@@ -111,9 +111,11 @@ empty {} when section= is provided; call read(path) without
 section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
-an 'okf' dict (type, status, stale, `trust_tier`, and the note's
-'sources' list when present); section reads omit it because they
-carry no frontmatter to derive it from.
+an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
+`review_applicability`, recorded, snapshot {algo, digest}, and the note's 'sources'
+list when present). Review applicability reports whether a snapshot binding is
+available, independently of freshness and recorded claims. Section reads omit
+it because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
 etag (SHA-256 hex str or null).
@@ -153,6 +155,63 @@ returns
 
 `content` is the raw file, frontmatter included. Pass `etag` as `if_match` to `write`, `edit`, `delete` or `rename` to change the note you read.
 <!-- DOMAIN-EXAMPLE-read-END -->
+
+## `inspect_citations`
+
+**Inspect Note Citations.** Read-only. Idempotent.
+
+Join a note's literal footnote labels to its source records.
+
+Use this for attribution in one known note, not navigation or evidence
+verification. Reports unmatched labels and duplicate-ID ambiguity without
+opening source resources; syntax coverage is limited and reported.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Exact case-sensitive .md note path from search or `list_documents`. |
+
+**Returns**
+
+Literal sources, citation IDs with occurrence counts and zero-based
+source indices, source-shape issues, duplicate IDs, and indices of source
+entries without IDs. Matched means one exact ID, not that the source supports a
+claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+fields describe coverage. `returned_text_sha256` hashes the LF-normalized
+returned text encoded as UTF-8; it is not a raw-file etag, a portable
+identity or a value to use for `if_match`.
+
+<!-- DOMAIN-EXAMPLE-inspect_citations-START -->
+
+Inspect one known note: `inspect_citations(path="research/note.md")`.
+For `Claim[^handbook]` and `sources: [{id: handbook, resource: team handbook}]`,
+the result reports `matched` with `source_indices: [0]`. The match records an
+exact ID join. Source support remains unchecked. See [syntax coverage](../../use/okf.md#syntax-coverage).
+
+<!-- DOMAIN-EXAMPLE-inspect_citations-END -->
+
+## `find_citing_notes`
+
+**Find Citing Notes.** Read-only. Idempotent.
+
+Find indexed notes citing an exact source resource and unresolved labels.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `resource` | `string` | required | Exact source resource string from a note's sources. |
+| `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
+
+**Returns**
+
+Citing notes with labels and counts, unresolved diagnostics, and
+`unconverted_notes`: indexed notes not yet re-read for citations.
+
+<!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-find_citing_notes-END -->
 
 ## `list_documents`
 
@@ -296,8 +355,10 @@ Dict with the following fields:
 - okf (dict, optional): Present only when the vault is an active
   OKF (Open Knowledge Format) bundle. Carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,
-  status and trust-tier breakdowns, and `stale_count`. Those cover
-  the note population '`okf_validate`' audits; the reserved
+  status and recorded-review trust-tier breakdowns, and `stale_count`.
+  These counts cover the note population '`okf_validate`' audits;
+  the classifications do not establish review applicability to
+  current content. The reserved
   `index.md` / `log.md` files are counted apart as
   `reserved_count`. `write_configured` is the configured OKF write
   flag; `write_effective` is true when that flag is enabled, OKF
@@ -526,8 +587,9 @@ Dict with the note context. Fields:
   them when writing to or proposing links involving this note;
   some folders are self-contained by design.
 - okf (dict, optional): OKF read annotation for this note
-  (type, status, stale, `trust_tier`, `sources_count`). Present
-  only when the vault is an active OKF bundle.
+  (type, status, stale, `trust_tier`, freshness, review,
+  `review_applicability`, `sources_count`).
+  Present only when the vault is an active OKF bundle.
 
 Index freshness is reported out-of-band in the response's
 `_meta.index_stale` field: True when the IndexWriter had
@@ -642,6 +704,17 @@ Informational rules, not deviations:
   exporting.
 - `missing_recommended`: notes without the recommended `title` or
   `description`.
+- `missing_freshness`: assessed notes with no expiry supplied.
+
+Evidence observations leave `conformant_notes` unchanged:
+
+- `malformed_freshness`, `malformed_review`: assessed notes with
+  unsupported expiry or malformed review records.
+- `evidence_unavailable`: discovered notes not assessed for evidence
+  because reading/parsing failed or the read cap was exceeded.
+
+Evidence findings cover discovered, non-excluded concepts, not
+complete traversal, truth, or editorial-policy compliance.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

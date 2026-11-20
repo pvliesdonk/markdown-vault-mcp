@@ -3,9 +3,10 @@
 A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
-Methods delegate to :class:`SearchManager`, :class:`DocumentManager`, or
-:class:`GitQueryManager`; OKF stats also include the vault's write-state
-projection. The bucket-3 methods
+Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
+:class:`GitQueryManager`; citation inspection analyzes one returned note-text
+snapshot with the pure citation reader. OKF stats also include the vault's
+write-state projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -16,10 +17,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import yaml
+
+from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+)
+from markdown_vault_mcp.utils.content_kind import is_note
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, Literal
 
+    from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -60,6 +72,7 @@ class ReaderFacet:
         doc_mgr: DocumentManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        citation_mgr: CitationManager | None = None,
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
@@ -71,10 +84,12 @@ class ReaderFacet:
             doc_mgr: Document and attachment reads, table-of-contents.
             git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
+            citation_mgr: Reverse citation lookup manager, when wired.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
         """
+        self._citation_mgr = citation_mgr
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
@@ -220,6 +235,54 @@ class ReaderFacet:
                 *section* is empty or names no heading.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def find_citing_notes(self, resource: str) -> dict[str, Any]:
+        """Find indexed notes citing an exact resource.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citing notes and unresolved label diagnostics.
+        """
+        self._require_built()
+        if self._citation_mgr is None:
+            raise RuntimeError("Citation manager is not wired")
+        return self._citation_mgr.find_citing(resource)
+
+    def inspect_citations(self, path: str) -> CitationReport:
+        """Inspect exact source attribution in one whole-note text snapshot.
+
+        Args:
+            path: Exact vault-relative .md note path.
+
+        Returns:
+            Literal sources, label joins and explicit syntax limits. This reads
+            no source resources and makes no claim about evidentiary support.
+
+        Raises:
+            InvalidRequestError: If the path is not a .md note or exceeds the
+                existing whole-note read limit.
+            DocumentNotFoundError: If the existing reader finds no note.
+            DocumentUnreadableError: If the existing reader cannot read it.
+        """
+        if not is_note(path):
+            raise InvalidRequestError(
+                f"path {path!r} is not a .md note. Call inspect_citations with "
+                "a .md path from search or list_documents."
+            )
+        note = self.read(path)
+        if note is None:
+            raise DocumentNotFoundError(
+                f"No note at path {path!r}. Find a path with search or list_documents "
+                "and pass it to inspect_citations."
+            )
+        # read() may carry metadata/hash from an earlier disk read. Only this
+        # one returned content string is allowed to supply the join and digest.
+        try:
+            return inspect_citation_text(path, note.content)
+        except yaml.YAMLError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
     def read_revision(
         self, path: str, revision: str, *, section: str | None = None

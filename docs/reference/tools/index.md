@@ -21,6 +21,8 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 |---|---|---|---|
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
+| Reader | [`inspect_citations`](reader.md#inspect_citations) | Inspect Note Citations | Join a note's literal footnote labels to its source records. |
+| Reader | [`find_citing_notes`](reader.md#find_citing_notes) | Find Citing Notes | Find indexed notes citing an exact source resource and unresolved labels. |
 | Reader | [`list_documents`](reader.md#list_documents) | List Documents | List notes, and optionally attachments, with path, title and frontmatter but no body text. |
 | Reader | [`list_folders`](reader.md#list_folders) | List Folders | List every folder that holds notes; `""` stands for the top level. |
 | Reader | [`list_tags`](reader.md#list_tags) | List Tags | List the distinct values one indexed frontmatter field takes across the vault. |
@@ -55,6 +57,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Writer | [`okf_convert_links`](writer.md#okf_convert_links) | OKF: Convert Wikilinks | Rewrite wikilinks as bundle-root-absolute Markdown links, the Open Knowledge Format's recommended style; returns counts of links converted and skipped. |
 | Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Write a folder's Open Knowledge Format index.md: a link to each note directly in it with its description, and one to each subfolder's index.md, replacing the old listing and keeping its frontmatter. |
 | Writer | [`okf_seed_log`](writer.md#okf_seed_log) | OKF: Seed log.md | Create a folder's Open Knowledge Format log.md from the git history of the notes under it, one dated section per day, newest first. |
+| Writer | [`okf_author`](writer.md#okf_author) | OKF: Author Concept | Set selected editorial fields on an existing OKF concept. |
 | Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record that a person reviewed a note, raising its Open Knowledge Format trust tier to human-reviewed; returns the verifier recorded. |
 | Git | [`get_history`](git.md#get_history) | Note History | List the commits that touched a note, an attachment, a folder or the whole vault, newest first. |
 | Git | [`get_diff`](git.md#get_diff) | Note Diff | Return how a note or attachment changed from an earlier commit to now, as one unified diff or one per commit. |

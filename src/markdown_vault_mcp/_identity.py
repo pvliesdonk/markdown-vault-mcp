@@ -129,25 +129,6 @@ class Principal:
     email: str | None
     kind: Literal["human", "service", "local"]
 
-    def okf_actor(self, version: str) -> str:
-        """Return the OKF provenance actor this principal stamps.
-
-        ``human:<subject>`` for an authenticated human, else the tool actor
-        ``markdown-vault-mcp/<version>`` — the exact rules of
-        the design-§6 actor rules, expressed over the resolved value.
-
-        Args:
-            version: Package version used for the tool actor.
-        """
-        # Function-local imports keep the module graph acyclic: _okf_write
-        # imports this module at load time for current_principal().
-        from markdown_vault_mcp._okf_write import tool_actor
-        from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX
-
-        if self.kind == "human" and self.subject:
-            return f"{_HUMAN_ACTOR_PREFIX}{self.subject}"
-        return tool_actor(version)
-
 
 _principal_var: ContextVar[Principal | None] = ContextVar(
     "write_principal", default=None
