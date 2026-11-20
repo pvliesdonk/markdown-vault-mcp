@@ -234,7 +234,7 @@ The interaction subsections below follow the order of the variable tables after 
 `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool.
 
 On a read-only server, `OKF_WRITE` is valid but inactive; see the
-[OKF write layer](../use/okf.md#the-enforced-write-layer) for the startup
+[OKF writing and provenance](../use/okf.md#writing-and-provenance) for the startup
 diagnostic and affected operations.
 
 Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`.
@@ -248,6 +248,13 @@ Upload links have no `if_match` option. With protection enabled,
 the file appears before the bytes arrive. Use a new path, or set
 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
 See [transfer links](../deploy/transfer-links.md#upload-destinations).
+
+`MARKDOWN_VAULT_MCP_PROTECTED_PATHS` protects matching paths, including
+automatic OKF upkeep. An unprotected primary write still succeeds if upkeep is
+blocked. Globs are case-insensitive; `*` crosses `/`, and `**/` requires at
+least one folder. Use `_conventions.md,**/_conventions.md` to cover both the
+root and nested convention files. A matching folder protects its contents.
+The root pattern `.` is rejected; use `*` to protect every path.
 
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade
@@ -275,10 +282,9 @@ warning and leaves semantic search disabled.
 #### Indexing {#indexing-and-search}
 
 Persistent deployments normally put `INDEX_PATH`, `EMBEDDINGS_PATH`, and
-`STATE_PATH` outside content folders. The file watcher excludes the directories
-holding those files so index writes cannot trigger another scan; placing state
-inside a content directory also prevents sibling content in that directory
-from being watched.
+`STATE_PATH` outside content folders. Search never watches the folders holding
+those files, so index writes cannot trigger a reindex. Observation still watches
+readable notes beside them; the files themselves are not notes in the ledger.
 
 `INDEXED_FIELDS` controls structured filters. `SEARCHABLE_FIELDS` defaults to
 the same list and controls keyword-searchable frontmatter plus first-chunk
@@ -289,9 +295,8 @@ on the next startup.
 #### Content {#content-and-transfer}
 
 Folder convention files guide clients before writes. OKF read semantics can be
-auto-detected from a root `index.md`; the separately gated OKF write layer adds
-provenance, invalidates stale verification, and maintains `log.md` and
-`index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
+auto-detected from a root `index.md`; independent settings enable explicit authoring and review and maintain `log.md` and
+`index.md`. Ordinary writes preserve provenance and reviews. See the [OKF guide](../use/okf.md) for the trust and verification
 model.
 
 Attachments in hidden or excluded directories are never listed. Full note
@@ -402,9 +407,31 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (begin_transaction, end_transaction, write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true` | No | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites. |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | (none) | No | Comma-separated case-insensitive vault-relative globs protecting paths and folder contents (_conventions.md,**/_conventions.md). Empty by default. The * wildcard crosses folders; **/ requires a folder. |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | `false` | No | Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged. |
+
+### Content
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | (none) | No | Review authority: off, elicit or trust-auth. Unset resolves to off, or elicit with OKF_WRITE enabled. Independent review requires an active OKF vault and a writable server; the alias also permits review of an undeclared vault in auto mode. For human reviews, elicit asks for confirmation and trust-auth requires human credentials and a human-driven interface. Opted-in service machine checks work under either enabled mode. Explicit elicit or trust-auth with OKF_MODE=off is a configuration error. |
+| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
+| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
+| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` | No | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. OKF maintenance and independent review require active semantics; the OKF_WRITE alias also permits review of an undeclared vault in auto mode. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST` | `false` | No | Allow selected change diffs to be sent to the configured summarize backend for an attributed log proposal. Off by default. |
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | Deprecated alias enabling OKF authoring, review, index and log maintenance. Explicit individual settings take precedence. Ordinary writes preserve provenance and review records. Requires OKF_MODE to be auto or on. Off by default. |
+| `MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW` | `false` | No | Allow service principals to record named machine checks with okf_verify. Off by default; OKF_VERIFY must also enable review. Service principals cannot record human-review. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | (none) | No | Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE. |
+| `MARKDOWN_VAULT_MCP_OKF_INDEX` | (none) | No | Enable automatic index maintenance in designated folders; defaults to false. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG` | (none) | No | OKF log authority defaults to off. Events records explicit editorial entries; writes also records server writes automatically. |
+| `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | (none) | No | Comma-separated designated OKF folder globs; defaults to root (.). * matches one folder level; ** spans levels. Leading ./ or / and trailing / are ignored. |
+| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: okf_verify refuses human review and permits named machine checks only when OKF_MACHINE_REVIEW is enabled. Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
+| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once. |
+| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
+| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |
 
 ### Embeddings
 
@@ -463,25 +490,10 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_POOL_SIZE` | `4` | No | With EMBEDDING_STORE=postgres, the most connections the store opens (at least 1). |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_STATEMENT_TIMEOUT_S` | `30.0` | No | With EMBEDDING_STORE=postgres, the longest one query may run, in seconds (0 sets none; at most 2147483.647). The bulk write of a full rebuild is never limited. |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset. |
-| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |
+| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated required frontmatter fields; documents missing any are excluded from the index, except index.md and log.md in an active OKF vault. |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | (none) | No | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**). |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | `title` | No | Frontmatter field used as the document title (falls back to title, the first H1, then the filename). Changing it cold-rebuilds the index once on next startup. |
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | (none) | No | Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup. |
-
-### Content
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
-| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
-| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
-| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` | No | OKF (Open Knowledge Format) read semantics. With auto (the default), read annotations switch on when the vault declares an OKF version in its root index.md. Use off to disable OKF semantics entirely, or on to force them for an undeclared vault. Annotations are read-only; write behavior is never affected. |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | `false` | No | OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default. |
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` | No | How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to a token's sub claim with no confirmation; it rejects static bearer credentials, other client-ID-only identities, and OAuth tokens the issuer marks as an application's. This is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error. |
-| `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` | (none) | No | Comma-separated token sub values that belong to applications, not people. A caller whose sub is listed is a service: its OKF writes stamp the tool actor instead of human:<sub>, and okf_verify records its review as local (elicit) or refuses it (trust-auth). Entries match the token's sub exactly. Use it for issuers whose client-credentials tokens carry nothing that marks them as an application's, such as a Keycloak, authentik or Zitadel service account; list that account's sub (for Keycloak, the service-account user's ID, not its name). |
-| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions (such as pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist. A link whose target has a listed extension is not part of the link graph; changing the list rebuilds the index once. |
-| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
-| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |
 
 ### Search tuning
 
@@ -505,6 +517,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | No | Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` | `300.0` | No | Seconds of group inactivity before automatic close. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` | `3600.0` | No | Maximum group age in seconds before automatic close. |
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30.0` | No | Seconds of write-idle time before pushing; 0 pushes only on shutdown. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | No | Git committer name for auto-commits, and the author name too unless an OIDC claim supplies one; set this in Docker where git config user.name is empty. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits, and the author email too unless an OIDC claim supplies one. |
@@ -516,9 +530,9 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing. |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch for external filesystem changes, including observation of excluded notes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing or an observation sweep. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files and new top-level folders relying on scans. |
 | `MARKDOWN_VAULT_MCP_BOOT_REINDEX` | `true` | No | Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp admin reindex'). `get_index_status` reports `offline_changes` as `not_reconciled` until the server itself runs one; a reindex from the command line updates the index but not that status. Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault. |
 | `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | (none) | No | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. |
 | `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN` | (none) | No | Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. GitLab generates this value; copy the `whsec_` token it shows under Generate signing token rather than inventing one. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected. |

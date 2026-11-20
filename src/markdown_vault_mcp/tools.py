@@ -16,7 +16,16 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from markdown_vault_mcp._tools import git, graph, index, query, reader, writer
+from markdown_vault_mcp._tools import (
+    git,
+    graph,
+    index,
+    okf_inventory,
+    query,
+    reader,
+    transactions,
+    writer,
+)
 
 __all__ = ["register_tools"]
 
@@ -28,8 +37,10 @@ def register_tools(mcp: FastMCP) -> None:
         mcp: The :class:`~fastmcp.FastMCP` instance to register tools on.
     """
     reader.register(mcp)
+    okf_inventory.register(mcp)
     query.register(mcp)
     graph.register(mcp)
     index.register(mcp)
+    transactions.register(mcp)
     writer.register(mcp)
     git.register(mcp)

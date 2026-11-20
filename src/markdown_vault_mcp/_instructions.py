@@ -23,9 +23,12 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._instructions_builder import InstructionRole, instructions_for
 from markdown_vault_mcp._write_tools import gated_tool
+from markdown_vault_mcp.config_sections.content import ContentConfig
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastmcp import FastMCP
+
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 
 #: Tools the write-guidance fragment tells the model to call. Resolved
 #: through :func:`~markdown_vault_mcp._write_tools.gated_tool` at import
@@ -77,10 +80,12 @@ class GuidanceConfig:
         summarize_note_limit: The configured summarize note limit, or ``None``
             when the summarize tool is not configured.
         okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
-        okf_write: Whether the enforced-write layer maintains the reserved
-            files, which decides whether the agent is asked to.
+        okf_write: Whether the deprecated alias enables reserved-file
+            maintenance, which decides whether the agent is asked to.
         boot_reindex: Whether startup reconciles changes made while no
             server ran; when it does not, the agent is told to reindex.
+        okf_capabilities: Resolved maintenance authority and folder scope;
+            ``None`` uses the legacy ``okf_write`` behavior.
     """
 
     read_only: bool
@@ -89,6 +94,7 @@ class GuidanceConfig:
     okf_mode: str = "off"
     okf_write: bool = False
     boot_reindex: bool = True
+    okf_capabilities: OkfCapabilities | None = None
 
 
 def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
@@ -129,10 +135,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     guidance then points at the client-side ``summarize-subtree`` prompt
     (#1035). Any ``okf_mode`` other than ``"off"`` emits the OKF sentence, on
     the same permits-rather-than-detects reasoning as the conventions one, and
-    ``okf_write`` decides which upkeep it asks for: without the enforced-write
-    layer nobody else keeps ``log.md`` / ``index.md`` current, and with it the
-    server regenerates a written folder's ``index.md``, so telling the agent
-    to edit that file invites work the next write replaces (#1431).
+    resolved capabilities decide which upkeep it asks for. The server can
+    maintain logs and designated indexes independently.
     With ``boot_reindex`` off, files changed while no server ran stay out of
     the index until a reindex runs, and nothing else prompts the model to run
     one, so the sentence names the tool (#1542); a deployment that keeps the
@@ -182,24 +186,53 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             )
         )
     if config.okf_mode != "off":
-        # Who keeps the reserved files current decides what to tell the agent.
-        # Under OKF_WRITE the server regenerates a written folder's 'index.md'
-        # from the listing, so asking the agent to edit it invites work the
-        # next write silently replaces (#1431).
-        upkeep = (
-            "Leave 'log.md'/'index.md' to the server."
-            if config.okf_write
-            else "For edits, update 'log.md'/'index.md'."
-        )
+        upkeep = ""
+        if not config.read_only:
+            # Tell the agent which files and folder scope the server maintains.
+            caps = (
+                config.okf_capabilities
+                or ContentConfig(okf_write=config.okf_write).okf_capabilities
+            )
+            index = caps.index
+            log = caps.log == "writes"
+            if caps.log == "events":
+                index_advice = (
+                    "Server maintains designated indexes; maintain others."
+                    if index
+                    else "For edits, update 'index.md'."
+                )
+                upkeep = (
+                    "Record related edits with 'okf_log_event'; 'log.md' stays editable. "
+                    + index_advice
+                )
+            elif index and log and caps.folders == ("**",):
+                upkeep = "Leave 'log.md'/'index.md' to the server."
+            elif not index and not log:
+                upkeep = "For edits, update 'log.md'/'index.md'."
+            else:
+                log_advice = (
+                    "Leave 'log.md' to the server."
+                    if log
+                    else "For edits, update 'log.md'."
+                )
+                index_advice = (
+                    f"Server maintains designated indexes ({', '.join(caps.folders)}); "
+                    "maintain others."
+                    if index
+                    else "For edits, update 'index.md'."
+                )
+                upkeep = f"{log_advice} {index_advice}"
+            upkeep += " "
         snippets.append(
             Snippet(
                 "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
                 "deprecated, stale and unverified ones count for less. "
+                "A human-reviewed tier records a dated review that may predate the current text. "
                 # Terse on purpose: the generated instructions stay under
                 # the builder's 1,536-unit generated target, and an
                 # agent-authored literal space is exactly the defect #1494
                 # fixed on the server's own output.
-                f"{upkeep} Use root-relative Markdown links, "
+                f"{upkeep}Use root-relative Markdown links, "
                 "%20 for spaces.",
                 InstructionRole.INSTANCE,
             )

@@ -2710,3 +2710,160 @@ def test_the_resident_refusal_names_streamed_and_the_default(
         )
     assert "EMBEDDING_SEARCH=streamed" in str(refused.value)
     assert "leave it unset" in str(refused.value)
+
+
+def test_protected_paths_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", raising=False)
+    assert ProjectConfig.from_env().protected_paths is None
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "a, ,folder/*.md")
+    assert ProjectConfig.from_env().protected_paths == ("a", "folder/*.md")
+
+
+@pytest.mark.parametrize("pattern", ["/x.md", "../x.md", "dir/../x.md", "", 42])
+def test_protected_paths_reject_invalid(pattern: Any) -> None:
+    from markdown_vault_mcp.config_sections.vault_settings import (
+        normalize_protected_paths,
+    )
+
+    with pytest.raises(ConfigurationError, match="PROTECTED_PATHS"):
+        normalize_protected_paths([pattern])
+
+
+def test_protected_paths_scalar_and_normalization(tmp_path: Path) -> None:
+    from markdown_vault_mcp.config_sections.vault_settings import (
+        VaultSettings,
+        normalize_protected_paths,
+    )
+
+    for constructor in (
+        lambda: ProjectConfig(source_dir=tmp_path, protected_paths="x.md"),
+        lambda: VaultSettings(protected_paths="x.md"),
+    ):
+        with pytest.raises(ConfigurationError, match="PROTECTED_PATHS"):
+            constructor()
+    assert normalize_protected_paths(
+        ["./x.md", "dir//x.md", "dir/./x.md", "folder/"]
+    ) == ("x.md", "dir/x.md", "dir/x.md", "folder")
+
+
+def test_protected_paths_preserves_config_positional_api() -> None:
+    defaults = ProjectConfig()
+    fields = [
+        f
+        for f in dataclasses.fields(ProjectConfig)
+        if not f.kw_only and f.name != "protected_paths"
+    ]
+    fields = fields[: next(i for i, f in enumerate(fields) if f.name == "exclude") + 1]
+    args = [
+        (["private"] if f.name == "exclude" else getattr(defaults, f.name))
+        for f in fields
+    ]
+    config = ProjectConfig(*args)
+    assert config.exclude == ("private",)
+    assert config.protected_paths is None
+    assert ProjectConfig.__dataclass_fields__["protected_paths"].kw_only
+
+
+@pytest.mark.parametrize("pattern", [".", "./", "././"])
+def test_protected_root_rejected_config(
+    pattern: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
+        ProjectConfig(protected_paths=[pattern])
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", pattern)
+    with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
+        ProjectConfig.from_env()
+
+
+def test_group_timeout_settings_reach_vault_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S", "23")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S", "67")
+    config = ProjectConfig.from_env()
+    settings = VaultSettings.from_project_config(config)
+    assert settings.git_group_idle_s == 23
+    assert settings.git_group_max_age_s == 67
+
+
+def test_project_config_rejects_invalid_group_timeout() -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match="group_idle_s"):
+        ProjectConfig(git_group_idle_s=0)
+
+
+def test_group_settings_do_not_shift_existing_positional_signature() -> None:
+    import inspect
+
+    from markdown_vault_mcp.config_sections import VaultSettings
+
+    params = inspect.signature(VaultSettings).parameters
+    assert params["git_group_idle_s"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["git_group_max_age_s"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 1e100])
+@pytest.mark.parametrize("setting", ["git_group_idle_s", "git_group_max_age_s"])
+def test_direct_vault_group_timeout_validation(setting: str, value: float) -> None:
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match=setting.removeprefix("git_")):
+        VaultSettings(**{setting: value})
+
+
+def test_group_timeouts_preserve_project_config_positional_fields() -> None:
+    defaults = ProjectConfig()
+    old_fields = [
+        f
+        for f in dataclasses.fields(ProjectConfig)
+        if not f.kw_only and f.name not in {"git_group_idle_s", "git_group_max_age_s"}
+    ]
+    end = next(i for i, f in enumerate(old_fields) if f.name == "git_push_delay_s")
+    args = [
+        27.0 if f.name == "git_push_delay_s" else getattr(defaults, f.name)
+        for f in old_fields[: end + 1]
+    ]
+    assert ProjectConfig(*args).git_push_delay_s == 27.0
+
+
+def test_okf_machine_review_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", raising=False)
+    assert not ProjectConfig.from_env().content.okf_machine_review
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MACHINE_REVIEW", "true")
+    assert ProjectConfig.from_env().content.okf_machine_review
+
+
+def test_machine_review_does_not_shift_positional_config_fields() -> None:
+    import inspect
+
+    for config_class in (ProjectConfig, ContentConfig):
+        params = inspect.signature(config_class).parameters
+        assert params["okf_machine_review"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert (
+            params["service_subjects"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        )
+    assert (
+        inspect.signature(ProjectConfig).parameters["okf_log_assist"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+
+
+def test_okf_log_assist_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The external-processing opt-in defaults off and loads from the environment."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST", raising=False)
+    assert not ProjectConfig.from_env().okf_log_assist
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG_ASSIST", "true")
+    assert ProjectConfig.from_env().okf_log_assist

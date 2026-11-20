@@ -23,7 +23,6 @@ from markdown_vault_mcp.okf import (
     TRUST_MACHINE,
     TRUST_UNVERIFIED,
     OkfDetector,
-    ReservedFrontmatterPolicy,
     derive_annotation,
     derive_stale,
     derive_trust_tier,
@@ -189,17 +188,37 @@ class TestVaultIntegration:
         ({"verified": []}, TRUST_UNVERIFIED),
         ({"verified": "yes"}, TRUST_UNVERIFIED),
         ({"verified": ["human:alice"]}, TRUST_UNVERIFIED),  # malformed entries
-        ({"verified": [{"by": "process:ci"}]}, TRUST_MACHINE),
-        ({"verified": [{"at": "2026-01-01"}]}, TRUST_MACHINE),
-        ({"verified": [{"by": "human:alice"}]}, TRUST_HUMAN),
         (
-            {"verified": [{"by": "process:ci"}, {"by": "human:alice"}]},
+            {"verified": [{"by": "process:ci", "at": "2026-01-01T00:00:00Z"}]},
+            TRUST_MACHINE,
+        ),
+        ({"verified": [{"at": "2026-01-01"}]}, TRUST_UNVERIFIED),
+        (
+            {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,
         ),
-        ({"generated": {"by": "human:alice"}}, TRUST_UNVERIFIED),
+        (
+            {
+                "verified": [
+                    {"by": "process:ci", "at": "2026-01-01T00:00:00Z"},
+                    {"by": "human:alice", "at": "2026-01-01T00:00:00Z"},
+                ]
+            },
+            TRUST_HUMAN,
+        ),
+        (
+            {"generated": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_UNVERIFIED,
+        ),
         # A bare mapping is a one-element list (field reference, #1357).
-        ({"verified": {"by": "human:alice", "at": "2026-01-01"}}, TRUST_HUMAN),
-        ({"verified": {"by": "process:ci"}}, TRUST_MACHINE),
+        (
+            {"verified": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_HUMAN,
+        ),
+        (
+            {"verified": {"by": "process:ci", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_MACHINE,
+        ),
     ],
 )
 def test_derive_trust_tier(metadata: dict, expected: str) -> None:
@@ -259,6 +278,14 @@ class TestDeriveAnnotation:
             "status": OKF_STATUS_DEFAULT,
             "stale": False,
             "trust_tier": TRUST_UNVERIFIED,
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     def test_full_metadata(self) -> None:
@@ -267,7 +294,7 @@ class TestDeriveAnnotation:
                 "type": " Playbook ",
                 "status": "deprecated",
                 "stale_after": "2020-01-01",
-                "verified": [{"by": "human:peter"}],
+                "verified": [{"by": "human:peter", "at": "2026-01-01T00:00:00Z"}],
             },
             now=NOW,
         )
@@ -276,6 +303,17 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
+            "freshness": {"state": "expired", "basis": "server_local_date"},
+            "review": {
+                "state": "recorded",
+                "recorded_entries": 1,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {
+                "snapshot": "unbound",
+                "basis": "no_snapshot_binding",
+            },
         }
 
     def test_unknown_status_passes_through(self) -> None:
@@ -423,6 +461,12 @@ def test_parse_stale_filter_rejects_garbage() -> None:
 @pytest.mark.parametrize(
     ("metadata", "okf_filters", "expected"),
     [
+        ({}, {"type": None}, True),
+        ({"type": None}, {"type": None}, True),
+        ({"type": ""}, {"type": None}, True),
+        ({"type": "  "}, {"type": None}, True),
+        ({"type": 42}, {"type": None}, True),
+        ({"type": "Playbook"}, {"type": None}, False),
         ({}, {"status": "stable"}, True),  # absent status means stable
         ({"status": "draft"}, {"status": "stable"}, False),
         ({"status": "deprecated"}, {"status": "deprecated"}, True),
@@ -432,7 +476,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
         ({}, {"trust_tier": "unverified"}, True),
         (
-            {"verified": [{"by": "human:a"}]},
+            {"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},
             {"trust_tier": "human-reviewed"},
             True,
         ),
@@ -450,7 +494,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
     ],
 )
 def test_matches_okf_filters(
-    metadata: dict, okf_filters: dict[str, str], expected: bool
+    metadata: dict, okf_filters: dict[str, str | None], expected: bool
 ) -> None:
     from markdown_vault_mcp.okf import matches_okf_filters
 
@@ -463,6 +507,7 @@ status: deprecated
 stale_after: 2000-01-01
 verified:
   - by: human:peter
+    at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 
@@ -1153,66 +1198,12 @@ class TestAppendOkfLogEntry:
         assert out == "# Log\n\n## 2026-08-09\n\n- x\n"
 
 
-class TestReservedFrontmatterPolicy:
-    """The gate the generated reserved files must survive (#1174, #1175).
+@pytest.mark.parametrize("index", [False, True])
+def test_event_guidance_allows_curation(index):
+    from markdown_vault_mcp.config_sections.content import ContentConfig
 
-    ``index.md`` and ``log.md`` are written by the server, but
-    ``required_frontmatter`` is set by the operator — so without this policy
-    the server generates files its own indexer then skips as
-    ``missing_frontmatter``.
-    """
-
-    def test_unconfigured_vault_gets_no_frontmatter(self) -> None:
-        """No required fields → body-only files, exactly as before the fix.
-
-        Closing the defect must cost a vault that never had it any churn: a
-        frontmatter block on every generated file would rewrite (and, on a
-        git vault, commit) the reserved files of every existing bundle.
-        """
-        assert ReservedFrontmatterPolicy().build(None, title="Log") is None
-
-    def test_existing_frontmatter_is_preserved_unconfigured(self) -> None:
-        """Preservation does not depend on a required field being configured."""
-        policy = ReservedFrontmatterPolicy()
-        assert policy.build({"okf_version": "0.2"}, title="Index") == {
-            "okf_version": "0.2"
-        }
-
-    def test_title_field_is_seeded_with_the_derived_title(self) -> None:
-        policy = ReservedFrontmatterPolicy(required_fields=("title",))
-        assert policy.build(None, title="Log") == {"title": "Log"}
-
-    def test_other_required_fields_are_seeded_as_null(self) -> None:
-        """The gate tests presence, not value, and the server knows no value."""
-        policy = ReservedFrontmatterPolicy(required_fields=("title", "type"))
-        assert policy.build(None, title="guides") == {"title": "guides", "type": None}
-
-    def test_existing_values_win_over_seeded_ones(self) -> None:
-        """A hand-authored title survives regeneration untouched."""
-        policy = ReservedFrontmatterPolicy(required_fields=("title",))
-        assert policy.build({"title": "Change history"}, title="Log") == {
-            "title": "Change history"
-        }
-
-    def test_root_declaration_survives_alongside_a_seeded_field(self) -> None:
-        policy = ReservedFrontmatterPolicy(required_fields=("title",))
-        assert policy.build({"okf_version": "0.2"}, title="Index") == {
-            "okf_version": "0.2",
-            "title": "Index",
-        }
-
-    def test_okf_version_is_never_synthesized(self) -> None:
-        """A folder index carrying ``okf_version`` audits as ``misplaced``.
-
-        Only the bundle root may declare it, so seeding it would trade the
-        missing-frontmatter defect for a conformance one.
-        """
-        policy = ReservedFrontmatterPolicy(required_fields=("title",))
-        assert "okf_version" not in policy.build(None, title="guides")
-
-    def test_custom_title_field_is_honoured(self) -> None:
-        """The seeded key follows the vault's configured ``title_field``."""
-        policy = ReservedFrontmatterPolicy(
-            title_field="heading", required_fields=("heading",)
-        )
-        assert policy.build(None, title="Log") == {"heading": "Log"}
+    caps = ContentConfig(okf_log="events", okf_index=index).okf_capabilities
+    text = _guidance(read_only=False, okf_mode="on", okf_capabilities=caps)
+    assert "'log.md' stays editable" in text
+    assert "Record related edits with 'okf_log_event'" in text
+    assert ("Server maintains designated indexes" in text) == index
