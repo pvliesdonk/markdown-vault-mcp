@@ -24,6 +24,7 @@ class GitConfig:
     commit_email_claim: str | None = None
     lfs: bool = True
     pull_interval_s: int = 600
+    submodule_remotes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate non-negative sync cadences on every construction path (#638).

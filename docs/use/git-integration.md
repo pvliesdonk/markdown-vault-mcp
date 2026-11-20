@@ -621,6 +621,44 @@ A git submodule or plain Git repository nested inside the vault is read-only. It
 
 In no-git mode nothing is committed, so nothing is refused.
 
+### Keeping submodule content current
+
+By default the server leaves submodules as git leaves them. A managed clone
+creates an empty submodule folder, and a pull that moves the commit a
+submodule is recorded at keeps the old files, so search serves the old notes.
+
+To keep submodules current, list every remote a submodule may be fetched
+from:
+
+```bash
+MARKDOWN_VAULT_MCP_GIT_SUBMODULE_REMOTES=https://git.example.com/team/notes.git
+```
+
+After every pull, each submodule whose remote is listed is checked out at the
+commit the vault records, and its notes are reindexed. The list is the
+trust boundary:
+
+- A submodule whose remote is not listed is never fetched, including by the
+  vault's own fetch.
+- `GIT_TOKEN` is never sent to a submodule remote. A submodule remote
+  that needs credentials must get them from the host's own git configuration,
+  such as a credential helper or SSH key.
+- A submodule with uncommitted changes is left untouched.
+- Nested submodules are neither updated nor fetched.
+- List each URL as git contacts it, after any `url.<base>.insteadOf`
+  rewriting in the host's git configuration. Matching is exact; no host is
+  trusted implicitly.
+- SSH submodule remotes need non-interactive authentication, such as a key
+  without a passphrase prompt.
+- If `.gitmodules` changes the URL of a submodule, run `git submodule sync` in
+  the vault; until then the old URL is checked.
+
+A submodule that cannot be brought current is reported, not skipped: the log
+records `git_submodule_not_current` with each path and reason whenever that set changes, and write-tool
+results carry `reason=submodule_not_current` in their `remote` diagnostic
+until a later pull finds every submodule current. Commit-only mode never
+pulls, so it never updates submodules.
+
 ## Git LFS
 
 If your vault tracks large files (PDFs, images) with [Git LFS](https://git-lfs.com), the server runs `git lfs pull` on startup to resolve LFS pointers into actual file content. This is enabled by default.

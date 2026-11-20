@@ -6669,6 +6669,46 @@ refuse nothing, since nothing is committed there. `create_upload_link` and
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
+Keeping a submodule's content current is opt-in and off by default (#1565;
+the owner chose opt-in, the account holder an explicit allow-list). With
+`GIT_SUBMODULE_REMOTES` unset nothing changes: a managed clone leaves the
+submodule folder empty, a pull that moves a gitlink leaves the old checkout,
+and the superproject fetch keeps git's default `on-demand` recursion into
+populated submodules. Set, it is both the switch and the trust boundary:
+`git/submodule_refresh.py`'s `SubmoduleRefresher` runs after every pull that
+reconciled with the remote, inside the pull's lock with writes paused, so the
+reindex that follows reads the new bytes. For each gitlink in HEAD's tree
+whose checkout is not at the recorded commit it runs `git -c
+fetch.recurseSubmodules=false -c submodule.recurse=false submodule update
+--init --checkout -- :(literal)<path>`, one path at a time with a 300 s
+timeout, never `--recursive`, and starts no update once the pass has run
+900 s. It does so only when the URL git would contact is listed: the
+populated submodule's `origin`, or `submodule.<name>.url` (which a
+local-only `submodule init` resolves), expanded through `url.*.insteadOf`
+by `ls-remote --get-url` so both cases compare the same form, then matched
+exactly after `GIT_REPO_URL`'s normalisation, with no host or same-origin
+trust. A changed `.gitmodules` URL does not rewrite an initialised
+submodule's stored URL, so that submodule stays refused until the operator
+runs `git submodule sync`. The superproject fetch gains
+`--no-recurse-submodules`, so the refresher is the only route to a
+submodule's remote. The update runs without `GIT_ASKPASS`, with
+`GIT_TERMINAL_PROMPT=0`, and with SSH in `BatchMode=yes` unless the operator
+set `GIT_SSH_COMMAND`: `GIT_TOKEN` is scoped to `GIT_REPO_URL` and is never
+offered to a submodule's host, and a remote asking for credentials fails
+instead of hanging the pull. A submodule with uncommitted changes, an
+unlisted or unreadable remote, a missing `.gitmodules` entry, a failed or
+timed-out update, or a spent pass budget is left as it is and opens sync
+health `reason=submodule_not_current`, ranked below every other reason. It
+logs `git_submodule_not_current submodules=<path>:<reason> ...` when it
+opens and again whenever the set of failing submodules changes; the next
+pass that finds every submodule current closes it (`git_submodule_current`).
+Commit-only mode never pulls, so it never refreshes (startup logs
+`git_submodule_refresh_inactive`). Index reconciliation is keyed on HEAD, and
+a refresh that retries an earlier failure moves a submodule without moving
+HEAD, so the strategy's optional `set_submodule_observer` makes `Vault`
+forget its reconciled head and the next reconcile reindexes. The hook stays
+off the public `Syncer` protocol so other backends need not implement it.
+
 Three git modes:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.

@@ -67,7 +67,11 @@ _PULL_CONDITIONS = frozenset(
     }
 )
 
-_Kind = Literal["push", "pull", "worktree"]
+_Kind = Literal["push", "pull", "worktree", "submodule"]
+
+#: Opted-in submodule refresh left a submodule off the recorded commit
+#: (#1565).  Ranks below every remote reason: the vault's commits replicate.
+SUBMODULE_REASON_NOT_CURRENT = "submodule_not_current"
 
 #: Fragments git prints when a push is rejected because the remote holds
 #: commits the clone has not seen.  Git's wording is stable: both appear in
@@ -140,6 +144,7 @@ class SyncHealth:
             that opened the condition still in force.  A push failure outranks
             a pull failure. ``uncommitted_changes`` outranks both: those
             files are not safely recorded in a commit in the first place.
+            ``submodule_not_current`` (#1565) ranks below every other reason.
         since: When the first outstanding condition was observed, in UTC.
             Dates the outage: it does not move when a second condition
             opens, nor when one of two closes while the other still holds,
@@ -166,7 +171,11 @@ class SyncHealth:
             "reason": self.reason,
             "since": since,
             "detail": (
-                "This vault's Git working tree holds changes the server did "
+                "A git submodule in this vault is not at the commit the vault "
+                "records, so notes inside it may be missing or out of date. "
+                "The server log names the submodule and why."
+                if self.reason == SUBMODULE_REASON_NOT_CURRENT
+                else "This vault's Git working tree holds changes the server did "
                 "not commit, and it neither commits nor discards them. Tell "
                 "the user so they can commit or discard them in the repository."
                 if self.reason == WORKTREE_REASON_UNCOMMITTED_CHANGES
@@ -202,6 +211,7 @@ class SyncHealthTracker:
         self._reasons: dict[_Kind, str] = {}
         self._outage_since: datetime | None = None
         self._snapshot: SyncHealth | None = None
+        self._submodule_detail: str | None = None
 
     def snapshot(self) -> SyncHealth | None:
         """Return the current health, or ``None`` while the clone is fine.
@@ -238,6 +248,29 @@ class SyncHealthTracker:
             )
         else:
             self._close("worktree")
+
+    def submodules_observed(self, not_current: str | None) -> None:
+        """Record submodules a refresh left out of date, or ``None`` (#1565).
+
+        Args:
+            not_current: ``path:reason ...`` per out-of-date submodule.
+        """
+        if not_current is None:
+            self._close("submodule")
+            return
+        with self._lock:
+            changed = self._reasons.get("submodule") is not None and (
+                not_current != self._submodule_detail
+            )
+            self._submodule_detail = not_current
+        if changed:
+            # The set of failing submodules moved while the condition stood.
+            logger.warning(
+                "git_submodule_not_current submodules=%s", one_line(not_current)
+            )
+        conditions = frozenset({SUBMODULE_REASON_NOT_CURRENT})
+        reason = SUBMODULE_REASON_NOT_CURRENT
+        self._open("submodule", reason, conditions, detail=not_current)
 
     def push_failed(self, reason: str, detail: str | None = None) -> None:
         """Record a push that did not reach the remote.
@@ -286,7 +319,7 @@ class SyncHealthTracker:
         """Open the *kind* condition, logging the transition into it once.
 
         Args:
-            kind: ``"push"``, ``"pull"`` or ``"worktree"``.
+            kind: ``"push"``, ``"pull"``, ``"worktree"`` or ``"submodule"``.
             reason: The ``*_REASON_*`` code.
             conditions: The codes that count as an outage for this kind.
             detail: Optional cause text carried onto the transition line.
@@ -313,6 +346,10 @@ class SyncHealthTracker:
                     "git_worktree_dirty reason=uncommitted_changes "
                     "action=inspect_git_status recovery=manual"
                 )
+            elif kind == "submodule":
+                logger.warning(
+                    "git_submodule_not_current submodules=%s", one_line(detail or "")
+                )
             elif remote_was_healthy:
                 # Placed last, where a cause that somehow kept a newline
                 # could not split an earlier field.
@@ -338,6 +375,8 @@ class SyncHealthTracker:
             self._recompute()
             if kind == "worktree":
                 logger.info("git_worktree_clean")
+            elif kind == "submodule":
+                logger.info("git_submodule_current")
             elif not (self._reasons.keys() & {"push", "pull"}):
                 logger.info(
                     "git_remote_resynced kind=%s unsynced_since=%s",
@@ -357,6 +396,7 @@ class SyncHealthTracker:
             self._reasons.get("worktree")
             or self._reasons.get("push")
             or self._reasons.get("pull")
+            or self._reasons.get("submodule")
         )
         if reason is None or self._outage_since is None:
             self._snapshot = None

@@ -729,6 +729,10 @@ class Vault:
             pause_writes=self.pause_writes,
         )
         self._git_strategy.set_commit_observer(reconciler.note_own_commit)
+        # Optional, kept off the public Syncer protocol (#1565).
+        observe = getattr(self._git_strategy, "set_submodule_observer", None)
+        if observe is not None:
+            observe(lambda: reconciler.mark_reconciled(None))
         return reconciler
 
     def _build_facets(self, settings: VaultSettings) -> None:

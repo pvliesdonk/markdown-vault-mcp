@@ -512,6 +512,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | (none) | No | OIDC claim key used as the commit author name (such as name) when an OIDC token is present; the committer stays GIT_COMMIT_NAME. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write. A configured claim the token does not carry is reported once at WARNING and the static identity is used. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | (none) | No | OIDC claim key used as the commit author email (such as email) when an OIDC token is present; the committer stays GIT_COMMIT_EMAIL. Resolved and carried the same way as the name claim. |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | No | Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS. |
+| `MARKDOWN_VAULT_MCP_GIT_SUBMODULE_REMOTES` | (none) | No | Comma-separated remote URLs that git submodules inside the vault may be fetched from. Unset (the default) leaves submodules as git leaves them. When set, every pull checks out each clean submodule whose remote is listed at the commit the vault records; other submodules are never fetched and are reported in sync health. When set, GIT_TOKEN is never sent to a submodule remote. |
 
 ### Change detection
 

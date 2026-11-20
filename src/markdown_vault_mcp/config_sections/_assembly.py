@@ -197,6 +197,7 @@ def _build_git_strategy(
             git_lfs=git.lfs,
         ),
         repo_path=config.source_dir,
+        submodule_remotes=git.submodule_remotes,
     )
 
 
