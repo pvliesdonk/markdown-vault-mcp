@@ -169,6 +169,7 @@ src/markdown_vault_mcp/
     __init__.py        -- package marker; the groups below are registered by tools.py
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
+    inventory.py       -- bounded metadata-only current-file MCP listing (#2121)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
@@ -204,4 +205,6 @@ src/markdown_vault_mcp/
   _cli_admin.py        -- the admin group (index, reindex, embeddings import, repair-log #1403) and the hidden aliases for the first three's old names (#2005)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
+  _cli_inventory.py    -- local changed-files JSON command; no index or remote backend (#2121)
+  _file_inventory.py   -- bounded metadata-only UTC-window observation of eligible current files (#2121)
 ```

@@ -126,6 +126,48 @@ indexed metadata without constructing embedding or summarization providers or
 loading vector sidecars. Follow a returned path with `read`, `read --section`,
 `similar`, `context` or a graph command. Local freshness remains unknown.
 
+### Current files in a UTC window
+
+```bash
+markdown-vault-mcp changed-files --local --source-dir /path/to/vault \
+  --start 2026-11-14T00:00:00Z --end 2026-11-15T00:00:00Z
+```
+
+`changed-files` is local only and emits scan results as JSON. It observes eligible current
+Markdown files and allowed attachments, including notes missing required fields
+or containing malformed frontmatter, without reading vault contents or opening
+an index. It uses filesystem modification time, not frontmatter dates. Both
+bounds require RFC3339 timestamps with `Z` or an explicit offset; the start is
+inclusive and the end exclusive. Equal, reversed, invalid and timezone-free
+bounds are refused. Output timestamps are UTC.
+
+This command deliberately has a narrower discovery scope than the existing
+Markdown scanner: all dot paths, configured exclusions and conventions files
+are omitted. It skips symlinks inside the selected root. A visible skipped
+symlink or an observation failure makes `complete` false, with generic reason
+codes and no skipped paths. Hidden and excluded paths do not get diagnostics
+or counts. The selected root is resolved and returned as `source_dir`.
+
+Directory traversal requires no-follow descriptor operations.
+Platforms without these operations return `unsupported_platform` with
+`complete: false` and no items, rather than following paths as a fallback.
+
+The entry budget is `--max-entries`: default 100000, maximum 1000000.
+The time budget is `--max-seconds`: default 10, maximum 300. The deadline is checked during entry enumeration; it cannot interrupt a blocked call. Reaching a bound returns
+partial JSON with `complete: false`, even if `items` is empty. Exit status is 0
+for a complete eligible scan, 1 for partial observation or an unavailable root,
+and 2 for a refused request. Check both the status and `complete` before using
+the list. A complete scan is not an atomic snapshot of concurrent edits.
+
+The result contains `source_dir`, UTC `start` and `end`, `interval: "[start,end)"`,
+`basis: "current_file_mtime"`, `complete`, `incomplete_reasons` and path-sorted
+`items`. Each item has a vault-relative `path`, `kind` (`markdown` or
+`attachment`) and `modified_at`. This is not change history: deleted files,
+previous names and earlier modifications are not recoverable from current
+modification time. It does not infer additions, authorship or content changes, and never
+prunes files. A configured hosted endpoint is refused unless `--local` is
+explicit; the command never sends a remote request.
+
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -322,6 +364,26 @@ Collect note links, neighbors, folder peers and conventions.
 | `--json` |  | False | Return the structured context dossier. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp changed-files`
+
+List eligible current files in a UTC modification window as JSON (local only).
+
+No vault file contents, index or history are read. Dot paths and configured
+exclusions are omitted; symlinks are skipped with explicit incompleteness.
+Requires no-follow descriptor traversal; unsupported platforms
+return an incomplete result rather than falling back to unsafe traversal.
+Exit 0 means the eligible scan completed; exit 1 retains partial JSON;
+exit 2 rejects the request. This does not identify deletions or old names.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--start` |  |  | Inclusive RFC3339 instant with Z or UTC offset. |
+| `--end` |  |  | Exclusive RFC3339 instant with Z or UTC offset. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--max-entries` |  | 100000 | Maximum filesystem entries visited. |
+| `--max-seconds` |  | 10.0 | Cooperative scan deadline; does not interrupt filesystem calls. |
 
 ## `markdown-vault-mcp links`
 
