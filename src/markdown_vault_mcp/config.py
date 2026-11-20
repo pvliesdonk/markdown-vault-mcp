@@ -619,7 +619,8 @@ class ProjectConfig:
             "help": (
                 "Folder-prefix score multipliers (`prefix:weight` pairs, "
                 "comma-separated, weights > 0) applied to all search modes; the deepest "
-                "matching prefix wins (sessions:0.5 demotes sessions/**)."
+                "matching prefix wins (sessions:0.5 demotes sessions/**). Repeated keys "
+                "that normalize to the same prefix must have equal weights."
             ),
             "tags": ("search",),
             "wizard": {"group": "Search tuning"},
@@ -631,7 +632,8 @@ class ProjectConfig:
             "help": (
                 "Per-column BM25 weights (`column:weight` pairs, comma-separated, "
                 "weights >= 0) for keyword ranking. Columns: path, title, folder, "
-                "heading, content, summary."
+                "heading, content, summary. Rejected when all six columns resolve to 0 "
+                "(omitted columns weigh 1). Repeated keys must have equal weights."
             ),
             "tags": ("search",),
             "wizard": {"group": "Search tuning"},

@@ -290,7 +290,7 @@ on the next startup.
 
 Folder convention files guide clients before writes. OKF read semantics can be
 auto-detected from a root `index.md`; the separately gated OKF write layer adds
-provenance, invalidates stale verification, and maintains `log.md` and
+provenance, clears recorded verification, and maintains `log.md` and
 `index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
 model.
 
@@ -304,7 +304,9 @@ Ranking-only settings such as `CHUNKS_PER_FILE`, `SNIPPET_WORDS`, folder weights
 and FTS weights take effect without reindexing. Chunk-size and overlap settings
 change the stored index and require `reindex`. Changing the embedding model or
 an explicit character cap rejects the warm-start shortcut and rebuilds
-automatically.
+automatically. SearchConfig rejects a map in which all six effective FTS column weights are 0.
+Omitted columns keep a weight of 1. Repeated folder or FTS weight keys that normalise to
+the same key must have equal weights.
 
 #### Git sync {#synchronization}
 
@@ -494,8 +496,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | No | Word cap per chunk; the adaptive chunker splits at deeper heading levels, then paragraph/word boundaries, to respect it. Match it to the embedding model's context. A reindex applies a new value. |
 | `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | (none) | No | Character cap enforced alongside MAX_CHUNK_WORDS to bound token-dense chunks. Unset derives min(1500, model context * 2.8). Set a positive value for an exact cap, or -1 to scale with the model's full context (can exhaust memory on long-context models). A reindex applies a new value. |
 | `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` | `40` | No | Words of overlap between adjacent budget-split fragments of the same heading section (0 disables). A reindex applies a new value. |
-| `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | (none) | No | Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). |
-| `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | (none) | No | Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. |
+| `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | (none) | No | Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). Repeated keys that normalize to the same prefix must have equal weights. |
+| `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | (none) | No | Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. Rejected when all six columns resolve to 0 (omitted columns weigh 1). Repeated keys must have equal weights. |
 
 ### Git sync
 

@@ -320,16 +320,8 @@ class VaultSettings:
             embedding_batch_size=config.embeddings.embedding_batch_size,
             # Weight maps are stored as frozen sorted tuples on the config
             # (#639); the Vault API takes plain dicts.
-            folder_weights=(
-                dict(config.search.folder_weights)
-                if config.search.folder_weights is not None
-                else None
-            ),
-            fts_weights=(
-                dict(config.search.fts_weights)
-                if config.search.fts_weights is not None
-                else None
-            ),
+            folder_weights=config.search.folder_weight_map,
+            fts_weights=config.search.fts_weight_map,
             conventions_file=config.content.conventions_file,
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,

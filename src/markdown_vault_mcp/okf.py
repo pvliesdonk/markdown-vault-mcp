@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -45,7 +46,6 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -365,6 +365,22 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     return now.date() >= boundary
 
 
+def _malformed_sources(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``sources`` is not a list of mappings."""
+    if "sources" not in metadata:
+        return False
+    sources = metadata["sources"]
+    return not isinstance(sources, list) or any(
+        not isinstance(entry, Mapping) for entry in sources
+    )
+
+
+def _malformed_generated(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``generated`` is not a mapping containing ``by``."""
+    if "generated" not in metadata:
+        return False
+    generated = metadata["generated"]
+    return not isinstance(generated, Mapping) or "by" not in generated
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
     """Describe the supplied expiry without implying knowledge is true."""
     if "stale_after" not in metadata:
@@ -424,7 +440,10 @@ def derive_annotation(
         ``review`` describe the supplied evidence and its parsing basis, not
         truth or applicability to this revision. Full reads additionally
         carry ``recorded`` with supplied expiry/reviews as parsed, including
-        malformed values; omitted keys remain absent.
+        malformed values; omitted keys remain absent. ``malformed_sources``
+        and ``malformed_generated`` appear only when true: present sources
+        must be a list of mappings, and generated a mapping containing
+        ``by``. These advisory flags leave source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -451,6 +470,10 @@ def derive_annotation(
             annotation["sources"] = source_list
     elif source_list:
         annotation["sources_count"] = len(source_list)
+    if _malformed_sources(metadata):
+        annotation["malformed_sources"] = True
+    if _malformed_generated(metadata):
+        annotation["malformed_generated"] = True
     return annotation
 
 
@@ -592,8 +615,13 @@ class OkfAuditReport:
             read by the same parser as every other rule, so JSON frontmatter
             is judged by its keys and its syntax is not checked. A folder
             index declaring ``okf_version`` is also
-            ``misplaced_okf_version``. Appended with a default so original
+            ``misplaced_okf_version``. Appended and defaulted so earlier
             positional construction still works.
+        malformed_sources: Notes with a present ``sources`` that is not
+            a list of mappings (advisory; an empty list is valid).
+        malformed_generated: Notes with a present ``generated`` that is
+            not a mapping containing ``by`` (advisory; key presence only).
+            Both provenance findings leave ``conformant_notes`` unchanged.
         missing_freshness: Assessed concepts with no expiry supplied.
         malformed_freshness: Assessed concepts with an unsupported expiry.
         malformed_review: Assessed concepts with malformed review input.
@@ -615,6 +643,8 @@ class OkfAuditReport:
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
     index_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_sources: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_generated: OkfFinding = OkfFinding(count=0, examples=())
     missing_freshness: OkfFinding = OkfFinding(count=0, examples=())
     malformed_freshness: OkfFinding = OkfFinding(count=0, examples=())
     malformed_review: OkfFinding = OkfFinding(count=0, examples=())
@@ -650,6 +680,8 @@ class _AuditCounters:
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.index_frontmatter = _FindingAccumulator(cap)
+        self.malformed_sources = _FindingAccumulator(cap)
+        self.malformed_generated = _FindingAccumulator(cap)
         self.missing_freshness = _FindingAccumulator(cap)
         self.malformed_freshness = _FindingAccumulator(cap)
         self.malformed_review = _FindingAccumulator(cap)
@@ -712,6 +744,10 @@ def _evaluate_note(
         and status.strip() not in OKF_STATUS_VALUES
     ):
         acc.unknown_status.add(rel)
+    if _malformed_sources(metadata):
+        acc.malformed_sources.add(rel)
+    if _malformed_generated(metadata):
+        acc.malformed_generated.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)
     if not metadata.get("title") or not metadata.get("description"):
@@ -839,6 +875,8 @@ def audit_bundle(
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
         index_frontmatter=acc.index_frontmatter.finding(),
+        malformed_sources=acc.malformed_sources.finding(),
+        malformed_generated=acc.malformed_generated.finding(),
         missing_freshness=acc.missing_freshness.finding(),
         malformed_freshness=acc.malformed_freshness.finding(),
         malformed_review=acc.malformed_review.finding(),
@@ -1181,8 +1219,8 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    write; ``verified`` is dropped without assessing whether a prior review
+    applies; ``sources`` and every other field are untouched.
     Surviving fields retain their mapping order, including nested mappings;
     a new ``generated`` field appends, while replacing it retains its slot.
     YAML comments and formatting are not retained on serialization.
