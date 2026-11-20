@@ -41,7 +41,7 @@ def resolve_okf_path(
     """Resolve an OKF reference using bundle-relative POSIX file identities.
 
     Args:
-        value: URI reference as written in the source file.
+        value: URI reference, Markdown syntax removed; percent escapes intact.
         source: Bundle-relative path of the file containing the reference.
         available: Set of case-sensitive bundle-relative file paths for lookup.
         version: Normalized declared OKF version, or None when undeclared.
