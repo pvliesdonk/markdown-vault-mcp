@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:f2d555dd8693d2ce110da1527e5056ebed5f3d73238e43b14a1bb3709959b51c -->
+<!-- vendor-spa-source-sha256:b318778a3680ff8a6c05ae63801a1422aa6d7de2fd41f6deda62cd8a638dc47e -->
 </head>
 <body>
 <div class="app-container">
@@ -1266,9 +1266,9 @@ app.onteardown = () => {
     }
     for (const e of data.edges) {
       const isSemantic = e.type === 'semantic';
-      // Semantic edges are undirected — use canonical key to avoid duplicates
+      // Semantic edges are undirected; order paths by UTF-16 code units for a canonical key.
       const edgeId = isSemantic
-        ? 'sem:' + [e.from, e.to].sort().join('<>')
+        ? 'sem:' + [e.from, e.to].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('<>')
         : e.from + '->' + e.to;
       if (!edgesDS.get(edgeId)) {
         const es = edgeStyle(e.type, 0, c);

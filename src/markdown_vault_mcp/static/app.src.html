@@ -1148,9 +1148,9 @@ app.onteardown = () => {
     }
     for (const e of data.edges) {
       const isSemantic = e.type === 'semantic';
-      // Semantic edges are undirected — use canonical key to avoid duplicates
+      // Semantic edges are undirected; order paths by UTF-16 code units for a canonical key.
       const edgeId = isSemantic
-        ? 'sem:' + [e.from, e.to].sort().join('<>')
+        ? 'sem:' + [e.from, e.to].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('<>')
         : e.from + '->' + e.to;
       if (!edgesDS.get(edgeId)) {
         const es = edgeStyle(e.type, 0, c);
