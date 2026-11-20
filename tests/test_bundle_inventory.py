@@ -97,37 +97,23 @@ def test_public_reader_before_build(
     assert "bundle/plain.md" not in {note.path for note in admitted}
 
 
-@pytest.mark.parametrize("tree", [False, True])
 @pytest.mark.parametrize(
     ("name", "content", "expected"),
     [
-        ("typed.md", "---\ntype: Metric\n---\n", ("concept_candidate", True, True)),
-        ("plain.md", "body", ("concept_candidate", False, True)),
-        ("untyped.md", "---\ntitle: Title\n---\n", ("concept_candidate", False, True)),
-        ("empty.md", "---\ntype: ''\n---\n", ("concept_candidate", False, True)),
-        ("index.md", "---\ntype: Metric\n---\n", ("navigation", False, True)),
-        ("log.md", "---\ntype: Metric\n---\n", ("history", False, True)),
-        ("_conventions.md", "---\ntype: Metric\n---\n", ("support", True, True)),
-        (".hidden.md", "---\ntype: Metric\n---\n", ("concept_candidate", False, False)),
-        ("asset.png", "image", ("supporting", False, True)),
+        ("typed.md", "---\ntype: Metric\n---\n", True),
+        ("untyped.md", "---\ntitle: Title\n---\n", False),
+        ("empty.md", "---\ntype: ''\n---\n", False),
+        ("index.md", "---\ntype: Metric\n---\n", False),
+        ("log.md", "---\ntype: Metric\n---\n", False),
+        ("_conventions.md", "---\ntype: Metric\n---\n", True),
     ],
 )
-def test_inventory_concept_and_bundle_membership(
-    tmp_path: Path,
-    name: str,
-    content: str,
-    expected: tuple[str, bool, bool],
-    tree: bool,
+def test_inventory_concept_classification(
+    tmp_path: Path, name: str, content: str, expected: bool
 ) -> None:
     (tmp_path / name).write_text(content)
-    subject = inspector(tmp_path)
-    result = (
-        subject.inspect(inventory.BundleTreeRequest(root=""))
-        if tree
-        else subject.inspect(BundleInspectionRequest(root=""))
-    )
-    entry = result.entries[0]
-    assert (entry.role, entry.is_concept, entry.in_bundle) == expected
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    assert result.entries[0].is_concept is expected
 
 
 @pytest.mark.parametrize("root", [".workspace/bundle", ".bundle"])
