@@ -12,8 +12,8 @@ Inventory tiers:
 * **domain** -- every ``MARKDOWN_VAULT_MCP_*`` (and known-bare) env read across
   the ``markdown_vault_mcp`` package, covering both the config layer
   (``config_sections``/``config.py``) and the server/CLI layer.
-* **server** -- the upstream ``fastmcp_pvl_core.ServerConfig`` source, resolved
-  via :func:`inspect.getsourcefile` so it tracks the installed version.
+* **server** -- the ``ServerConfig`` source (``config_sections/server.py``
+  since #2288), resolved via :func:`inspect.getsourcefile`.
 * **framework** -- ``FASTMCP_*`` vars read by FastMCP itself, not by our code.
 * **extra** -- vars read through runtime indirection the static extractor
   cannot resolve (documented individually in ``EXTRA_KNOWN_VARS``).
@@ -32,15 +32,10 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import (
-    JobsConfig,
-    ServerConfig,
-    TransferConfig,
-    finalize_instructions,
-    register_health_routes,
-)
-
 import markdown_vault_mcp
+from markdown_vault_mcp._health import register_health_routes
+from markdown_vault_mcp._instructions_builder import finalize_instructions
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -72,15 +67,16 @@ GENERATORS_JS_PATH = REPO_ROOT / "docs/javascripts/config-wizard/generators.js"
 # by any config code here.
 GENERATOR_INJECTED = {"FASTMCP_HOME"}
 
-# {PREFIX}_* runtime/logging vars: read by FastMCP (pvl-core) itself, not by
-# any config code we own — no literal ``env(prefix, "LOG_LEVEL")`` call
-# exists for the static extractor to find. The only hand-listed framework
-# tier; kept tiny on purpose.
+# {PREFIX}_* runtime/logging vars: read by ``_logging_setup`` itself, not by
+# any config section. Since the fold (#2276) the package-wide scan also
+# finds ``_logging_setup``'s ``env(env_prefix, "LOG_LEVEL")`` reads, so this
+# hand-listed framework tier overlaps the domain inventory; kept tiny on
+# purpose.
 #
 # pvl-core v8 renamed these from bare FASTMCP_* names to the prefixed
 # {PREFIX}_LOG_LEVEL / {PREFIX}_LOG_FORMAT (FASTMCP_ENABLE_RICH_LOGGING was
 # removed outright, not renamed; the bare FASTMCP_LOG_LEVEL keeps working as
-# a deprecated fallback for one major, read by pvl-core the same way).
+# a deprecated fallback for one major, read by ``_logging_setup`` the same way).
 FRAMEWORK_VARS = {
     f"{PREFIX}_LOG_LEVEL",
     f"{PREFIX}_LOG_FORMAT",
@@ -113,35 +109,39 @@ def _server_config_source_file() -> Path:
 
 
 def _transfer_config_source_file() -> Path:
-    """Resolve the installed ``TransferConfig`` source file (server tier).
+    """Resolve the ``TransferConfig`` source file (server tier).
 
-    ``TransferConfig`` is a pvl-core-owned section composed into
-    :class:`ProjectConfig` (#979); its env reads live in pvl-core's own source,
-    so it is resolved the same way as ``ServerConfig`` rather than scanned by the
-    domain package walk.
+    ``TransferConfig`` is a section composed into :class:`ProjectConfig` (#979),
+    resolved the same way as ``ServerConfig``. It moved out of pvl-core in #2321
+    and keeps its server tier.
     """
+    from markdown_vault_mcp.config_sections import TransferConfig
+
     src = inspect.getsourcefile(TransferConfig)
     assert src is not None, "TransferConfig source file not found"
     return Path(src)
 
 
 def _jobs_config_source_file() -> Path:
-    """Resolve the installed ``JobsConfig`` source file (server tier).
+    """Resolve the ``JobsConfig`` source file (server tier).
 
-    ``JobsConfig`` is a pvl-core-owned section composed into
-    :class:`ProjectConfig` (#1033), resolved the same way as
-    ``TransferConfig`` above.
+    ``JobsConfig`` is a section composed into :class:`ProjectConfig` (#1033),
+    resolved the same way as ``TransferConfig`` above. It moved out of
+    pvl-core in #2308 and keeps its server tier.
     """
+    from markdown_vault_mcp.config_sections import JobsConfig
+
     src = inspect.getsourcefile(JobsConfig)
     assert src is not None, "JobsConfig source file not found"
     return Path(src)
 
 
 def _health_source_file() -> Path:
-    """Resolve pvl-core's health-route module (server tier).
+    """Resolve the health-route module (server tier).
 
     ``HEALTH_DETAIL`` is read while the routes are registered rather than by
     ``ServerConfig``, so its owning module must participate in the inventory.
+    The module moved out of pvl-core in #2334 and keeps its server tier.
     """
     src = inspect.getsourcefile(register_health_routes)
     assert src is not None, "register_health_routes source file not found"
@@ -254,13 +254,14 @@ def server_inventory() -> set[str]:
 
 
 def _instructions_source_file() -> Path:
-    """Resolve pvl-core's instructions module (server tier).
+    """Resolve the instructions-builder module (server tier).
 
     ``INSTRUCTIONS`` and ``INSTRUCTIONS_EXTRA`` are read by
-    :func:`fastmcp_pvl_core.finalize_instructions`, which lives outside
-    ``ServerConfig``'s own module — so scanning ``ServerConfig`` alone misses
-    them. Scanning the module that actually reads them keeps the inventory
-    true if pvl-core renames either var, which a hardcoded allowlist would not.
+    :func:`~markdown_vault_mcp._instructions_builder.finalize_instructions`,
+    which lives outside ``ServerConfig``'s own module, so scanning
+    ``ServerConfig`` alone misses them. Scanning the module that actually reads
+    them keeps the inventory true if either var is renamed, which a hardcoded
+    allowlist would not.
     """
     src = inspect.getsourcefile(finalize_instructions)
     assert src is not None, "finalize_instructions source file not found"
@@ -327,6 +328,11 @@ NOT_IN_WIZARD = {
     f"{PREFIX}_TRANSPORT": "implied by deployment target / image CMD",
     f"{PREFIX}_HOST": "bind host fixed per deployment (0.0.0.0 in Docker)",
     f"{PREFIX}_PORT": "default 8000; deployment-fixed",
+    # Development-only debugger knobs, read by _debug.maybe_start_debugpy since
+    # #2335; they do nothing unless the image was built with DEBUG=true, so
+    # config-presentation.yml documents them without a wizard control.
+    f"{PREFIX}_DEBUG_PORT": "development-only; needs a DEBUG=true image build",
+    f"{PREFIX}_DEBUG_WAIT": "development-only; needs a DEBUG=true image build",
     # Upstream ServerConfig explicit auth-mode override; the wizard derives auth
     # from credential presence (BEARER_TOKEN / OIDC_*), not an explicit selector,
     # and AUTH_MODE is undocumented in this project's configuration surface.
