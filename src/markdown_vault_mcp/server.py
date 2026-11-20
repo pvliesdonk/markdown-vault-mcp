@@ -15,17 +15,16 @@ from importlib.metadata import version as _pkg_version
 from fastmcp import FastMCP
 
 from markdown_vault_mcp._env import env
+from markdown_vault_mcp._health import HealthCheck, register_health_routes
+from markdown_vault_mcp._http_path import normalise_http_path
 from markdown_vault_mcp._instructions_builder import (
     finalize_instructions,
     instructions_for,
 )
 from markdown_vault_mcp._pvl_core import (
-    HealthCheck,
     build_auth,
     configure_logging_from_env,
     get_current_auth_mode,
-    normalise_http_path,
-    register_health_routes,
     wire_middleware_stack,
 )
 from markdown_vault_mcp._server_apps import register_apps

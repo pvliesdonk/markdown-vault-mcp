@@ -176,6 +176,8 @@ src/markdown_vault_mcp/
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)
   _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)
+  _health.py           -- register_health_routes / HealthCheck: unauthenticated /health liveness and /health/ready readiness (KV write probe + domain checks, HEALTH_DETAIL) (#2334)
+  _http_path.py        -- normalise_http_path: HTTP mount-path normalisation for serve and the health prefix (#2334)
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)

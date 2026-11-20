@@ -33,8 +33,9 @@ import re
 from pathlib import Path
 
 import markdown_vault_mcp
+from markdown_vault_mcp._health import register_health_routes
 from markdown_vault_mcp._instructions_builder import finalize_instructions
-from markdown_vault_mcp._pvl_core import ServerConfig, register_health_routes
+from markdown_vault_mcp._pvl_core import ServerConfig
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 

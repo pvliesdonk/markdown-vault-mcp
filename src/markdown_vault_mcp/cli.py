@@ -6,12 +6,12 @@ from typing import Literal
 
 import typer
 
+from markdown_vault_mcp._http_path import normalise_http_path
 from markdown_vault_mcp._kv_store import build_event_store
 from markdown_vault_mcp._pvl_core import (
     ConfigurationError,
     configure_logging_from_env,
     maybe_start_debugpy,
-    normalise_http_path,
     run_http,
 )
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
