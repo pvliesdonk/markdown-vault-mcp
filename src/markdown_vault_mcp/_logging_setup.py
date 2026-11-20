@@ -1,8 +1,7 @@
 """Logging setup: this module owns the root logger; FastMCP's is turned off.
 
-Ported from ``fastmcp_pvl_core._logging`` 10.2.0 (#2276). The renderer still
-comes from pvl-core through the shim until #2342; core's ``SecretMaskFilter``
-had no user here and stayed behind.
+Ported from ``fastmcp_pvl_core._logging`` 10.2.0 (#2276); core's
+``SecretMaskFilter`` had no user here and stayed behind.
 
 ``configure_logging_from_env`` installs a single console handler chain at
 the **root** logger and neutralises FastMCP's own logging
@@ -46,7 +45,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from markdown_vault_mcp._env import env
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp._log_render import (
     _ACCESS_FIELDS_ATTR,
     JsonFormatter,
     _AccessLogFields,

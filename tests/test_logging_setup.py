@@ -715,7 +715,7 @@ def test_access_filter_passes_records_of_another_shape(monkeypatch):
 
 
 def test_access_filter_attaches_pvl_core_fields_when_it_keeps_a_record(monkeypatch):
-    from markdown_vault_mcp._pvl_core import _ACCESS_FIELDS_ATTR
+    from markdown_vault_mcp._log_render import _ACCESS_FIELDS_ATTR
 
     (log_filter,) = _access_filter(monkeypatch)
     record = _access_record("GET", "/transfer/tok_abc123", 404)
@@ -731,7 +731,7 @@ def test_access_filter_attaches_pvl_core_fields_when_it_keeps_a_record(monkeypat
 
 
 def test_access_filter_does_not_attach_fields_to_a_dropped_record(monkeypatch):
-    from markdown_vault_mcp._pvl_core import _ACCESS_FIELDS_ATTR
+    from markdown_vault_mcp._log_render import _ACCESS_FIELDS_ATTR
 
     (log_filter,) = _access_filter(monkeypatch)
     record = _access_record("GET", "/mcp", 200)
@@ -740,7 +740,7 @@ def test_access_filter_does_not_attach_fields_to_a_dropped_record(monkeypatch):
 
 
 def test_access_filter_does_not_attach_fields_to_an_unrecognised_record(monkeypatch):
-    from markdown_vault_mcp._pvl_core import _ACCESS_FIELDS_ATTR
+    from markdown_vault_mcp._log_render import _ACCESS_FIELDS_ATTR
 
     (log_filter,) = _access_filter(monkeypatch)
     other = logging.LogRecord(

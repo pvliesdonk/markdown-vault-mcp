@@ -25,15 +25,6 @@ from fastmcp_pvl_core import (
     get_subject,
 )
 from fastmcp_pvl_core import __version__ as CORE_VERSION
-from fastmcp_pvl_core._log_render import (
-    _ACCESS_FIELDS_ATTR,
-    JsonFormatter,
-    _AccessLogFields,
-    _NeverRaiseFilter,
-    _or_fallback,
-    bind_record,
-    render_rich,
-)
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Configuration, environment helpers and the config error (#2275).
@@ -41,14 +32,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "ServerConfig",
     "domain_env_suffixes",
     "domain_env_surface",
-    # The log renderer (#2342).
-    "_ACCESS_FIELDS_ATTR",
-    "JsonFormatter",
-    "_AccessLogFields",
-    "_NeverRaiseFilter",
-    "_or_fallback",
-    "bind_record",
-    "render_rich",
     # Authentication and the request subject (#2277).
     "build_auth",
     "build_bearer_auth",
