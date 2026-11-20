@@ -1158,3 +1158,11 @@ def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> No
         shut.chmod(0o755)
     assert [n.path for n in notes] == ["ok.md"]
     assert len(errors) == 1
+
+
+def test_scanner_populates_citations(tmp_path: Path) -> None:
+    text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n"
+    path = tmp_path / "one.md"
+    path.write_bytes(text.encode())
+    note = parse_note(path, tmp_path)
+    assert note.citations[0].resource == "urn:s"

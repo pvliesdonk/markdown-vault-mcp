@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp._cli_remote import RemoteReply, run_read
 
 if TYPE_CHECKING:
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.cli import _BuiltVault
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
@@ -100,7 +101,11 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
 
 
 def _build_reader_vault(
-    config: ProjectConfig, source_dir: str | None, in_memory: bool
+    config: ProjectConfig,
+    source_dir: str | None,
+    in_memory: bool,
+    *,
+    inspection_policy: InspectionPolicy | None = None,
 ) -> _BuiltVault:
     from dataclasses import replace
     from pathlib import Path
@@ -140,6 +145,7 @@ def _build_reader_vault(
             Vault(
                 source_dir=config.source_dir,
                 settings=settings,
+                inspection_policy=inspection_policy,
                 embedding_provider=instances.embedding_provider,
                 summarizer=instances.summarizer,
                 git_strategy=instances.git_strategy,
@@ -180,9 +186,7 @@ def _facet_payload(
         return [_plain(item) for item in result]
     data = _plain(result)
     if tool == "stats":
-        okf = vault.reader.okf_stats()
-        if okf is not None:
-            data["okf"] = okf
+        data["okf"] = vault.okf_stats_report()
     if tool == "get_context":
         _context_annotations(vault, data, arguments["path"])
     return data
@@ -244,7 +248,13 @@ def read_payload(
     """
     from dataclasses import asdict
 
-    from markdown_vault_mcp.exceptions import DocumentNotFoundError
+    import yaml
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.exceptions import (
+        DocumentNotFoundError,
+        DocumentUnreadableError,
+    )
     from markdown_vault_mcp.okf import derive_annotation
     from markdown_vault_mcp.utils import is_note
 
@@ -256,8 +266,17 @@ def read_payload(
     if note is None:
         raise DocumentNotFoundError.note(path)
     data = asdict(note)
-    if section is None and vault.okf.state().active:
-        data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+    active = vault.okf.state().active
+    if section is None and (
+        active or vault.okf_capability_report(active=False)["verify"]["effective"]
+    ):
+        data["okf"] = (
+            derive_annotation(note.frontmatter, include_sources=True) if active else {}
+        )
+        try:
+            data["okf"]["snapshot"] = concept_snapshot(note.content)
+        except (yaml.YAMLError, ValueError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
     return data
 
 

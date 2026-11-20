@@ -2148,7 +2148,8 @@ def parse_note(
     """Parse a single markdown file into a ParsedNote.
 
     Reads raw bytes for hash computation, decodes as UTF-8, parses frontmatter
-    with ``python-frontmatter``, resolves title, and chunks content.
+    with ``python-frontmatter``, resolves title, chunks content, and derives
+    literal citation edges from the same snapshot.
 
     Args:
         path: Absolute path to the markdown file.
@@ -2204,6 +2205,8 @@ def parse_note(
         for _, level, text in _scan_headings(body.splitlines(keepends=True))
     ]
 
+    from markdown_vault_mcp.citations import citation_edges
+
     note = ParsedNote(
         path=rel_str,
         frontmatter=metadata,
@@ -2214,6 +2217,7 @@ def parse_note(
         links=links,
         content_chars=content_chars,
         headings=headings,
+        citations=citation_edges(text),
     )
     logger.debug(
         "parse_note path=%s title=%r chunks=%d links=%d",
@@ -2256,6 +2260,7 @@ def parse_note_categorized(
     attachment_extensions: frozenset[str] | None = None,
     required_frontmatter: list[str] | None = None,
     log_context: str = "scan",
+    exempt_required_frontmatter: bool = False,
 ) -> ParsedNote | CategorizedSkip | None:
     """Parse one markdown file, classifying failures into the skip taxonomy.
 
@@ -2286,6 +2291,7 @@ def parse_note_categorized(
             :func:`parse_note`.
         required_frontmatter: Frontmatter keys that must be present.
         log_context: Prefix identifying the calling pipeline in logs.
+        exempt_required_frontmatter: Skip the required-field gate for this file.
 
     Returns:
         The parsed note on success, a :class:`CategorizedSkip` for a
@@ -2340,7 +2346,7 @@ def parse_note_categorized(
             SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
         )
 
-    if required_frontmatter:
+    if required_frontmatter and not exempt_required_frontmatter:
         missing = [f for f in required_frontmatter if f not in note.frontmatter]
         if missing:
             return CategorizedSkip(
@@ -2365,6 +2371,7 @@ def scan_directory(
     title_field: str = "title",
     attachment_extensions: frozenset[str] | None = None,
     on_walk_error: Callable[[OSError], None] | None = None,
+    exempt_required_frontmatter: Callable[[str], bool] | None = None,
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
@@ -2400,6 +2407,8 @@ def scan_directory(
             document's title; passed through to :func:`parse_note`.
         attachment_extensions: Effective attachment allowlist; passed
             through to :func:`parse_note` (``None`` = the default set).
+        exempt_required_frontmatter: Optional path predicate for bypassing the
+            required-field gate.
         on_walk_error: Called with each ``OSError`` the directory walk meets,
             such as an unreadable subdirectory, so the caller can tell an
             incomplete scan from a complete one (#1785). ``None`` keeps the
@@ -2453,6 +2462,11 @@ def scan_directory(
             attachment_extensions=attachment_extensions,
             required_frontmatter=required_frontmatter,
             log_context="scan",
+            exempt_required_frontmatter=(
+                exempt_required_frontmatter(rel_posix)
+                if exempt_required_frontmatter
+                else False
+            ),
         )
         if outcome is None:
             # Transient I/O failure (already logged) — retry next scan.
