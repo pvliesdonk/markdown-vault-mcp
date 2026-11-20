@@ -2224,7 +2224,7 @@ the spec itself says, dated and sourced, in
   last-observed index admission, artifact v0.2 format findings and uninspected
   content or metadata (including metadata of files included in the archive).
   Subtree frontmatter path fields are relocated with the same outside-path rules.
-  Non-slash, non-dot values are reported as ambiguous. Field values are URI
+  Bare paths resolve from their source directory; legacy root fallbacks appear in `v0_2_root_fallback` and unresolved values are dependencies. Field values are URI
   references with percent-decoded matching and preserved suffixes. YAML aliases and merges used by changed paths are copied to preserve
   other values. Directory paths relocate too: the selected root becomes `/`,
   directory-form paths retain their slash, and `.` and `..` are paths.
