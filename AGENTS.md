@@ -16,8 +16,6 @@ out of this always-loaded file because it is reference material consulted on
 demand, not context every session needs.
 <!-- DOMAIN-END -->
 
-<!-- ===== TEMPLATE-OWNED SECTIONS BELOW — DO NOT EDIT; CHANGES WILL BE OVERWRITTEN ON COPIER UPDATE ===== -->
-
 ## Conventions
 
 - Write commit subjects and pull-request titles as conventional commits: one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, an optional scope (`feat(search): ...`), and `!` for a breaking change. The `PR Title` job fails any other title; retitle to clear it, no push needed. Accepted types: `scripts/check_pr_title.py`.
@@ -36,13 +34,12 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `logging-standard` — before adding or changing a logging call.
 - `tool-registration` — before adding, renaming, or documenting an MCP tool, `get_server_info`, icons, or the public import surface.
 - `writing-model-facing-text` — before writing or changing a tool, parameter, resource or prompt description, or a server-instructions snippet.
-- `writing-documentation` — before adding, moving or substantially changing a page in `docs/` or `README.md`: whether the knowledge is this project's or the template's, and where it goes.
+- `writing-documentation` — before adding, moving or substantially changing a page in `docs/` or `README.md`: whether the knowledge is domain or general, and where it goes.
 - `designing-tool-outcomes` — before writing or changing a tool that can fail, refuse, find nothing or hit a conflict: what it returns, raises and logs in each case.
 - `repository-protection` — before changing rulesets, required checks, or the bootstrap workflow.
 - `authoring-issues-prs` — when filing an issue, sizing a change before coding, or opening a PR.
 - `self-reviewing` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
 - `stacking-prs` — when work ships as several dependent PRs (a stack): plan it, run `self-reviewing` on each PR before starting the next, and restack after a squash merge.
-- `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
 - `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
 - `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
@@ -78,10 +75,9 @@ A review from another workflow (a plan executor's reviewer, a code-review skill 
 
 - Install once per clone with `uv run pre-commit install`; run `uv run pre-commit run --all-files` before pushing.
 - The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
-- **Template conformance runs at push time:** the `template-conformance` hook fails a push that adds content outside a sentinel block in a file `copier update` re-renders. Move the content into the block the file declares. Skip the hook only for drift a Decay issue tracks: `SKIP=template-conformance git push`.
 - The `self-review` hook fails a push whose commit has no review recorded by the `self-reviewing` skill; clear it by running the skill, which records the review as its last step.
 - Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
-- Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
+- Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults are yours to maintain.
 
 ## Structural health
 
@@ -106,10 +102,8 @@ Every PR closes or references at least one issue: create the issue first when no
 
 Size a PR from its plan before coding: one behaviour, named in the title without `and`, in at most five source files (tests, docs, generated files and files that only gain a pointer uncounted; one mechanical edit repeated across files counts as one). Larger work is split into child issues, one PR each, or run as an epic on an integration branch. The changed lines in the counted files are the backstop: past 400, the PR body says why the change is still one behaviour; past 1,000, it is re-planned and reimplemented, never carved. Procedure: the `authoring-issues-prs` skill, "Size the change before coding"; evidence: `docs/design/reference/pull-request-size.md`.
 
-<!-- TEMPLATE-TRACKING-START -->
 Request Claude on a pull request or issue with an explicit `@claude` mention.
-Automatic agent review is disabled. Request Claude selectively with an `@claude` mention; deterministic CI remains the merge gate.
-<!-- TEMPLATE-TRACKING-END -->
+Automatic agent review is disabled; deterministic CI remains the merge gate.
 
 ## GitHub Review Types
 
@@ -141,19 +135,10 @@ Vale lints `docs/` and `README.md` in pre-commit and CI; keep them clean. Intern
 
 Read `docs/design/roadmap.md` before planning work, and update its argument when direction changes. GitHub owns status (epics are parent issues with native sub-issues; release packages are ordinal-named milestones); the index owns the argument.
 
-<!-- TEMPLATE-TRACKING-START -->
-## Shared Infrastructure
+## Where fixes go
 
-Shared infrastructure (auth providers, middleware, logging bootstrap, event store, CLI scaffolding, release pipeline, Docker entrypoint, nfpm and mcpb packaging) lives upstream in [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the Python library, and [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template), the copier template this project was generated from. Fixes to shared code land there and propagate here via `copier update`, run by the weekly `.github/workflows/copier-update.yml` cron or by hand.
+Every fix lands in this repository, including fixes to files that came from `fastmcp-server-template`: this project no longer tracks the template. The same holds for what came from `fastmcp-pvl-core`, which #2241 folded in; `CONTRIBUTING.md`'s "Where to send fixes" has the routing, the issue and PR discipline, and the uncertainty rule.
 
-Content outside a sentinel block in a file `copier update` re-renders is drift, not a customisation: `uv run --script scripts/check_template_conformance.py` lists every such line against the pinned template version, and `docs/contribute/template-updates.md` names each file's blocks. Domain code (tools, resources, prompts, and the config fields inside the `CONFIG-*` sentinels) stays in this repo. A conflict marker in a copier-update PR often signals a template bug; check whether the template needs fixing before resolving locally.
-
-## Contributing fixes upstream
-
-`CONTRIBUTING.md` holds the three-tier routing (library to `fastmcp-pvl-core`, template to `fastmcp-server-template`, domain to this repo), the issue and PR discipline, and the uncertainty rule.
-<!-- TEMPLATE-TRACKING-END -->
-
-<!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
 
 ## Key Design Decisions
 <!-- DOMAIN-START -->
