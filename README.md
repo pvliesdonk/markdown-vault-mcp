@@ -142,5 +142,5 @@ The full decision log lives in the [design document](docs/design/design.md).
 ## Links
 
 - [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/) and its [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt)
-- [FastMCP](https://gofastmcp.com) and [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/), which this server is built on
+- [FastMCP](https://gofastmcp.com), which this server is built on, and [fastmcp-pvl-core](https://github.com/pvliesdonk/fastmcp-pvl-core), whose code it folded in
 - [fastmcp-server-template](https://github.com/pvliesdonk/fastmcp-server-template), which generated this repository
