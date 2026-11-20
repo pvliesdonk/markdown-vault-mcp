@@ -398,9 +398,8 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     }
 
 
-def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
+def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
     """Count usable recorded claims separately from malformed input."""
-    entries = verified_entries(metadata)
     recorded = sum(_review_recorded(entry) for entry in entries)
     malformed = len(entries) - recorded
     if "verified" not in metadata:
@@ -417,6 +416,20 @@ def _review_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
         "malformed_entries": malformed,
         "basis": "supplied_metadata_only",
     }
+
+
+def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
+    """Report whether a supplied review applies to the current content.
+
+    No review is bound to a content snapshot, so a supplied review's
+    applicability is always ``unknown``; ``basis`` says why. Only an absent
+    or empty ``verified`` reports ``none``.
+    """
+    if entries:
+        return {"state": "unknown", "basis": "no_snapshot_binding"}
+    if review["state"] == "malformed":
+        return {"state": "unknown", "basis": "malformed_review"}
+    return {"state": "none", "basis": "no_review_supplied"}
 
 
 def derive_annotation(
@@ -440,9 +453,11 @@ def derive_annotation(
         ``stale``, and ``trust_tier`` always; ``type`` only when present
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
-        truth or applicability to this revision. Full reads additionally
-        carry ``recorded`` with supplied expiry/reviews as parsed, including
-        malformed values; omitted keys remain absent. ``malformed_sources``
+        truth or applicability to this revision. ``review_applicability``
+        reports that separately as ``{state, basis}``: ``unknown`` when
+        ``verified`` has entries or is malformed, ``none`` when absent or
+        empty. Full reads additionally carry ``recorded`` with supplied
+        expiry/reviews as parsed, including malformed values; omitted keys remain absent. ``malformed_sources``
         and ``malformed_generated`` appear only when true: present sources
         must be a list of mappings, and generated a mapping containing
         ``by``. These advisory flags leave source projections unchanged.
@@ -461,7 +476,11 @@ def derive_annotation(
     annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
-    annotation["review"] = _review_evidence(metadata)
+    entries = verified_entries(metadata)
+    annotation["review"] = _review_evidence(metadata, entries)
+    annotation["review_applicability"] = _review_applicability(
+        entries, annotation["review"]
+    )
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:
@@ -762,7 +781,7 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
         acc.missing_freshness.add(rel)
     elif _parse_stale_after(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)
-    if _review_evidence(metadata)["malformed_entries"]:
+    if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)
 
 

@@ -225,3 +225,53 @@ def test_report_old_positional_constructor() -> None:
     )
     assert report.evidence_unavailable == empty
     assert report.malformed_review == empty
+
+
+@pytest.mark.parametrize(
+    ("metadata", "applicability", "review_state"),
+    [
+        ({}, {"state": "none", "basis": "no_review_supplied"}, "missing"),
+        ({"verified": []}, {"state": "none", "basis": "no_review_supplied"}, "empty"),
+        (
+            {"verified": None},
+            {"state": "unknown", "basis": "malformed_review"},
+            "malformed",
+        ),
+        (
+            {"verified": True},
+            {"state": "unknown", "basis": "malformed_review"},
+            "malformed",
+        ),
+        (
+            {"verified": {}},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
+            "malformed",
+        ),
+        (
+            {"verified": [None]},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
+            "malformed",
+        ),
+        (
+            {"verified": [None, {"by": "human:alice", "at": AT}]},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
+            "recorded",
+        ),
+        (
+            {"verified": {"by": "human:alice", "at": AT}},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
+            "recorded",
+        ),
+        (
+            {"verified": [{"by": "human:alice", "at": AT, "snapshot": "claimed"}]},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
+            "recorded",
+        ),
+    ],
+)
+def test_review_applicability(
+    metadata: dict[str, Any], applicability: dict[str, str], review_state: str
+) -> None:
+    result = derive_annotation(metadata, now=NOW)
+    assert result["review_applicability"] == applicability
+    assert result["review"]["state"] == review_state

@@ -205,6 +205,15 @@ frontmatter blob; not persisted):
   Mixed lists retain both counts; `recorded` never means applicability to
   the current revision has been established. A malformed outer value counts
   as one malformed entry. No source fetching or reviewer authentication occurs.
+- `review_applicability`: `{state, basis}` stating whether a supplied review
+  applies to the current content. No review is bound to a content snapshot,
+  so a `verified` value with entries, or one that is malformed, reports
+  `state: unknown`: entries, malformed ones included, with
+  `basis: no_snapshot_binding`, and a malformed outer value with
+  `basis: malformed_review`. `review` reports entry validity;
+  timestamps and extensions never establish coverage. An absent or empty
+  `verified` reports `state: none` with `basis: no_review_supplied`. This
+  assessment is separate from freshness.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
@@ -230,7 +239,7 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier, freshness, review}`, plus the
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}`, plus the
    true-only `malformed_sources`/`malformed_generated` flags — omitted entirely when
    detection is off, and individual members omitted when underivable.
    Whole reads also carry `recorded` with supplied `stale_after` and
@@ -836,8 +845,9 @@ phase owns.
 
 ## 10. Open questions
 
-- Review applicability after observed changes remains separate from recorded
-  claim interpretation (#1413).
+- Reads report a supplied review's applicability as unknown (#1413). How observed changes
+  are represented and how reviews bind to snapshots remain follow-ups (#1414,
+  #1445).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
   amendment and #1373: the value carries its own offset; a bare date is the
   server-local day.
