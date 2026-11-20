@@ -36,7 +36,7 @@ Vault settings, indexed fields, exclusions, and OKF detection and write state.
 
 `stats://vault` (application/json)
 
-Vault statistics: note, chunk and link counts and search capabilities.
+Vault statistics, search capabilities and known Git sync problems.
 
 ## `vault_tags`
 

@@ -6811,6 +6811,12 @@ saved work that never left the host. `SyncHealthTracker` is the single place
 that remembers whether the clone is reaching its remote, and the MCP write
 path reports it.
 
+The read-only MCP `stats` tool and `stats://vault` resource also attach that
+same optional `remote` snapshot before adding index freshness metadata, without
+running Git or gating on index readiness. Observations are process-local and
+reset on restart. Absence means no known condition, not proof that a push has
+succeeded. This lets monitoring observe failures without a write.
+
 - **Fed from the outcomes, not the call sites.** `_pull_pipeline` and
   `force_push` own the strategy-wide lock and call the implementations under
   it (`_pull_locked`, `_push_locked`), so every pull and push outcome passes
