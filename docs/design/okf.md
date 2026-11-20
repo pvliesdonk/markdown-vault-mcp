@@ -195,7 +195,7 @@ frontmatter blob; not persisted):
   `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
   otherwise `unverified`. A bare mapping is still one record. Malformed
   siblings do not erase usable records. This deliberately changes the
-  public helper and filter behavior from v6.1.2 (#1444).
+  public helper and filter behavior from v6.1.4 (#1444).
 - `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
   `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
   or `server_local_date`. The compatibility `stale: false` includes missing
@@ -222,11 +222,23 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
 
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
+- `malformed_sources` and `malformed_generated`: true-only advisory flags,
+  shared by full-read and compact annotations. A present `sources` must be
+  a list of mappings (including an empty list); a present `generated` must
+  be a mapping containing `by`. Only key presence is checked: null, blank,
+  or numeric `by` values pass, with no required `at`. Absent outer keys
+  produce no flag, while explicit null values do. Source lists pass through
+  intact and retain their full count even when mixed with non-mappings;
+  non-list sources gain no invented list/count, and empty lists remain
+  omitted. No raw `generated` projection is added. These computed checks
+  use the [existing format reference](reference/okf-v0.2.md) and change no
+  stored rows, trust, filters, ranking, admission, or write policy.
 
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}`, plus the
+   true-only `malformed_sources`/`malformed_generated` flags — omitted entirely when
    detection is off, and individual members omitted when underivable.
    Whole reads also carry `recorded` with supplied `stale_after` and
    `verified` values as parsed, including null/malformed values and extensions;
@@ -321,6 +333,21 @@ during migration it is a progress meter:
   and advisory, since the spec tolerates their absence.
 - Informational (non-conformance) counts: wikilink usage (matters at export
   only), notes lacking recommended fields.
+- Advisory `malformed_sources` and `malformed_generated` findings reuse the
+  annotation shape checks, counting each parsed non-reserved note once per
+  field with sorted, capped examples. They leave `conformant_notes`
+  unchanged; exclusions and parse failures keep their existing paths.
+  Reading and auditing never rewrite malformed fields.
+- Evidence findings (#1444): `missing_freshness` (informational),
+  `malformed_freshness` and `malformed_review` (format observations, using
+  the annotation's `freshness` and `review` rules), and
+  `evidence_unavailable` for discovered concepts whose read or parse failed
+  or whose content exceeds the read cap (detected by reading one character
+  past it). They leave `conformant_notes` unchanged and cover discovered,
+  non-excluded concepts, not complete traversal or editorial policy.
+- Every report field added after `index_frontmatter` is defaulted and
+  appended, provenance fields first and then evidence fields, so positional
+  library construction keeps working.
 - Summary ratio ("N of M notes conformant") + the same exclude patterns as
   the index (convention files, configured excludes) so known-nonconforming
   zones can be whitelisted via existing config.
@@ -479,12 +506,11 @@ Tool tags following switches: #1412.
   told which note and why rather than being handed the parser's own exception.
   With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
   indexer records the file as a `parse_error` skip (#1408).
-- **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
-  carrying `verified` clears the `verified` list — verification attests to
-  bytes that no longer exist. Frontmatter-only edits that do not touch the
-  body also invalidate (the spec ties verification to the concept, not the
-  body alone); rename does not. This is the highest-value enforcement:
-  it is exactly the invariant an advisory-only setup eventually misses.
+- **Verification clearing** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
+  carrying `verified` clears the `verified` list. Frontmatter-only edits that
+  do not touch the body also clear it; rename does not. This existing write
+  behavior does not establish that a prior review is invalid or that it applies
+  to the current content. The preservation transition is separate work (#1443).
 - **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
@@ -517,10 +543,9 @@ Tool tags following switches: #1412.
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
-  Trust caveat: even `elicit` makes `human-reviewed` mean *"a human deliberately
-  confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
-  It guarantees a deliberate human act gates the tier, not diligence; downstream
-  OKF consumers should calibrate to that.
+  Trust caveat: `elicit` asks a human to confirm this tool's review entry, but
+  the `human-reviewed` tier also classifies supplied metadata. It does not
+  authenticate the reviewer or establish applicability to current content.
 - **Convention maintenance** (gated by `OKF_MAINTAIN` once §6.0 lands;
   today by `OKF_WRITE`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
@@ -805,7 +830,7 @@ so new vaults are conformant from note one.
 | 2 | Query filters (`type`/`status`/`stale`/`trust_tier`), graph `type` field | 1 |
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
-| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
+| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification clearing, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |

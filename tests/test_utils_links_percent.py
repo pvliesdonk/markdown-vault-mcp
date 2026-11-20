@@ -33,24 +33,21 @@ class TestComputeNewRawTargetEncoded:
             == "probe/b2.md"
         )
 
-    def test_root_relative_encoded_target_from_a_subfolder_source(self) -> None:
-        """The shape test compares raw_target to old_path, so an encoded
-        target never matched and fell into the relative-to-source branch.
-
-        From a root-level source that branch coincidentally produces the
-        right string; from a subfolder it converts a root-relative link into
-        a relative one, which is the fidelity defect #1105 was about.
-        """
+    @pytest.mark.parametrize(
+        ("raw", "old", "new", "expected"),
+        [
+            ("a.md", "a.md", "c.md", "../c.md"),
+            (r"a\(b\).md", "a(b).md", "c.md", "../c.md"),
+            ("x&#46;md", "x.md", "y.md", "../y.md"),
+            ("probe/b%5B1%5D.md", "probe/b[1].md", "probe/b2.md", "../probe/b2.md"),
+        ],
+    )
+    def test_nested_vault_paths_become_source_relative(
+        self, raw: str, old: str, new: str, expected: str
+    ) -> None:
         assert (
-            compute_new_raw_target(
-                "markdown",
-                "probe/b%5B1%5D.md",
-                None,
-                "probe/b2.md",
-                source_path="sub/hub.md",
-                old_path="probe/b[1].md",
-            )
-            == "probe/b2.md"
+            compute_new_raw_target("markdown", raw, None, new, "sub/src.md", old)
+            == expected
         )
 
     def test_leading_slash_encoded_target_keeps_its_shape(self) -> None:
@@ -170,6 +167,23 @@ class TestDecodeLinkTarget:
     )
     def test_decodes(self, written: str, decoded: str) -> None:
         assert decode_link_target(written) == decoded
+
+    @pytest.mark.parametrize(
+        ("written", "path", "fragment", "refused"),
+        [
+            (r"a\(b\).md", "a(b).md", None, False),
+            ("x&#46;md", "x.md", None, False),
+            ("probe/b%5B1%5D.md#h", "probe/b[1].md", "h", False),
+            ("Bad%2FName.md", "Bad%2FName.md", None, True),
+            ("Bad%252FName.md", "Bad%2FName.md", None, False),
+        ],
+    )
+    def test_decodes_destination(
+        self, written: str, path: str, fragment: str | None, refused: bool
+    ) -> None:
+        from markdown_vault_mcp.utils.links import parse_markdown_destination
+
+        assert parse_markdown_destination(written) == (path, fragment, refused)
 
     @pytest.mark.parametrize(
         "written",

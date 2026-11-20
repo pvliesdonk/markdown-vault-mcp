@@ -175,7 +175,7 @@ months, not twelve.
   entry" and `id`, `title`, `author`, `usage_count` and `last_modified` are
   optional; the server passes the list through on reads and counts it on
   search hits. [source: spec] (§5.1)
-  [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
+  [pins: tests/test_okf.py::test_provenance_shape_matrix]
 - Per-claim attribution is a markdown footnote whose label is a
   `sources[].id`, "keyed rather than positional". Nothing here depends on
   it. [source: spec] (§5.1)
@@ -235,9 +235,10 @@ tree, 2026-09-07].
   [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
-  re-confirmation"; the server's enforced write layer clears it so an
-  attestation cannot outlive the bytes it attested. Deliberate; decided in
-  `docs/design/okf.md` § 6.
+  re-confirmation"; the server's enforced write layer clears it on its own
+  content-changing writes. Clearing does not establish that the earlier
+  review was invalid or whether it applies to the new content (#1413).
+  Deliberate; decided in `docs/design/okf.md` § 6.
   [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
