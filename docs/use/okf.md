@@ -76,7 +76,7 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
-The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server currently writes the required fields into them. Existing fields are preserved; reserved files remain indexed in an active OKF vault even without them. A declaration change reaches reserved files on the next indexing pass, and upgrading an older index rebuilds it once.
 
 ### 2. Declare
 
@@ -101,7 +101,7 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 ### Reserved files on a vault with required fields
 
-If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, documents missing any listed field are excluded from the index. The generated `index.md` and `log.md` are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written as `null`, for you to fill in. Without this the bundle's own listing and change history would be absent from `search` and `list_documents` while still opening through `read`.
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, concept notes missing any listed field are excluded from the index. In an active OKF vault, reserved `index.md` and `log.md` files are indexed without those fields. The generators currently give new reserved files the required fields: the title comes from the heading and other fields are written as `null`. If the root declaration cannot be read and no confirmed admission state is available, indexing fails safely; retry after the read error is resolved.
 
 Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
 
@@ -194,7 +194,9 @@ that ran the command can read the recovery file. It is not indexed as a note.
 In a Git-backed vault both files are committed like any other write. Keep the
 recovery file until you have checked the result. The same preview and apply
 are available to library callers as `Vault.writer.okf_preview_log_repair` and
-`Vault.writer.okf_apply_log_repair`.
+`Vault.writer.okf_apply_log_repair`. The library apply call refuses if either
+the log or recovery path is protected. A trusted library caller can pass
+`allow_protected=True`; the admin CLI passes it to preserve operator repair.
 
 Any existing recovery entry blocks apply, even one with the same bytes. If
 apply stops part-way, its error says whether the log may already have
@@ -229,3 +231,11 @@ The export reads from the live vault and never changes it. Wikilinks become the 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
+
+Protected paths also prevent automatic index and log upkeep. A primary write
+to an unprotected note still succeeds when upkeep is blocked. Explicit OKF
+bulk transforms finish eligible writes before reporting protected paths they
+skipped. The refusal repeats until the operator converts the protected notes or
+changes the setting; see [protected paths](../reference/configuration.md).
+Pulls through `git_sync`, CLI admin commands and edits outside the client bypass
+the client write guard.
