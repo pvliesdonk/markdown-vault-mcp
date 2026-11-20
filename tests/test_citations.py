@@ -129,6 +129,9 @@ def test_non_citation_contexts(body: str) -> None:
     [
         "Claim `events_`[^a].",
         "[navigation](note.md) claim[^a].",
+        "[navigation](note.md)[^a]",
+        "See [[Other note]][^a]",
+        "See [[Other note|alias]][^a].",
         "- List claim[^a]",
         "> Quote claim[^a]",
         "# Heading[^a]",
@@ -220,7 +223,7 @@ async def test_tool_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         assert reply.structured_content == asdict(
             inspect_citation_text("one.md", content)
         )
-        with pytest.raises(Exception, match="No note at path"):
+        with pytest.raises(Exception, match=r"Document not found: 'missing\.md'"):
             await client.call_tool("inspect_citations", {"path": "missing.md"})
 
 
@@ -243,7 +246,9 @@ def test_newer_unparseable_snapshot_is_unreadable_not_empty() -> None:
     assert isinstance(exc.value.__cause__, yaml.YAMLError)
 
 
-@pytest.mark.parametrize("body", ["[^a](", "[^a][]", "[^a][undefined]"])
+@pytest.mark.parametrize(
+    "body", ["[^a](", "[^a][]", "[^a][undefined]", "[text][^a]", "[t][ref][^a]"]
+)
 def test_incomplete_navigation_shapes_are_not_citations(body: str) -> None:
     assert inspect_citation_text("one.md", body).citations == []
 

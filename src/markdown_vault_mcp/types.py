@@ -36,6 +36,16 @@ SEARCH_MODES: tuple[str, ...] = ("keyword", "semantic", "hybrid")
 #: value reached the dispatch's final branch and ran hybrid silently (#1205).
 DEFAULT_SEARCH_MODES: tuple[str, ...] = ("auto", *SEARCH_MODES)
 
+#: notes_fts column order is the bm25() argument order.
+FTS_COLUMNS: tuple[str, ...] = (
+    "path",
+    "title",
+    "folder",
+    "heading",
+    "content",
+    "summary",
+)
+
 
 @dataclass(frozen=True)
 class SkippedFile:

@@ -25,6 +25,7 @@ CITATION_MARKER_SCOPE = (
 
 # Labels are deliberately literal: no CommonMark reference-label normalization.
 _MARKER = re.compile(r"\[\^([^\s\[\]\\]+)\]")
+_OWN_TOKENS = frozenset({"citation_marker", "citation_wikilink"})
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,9 @@ def _wikilink(state: StateInline, silent: bool) -> bool:
     # Unterminated wikilinks are outside this slice too: consume this inline
     # block rather than let an embedded marker look like an attribution.
     state.pos = end + 2 if end >= 0 else state.posMax
+    # A marker token lets an adjacent footnote tell a wikilink's "]]" apart
+    # from a reference-link label's "]".
+    state.push("citation_wikilink", "", 0)
     return True
 
 
@@ -107,14 +111,15 @@ def _citation_marker(state: StateInline, silent: bool) -> bool:
     if not match or state.linkLevel:
         return False
     # A reference label is navigation, even if its definition is absent.
-    # Adjacent footnotes are different: the preceding token is our own marker.
+    # Adjacent footnotes and wikilinks are different: the preceding token is
+    # one of our own.
     if (
         state.pos
         and state.src[state.pos - 1] == "]"
         and (
             state.pending
             or not state.tokens
-            or state.tokens[-1].type != "citation_marker"
+            or state.tokens[-1].type not in _OWN_TOKENS
         )
     ):
         return False
