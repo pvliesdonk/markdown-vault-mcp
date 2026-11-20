@@ -911,8 +911,16 @@ class TestIndexFrontmatterAudit:
             "---\nokf_version:\n---\n# Bundle\n",
             '{\n"okf_version": "0.2"\n}\n# Bundle\n',
             "---\ntitle: Bundle\n# Bundle\n",
+            '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
         ],
-        ids=["body-only", "declaration", "null-version", "json", "unclosed"],
+        ids=[
+            "body-only",
+            "declaration",
+            "null-version",
+            "json",
+            "unclosed",
+            "leading-blank-line",
+        ],
     )
     def test_root_index_without_a_finding(self, tmp_path: Path, text: str) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -929,7 +937,6 @@ class TestIndexFrontmatterAudit:
             "---\n# only a comment\n---\n# Bundle\n",
             "---\n- a\n- b\n---\n# Bundle\n",
             "---\n: [broken\n---\n# Bundle\n",
-            '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
         ],
         ids=[
             "extra-key",
@@ -938,7 +945,6 @@ class TestIndexFrontmatterAudit:
             "comment-only",
             "sequence",
             "malformed",
-            "leading-blank-line",
         ],
     )
     def test_root_index_finding(self, tmp_path: Path, text: str) -> None:

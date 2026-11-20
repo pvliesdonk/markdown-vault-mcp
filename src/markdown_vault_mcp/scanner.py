@@ -805,6 +805,7 @@ def _split_frontmatter(text: str) -> tuple[BaseHandler, str, str] | None:
     if _YAML_BOUNDARY.match(candidate):
         handler = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
     else:
+        candidate = text.lstrip()
         handler = frontmatter.detect_format(candidate, frontmatter.handlers)
         if handler is None or isinstance(handler, YAMLHandler):
             return None
@@ -858,8 +859,8 @@ def strip_frontmatter_block(text: str) -> str:
 
     Detection is shared with :func:`parse_frontmatter`: YAML delimiters must
     be exact lines, beginning at the first line after an optional BOM. An
-    unterminated block is body text. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
-    line that is an indented code block keeps its indentation.
+    unterminated block is body text. Unlike :func:`frontmatter.parse`, the body
+    is not stripped, so an indented code block keeps its indentation.
 
     The newlines separating the block from the body are dropped — they are the
     delimiter's, not the body's, and ``frontmatter.dumps`` re-inserts them on

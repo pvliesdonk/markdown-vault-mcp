@@ -174,7 +174,7 @@ relative path:
 
 Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
-heading, then the filename (without extension). YAML frontmatter starts with an exact `---` first line after an optional BOM and ends at the next exact `---` line. LF and CRLF are accepted; delimiter lines with trailing spaces are not. The parser and body splitter share this rule; JSON and optional TOML handlers also require their opener on the first line after an optional BOM. Notes with leading blank lines lose metadata until the blank lines are removed. The index rebuilds when the parsing semantics change.
+heading, then the filename (without extension). YAML frontmatter starts with an exact `---` first line after an optional BOM and ends at the next exact `---` line. LF and CRLF are accepted; delimiter lines with trailing spaces are not. The parser and body splitter share this rule; JSON and optional TOML handlers retain their existing behavior, including leading whitespace. Notes with leading blank lines lose metadata until the blank lines are removed. The index rebuilds when the parsing semantics change.
 
 Content writes serialize supplied frontmatter in caller insertion order,
 including nested mappings and mappings inside lists. Edit, append, OKF

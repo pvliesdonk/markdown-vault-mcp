@@ -1032,10 +1032,11 @@ class TestParseFrontmatter:
         with pytest.raises(yaml.YAMLError):
             parse_frontmatter("---\ntitle: [unclosed\n---\n# body\n")
 
-    def test_well_formed_json_frontmatter_parses(self) -> None:
+    @pytest.mark.parametrize("prefix", ["", "\n"])
+    def test_well_formed_json_frontmatter_parses(self, prefix: str) -> None:
         from markdown_vault_mcp.scanner import parse_frontmatter
 
-        post = parse_frontmatter('{\n"title": "T"\n}\n# body\n')
+        post = parse_frontmatter(prefix + '{\n"title": "T"\n}\n# body\n')
         assert post.metadata == {"title": "T"}
 
 

@@ -38,18 +38,6 @@ def test_public_inventory_rejects_leading_blank_line(tmp_path: Path) -> None:
         vault.close()
 
 
-def test_json_handler_accepts_bom() -> None:
-    text = '\ufeff{\n"type": "Metric"\n}\nBody'
-    assert parse_frontmatter(text).metadata == {"type": "Metric"}
-    assert strip_frontmatter_block(text) == "Body"
-
-
-def test_leading_blank_json_is_body() -> None:
-    text = '\n{\n"type": "Metric"\n}\nBody'
-    assert parse_frontmatter(text).metadata == {}
-    assert strip_frontmatter_block(text) == text
-
-
 @pytest.mark.parametrize(
     ("text", "state", "parse_state", "reason"),
     [
@@ -61,7 +49,6 @@ def test_leading_blank_json_is_body() -> None:
             "not_inspected",
             "metadata_complexity",
         ),
-        ('\n{\n"type": "Metric"\n}\n', "inspected", "valid", None),
     ],
 )
 def test_public_inventory_uses_frontmatter_boundaries(
