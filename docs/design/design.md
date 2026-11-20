@@ -6995,10 +6995,13 @@ records its description once per touched log at close when logging is enabled.
 A finalizer writes the events under the file lock before the scope end marker;
 the opener identity and close date are captured. A failed event sets
 `history_failed` separately from the Git outcome; every selected log is attempted,
-and the server log names failures. Absent paths remain plain text in history.
+and the server log names failures. Sync reports `history_failed` when a settled
+group has a history failure and still runs its Git legs. Absent paths remain plain text in history.
 Git stages the whole log file. Concurrent groups sharing a log can place entries
 in another group's commit; an ungrouped event already written before its scope
-ends can also enter a group commit that stages the shared log.
+ends can also enter a group commit that stages the shared log. If group finalization
+is still pending after 30 seconds during shutdown, the vault leaves stores open;
+service shutdown closes Git without retrying, so the group commit may fail.
 
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with

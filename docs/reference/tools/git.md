@@ -179,6 +179,8 @@ Dict with the following fields:
   `remote_sha_before`, `remote_sha_after`, and an optional reason
   (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
   `"push_failed"`) and hint.
+- `history_failed` (bool, optional): True when a settled transaction
+  could not record history. Sync still ran; check the server log.
 - `dry_run` (bool): Only present when `dry_run` was true.
 
 **Outcomes and errors**

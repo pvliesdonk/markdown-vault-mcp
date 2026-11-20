@@ -1456,7 +1456,10 @@ class Vault:
 
         Stops the pull loop :meth:`start` started, drains the index writer
         (deferred embeddings included) and the pending write callbacks,
-        then closes the stores. A writer job still running after the drain
+        then closes the stores. Group finalization still pending after 30 seconds
+        logs an error and leaves stores open. A later ``close()`` can retry, but
+        service shutdown does not retry and closes Git, which may make the group
+        commit fail. A writer job still running after the drain
         timeout keeps the keyword index and the vector store open: closing
         either would cut the job's writes short (#1896). They then keep
         their connections and writer locks until the job ends and they are
@@ -1475,8 +1478,9 @@ class Vault:
             try:
                 self._write_callback.close_groups(timeout=30.0)
             except (TimeoutError, CommitGroupError):
-                logger.warning(
-                    "group_finalize_timeout action=defer_cleanup", exc_info=True
+                logger.error(
+                    "group_finalize_timeout outcome=may_be_lost timeout_s=30",
+                    exc_info=True,
                 )
                 return
 

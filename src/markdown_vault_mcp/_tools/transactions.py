@@ -97,8 +97,8 @@ async def close_transaction(vault: Vault, handle: str) -> dict[str, Any]:
     return asdict((await _await_commits([future]))[0])
 
 
-async def settle_transactions(vault: Vault, handle: str | None) -> None:
-    """Close the caller's groups before sync, refusing failed commits."""
+async def settle_transactions(vault: Vault, handle: str | None) -> bool:
+    """Close the caller's groups and report history failures before sync."""
     with _refused():
         futures = vault._write_callback.close_owner_groups(
             resolve_mcp_principal(), handle
@@ -110,6 +110,7 @@ async def settle_transactions(vault: Vault, handle: str | None) -> None:
             "Ask the operator to inspect the Git index and resolve the commit failure.",
             log_level=logging.ERROR,
         )
+    return any(result.history_failed for result in results)
 
 
 def register(mcp: FastMCP) -> None:

@@ -38,22 +38,13 @@ _UNSAFE_LAYOUT = "Log layout cannot take an event safely (check `log.md` for an 
 
 _INACTIVE = {None: "logging is off", "okf_inactive": "no OKF bundle is active"}
 
-_deferred: ContextVar[bool | Callable[[], bool]] = ContextVar(
-    "okf_deferred_event", default=False
-)
+_deferred: ContextVar[bool] = ContextVar("okf_deferred_event", default=False)
 
 
 @contextmanager
-def deferred_event(active: Callable[[], bool] | None = None) -> Iterator[None]:
-    """Suppress automatic write bullets while retaining index maintenance.
-
-    Args:
-        active: Optional predicate controlling suppression for the current write.
-
-    Yields:
-        Control with the deferred event policy bound.
-    """
-    token = _deferred.set(active if active is not None else True)
+def deferred_event() -> Iterator[None]:
+    """Suppress automatic write bullets while retaining index maintenance."""
+    token = _deferred.set(True)
     try:
         yield
     finally:
@@ -62,8 +53,12 @@ def deferred_event(active: Callable[[], bool] | None = None) -> Iterator[None]:
 
 def event_deferred() -> bool:
     """Return whether automatic write bullets are deferred in this context."""
-    value = _deferred.get()
-    return value() if callable(value) else value
+    return _deferred.get()
+
+
+def end_event_deferral() -> None:
+    """Stop deferring later writes in the current context."""
+    _deferred.set(False)
 
 
 def _literal(text: str) -> str:

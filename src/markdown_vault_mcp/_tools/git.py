@@ -415,6 +415,8 @@ def register(mcp: FastMCP) -> None:
               remote_sha_before, remote_sha_after, and an optional reason
               (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
               `"push_failed"`) and hint.
+            - history_failed (bool, optional): True when a settled transaction
+              could not record history. Sync still ran; check the server log.
             - dry_run (bool): Only present when dry_run was true.
 
         Raises:
@@ -426,8 +428,9 @@ def register(mcp: FastMCP) -> None:
             raise InvalidRequestError(
                 "Omit transaction for a dry-run preview; it leaves transactions open."
             )
-        if not dry_run:
-            await settle_transactions(vault, transaction)
+        history_failed = (
+            await settle_transactions(vault, transaction) if not dry_run else False
+        )
         git_root = strategy.resolve_force_repo()
 
         result: dict[str, Any] = {
@@ -439,6 +442,8 @@ def register(mcp: FastMCP) -> None:
         }
         if dry_run:
             result["dry_run"] = True
+        if history_failed:
+            result["history_failed"] = True
 
         if direction in ("pull", "both"):
             pull_dict = await _run_pull_leg(strategy, vault, dry_run=dry_run)

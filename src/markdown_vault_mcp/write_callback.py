@@ -32,7 +32,6 @@ import threading
 import time
 from concurrent.futures import Future
 from contextlib import contextmanager, nullcontext
-from contextvars import ContextVar
 from datetime import date
 from typing import TYPE_CHECKING, cast
 
@@ -53,7 +52,7 @@ from markdown_vault_mcp._commit_scope import (
     is_auxiliary_commit_write,
 )
 from markdown_vault_mcp._identity import bound_principal, current_principal
-from markdown_vault_mcp._okf_log_event import deferred_event
+from markdown_vault_mcp._okf_log_event import deferred_event, end_event_deferral
 from markdown_vault_mcp.types import (
     ACCEPTS_BATCH_ATTR,
     ACCEPTS_OLD_PATH_ATTR,
@@ -79,9 +78,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-_deferred_group_write: ContextVar[list[bool] | None] = ContextVar(
-    "deferred_group_write", default=None
-)
 
 
 class _DrainMarker:
@@ -273,9 +269,8 @@ class WriteCallbackDispatcher:
                     None,
                 )
                 if group is not None:
-                    state = _deferred_group_write.get()
-                    if state is not None and not is_auxiliary_commit_write():
-                        state[0] = not group.closed
+                    if group.closed and not is_auxiliary_commit_write():
+                        end_event_deferral()
                     principal = group.principal
                     if not group.closed and not is_auxiliary_commit_write():
                         group.paths.add(abs_path)
@@ -367,16 +362,13 @@ class WriteCallbackDispatcher:
                 )
             group.active += 1
             group.touched = time.monotonic()
-        state = [True]
-        token = _deferred_group_write.set(state)
         try:
             with (
                 bound_commit_group(group.scope),
-                deferred_event(lambda: state[0]),
+                deferred_event(),
             ):
                 yield
         finally:
-            _deferred_group_write.reset(token)
             with self._group_lock:
                 group.active -= 1
                 group.touched = time.monotonic()
@@ -440,33 +432,37 @@ class WriteCallbackDispatcher:
         day: date,
     ) -> None:
         """Write group history before its end marker, outside the group lock."""
-        record_history = bool(
-            self.group_event is not None and self.group_event_enabled()
-        )
-        with self.group_write_scope() if record_history else nullcontext():
+        done: Future[None] | None = None
+        try:
+            record_history = bool(
+                self.group_event is not None and self.group_event_enabled()
+            )
+            with self.group_write_scope() if record_history else nullcontext():
+                try:
+                    with self._group_lock:
+                        paths = group.paths.copy()
+                    if record_history and paths and self.group_event is not None:
+                        identity = (
+                            bound_principal(group.principal)
+                            if group.principal
+                            else nullcontext()
+                        )
+                        with (
+                            identity,
+                            bound_commit_group(group.scope),
+                            auxiliary_commit_writes(),
+                        ):
+                            self.group_event(group, paths, day)
+                finally:
+                    done = self._end_group(group)
+        except Exception:
+            logger.error("group_history_failed action=close_group", exc_info=True)
             with self._group_lock:
-                paths = group.paths.copy()
-            try:
-                if record_history and paths and self.group_event is not None:
-                    identity = (
-                        bound_principal(group.principal)
-                        if group.principal
-                        else nullcontext()
-                    )
-                    with (
-                        identity,
-                        bound_commit_group(group.scope),
-                        auxiliary_commit_writes(),
-                    ):
-                        self.group_event(group, paths, day)
-            except Exception:
-                with self._group_lock:
-                    group.record(
-                        GroupCommitResult(None, 0, "no_changes", history_failed=True)
-                    )
-            with self._group_lock:
-                done = self._enqueue_scope_end(group.scope)
-                group.closed = True
+                group.record(
+                    GroupCommitResult(None, 0, "no_changes", history_failed=True)
+                )
+                if not group.closed:
+                    done = self._end_group(group)
 
         def finish(_done: Future[None] | None = None) -> None:
             with self._group_lock:
@@ -480,6 +476,20 @@ class WriteCallbackDispatcher:
             finish()
         else:
             done.add_done_callback(finish)
+
+    def _end_group(self, group: CommitGroup) -> Future[None] | None:
+        """Queue one end marker and always establish the close boundary."""
+        with self._group_lock:
+            try:
+                return self._enqueue_scope_end(group.scope)
+            except Exception:
+                logger.error(
+                    "group_commit_queue_failed action=close_group", exc_info=True
+                )
+                group.record(GroupCommitResult(None, 0, "failed"))
+                return None
+            finally:
+                group.closed = True
 
     def close_owner_groups(
         self, principal: Principal | None, handle: str | None = None

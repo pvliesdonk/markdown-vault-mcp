@@ -40,6 +40,7 @@ async def test_sync_settles_and_pushes_all_caller_groups(
             args["transaction"] = handles[0]
         result = await client.call_tool("git_sync", args)
         assert result.data["push"]["applied"]
+        assert "history_failed" not in result.data
         subjects = _run_git(
             git_repo_pair.remote_path, "log", "--format=%s"
         ).splitlines()
@@ -68,7 +69,8 @@ async def test_sync_preview_keeps_group_open(
             with pytest.raises(ToolError, match="dry-run"):
                 await client.call_tool("git_sync", args)
         else:
-            await client.call_tool("git_sync", args)
+            preview = await client.call_tool("git_sync", args)
+            assert "history_failed" not in preview.data
         assert _run_git(git_repo_pair.local_path, "rev-parse", "HEAD") == before
         assert _run_git(git_repo_pair.remote_path, "rev-parse", "HEAD") == remote
         assert (await client.call_tool("end_transaction", {"handle": handle})).data[
@@ -578,3 +580,92 @@ async def test_cancelled_write_keeps_transaction_active_until_worker_finishes(
             if not task.done():
                 await asyncio.gather(task, return_exceptions=True)
         await _assert_cancelled_write_commits(client, git_repo_pair, handle, path)
+
+
+async def _prepare_automatic_close(
+    vault: Any, handle: str, selection: str, monkeypatch: pytest.MonkeyPatch
+) -> Any:
+    """Arrange a pending or completed automatic close for the sync probe."""
+    import asyncio
+    from threading import Event
+
+    entered, release = Event(), Event()
+    if selection == "pending":
+        event = vault._write_callback.group_event
+        assert event is not None
+
+        def paused(*args: Any) -> None:
+            entered.set()
+            assert release.wait(5)
+            event(*args)
+
+        monkeypatch.setattr(vault._write_callback, "group_event", paused)
+    if selection in {"pending", "auto_explicit", "auto_implicit"}:
+        future = vault._write_callback.close_group(handle, None, _automatic=True)
+        if selection == "pending":
+            assert await asyncio.to_thread(entered.wait, 5)
+        else:
+            assert (await asyncio.wrap_future(future)).history_failed
+    return release
+
+
+@pytest.mark.parametrize(
+    "selection", ["explicit", "implicit", "pending", "auto_explicit", "auto_implicit"]
+)
+async def test_sync_reports_settled_history_failures(
+    git_repo_pair: GitRepoPair,
+    _git_managed_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selection: str,
+) -> None:
+    """Sync surfaces newly settled history failures without stopping Git."""
+    import asyncio
+
+    from markdown_vault_mcp import domain
+
+    root = git_repo_pair.local_path
+
+    def prepare_logs() -> None:
+        (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+        (root / "bad").mkdir()
+        (root / "bad/log.md").write_text("# Log\n\n```\nunclosed\n")
+
+    prepare_logs()
+    for key, value in (("MODE", "on"), ("LOG", "events"), ("FOLDERS", "bad")):
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_OKF_{key}", value)
+    async with Client(make_server()) as client:
+        handle = (
+            await client.call_tool("begin_transaction", {"description": "Partial"})
+        ).data["handle"]
+        for path in ("good.md", "bad/note.md"):
+            await client.call_tool(
+                "write", {"path": path, "content": "# Note\n", "transaction": handle}
+            )
+        vault = domain.get_vault_singleton()
+        assert vault is not None
+        if selection == "implicit":
+            other = (
+                await client.call_tool("begin_transaction", {"description": "Other"})
+            ).data["handle"]
+            await client.call_tool(
+                "write",
+                {"path": "other.md", "content": "# Other\n", "transaction": other},
+            )
+        release = await _prepare_automatic_close(vault, handle, selection, monkeypatch)
+        args = {"direction": "push"}
+        if selection in {"explicit", "auto_explicit"}:
+            args["transaction"] = handle
+        task = asyncio.create_task(client.call_tool("git_sync", args))
+        try:
+            if selection == "pending":
+                await asyncio.sleep(0.1)
+                assert not task.done()
+        finally:
+            release.set()
+        result = (await task).data
+        assert result["push"]["applied"]
+        if selection == "auto_implicit":
+            assert "history_failed" not in result
+        else:
+            assert result["history_failed"] is True
+        assert "Partial" in _run_git(git_repo_pair.remote_path, "show", "HEAD:log.md")

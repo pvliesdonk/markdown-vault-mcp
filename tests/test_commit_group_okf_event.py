@@ -473,3 +473,117 @@ def test_group_with_only_reserved_index_does_not_create_history(
         not dispatcher.close_group(group.handle, None).result(timeout=10).history_failed
     )
     assert not is_regular_file(git_repo / "log.md")
+
+
+@pytest.mark.parametrize("point", ["policy", "scope", "queue"])
+def test_finalizer_failure_before_history_still_completes(
+    make_vault: Callable[..., Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    point: str,
+) -> None:
+    """An early history failure resolves the close and permits shutdown."""
+    from contextlib import contextmanager
+
+    vault = make_vault("events")
+    dispatcher = vault._write_callback
+    group = dispatcher.open_group("Early failure", None)
+    with dispatcher.bind_group(group.handle, None):
+        vault.writer.write("a.md", "# A\n")
+
+    def fail_policy() -> bool:
+        raise OSError("policy unavailable")
+
+    @contextmanager
+    def fail_scope() -> Iterator[None]:
+        raise OSError("write scope unavailable")
+        yield
+
+    def fail_queue(_scope: object) -> None:
+        raise OSError("queue unavailable")
+
+    if point == "policy":
+        monkeypatch.setattr(dispatcher, "group_event_enabled", fail_policy)
+    elif point == "scope":
+        monkeypatch.setattr(dispatcher, "group_write_scope", fail_scope)
+    else:
+        monkeypatch.setattr(dispatcher, "_enqueue_scope_end", fail_queue)
+    future = dispatcher.close_group(group.handle, None)
+    try:
+        result = future.result(timeout=1)
+        if point == "queue":
+            assert result.status == "failed"
+            assert "group_commit_queue_failed" in caplog.text
+        else:
+            assert result.status == "committed" and result.history_failed
+            assert "group_history_failed" in caplog.text
+        assert group.closed
+    finally:
+        if not future.done():
+            group.closed = True
+            future.set_result(group.result)
+
+
+def test_nested_deferral_restores_outer_context() -> None:
+    """A group's suppression decision cannot change an outer deferral."""
+    from markdown_vault_mcp._okf_log_event import (
+        deferred_event,
+        end_event_deferral,
+        event_deferred,
+    )
+
+    assert not event_deferred()
+    with deferred_event():
+        with deferred_event():
+            end_event_deferral()
+            assert not event_deferred()
+        assert event_deferred()
+    assert not event_deferred()
+
+
+def test_service_shutdown_closes_git_after_group_timeout(
+    git_repo: Path,
+    make_vault: Callable[..., Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Service shutdown can leave group files uncommitted after its bound."""
+    import threading
+
+    vault = make_vault("events")
+    dispatcher = vault._write_callback
+    strategy = dispatcher._on_write
+    assert isinstance(strategy, GitWriteStrategy)
+    original_batch = strategy.on_write_batch
+    entered, release = threading.Event(), threading.Event()
+
+    def paused(*args: object, **kwargs: object) -> object:
+        entered.set()
+        assert release.wait(5)
+        return original_batch(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(strategy, "on_write_batch", paused)
+    original_close = dispatcher.close_groups
+    monkeypatch.setattr(
+        dispatcher,
+        "close_groups",
+        lambda timeout=30: original_close(timeout=min(timeout, 0.1)),
+    )
+    group = dispatcher.open_group("Shutdown timeout", None)
+    with dispatcher.bind_group(group.handle, None):
+        vault.writer.write("note.md", "# Note\n")
+    pending = dispatcher.close_group(group.handle, None)
+    try:
+        assert entered.wait(5)
+        vault.close()
+        assert "group_finalize_timeout outcome=may_be_lost" in caplog.text
+        assert vault._fts.count_documents() >= 0
+        strategy.close()
+    finally:
+        release.set()
+    assert pending.result(timeout=5).status == "failed"
+    assert is_regular_file(git_repo / "note.md")
+    assert "Shutdown timeout" in (git_repo / "log.md").read_text()
+    assert "note.md" in _run_git(git_repo, "status", "--porcelain")
+    assert "Shutdown timeout" not in _run_git(git_repo, "log", "--format=%s")
+    vault.close()
