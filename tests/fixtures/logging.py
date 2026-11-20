@@ -63,3 +63,73 @@ def reader_logging() -> Iterator[StringIO]:
         with patch.object(cli, "configure_logging_from_env", configure):
             configure(_ENV_PREFIX)
             yield destination
+
+
+MANAGED_LOGGERS = (
+    "fastmcp",
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+    "mcp.server.lowlevel.server",
+    "httpx",
+    "httpcore",
+    "docket.worker",
+)
+"""Every logger ``configure_logging_from_env`` mutates (ported from pvl-core's
+``tests/conftest.py`` at v10.2.0, #2276).
+
+One list, in one place: the logging-setup and serve tests both snapshot this
+topology, and a copy in each would drift the moment the policy gained a logger.
+"""
+
+
+@contextmanager
+def preserve_logging_topology() -> Iterator[None]:
+    """Snapshot root and every managed logger, and put them back afterwards.
+
+    Handlers, level, propagation, filters and the ``disabled`` flag, plus
+    FastMCP's ``log_enabled``: everything ``configure_logging_from_env`` or a
+    uvicorn server's own logging setup can change.
+    """
+    import fastmcp
+
+    root = logging.getLogger()
+    saved_root = (root.handlers[:], root.level)
+    saved = {
+        name: (
+            logging.getLogger(name).handlers[:],
+            logging.getLogger(name).level,
+            logging.getLogger(name).propagate,
+            logging.getLogger(name).filters[:],
+            logging.getLogger(name).disabled,
+        )
+        for name in MANAGED_LOGGERS
+    }
+    saved_log_enabled = fastmcp.settings.log_enabled
+    try:
+        yield
+    finally:
+        root.handlers[:] = saved_root[0]
+        root.setLevel(saved_root[1])
+        for name, (handlers, level, propagate, filters, disabled) in saved.items():
+            logger = logging.getLogger(name)
+            logger.handlers[:] = handlers
+            logger.setLevel(level)
+            logger.propagate = propagate
+            logger.filters[:] = filters
+            logger.disabled = disabled
+        fastmcp.settings.log_enabled = saved_log_enabled
+
+
+@pytest.fixture
+def restore_logging_topology() -> Iterator[None]:
+    """Snapshot the whole logging topology and put it back afterwards.
+
+    Root handlers included: tests that call ``configure_logging_from_env``
+    install and remove handlers at root, and without this the first one to run
+    leaves the rest of the suite, and pytest's own ``caplog``, on a tree it did
+    not expect. Not autouse: only the modules that reconfigure logging pay for
+    it.
+    """
+    with preserve_logging_topology():
+        yield
