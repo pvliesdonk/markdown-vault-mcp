@@ -3685,7 +3685,7 @@ is not a snapshot.
 Before readiness and without index knowledge, search state is `not_evaluated`.
 These observations can lag disk changes and do not determine format conformance.
 Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
-candidates) confer no bundle conformance, global OKF activation or writer authority.
+candidates) confer no bundle conformance, global OKF activation or writer authority. The additive `in_bundle` flag excludes dot paths; `is_concept` requires membership, a non-reserved Markdown filename and an observed non-empty string type. Uninspected entries do not assert concept status. A typed conventions file can be a concept without changing its support role.
 
 Effective index excludes label matching entries `index_excluded` without hiding
 or refusing them. Dot components are labelled `hidden_path`; `.git` and the

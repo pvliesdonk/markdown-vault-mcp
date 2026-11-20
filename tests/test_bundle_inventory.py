@@ -97,6 +97,92 @@ def test_public_reader_before_build(
     assert "bundle/plain.md" not in {note.path for note in admitted}
 
 
+@pytest.mark.parametrize(
+    ("name", "content", "expected"),
+    [
+        ("typed.md", "---\ntype: Metric\n---\n", ("concept_candidate", True, True)),
+        ("plain.md", "body", ("concept_candidate", False, True)),
+        ("untyped.md", "---\ntitle: Title\n---\n", ("concept_candidate", False, True)),
+        ("empty.md", "---\ntype: ''\n---\n", ("concept_candidate", False, True)),
+        (
+            "invalid.md",
+            "---\ntype: [Metric]\n---\n",
+            ("concept_candidate", False, True),
+        ),
+        ("index.md", "---\ntype: Metric\n---\n", ("navigation", False, True)),
+        ("log.md", "---\ntype: Metric\n---\n", ("history", False, True)),
+        ("_conventions.md", "---\ntype: Metric\n---\n", ("support", True, True)),
+        (".hidden.md", "---\ntype: Metric\n---\n", ("concept_candidate", False, False)),
+        ("asset.png", "image", ("supporting", False, True)),
+    ],
+)
+def test_inventory_concept_and_bundle_membership(
+    tmp_path: Path, name: str, content: str, expected: tuple[str, bool, bool]
+) -> None:
+    (tmp_path / name).write_text(content)
+    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    entry = result.entries[0]
+    assert (entry.role, entry.is_concept, entry.in_bundle) == expected
+    assert asdict(entry)["is_concept"] is expected[1]
+    assert asdict(entry)["in_bundle"] is expected[2]
+
+
+def test_inventory_hidden_ancestor_and_uninspected_note(tmp_path: Path) -> None:
+    hidden = tmp_path / ".hidden"
+    hidden.mkdir()
+    (hidden / "typed.md").write_text("---\ntype: Metric\n---\n")
+    (tmp_path / "large.md").write_text("x" * 100)
+    subject = inspector(tmp_path, note_limit=10)
+    hidden_entry = subject.inspect(BundleInspectionRequest(root=".hidden")).entries[0]
+    assert hidden_entry.hidden_path and not hidden_entry.in_bundle
+    assert not hidden_entry.is_concept
+    large = next(
+        e
+        for e in subject.inspect(BundleInspectionRequest(root="")).entries
+        if e.path == "large.md"
+    )
+    assert large.reason == "note_limit"
+    assert large.in_bundle and not large.is_concept
+
+
+async def test_inventory_membership_serializes_through_tool_and_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastmcp import Client
+    from typer.testing import CliRunner
+
+    from markdown_vault_mcp.cli import app
+    from tests.conftest import wait_for_mcp_writer_drain
+    from tests.server_factory import make_server
+
+    (tmp_path / "typed.md").write_text("---\ntype: Metric\n---\n")
+    (tmp_path / "untyped.md").write_text("body")
+    (tmp_path / ".hidden.md").write_text("---\ntype: Metric\n---\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path.parent / "v6-index.db")
+    )
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        payload = (
+            await client.call_tool("okf_inventory", {"root": ""})
+        ).structured_content
+    cli = CliRunner().invoke(app, ["okf-inventory", "", "--local", "--json"])
+    assert cli.exit_code == 0, cli.output
+    assert json.loads(cli.stdout) == payload
+    rows = {row["path"]: row for row in payload["entries"]}
+    assert (rows["typed.md"]["is_concept"], rows["typed.md"]["in_bundle"]) == (
+        True,
+        True,
+    )
+    assert not rows["untyped.md"]["is_concept"]
+    assert (rows[".hidden.md"]["is_concept"], rows[".hidden.md"]["in_bundle"]) == (
+        False,
+        False,
+    )
+
+
 @pytest.mark.parametrize("field", ["root", "directory"])
 @pytest.mark.parametrize(
     "path", ["/absolute", "../outside", "a/../b", "a/./b", "a//b", "nul\x00.md", "a\\b"]

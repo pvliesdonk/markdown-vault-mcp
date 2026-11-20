@@ -135,6 +135,8 @@ class BundleEntry:
         visibility: Whether the path matches an effective index exclusion.
         hidden_path: Whether any vault-relative component begins with a dot.
         search_state: Last observed index admission, or not_evaluated.
+        in_bundle: Whether the vault-relative path has no dot components.
+        is_concept: Whether an in-bundle, non-reserved note has an observed type.
     """
 
     path: str
@@ -146,6 +148,8 @@ class BundleEntry:
     visibility: Literal["visible", "index_excluded"] = "visible"
     hidden_path: bool = False
     search_state: SearchState = "not_evaluated"
+    in_bundle: bool = True
+    is_concept: bool = False
 
 
 @dataclass(frozen=True)
@@ -488,12 +492,19 @@ class BundleInspector:
         )
 
     def _labelled(self, entry: BundleEntry, path: str) -> BundleEntry:
+        hidden = any(part.startswith(".") for part in path.split("/"))
         return replace(
             entry,
             visibility="index_excluded"
             if is_path_excluded(path, self._excludes)
             else "visible",
-            hidden_path=any(part.startswith(".") for part in path.split("/")),
+            hidden_path=hidden,
+            in_bundle=not hidden,
+            is_concept=(
+                not hidden
+                and entry.role in {"concept_candidate", "support"}
+                and entry.type_state == "present"
+            ),
         )
 
     def _enumerate(
