@@ -5966,8 +5966,8 @@ upstream FastMCP #4952).
 - `fetch(url, path, frontmatter?, if_match?, timeout_s?)` downloads content
   from an HTTP/HTTPS URL and dispatches to `write()` (for `.md` paths) or
   `write_attachment()` (for other extensions). The download delegates to
-  `fastmcp_pvl_core.fetch_url`, the hardened shared primitive the tool's
-  original SSRF guard was lifted into (#862; pvl-core #219): scheme
+  `_fetch.fetch_url`, the hardened fetch the tool's original SSRF guard was
+  lifted into in pvl-core (#862; pvl-core #219) and ported back from (#2282): scheme
   allowlist (`http`/`https` only), rejection of any host resolving to a
   non-public address (permit-list model — private, loopback, link-local,
   CGNAT/shared 100.64/10, and reserved ranges are all blocked, with NAT64

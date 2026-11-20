@@ -17,7 +17,6 @@ from fastmcp_pvl_core import (
     CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
     GENERATED_INSTRUCTIONS_TARGET_UTF16,
     ConfigurationError,
-    FetchResult,
     HealthCheck,
     InstructionRole,
     ServerConfig,
@@ -34,7 +33,6 @@ from fastmcp_pvl_core import (
     configure_logging_from_env,
     domain_env_suffixes,
     domain_env_surface,
-    fetch_url,
     finalize_instructions,
     find_nonconforming_log_calls,
     get_claims,
@@ -84,8 +82,7 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "finalize_instructions",
     "instructions_for",
     "utf16_code_units",
-    # Transfer links and URL fetching (#2282).
-    "FetchResult",
+    # Transfer links (#2318-#2321).
     "TransferConfig",
     "TransferKind",
     "TransferLinks",
@@ -93,6 +90,5 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "TransferResourceGoneError",
     "TransferSinkError",
     "TransferUnavailableError",
-    "fetch_url",
     "register_transfer_routes",
 ]

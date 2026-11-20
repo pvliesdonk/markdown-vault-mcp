@@ -703,7 +703,7 @@ class TestFetchThreadsActor:
     ) -> None:
         from unittest.mock import AsyncMock
 
-        from markdown_vault_mcp._pvl_core import FetchResult
+        from markdown_vault_mcp._fetch import FetchResult
 
         # fetch writes .md notes through DocumentManager.write, so the enricher
         # fires; the provenance actor must be the authenticated caller (#964).

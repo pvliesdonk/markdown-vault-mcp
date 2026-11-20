@@ -2047,7 +2047,7 @@ class TestFetchTool:
         URL when nothing redirected, which is what every caller here wants
         (pvl-core 4.11.2 made the field mandatory, #1114).
         """
-        from markdown_vault_mcp._pvl_core import FetchResult
+        from markdown_vault_mcp._fetch import FetchResult
 
         return AsyncMock(
             return_value=FetchResult(
