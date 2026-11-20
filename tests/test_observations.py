@@ -655,15 +655,16 @@ def test_deep_resource_failure_blocks_only_its_subtree(  # noqa: PLR0915, RUF100
         vault = Vault(
             source_dir=source, settings=VaultSettings(exclude_patterns=["excluded/**"])
         )
+        limit = sys.getrecursionlimit()
         try:
             ledger = vault._index_mgr.observations
             deep = "/".join(["excluded"] + ["d"] * 510 + ["leaf.md"])
-            limit = sys.getrecursionlimit()
             try:
                 sys.setrecursionlimit(5000)
                 vault.index.build_index()
             finally:
-                sys.setrecursionlimit(limit)
+                # mypy.api can raise the inherited limit; pin the failure precondition.
+                sys.setrecursionlimit(1000)
             first = ledger.rows()
             assert deep in first
             removed.unlink()
@@ -688,6 +689,7 @@ def test_deep_resource_failure_blocks_only_its_subtree(  # noqa: PLR0915, RUF100
                 rows["changed.md"].content_digest != first["changed.md"].content_digest
             )
         finally:
+            sys.setrecursionlimit(limit)
             vault.close()
     finally:
         os.unlink("leaf.md", dir_fd=parents[-1])
