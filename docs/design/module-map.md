@@ -142,6 +142,8 @@ src/markdown_vault_mcp/
   _tool_visibility.py  -- apply_tool_visibility / effective_tool_names / registered_tool_names: TOOLS_ALLOW / TOOLS_DENY filtering and the tool-name enumerations the instructions builder prunes against (#2278)
   _tool_boundary.py    -- tool_boundary / is_tool_boundary: every tool's unexpected exception becomes one logged fault ToolError (#2280)
   _fetch.py            -- fetch_url / FetchResult: SSRF-hardened URL fetch (non-public-address rejection, DNS-rebind pin, per-hop revalidation, size cap, redaction) (#2282)
+  _log_grammar.py      -- parse_log_template: the event_name key=%s log-call grammar (#2340)
+  _log_conformance.py  -- find_nonconforming_log_calls: AST check behind tests/test_logging_standard.py (#2340)
   _jobs.py             -- Jobs / build_jobs: soft-deadline promotion of long-running calls to pollable jobs, yielding to native tasks (#2307)
   _job_store.py        -- JobStore and the job records: subject-scoped, TTL-pinned job records over the jobs KV namespace, with the per-subject cap (#2307)
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)

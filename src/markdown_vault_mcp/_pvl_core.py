@@ -21,7 +21,6 @@ from fastmcp_pvl_core import (
     configure_logging_from_env,
     domain_env_suffixes,
     domain_env_surface,
-    find_nonconforming_log_calls,
     get_claims,
     get_current_auth_mode,
     get_subject,
@@ -39,7 +38,6 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     # Logging setup and the request-logging middleware (#2276).
     "RequestLoggingMiddleware",
     "configure_logging_from_env",
-    "find_nonconforming_log_calls",
     "wire_middleware_stack",
     # Authentication and the request subject (#2277).
     "build_auth",
