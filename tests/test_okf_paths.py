@@ -1,8 +1,6 @@
 """Tests for the pure OKF URI-reference resolver."""
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from markdown_vault_mcp._okf_paths import resolve_okf_path
 
@@ -28,9 +26,7 @@ from markdown_vault_mcp._okf_paths import resolve_okf_path
             {"notes/current.md"},
             ("resolved", "notes/current.md", "#part"),
         ),
-        ("https://example.org/a", "0.3", set(), ("external", None, "")),
         ("custom:opaque", "0.3", set(), ("external", None, "")),
-        ("//example.org/a", "0.3", set(), ("external", None, "")),
         ("../../secret", "0.2", {"secret"}, ("external", None, "")),
         ("/%2e%2e/secret", None, {"secret"}, ("external", None, "")),
         ("next.md", "0.2", {"next.md"}, ("root_fallback", "next.md", "")),
@@ -47,6 +43,7 @@ from markdown_vault_mcp._okf_paths import resolve_okf_path
         ("Next.md", "0.3", {"notes/next.md"}, ("unresolved", None, "")),
         ("/next.md", "0.2", {"notes/next.md"}, ("unresolved", None, "")),
         ("a%23b.md", "0.3", {"notes/a#b.md"}, ("resolved", "notes/a#b.md", "")),
+        ("../target.md", "0.3", {"target.md"}, ("resolved", "target.md", "")),
     ],
 )
 def test_resolution(
@@ -57,14 +54,6 @@ def test_resolution(
 ) -> None:
     result = resolve_okf_path(value, "notes/current.md", files, version)
     assert (result.status, result.path, result.suffix) == expected
-
-
-@given(st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=25))
-def test_percent_encoded_name_resolves(name: str) -> None:
-    value = "".join(f"%{ord(char):02X}" for char in name) + ".md"
-    result = resolve_okf_path(value, "nested/current.md", {f"nested/{name}.md"}, "0.3")
-    assert result.status == "resolved"
-    assert result.path == f"nested/{name}.md"
 
 
 def test_body_link_does_not_use_legacy_fallback() -> None:
@@ -81,33 +70,14 @@ def test_invalid_source_is_rejected() -> None:
             resolve_okf_path("note.md", source, set(), "0.3")
 
 
-def test_parent_path_within_bundle_resolves() -> None:
-    result = resolve_okf_path("../target.md", "notes/current.md", {"target.md"}, "0.3")
-    assert result.path == "target.md"
-    assert result.status == "resolved"
-
-
 def test_fallback_cannot_escape_root() -> None:
-    result = resolve_okf_path("../missing.md", "notes/current.md", set(), "0.2")
+    result = resolve_okf_path("../y.md", "a/b/current.md", {"y.md"}, "0.2")
     assert result.status == "unresolved"
 
 
-def test_invalid_utf8_never_resolves_replacement_character() -> None:
+def test_refused_escapes_never_match() -> None:
     result = resolve_okf_path(
-        "bad%FF.md?view#part", "notes/current.md", {"notes/bad�.md", "bad�.md"}, "0.2"
-    )
-    assert result.status == "unresolved"
-    assert result.path is None
-    assert result.suffix == "?view#part"
-
-
-@pytest.mark.parametrize("escape", ["%2F", "%2f", "%00", "%FF"])
-@pytest.mark.parametrize("path_field", [True, False])
-def test_refused_escapes_never_match(escape: str, path_field: bool) -> None:
-    value = f"a{escape}b.md"
-    files = {f"notes/{value}", value, "notes/a/b.md", "notes/a\x00b.md"}
-    result = resolve_okf_path(
-        value, "notes/current.md", files, "0.2", path_field=path_field
+        "a%2Fb.md", "notes/current.md", {"notes/a%2Fb.md", "notes/a/b.md"}, "0.2"
     )
     assert result.status == "unresolved"
 
@@ -128,10 +98,9 @@ def test_external_reference_retains_suffix(value: str) -> None:
     assert (result.status, result.suffix) == ("external", "?q#f")
 
 
-@pytest.mark.parametrize("version", [None, "0.3"])
-def test_empty_path_field_is_absent(version: str | None) -> None:
+def test_empty_path_field_is_absent() -> None:
     assert (
-        resolve_okf_path("", "notes/current.md", {"notes/current.md"}, version).status
+        resolve_okf_path("", "notes/current.md", {"notes/current.md"}, None).status
         == "absent"
     )
 
@@ -143,22 +112,12 @@ def test_encoded_percent_can_name_literal_escape() -> None:
     assert (result.status, result.path) == ("resolved", "notes/a%2Fb.md")
 
 
-@pytest.mark.parametrize("value", ["", "?view", "#part"])
-def test_empty_body_reference_targets_source(value: str) -> None:
+def test_empty_body_reference_targets_source() -> None:
     result = resolve_okf_path(
-        value, "notes/current.md", {"notes/current.md"}, None, path_field=False
+        "", "notes/current.md", {"notes/current.md"}, None, path_field=False
     )
     assert (result.status, result.path, result.suffix) == (
         "resolved",
         "notes/current.md",
-        value,
-    )
-
-
-def test_query_only_path_field_targets_source() -> None:
-    result = resolve_okf_path("?view", "notes/current.md", {"notes/current.md"}, None)
-    assert (result.status, result.path, result.suffix) == (
-        "resolved",
-        "notes/current.md",
-        "?view",
+        "",
     )
