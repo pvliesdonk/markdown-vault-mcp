@@ -172,7 +172,7 @@ def test_remote_keeps_security_suppression(
 ) -> None:
     """Remote DEBUG still hides credential-bearing transport logs and skips local."""
 
-    async def remote(*_args: Any) -> RemoteReply:
+    async def remote(*_args: Any, **_kwargs: Any) -> RemoteReply:
         logging.getLogger(__name__).error("synthetic_secret")
         return RemoteReply("remote")
 

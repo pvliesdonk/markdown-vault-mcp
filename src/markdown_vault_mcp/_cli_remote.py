@@ -1,4 +1,4 @@
-"""Lazy native MCP transport for one read-only command invocation."""
+"""Lazy native MCP transport for one hosted command invocation."""
 
 from __future__ import annotations
 
@@ -27,8 +27,13 @@ class RemoteReply:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-def _payload(result: Any, tool: str) -> RemoteReply:
+def _payload(result: Any, tool: str, *, write: bool = False) -> RemoteReply:
     if result.is_error:
+        if write:
+            message = "\n".join(
+                block.text for block in result.content if block.type == "text"
+            )
+            raise ClientError(message or "Remote tool failed.", 1)
         raise ClientError(
             "Remote read failed. Check the server's query and semantic capabilities.", 1
         )
@@ -56,38 +61,75 @@ def _payload(result: Any, tool: str) -> RemoteReply:
 
 
 async def _call(
-    settings: ClientSettings, tool: str, arguments: dict[str, Any]
+    settings: ClientSettings,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    write: bool = False,
+    read_etag_from: str | None = None,
 ) -> RemoteReply:
+    operation = "writes" if write else "reads"
     try:
         from fastmcp import Client
         from fastmcp.client.transports import StreamableHttpTransport
     except ImportError:
         raise ClientError(
-            'Install "markdown-vault-mcp[mcp]" to use remote reads.', 1
+            f'Install "markdown-vault-mcp[mcp]" to use remote {operation}.', 1
         ) from None
     if settings.url is None:
-        raise ClientError("Remote reads require a server URL.")
+        raise ClientError(f"Remote {operation} require a server URL.")
     # Passing headers explicitly also disables automatic interactive OAuth.
     headers = {"Authorization": f"Bearer {settings.token}"} if settings.token else {}
     transport = StreamableHttpTransport(settings.url, headers=headers, auth=None)
     async with (
         asyncio.timeout(settings.timeout),
         Client(
-            transport, timeout=settings.timeout, init_timeout=settings.timeout
+            transport,
+            timeout=settings.timeout,
+            init_timeout=settings.timeout,
+            # Preserve native job envelopes instead of SDK task auto-polling.
+            mode="legacy" if write else "auto",
         ) as client,
     ):
         tools = {item.name: item for item in await client.list_tools()}
-        if tool not in tools:
-            raise ClientError(
-                "Remote server does not support this read tool; upgrade the server.", 1
+        requested = dict(arguments)
+        if read_etag_from is not None:
+            requested["if_match"] = ""
+        _check_schema(tools, tool, requested, write=write)
+        if read_etag_from is not None:
+            _check_schema(tools, "read", {"path": read_etag_from}, write=True)
+            reply = _payload(
+                await client.call_tool_mcp("read", {"path": read_etag_from}),
+                "read",
+                write=True,
             )
-        schema = tools[tool].input_schema
-        if set(arguments) - set(schema.get("properties", {})):
-            raise ClientError(
-                "Remote server does not support the requested options; upgrade the server.",
-                1,
-            )
-        return _payload(await client.call_tool_mcp(tool, arguments), tool)
+            etag = reply.data.get("etag") if isinstance(reply.data, dict) else None
+            if not isinstance(etag, str) or not etag:
+                raise ClientError(
+                    "Remote read did not return a nonempty etag; no mutation submitted.",
+                    1,
+                )
+            arguments = {**arguments, "if_match": etag}
+        return _payload(await client.call_tool_mcp(tool, arguments), tool, write=write)
+
+
+def _check_schema(
+    tools: dict[str, Any], tool: str, arguments: dict[str, Any], *, write: bool
+) -> None:
+    if tool not in tools:
+        message = (
+            f"Remote server does not support tool '{tool}'."
+            if write
+            else "Remote server does not support this read tool; upgrade the server."
+        )
+        raise ClientError(message, 1)
+    if set(arguments) - set(tools[tool].input_schema.get("properties", {})):
+        message = (
+            f"Remote tool '{tool}' does not support the requested options."
+            if write
+            else "Remote server does not support the requested options; upgrade the server."
+        )
+        raise ClientError(message, 1)
 
 
 def _failure_kind(exc: BaseException) -> str:
@@ -121,15 +163,60 @@ def call_read(
         ClientError: Unsupported server, timeout, transport or tool failure.
         KeyboardInterrupt: Interrupted operation, after transport cleanup.
     """
+    return _execute(settings, tool, arguments)
+
+
+def call_write(
+    settings: ClientSettings,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    read_etag_from: str | None = None,
+) -> RemoteReply:
+    """Execute one hosted mutation, optionally reading its concurrency token.
+
+    Args:
+        settings: Validated endpoint, credential and whole-operation deadline.
+        tool: Existing MCP tool to invoke once.
+        arguments: Native arguments checked against advertised properties.
+        read_etag_from: Whole-note path whose live etag must precede mutation.
+
+    Returns:
+        Native structured result, including an accepted job envelope.
+
+    Raises:
+        ClientError: Unsupported capability, failed pre-read, tool or transport error.
+        KeyboardInterrupt: Interrupted operation after connection cleanup.
+    """
+    return _execute(
+        settings, tool, arguments, write=True, read_etag_from=read_etag_from
+    )
+
+
+def _execute(
+    settings: ClientSettings,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    write: bool = False,
+    read_etag_from: str | None = None,
+) -> RemoteReply:
     # Third-party debug/exception logs can contain Authorization or a redirect
     # location. The command emits safe diagnostics instead, including with -v.
     previous = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
-        return asyncio.run(_call(settings, tool, arguments))
+        return asyncio.run(
+            _call(settings, tool, arguments, write=write, read_etag_from=read_etag_from)
+        )
     except ClientError:
         raise
     except TimeoutError:
+        if write:
+            raise ClientError(
+                "Remote operation timed out; outcome may be unknown. Check the server before retrying.",
+                1,
+            ) from None
         raise ClientError(
             "Remote read timed out; increase --timeout if needed.", 1
         ) from None
@@ -138,7 +225,12 @@ def call_read(
         # carry a header or a redirect location.
         raise ClientError(
             f"Remote MCP connection failed ({_failure_kind(exc)}). Check the "
-            "endpoint and bearer authentication; interactive login is not supported.",
+            "endpoint and bearer authentication; interactive login is not supported."
+            + (
+                " Mutation outcome may be unknown; check before retrying."
+                if write
+                else ""
+            ),
             1,
         ) from None
     finally:
