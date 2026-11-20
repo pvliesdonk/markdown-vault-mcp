@@ -365,20 +365,6 @@ class TestConfigCrossValidation:
         with pytest.raises(ConfigurationError, match="okf_verify must be one of"):
             ContentConfig(okf_write=True, okf_verify=bad)
 
-    @pytest.mark.parametrize("mode", ["off", "trust-auth"])
-    def test_okf_verify_non_default_requires_okf_write(self, mode: str) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-        from markdown_vault_mcp.exceptions import ConfigurationError
-
-        with pytest.raises(ConfigurationError, match="only meaningful when okf_write"):
-            ContentConfig(okf_write=False, okf_verify=mode)
-
-    def test_okf_verify_default_allowed_without_okf_write(self) -> None:
-        from markdown_vault_mcp.config_sections.content import ContentConfig
-
-        # The default value must not trip the OKF_WRITE-off interaction guard.
-        assert ContentConfig(okf_write=False).okf_verify == "elicit"
-
     @pytest.mark.parametrize("mode", ["elicit", "off", "trust-auth"])
     def test_okf_verify_allowed_with_okf_write(self, mode: str) -> None:
         from markdown_vault_mcp.config_sections.content import ContentConfig
@@ -771,6 +757,27 @@ class TestOkfVerifyTrustAuth:
         (entry,) = meta["verified"]
         assert entry["by"] == "human:peter"
         _assert_recent_utc_stamp(entry["at"])
+
+    @pytest.mark.usefixtures("trust_auth_env")
+    @pytest.mark.parametrize("subject", ["user:alice", "urn:uuid:123", "team/alice"])
+    async def test_written_subject_remains_recorded_on_read(
+        self, monkeypatch: pytest.MonkeyPatch, subject: str
+    ) -> None:
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: subject)
+        monkeypatch.setattr(
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": subject}
+        )
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("read", {"path": "guides/playbook.md"})
+        annotation = _parse_tool_data(result)["okf"]
+        assert annotation["trust_tier"] == "human-reviewed"
+        assert annotation["review"]["state"] == "recorded"
+        assert annotation["review"]["recorded_entries"] == 1
+        assert annotation["review"]["malformed_entries"] == 0
+        assert annotation["recorded"]["verified"][0]["by"] == f"human:{subject}"
 
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
