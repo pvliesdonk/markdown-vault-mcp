@@ -252,7 +252,7 @@ def resolve_mcp_principal() -> Principal:
     """Resolve the caller's :class:`Principal` from the MCP request context.
 
     Call inside a tool handler (it reads the request context). Subject rules
-    retain the authenticated identifier from ``fastmcp_pvl_core.get_subject``.
+    retain the authenticated identifier from ``_subject.get_subject``.
     A usable token ``sub`` retains human attribution unless the issuer marks
     the token as issued to an application: its ``sub`` equals the client's
     ID, or it carries Entra ID's ``idtyp: app`` or Auth0's
@@ -270,10 +270,10 @@ def resolve_mcp_principal() -> Principal:
         resolves to a ``"local"`` principal with every field ``None``.
     """
     # Function-local imports are deliberate and load-bearing: tests monkeypatch
-    # ``fastmcp_pvl_core.get_subject`` / ``get_claims`` as package attributes,
+    # ``markdown_vault_mcp._subject.get_subject`` / ``get_claims`` as module attributes,
     # which only takes effect when the lookup happens at call time (the same
     # pattern as ``_okf_write``).
-    from fastmcp_pvl_core import get_claims, get_subject
+    from markdown_vault_mcp._subject import get_claims, get_subject
 
     subject = get_subject()
     claims = get_claims()
