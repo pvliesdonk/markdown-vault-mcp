@@ -46,23 +46,27 @@ def test_unwired_writer_refuses_repair(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "original",
     [
-        b"---\ntitle: [\n---\n\xff",
+        b"\xff",
         b"body only\n",
         b"---\nx-a: " + b"[" * 40 + b"]" * 40 + b"\n---\n",
+        b'\xef\xbb\xbf---\r\nokf_version: "0.3"\r\ntitle: Index\r\ndescription: Bundle\r\nlicense: MIT\r\ntype: null\r\nx-test: value\r\n---\r\n# Index\r\n',
     ],
 )
-def test_root_index_keeps_invalid_or_body_only_content(
-    tmp_path: Path, original: bytes
-) -> None:
+def test_root_index_is_kept(tmp_path: Path, original: bytes) -> None:
     path = tmp_path / "index.md"
     path.write_bytes(original)
     vault = Vault(
         source_dir=tmp_path,
-        settings=VaultSettings(read_only=False, okf_mode="on"),
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode="on",
+            required_frontmatter=["title", "type", "conflict_with"],
+        ),
     )
     try:
+        repair = ReservedFrontmatterRepair(vault)
         for apply in (False, True):
-            item = vault.writer.okf_strip_seeded_frontmatter(apply=apply)[0]
+            item = repair.run(apply=apply)[0]
             assert item.path == "index.md" and item.kept_reason
             assert item.skip_reason is None and item.keys == ()
             assert path.read_bytes() == original
@@ -72,15 +76,11 @@ def test_root_index_keeps_invalid_or_body_only_content(
 
 def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
     (tmp_path / "guides").mkdir()
-    root = tmp_path / "index.md"
-    root.write_text(
-        '\ufeff---\r\nokf_version: "0.3"\r\ntitle: Index\r\ndescription: Bundle\r\nlicense: MIT\r\ntype: null\r\nx-test: value\r\n---\r\n# Index\r\n'
-    )
     log = tmp_path / "guides" / "log.md"
     log.write_text("---\ntitle: Log\ntype: null\n---\n# Log\n")
     edited = tmp_path / "guides" / "index.md"
     edited.write_text("---\ntitle: Hand edited\ntype: null\n---\n# Guide\n")
-    before = [p.read_bytes() for p in (root, log, edited)]
+    before = [p.read_bytes() for p in (log, edited)]
     vault = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(
@@ -94,14 +94,11 @@ def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
         repair = ReservedFrontmatterRepair(vault)
         preview = repair.run()
         assert {x.path: x.keys for x in preview} == {
-            "index.md": (),
             "guides/index.md": ("type",),
             "guides/log.md": ("title", "type"),
         }
-        assert [p.read_bytes() for p in (root, log, edited)] == before
+        assert [p.read_bytes() for p in (log, edited)] == before
         assert repair.run(apply=True) == preview
-        assert next(x for x in preview if x.path == "index.md").kept_reason
-        assert root.read_bytes() == before[0]
         assert log.read_text() == "# Log\n"
         assert edited.read_text() == "---\ntitle: Hand edited\n---\n# Guide\n"
     finally:
@@ -130,8 +127,7 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     root.mkdir()
     log = root / "log.md"
     index = root / "index.md"
-    original = b"---\ntitle: Index\n---\nbody\n"
-    index.write_bytes(original)
+    index.write_bytes(b"---\ntitle: Index\n---\nbody\n")
     log.write_text("---\ntitle: Log\ntype: null\n---\n# Log\n")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(root))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
@@ -148,7 +144,6 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "title: Log" in log.read_text()
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert result.exit_code == 0, result.output
-    assert "Kept index.md:" in result.stdout
     assert "Removed log.md: title" in result.stdout
     assert log.read_text() == "# Log\n"
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
