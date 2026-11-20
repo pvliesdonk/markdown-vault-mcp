@@ -142,6 +142,7 @@ src/markdown_vault_mcp/
   _tool_visibility.py  -- apply_tool_visibility / effective_tool_names / registered_tool_names: TOOLS_ALLOW / TOOLS_DENY filtering and the tool-name enumerations the instructions builder prunes against (#2278)
   _tool_boundary.py    -- tool_boundary / is_tool_boundary: every tool's unexpected exception becomes one logged fault ToolError (#2280)
   _fetch.py            -- fetch_url / FetchResult: SSRF-hardened URL fetch (non-public-address rejection, DNS-rebind pin, per-hop revalidation, size cap, redaction) (#2282)
+  _logging_setup.py    -- configure_logging_from_env: the root handler chain (Rich or JSON), FastMCP neutralised, level resolution, noisy-logger and access-log policy (#2276)
   _log_grammar.py      -- parse_log_template: the event_name key=%s log-call grammar (#2340)
   _log_conformance.py  -- find_nonconforming_log_calls: AST check behind tests/test_logging_standard.py (#2340)
   _request_logging.py  -- RequestLoggingMiddleware / wire_middleware_stack: request_* / tool_call_* lines with timing, connection and trace fields (#2341)

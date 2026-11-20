@@ -1,23 +1,46 @@
 """The ``run_http`` seam (#2335).
 
-Ported from fastmcp-pvl-core v10.2.0 ``tests/test_serve.py``. Its two cases
-that configure logging and read what reaches root
-(``test_end_to_end_access_log_policy``,
-``test_uvicorn_never_installs_its_own_handlers``) test the logging setup's
-handling of uvicorn and move with that area (#2276).
+Ported from fastmcp-pvl-core v10.2.0 ``tests/test_serve.py``; its two cases
+that configure logging and read what reaches root came along with the logging
+setup (#2276).
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 import socket
 import threading
 import time
 
+import httpx
 import pytest
 
 from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._serve import _build_uvicorn_config, _run_server, run_http
+
+
+@pytest.fixture
+def configured_logging_capture(monkeypatch, restore_logging_topology):  # noqa: ARG001 - fixture dependency for its teardown
+    """Configure logging as a server does, and capture what reaches root.
+
+    ``restore_logging_topology`` (``tests/fixtures/logging.py``) puts the whole tree back
+    afterwards, so this fixture only has to add its capture handler.
+    """
+    from markdown_vault_mcp._logging_setup import configure_logging_from_env
+
+    monkeypatch.delenv("TEST_MCP_LOG_LEVEL", raising=False)
+    monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
+
+    messages: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            messages.append(record.getMessage())
+
+    configure_logging_from_env("TEST_MCP")
+    logging.getLogger().addHandler(_Capture())
+    yield messages
 
 
 async def _app(scope, receive, send):
@@ -166,6 +189,44 @@ def test_zero_port_is_an_override_not_a_fallback(monkeypatch):
     )
     run_http(_app, config=ServerConfig(port=8000), port=0)
     assert captured["built"].port == 0
+
+
+def test_end_to_end_access_log_policy(configured_logging_capture, monkeypatch):
+    """A real server, real requests: successes silent, failures logged and redacted.
+
+    Routed through ``run_http`` itself (via ``_running_server_via_run_http``)
+    rather than a copy of its composition, so this exercises the same code
+    path a caller actually uses — including ``_run_server``'s epilogue.
+    """
+    with _running_server_via_run_http(monkeypatch) as (_server, port):
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}") as client:
+            client.get("/health")
+            client.post("/mcp")
+            client.get("/nope")
+            client.get("/transfer/tok_SECRET123")
+        time.sleep(0.3)
+
+    access = [m for m in configured_logging_capture if ' - "' in m]
+    assert not any("/health" in m for m in access)
+    assert not any("/mcp" in m for m in access)
+    assert any("/nope" in m and "404" in m for m in access)
+    assert not any("tok_SECRET123" in m for m in access)
+    assert any("transfer/<redacted>" in m for m in access)
+
+
+@pytest.mark.usefixtures("configured_logging_capture")
+def test_uvicorn_never_installs_its_own_handlers():
+    """log_config=None is what makes the logging topology hold at runtime."""
+    with _running_server():
+        access = logging.getLogger("uvicorn.access")
+        assert access.handlers == []
+        assert access.propagate is True
+        # Pins the cell the README's "raising {PREFIX}_LOG_LEVEL silences
+        # access lines" claim depends on: NOTSET only inherits root's level
+        # rather than being *set* to it. Were uvicorn.Config.log_level not
+        # None, Config.configure_logging() would setLevel(INFO) here even
+        # with log_config=None, and the README's claim would not hold.
+        assert access.level == logging.NOTSET
 
 
 class TestRunServerEpilogue:

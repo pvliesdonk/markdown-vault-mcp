@@ -1,7 +1,7 @@
 ---
 name: logging-standard
 description: >-
-  Use before adding or changing any logging call in src/: log levels, exception handling, the event_name key=value message grammar tests/test_logging_standard.py enforces, and what pvl-core's root-logger setup (standard-library logging rendered as Rich or JSON) does with a call that follows it or does not.
+  Use before adding or changing any logging call in src/: log levels, exception handling, the event_name key=value message grammar tests/test_logging_standard.py enforces, and what the root-logger setup (standard-library logging rendered as Rich or JSON) does with a call that follows it or does not.
 ---
 
 # Logging Standard
@@ -43,7 +43,7 @@ do not try to make them conform, silence them, or reformat them:
   formatter over ordinary `LogRecord`s.
 - The request-logging middleware handles tool invocation, timing and error
   logging automatically.
-- **pvl-core owns the root logger.** `cli._root` calls
+- **`_logging_setup.py` owns the root logger.** `cli._root` calls
   `configure_logging_from_env("MARKDOWN_VAULT_MCP", verbose=...)`, and so does
   `make_server()` unless its caller passes `configure_logging=False`, as
   `serve` does to keep `-v`; it installs

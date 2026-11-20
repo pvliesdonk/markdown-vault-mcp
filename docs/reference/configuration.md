@@ -165,7 +165,7 @@ fields as keys, for a log collector. Unset, the server chooses by itself:
 and a systemd unit log JSON with no configuration. Neither the image nor the
 packaged unit sets anything.
 
-The choice applies to the whole process. pvl-core owns the root logger and
+The choice applies to the whole process. The server owns the root logger and
 switches FastMCP's own handlers off, so this server's `markdown_vault_mcp.*`
 lines and FastMCP's render through the same chain, as do uvicorn's. Access
 lines from `uvicorn.access` are filtered rather than levelled: below `DEBUG`
