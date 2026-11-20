@@ -1,7 +1,7 @@
 """Domain-local quieting of the httpx/httpcore per-request loggers (#792).
 
 ``httpx``/``httpcore`` emit a per-request ``INFO`` line ("HTTP Request: POST …
-200 OK") that floods normal embedding builds. FastMCP's ``configure_logging_from_env``
+200 OK") that floods normal embedding builds. ``configure_logging_from_env``
 only governs ``uvicorn.access`` / ``mcp.server.lowlevel.server`` (per the logging
 standard); these HTTP-client deps are domain-owned, so MVM quiets them itself.
 

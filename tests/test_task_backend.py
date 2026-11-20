@@ -1,7 +1,7 @@
 """Guards for the background-task backend wiring in `make_server`.
 
 `MARKDOWN_VAULT_MCP_TASKS_URL` is documented automatically — the config-surface
-generator reads it from `fastmcp_pvl_core.server_config_surface()`, whether or
+generator reads it from `_config_surface.server_config_surface()`, whether or
 not anything wires it.  Documentation without wiring is exactly how a feature
 ships inert, so these tests assert the wiring itself: that `make_server` calls
 `configure_task_backend` on the very server it returns, and that the config
@@ -12,10 +12,9 @@ The assertions are on the `TasksExtension` the helper registers and returns —
 with the resolved backend and registers it on `mcp`.  FastMCP exposes no
 public read accessor for registered extensions, so a spy wraps the server
 module's `configure_task_backend` binding to capture the return value; the
-spy calls the real pvl-core helper, so resolution and registration still
-run unchanged.  Resolution order (pvl-core ADR 0002 §4.2, as revised for
-FastMCP 4) is core's to own; what belongs here is proof the template
-reaches it.
+spy calls the real helper, so resolution and registration still run
+unchanged.  Resolution order is pinned in ``tests/test_tasks.py``; what
+belongs here is proof ``make_server`` reaches it.
 """
 
 from __future__ import annotations
@@ -24,10 +23,11 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import pytest
-from fastmcp_pvl_core import ServerConfig, configure_task_backend
 
 import markdown_vault_mcp.server as server_module
+from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:
@@ -36,11 +36,10 @@ if TYPE_CHECKING:
     from fastmcp_tasks.settings import DocketSettings
 
 _DERIVED_QUEUE_NAME = "markdown-vault-mcp"
-"""What pvl-core derives from `MARKDOWN_VAULT_MCP` — lower-cased, `_` to `-`.
+"""What `_derive_queue_name` makes of `MARKDOWN_VAULT_MCP`: lower-cased, `_` to `-`.
 
-Hard-coded rather than imported: `_derive_queue_name` is core-private, and the
-point of the assertion is that the rendered project gets *this* name instead of
-fastmcp's `"fastmcp"` default.
+Hard-coded rather than imported: the point of the assertion is that this
+server gets *this* name instead of fastmcp's `"fastmcp"` default.
 """
 
 
@@ -101,7 +100,7 @@ def task_backend(monkeypatch: pytest.MonkeyPatch) -> _TaskBackendCapture:
     """Spy on `configure_task_backend`, capturing server and extension.
 
     Calls through to the real helper, so resolution and registration are the
-    genuine pvl-core behaviour; the capture only adds visibility (FastMCP
+    genuine behaviour; the capture only adds visibility (FastMCP
     exposes no public read accessor for registered extensions).
     """
     capture = _TaskBackendCapture()
