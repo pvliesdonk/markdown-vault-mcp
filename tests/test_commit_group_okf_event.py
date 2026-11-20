@@ -220,8 +220,11 @@ def test_timer_closes_and_records_history(
     result = vault._write_callback.close_group(group.handle, principal).result(
         timeout=10
     )
-    assert result.status == "committed"
-    assert "Timer change" in (git_repo / "log.md").read_text()
+    assert result.status == "committed" and result.sha
+    assert _run_git(
+        git_repo, "show", "-s", "--format=%an <%ae>", result.sha
+    ).strip() == ("Alice <alice@example.com>")
+    assert "Timer change" in _run_git(git_repo, "show", f"{result.sha}:log.md")
 
 
 def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(

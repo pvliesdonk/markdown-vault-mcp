@@ -6996,7 +6996,7 @@ A finalizer writes the events under the file lock before the scope end marker;
 the opener identity and close date are captured. A failed event sets
 `history_failed` separately from the Git outcome; every selected log is attempted,
 and the server log names failures. Sync reports `history_failed` when a settled
-group has a history failure and still runs its Git legs. Absent paths remain plain text in history.
+group has a history failure and still runs its Git legs. Absent paths appear as inline code in history.
 Git stages the whole log file. Concurrent groups sharing a log can place entries
 in another group's commit; an ungrouped event already written before its scope
 ends can also enter a group commit that stages the shared log. If group finalization
