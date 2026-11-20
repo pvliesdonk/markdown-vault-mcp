@@ -710,7 +710,7 @@ class WriteCallbackDispatcher:
         # and ``fire`` starts it only when ``_on_write`` is not None. ``_on_write`` is
         # set once in ``__init__`` and never reassigned, so it is non-None here.
         on_write = self._on_write
-        assert on_write is not None  # noqa: S101, RUF100 - worker requires a callback
+        assert on_write is not None
         try:
             while True:
                 item = self._queue.get()
