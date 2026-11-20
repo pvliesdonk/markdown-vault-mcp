@@ -236,8 +236,7 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
     [
         ({}, False),
         ({"stale_after": dt.date(2026, 8, 6)}, True),
-        # Stale when today >= stale_after (field reference, #1357): the
-        # date itself is the first stale day.
+        # OKF v0.3 §5 places date-only expiry at midnight UTC.
         ({"stale_after": dt.date(2026, 8, 7)}, True),
         ({"stale_after": dt.date(2026, 8, 8)}, False),
         ({"stale_after": "2026-08-07"}, True),
@@ -266,13 +265,6 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
 )
 def test_derive_stale(metadata: dict, expected: bool) -> None:
     assert derive_stale(metadata, now=NOW) is expected
-
-
-def test_derive_stale_bare_date_uses_utc_day() -> None:
-    """A bare date expires at midnight UTC regardless of local day."""
-    now = dt.datetime(2026, 8, 8, 0, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is False
-    assert derive_stale({"stale_after": dt.date(2026, 8, 7)}, now=now) is True
 
 
 class TestDeriveAnnotation:

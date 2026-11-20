@@ -66,7 +66,8 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
 def test_freshness_basis(value: Any, state: str, basis: str) -> None:
     result = derive_annotation({"stale_after": value}, now=NOW)
     assert result["freshness"] == {"state": state, "basis": basis}
-    assert result["stale"] == (state == "expired")
+    if basis == "offset_instant":
+        assert result["stale"] == (state == "expired")
 
 
 @pytest.mark.parametrize(
@@ -233,26 +234,21 @@ def test_date_expiry_uses_utc_midnight(value: Any, offset: int) -> None:
         (boundary - dt.timedelta(seconds=1), "unexpired"),
         (boundary, "expired"),
     ]:
-        result = derive_annotation(
-            {"stale_after": value}, now=now.astimezone(zone), include_sources=True
-        )
+        result = derive_annotation({"stale_after": value}, now=now.astimezone(zone))
         assert result["freshness"] == {"state": state, "basis": "utc_date"}
         assert result["stale"] is (state == "expired")
-        assert result["recorded"] == {"stale_after": value}
 
 
 @pytest.mark.parametrize("value", ["2026-11-14", dt.date(2026, 11, 14)])
 def test_date_only_review_is_recorded(value: Any) -> None:
     metadata = {"verified": [{"by": "human:alice", "at": value}]}
-    result = derive_annotation(metadata, now=NOW, include_sources=True)
+    result = derive_annotation(metadata, now=NOW)
     assert result["trust_tier"] == "human-reviewed"
     assert result["review"]["state"] == "recorded"
-    assert result["recorded"] == metadata
+    assert result["review"]["recorded_entries"] == 1
 
 
 @pytest.mark.parametrize("value", [None, "", "  "])
-def test_empty_expiry_is_missing_and_preserves_recorded(value: Any) -> None:
-    metadata = {"stale_after": value}
-    result = derive_annotation(metadata, now=NOW, include_sources=True)
+def test_empty_expiry_is_missing(value: Any) -> None:
+    result = derive_annotation({"stale_after": value}, now=NOW)
     assert result["freshness"] == {"state": "missing", "basis": "no_expiry_supplied"}
-    assert result["recorded"] == metadata

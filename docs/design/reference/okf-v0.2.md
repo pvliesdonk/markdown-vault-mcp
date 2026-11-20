@@ -229,7 +229,7 @@ tree, 2026-09-07].
   the date at midnight UTC; the server now follows that rule. Offset
   datetimes remain instants, and datetimes without offsets remain invalid.
   See [the v0.3 reference](okf-v0.3.md).
-  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_utc_day]
+  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf_evidence.py::test_date_expiry_uses_utc_midnight]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
   re-confirmation"; the server's enforced write layer clears it so an
