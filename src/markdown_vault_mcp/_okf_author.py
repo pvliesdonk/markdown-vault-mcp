@@ -25,7 +25,7 @@ from markdown_vault_mcp.scanner import parse_frontmatter
 _FIELDS = frozenset(
     {"type", "title", "description", "tags", "status", "stale_after", "sources"}
 )
-_ACTOR = re.compile(r"(?:human:|process:)\S+|[^\s/]+/\S+")
+_ACTOR = re.compile(r"[^\s:]+:\S+|[^\s/]+/\S+")
 
 
 def _valid_sources(value: Any) -> bool:
@@ -58,7 +58,7 @@ def _validate(
         raise InvalidRequestError("Only OKF editorial fields can be authored")
     if producer is not None and not _ACTOR.fullmatch(producer):
         raise InvalidRequestError(
-            "Producer must be a human:<id>, process:<id>, or <producer>/<version> actor"
+            "Producer must be a <scheme>:<id> or <producer>/<version> actor without whitespace"
         )
     if not fields and producer is None and repair is None:
         raise InvalidRequestError("At least one field, producer, or repair is required")
@@ -322,7 +322,7 @@ def _repair_changes(metadata: dict[str, Any], repair: dict[str, Any]) -> dict[st
                 or not _ACTOR.fullmatch(actor)
             ):
                 raise InvalidRequestError(
-                    "Replacement requires a non-null generated value and valid actor"
+                    "Replacement requires a non-null generated value and a <scheme>:<id> or <producer>/<version> actor without whitespace"
                 )
             entries.append({"generated": previous, "reason": request["reason"]})
             changes[key] = {"by": actor, "at": okf_timestamp(datetime.now(UTC))}

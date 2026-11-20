@@ -241,7 +241,40 @@ def test_selected_entry_edits(
 
 @pytest.mark.parametrize(
     "producer",
-    ["", "human:", "process:", "/1", "agent/", "bad", " a/1", "a\nb/1", "human:a\nb"],
+    ["team:finance-fpa", "custom:opaque", "agent/1", "human:bob", "process:nightly"],
+)
+@pytest.mark.parametrize("replacement", [False, True])
+def test_author_accepts_producer_actor_forms(producer: str, replacement: bool) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    text = "---\ngenerated: {by: old/1}\n---\nBody\n"
+    if replacement:
+        result = author_text(
+            text,
+            {},
+            None,
+            repair={"replace_generated": {"by": producer, "reason": "correction"}},
+        )
+    else:
+        result = author_text(text, {}, producer)
+    assert frontmatter.loads(result).metadata["generated"]["by"] == producer
+
+
+@pytest.mark.parametrize(
+    "producer",
+    [
+        "",
+        "human:",
+        "process:",
+        ":id",
+        "/1",
+        "agent/",
+        "bad",
+        " a/1",
+        "a\nb/1",
+        "human:a\nb",
+        "team:bad id",
+    ],
 )
 def test_invalid_actor_refused_without_write(tmp_path: Path, producer: str) -> None:
     (tmp_path / "note.md").write_text("# Body\n")
@@ -256,6 +289,19 @@ def test_invalid_actor_refused_without_write(tmp_path: Path, producer: str) -> N
         assert (tmp_path / "note.md").read_text() == "# Body\n"
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("producer", [":id", "team:", "team:bad id", "bad"])
+def test_replacement_rejects_invalid_producer(producer: str) -> None:
+    from markdown_vault_mcp._okf_author import author_text
+
+    with pytest.raises(InvalidRequestError, match="<scheme>:<id>"):
+        author_text(
+            "---\ngenerated: {by: old/1}\n---\nBody\n",
+            {},
+            None,
+            repair={"replace_generated": {"by": producer, "reason": "correction"}},
+        )
 
 
 @pytest.mark.parametrize(
