@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:242fe83d9f2a3a303670fb2c31de08f72e13942e69b62489362f534a6dc00621 -->
+<!-- vendor-spa-source-sha256:b8b9a1e58985e318be5c0bf57efe2225099a984f8fe4c329913b2cad59e73e2b -->
 </head>
 <body>
 <div class="app-container">
@@ -1710,9 +1710,9 @@ app.onteardown = () => {
   const previewEl = document.getElementById('browser-preview');
 
   // The properties panel shows YAML metadata; hide its exact delimiter block
-  // from the body using the same first-line, optional BOM and CRLF rule.
+  // from the body using the same first-line and CRLF rule.
   function stripFrontmatter(text) {
-    return String(text || '').replace(/^\uFEFF?---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
+    return String(text || '').replace(/^---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
   }
 
   function normalizeTags(fm) {

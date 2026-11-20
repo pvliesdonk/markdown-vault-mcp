@@ -110,7 +110,8 @@ def test_search_name_survives_populated_value(page: Page) -> None:
     ("content", "is_metadata"),
     [
         ("---\ntype: Metric\n---\nBody", True),
-        ("\ufeff---\ntype: Metric\n---\nBody", True),
+        # File decoding has already removed the first BOM.
+        ("\ufeff---\ntype: Metric\n---\nBody", False),
         ("---\r\ntype: Metric\r\n---\r\nBody", True),
         ("---\ntype: Metric\n---\r", True),
         ("\n---\ntype: Metric\n---\nBody", False),

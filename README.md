@@ -129,7 +129,7 @@ Every variable the server reads, the shared ones included, is in the [configurat
 ## Design decisions
 
 <!-- DOMAIN-README-DESIGN-START -->
-- **Document identity is the relative path** with `.md` extension; frontmatter is optional by default (`REQUIRED_FIELDS` opts into enforcement, except for reserved files in an active OKF vault). YAML frontmatter starts on the first line with exactly `---` (after an optional BOM) and ends at the next exact `---` line. Remove leading blank lines to retain metadata previously read from them.
+- **Document identity is the relative path** with `.md` extension; frontmatter is optional by default (`REQUIRED_FIELDS` opts into enforcement, except for reserved files in an active OKF vault). YAML frontmatter starts on the first line with exactly `---` (after decoding removes one optional BOM) and ends at the next exact `---` line. Remove leading blank lines to retain metadata previously read from them.
 - **Hybrid search uses Reciprocal Rank Fusion** over the FTS5 and vector result lists, with diversity-aware ranking capping chunks per document.
 - **Tool semantics mirror Claude Code's Read/Write/Edit patterns**, so LLM clients drive the vault with habits they already have.
 - **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/reference/api/vault.md#index-freshness-after-writes).

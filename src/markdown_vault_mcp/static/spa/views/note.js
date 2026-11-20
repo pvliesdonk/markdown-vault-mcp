@@ -22,9 +22,9 @@
   const previewEl = document.getElementById('browser-preview');
 
   // The properties panel shows YAML metadata; hide its exact delimiter block
-  // from the body using the same first-line, optional BOM and CRLF rule.
+  // from the body using the same first-line and CRLF rule.
   function stripFrontmatter(text) {
-    return String(text || '').replace(/^\uFEFF?---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
+    return String(text || '').replace(/^---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|\r?$)/, '');
   }
 
   function normalizeTags(fm) {

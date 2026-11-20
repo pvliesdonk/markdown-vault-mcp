@@ -801,17 +801,16 @@ _YAML = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
 
 def _split_yaml(text: str) -> tuple[str, str] | None:
     """Find a complete exact YAML block and retain its unstripped body."""
-    candidate = text.removeprefix("\ufeff")
-    if not _YAML_BOUNDARY.match(candidate):
+    if not _YAML_BOUNDARY.match(text):
         return None
     try:
-        return _YAML.split(candidate)
+        return _YAML.split(text)
     except ValueError:
         return None
 
 
 def _yaml_like(text: str) -> bool:
-    return YAMLHandler().detect(text.removeprefix("\ufeff").strip())
+    return YAMLHandler().detect(text.strip())
 
 
 def parse_frontmatter(text: str) -> frontmatter.Post:
@@ -860,7 +859,7 @@ def strip_frontmatter_block(text: str) -> str:
     includes the block, so it has to come off first.
 
     Detection is shared with :func:`parse_frontmatter`: YAML delimiters must
-    be exact lines, beginning at the first line after an optional BOM. An
+    be exact lines, beginning at the first line of decoded text. An
     unterminated block is body text. Unlike :func:`frontmatter.parse`, the body
     is not stripped, so an indented code block keeps its indentation.
 

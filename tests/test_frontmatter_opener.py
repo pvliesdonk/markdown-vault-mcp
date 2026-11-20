@@ -15,8 +15,8 @@ from markdown_vault_mcp.vault import Vault, VaultSettings
         ("---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
         ("---\ntype: Metric\n---", {"type": "Metric"}, ""),
         ("---\ntype: Metric\n--- ", {}, None),
-        # Public string callers can supply a BOM without file decoding.
-        ("\ufeff---\ntype: Metric\n---\nBody", {"type": "Metric"}, "Body"),
+        ("\ufeff---\ntype: Metric\n---\nBody", {}, None),
+        ("\ufeff\ufeff---\ntype: Metric\n---\nBody", {}, None),
         ("---\r\ntype: Metric\r\n---\r\nBody", {"type": "Metric"}, "Body"),
         ("\n---\ntype: Metric\n---\nBody", {}, None),
         (" ---\ntype: Metric\n---\nBody", {}, None),
@@ -111,5 +111,24 @@ def test_crlf_body_matches_lf_in_public_index(
             == results["crlf.md"].sections[0].content
         )
         assert "\r" not in results["crlf.md"].sections[0].content
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(("bom_count", "is_concept"), [(1, True), (2, False)])
+def test_file_bom_inventory(tmp_path: Path, bom_count: int, is_concept: bool) -> None:
+    (tmp_path / "metric.md").write_bytes(
+        b"\xef\xbb\xbf" * bom_count + b"---\ntype: Metric\n---\nBody"
+    )
+    vault = Vault(source_dir=tmp_path)
+    try:
+        result = vault.reader.inspect_bundle(BundleInspectionRequest(root=""))
+        assert result.entries[0].is_concept is is_concept
+        note = vault.reader.read("metric.md")
+        assert note is not None
+        assert (note.frontmatter.get("type") == "Metric") is is_concept
+        vault.index.build_index()
+        indexed = vault.reader.list_documents()[0]
+        assert (indexed.frontmatter.get("type") == "Metric") is is_concept
     finally:
         vault.close()
