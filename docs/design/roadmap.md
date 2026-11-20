@@ -710,14 +710,15 @@ became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 § Follow-up slices, which carries its ordering argument. An open decision
 inside a package is work for that cut, not a reason to keep its issue out.
 
-`stated` — A package is the set of issues to resolve for a release, not a set
-of accepted PRs. A contributor-filed issue joins the package it is meant for,
-and accepting it is work inside that package (20 November 2026). This
+`stated` — "The milestone is a collection of issues to resolve for a release.
+Not a collection of already accepted PRs" (20 November 2026). A
+contributor-filed issue therefore joins the package it is meant for, and
+accepting it is work inside that package. This
 supersedes the 17 November rule that a contributor-proposed issue has no
 package until accepted.
 
-`stated` — A package whose work includes a PR with a breaking marker has major
-intent (20 November 2026). By that rule `024`, `026`, `031`, `034`, `035`,
+`stated` — "If a PR carries ! then it will be a major break" (20 November
+2026). By that rule `024`, `026`, `031`, `034`, `035`,
 `037` and `038` are majors.
 
 `derived` — Two packages were added on 20 November 2026:
@@ -779,9 +780,9 @@ Do not make one broad existing issue span multiple milestones: refinement splits
 delivery issues where a candidate boundary cuts across their current scope,
 preserving the epic's frozen acceptance outcome.
 
-`derived` — Capability cuts have provisional minor intent, except the
-preservation/policy transition whose compatibility kind remains unresolved in
-[#1412][1412]. The Git foundation may need an explicit release-version override
+`derived` — Capability cuts have provisional minor intent, unless a PR in the
+cut carries a breaking marker, which makes it a major (§ Packages, 20 November
+2026). The Git foundation may need an explicit release-version override
 if its changes are only refactoring/tests; a package label does not itself cut a
 release. Every cut is classified against the stable operator/library contract
 it will follow, especially the contract established in `020`.
@@ -1249,7 +1250,7 @@ reference them or the 18 November hold on [#1498][1498] still applies.
 `evidenced` — [#1631][1631] had closed when [#2206][2206] merged, while its
 fix [#2143][2143] was still open; it was reopened. The body of
 [#2216][2216] listed other PRs as "Closes #N", which GitHub would have used to
-close ten unrelated issues on merge; the account holder's agent reworded that
+close nine unrelated issues on merge; the account holder's agent reworded that
 section, leaving only [#1422][1422].
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
