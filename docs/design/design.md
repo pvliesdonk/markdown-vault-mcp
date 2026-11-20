@@ -1995,8 +1995,9 @@ the spec itself says, dated and sourced, in
   promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
   evidence and its basis; `review` counts usable and malformed records with
   `basis: supplied_metadata_only`. Neither certifies truth or applicability.
-  `review_applicability` separately reports unbound supplied entries, absence,
-  or malformed outer input; it never infers snapshot coverage from timestamps.
+  `review_applicability` (`{state, basis}`) reports applicability apart from
+  the recorded claims: `unknown` for any supplied `verified` value, `none`
+  when absent or empty; it never infers snapshot coverage from timestamps.
   Full reads additionally expose supplied expiry/reviews under `recorded`,
   preserving parsed values, while compact results omit that projection.
   The exact contract and supported timestamp subset are in `okf.md` §3.
@@ -2024,8 +2025,9 @@ the spec itself says, dated and sourced, in
   without asserting that the vault is an active OKF bundle. Applicability
   is explicitly unknown; no timestamp comparison, history inference, byte
   comparison or metadata rewrite is performed. JSON/agent payloads and
-  filters are unchanged by the presentation slice. Structured applicability
-  remains separate work; this slice does not complete #1413.
+  filters are unchanged by the presentation slice; the structured
+  `review_applicability` field above carries the same `unknown` to them.
+  Assessment after observed changes remains #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows

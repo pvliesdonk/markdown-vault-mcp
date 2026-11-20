@@ -230,41 +230,41 @@ def test_report_old_positional_constructor() -> None:
 @pytest.mark.parametrize(
     ("metadata", "applicability", "review_state"),
     [
-        ({}, {"review": "none", "basis": "no_review_supplied"}, "missing"),
-        ({"verified": []}, {"review": "none", "basis": "no_review_supplied"}, "empty"),
+        ({}, {"state": "none", "basis": "no_review_supplied"}, "missing"),
+        ({"verified": []}, {"state": "none", "basis": "no_review_supplied"}, "empty"),
         (
             {"verified": None},
-            {"review": "unknown", "basis": "malformed_review"},
+            {"state": "unknown", "basis": "malformed_review"},
             "malformed",
         ),
         (
             {"verified": True},
-            {"review": "unknown", "basis": "malformed_review"},
+            {"state": "unknown", "basis": "malformed_review"},
             "malformed",
         ),
         (
             {"verified": {}},
-            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "malformed",
         ),
         (
             {"verified": [None]},
-            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "malformed",
         ),
         (
             {"verified": [None, {"by": "human:alice", "at": AT}]},
-            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "recorded",
         ),
         (
             {"verified": {"by": "human:alice", "at": AT}},
-            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "recorded",
         ),
         (
             {"verified": [{"by": "human:alice", "at": AT, "snapshot": "claimed"}]},
-            {"snapshot": "unbound", "basis": "no_snapshot_binding"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "recorded",
         ),
     ],

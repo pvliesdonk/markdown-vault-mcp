@@ -205,13 +205,14 @@ frontmatter blob; not persisted):
   Mixed lists retain both counts; `recorded` never means applicability to
   the current revision has been established. A malformed outer value counts
   as one malformed entry. No source fetching or reviewer authentication occurs.
-- `review_applicability`: supplied review entries report `snapshot: unbound`
-  and `basis: no_snapshot_binding`; timestamps and extensions do not establish
-  coverage. This includes malformed entries: unbound describes binding absence,
-  while `review` reports entry validity. An absent or empty review reports
-  `review: none` with `basis: no_review_supplied`; a malformed outer value
-  reports `review: unknown` with `basis: malformed_review`. This assessment is
-  separate from freshness.
+- `review_applicability`: `{state, basis}` stating whether a supplied review
+  applies to the current content. No review is bound to a content snapshot,
+  so a supplied `verified` value always reports `state: unknown`: entries,
+  malformed ones included, with `basis: no_snapshot_binding`, and a malformed
+  outer value with `basis: malformed_review`. `review` reports entry validity;
+  timestamps and extensions never establish coverage. An absent or empty
+  `verified` reports `state: none` with `basis: no_review_supplied`. This
+  assessment is separate from freshness.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
@@ -843,7 +844,7 @@ phase owns.
 
 ## 10. Open questions
 
-- Reads report supplied review entries as unbound (#1413). How observed changes
+- Reads report a supplied review's applicability as unknown (#1413). How observed changes
   are represented and how reviews bind to snapshots remain follow-ups (#1414,
   #1445).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21

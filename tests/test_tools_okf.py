@@ -226,7 +226,7 @@ class TestDeclaredBundle:
         assert playbook["stale"] is True
         assert playbook["trust_tier"] == "human-reviewed"
         assert playbook["review_applicability"] == {
-            "snapshot": "unbound",
+            "state": "unknown",
             "basis": "no_snapshot_binding",
         }
         assert playbook["sources_count"] == 2
@@ -243,7 +243,7 @@ class TestDeclaredBundle:
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
             },
-            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
+            "review_applicability": {"state": "none", "basis": "no_review_supplied"},
         }
 
     async def test_read_includes_full_sources(self) -> None:
@@ -254,7 +254,7 @@ class TestDeclaredBundle:
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
         assert okf["review_applicability"] == {
-            "snapshot": "unbound",
+            "state": "unknown",
             "basis": "no_snapshot_binding",
         }
         assert [s["resource"] for s in okf["sources"]] == [
@@ -285,7 +285,7 @@ class TestDeclaredBundle:
             )
         assert context["okf"]["type"] == "Playbook"
         assert context["okf"]["review_applicability"] == {
-            "snapshot": "unbound",
+            "state": "unknown",
             "basis": "no_snapshot_binding",
         }
 

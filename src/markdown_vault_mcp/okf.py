@@ -419,12 +419,17 @@ def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, 
 
 
 def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
-    """Describe whether supplied review entries have a snapshot binding."""
+    """Report whether a supplied review applies to the current content.
+
+    No review is bound to a content snapshot, so a supplied review's
+    applicability is always ``unknown``; ``basis`` says why. Only an absent
+    or empty ``verified`` reports ``none``.
+    """
     if entries:
-        return {"snapshot": "unbound", "basis": "no_snapshot_binding"}
+        return {"state": "unknown", "basis": "no_snapshot_binding"}
     if review["state"] == "malformed":
-        return {"review": "unknown", "basis": "malformed_review"}
-    return {"review": "none", "basis": "no_review_supplied"}
+        return {"state": "unknown", "basis": "malformed_review"}
+    return {"state": "none", "basis": "no_review_supplied"}
 
 
 def derive_annotation(
@@ -449,7 +454,8 @@ def derive_annotation(
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
         truth or applicability to this revision. ``review_applicability``
-        reports the lack of a snapshot binding separately. Full reads additionally
+        reports that separately as ``{state, basis}``: ``unknown`` for any
+        supplied review, ``none`` when absent or empty. Full reads additionally
         carry ``recorded`` with supplied expiry/reviews as parsed, including
         malformed values; omitted keys remain absent. ``malformed_sources``
         and ``malformed_generated`` appear only when true: present sources
