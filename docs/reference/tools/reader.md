@@ -28,7 +28,7 @@ Use `list_documents` for a complete listing and read for a path you already know
 | `limit` | `integer` | `10` | Maximum notes to return (default 10). |
 | `mode` | `keyword \| semantic \| hybrid \| null` | `null` | Omit for the best mode this vault serves. `"keyword"` suits exact terms, operators and filenames; `"semantic"` matches meaning only; `"hybrid"` combines both. `"semantic"` and `"hybrid"` need `semantic_search_available` from stats. |
 | `folder` | `string \| null` | `null` | Only notes under this folder, a value from `list_folders`; `""` for top-level notes only. |
-| `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "pacing"}`; keys come from `indexed_frontmatter_fields` in stats, and a list field matches when it holds the value. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. |
+| `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "pacing"}`; keys come from `indexed_frontmatter_fields` in stats, and a list field matches when it holds the value. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes without a non-empty string type, excluding reserved files. |
 | `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note, at least 1; omit for the server default. |
 | `snippet_words` | `integer \| null` | `null` | Snippet width in words; omit for the server default, 0 for whole sections. read with section set to a result's heading returns that whole section. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
@@ -49,8 +49,8 @@ List of result dicts ranked by file relevance. Each contains:
   the vault is an active OKF bundle. Carries `type` (when
   declared), `status` (defaults to `"stable"`), `stale`
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-  `"machine-confirmed"` / `"human-reviewed"`), and
-  `sources_count` (when the note cites sources).
+  `"machine-confirmed"` / `"human-reviewed"`), `freshness`, `review`,
+  `review_applicability`, and `sources_count` (when the note cites sources).
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
 
@@ -111,9 +111,11 @@ empty {} when section= is provided; call read(path) without
 section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
-an 'okf' dict (type, status, stale, `trust_tier`, and the note's
-'sources' list when present); section reads omit it because they
-carry no frontmatter to derive it from.
+an 'okf' dict (type, status, stale, `trust_tier`, freshness, review,
+`review_applicability`, recorded, and the note's 'sources' list when
+present). Review applicability reports whether a snapshot binding is
+available, independently of freshness and recorded claims. Section reads omit
+it because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
 etag (SHA-256 hex str or null).
@@ -170,7 +172,7 @@ Use search to find notes by what they say.
 | `folder` | `string \| null` | `null` | Only notes in this folder and its sub-folders, such as `"Journal"`; `""` for top-level notes only; omit for the whole vault. |
 | `pattern` | `string \| null` | `null` | Glob matched against paths, such as `"Journal/*.md"` or `"**/*meeting*.md"`. |
 | `include_attachments` | `boolean` | `false` | Also list non-note files, marked kind=`"attachment"` with their `mime_type`. Default false. |
-| `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "craft"}`; any key works, a list field matches when it holds the value, and attachments never match. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. |
+| `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "craft"}`; any key works, a list field matches when it holds the value, and attachments never match. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. Use `{"type": null}` on an active OKF bundle for searchable notes without a non-empty string type, excluding reserved files. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
@@ -293,8 +295,11 @@ Dict with the following fields:
   Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links.
   Call '`get_orphan_notes`' if non-zero.
-- okf (dict, optional): Present only when the vault is an active
-  OKF (Open Knowledge Format) bundle. Carries mode,
+- okf (dict): Always includes capabilities with configured values,
+  effective true/false values, reasons and folder scope. Reasons are
+  `read_only`, `okf_inactive`, `not_implemented` or `not_designated`;
+  null means no reason. When OKF is inactive, capabilities is
+  the only field. An active OKF bundle also carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,
   status and trust-tier breakdowns, and `stale_count`. Those cover
   the note population '`okf_validate`' audits; the reserved
@@ -526,8 +531,9 @@ Dict with the note context. Fields:
   them when writing to or proposing links involving this note;
   some folders are self-contained by design.
 - okf (dict, optional): OKF read annotation for this note
-  (type, status, stale, `trust_tier`, `sources_count`). Present
-  only when the vault is an active OKF bundle.
+  (type, status, stale, `trust_tier`, freshness, review,
+  `review_applicability`, `sources_count`).
+  Present only when the vault is an active OKF bundle.
 
 Index freshness is reported out-of-band in the response's
 `_meta.index_stale` field: True when the IndexWriter had
@@ -642,10 +648,55 @@ Informational rules, not deviations:
   exporting.
 - `missing_recommended`: notes without the recommended `title` or
   `description`.
+- `missing_freshness`: assessed notes with no expiry supplied.
+
+Evidence observations leave `conformant_notes` unchanged:
+
+- `malformed_freshness`, `malformed_review`: assessed notes with
+  unsupported expiry or malformed review records.
+- `evidence_unavailable`: discovered notes not assessed for evidence
+  because reading/parsing failed or the read cap was exceeded.
+
+Evidence findings cover discovered, non-excluded concepts, not
+complete traversal, truth, or editorial-policy compliance.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->
+
+## `okf_inventory`
+
+**Inspect Bundle Inventory.** Read-only. Idempotent.
+
+Inspect concept candidates in a bundle, including notes outside search.
+
+Unknown type or parse state can match. Search-state filters are exact;
+directory boundaries remain visible so they can be selected as root.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `root` | `string` | required | Vault-relative bundle root; use an empty string for the vault root. |
+| `type_state` | `not_inspected \| absent \| invalid \| present \| null` | `null` | Filter by observed type presence, such as absent. |
+| `parse_state` | `not_inspected \| valid \| invalid_encoding \| malformed_metadata \| null` | `null` | Filter by metadata parsing outcome. |
+| `search_state` | `not_evaluated \| searchable \| non_admitted \| unparseable \| index_excluded \| not_indexed_yet \| null` | `null` | Filter by observed search admission; `not_evaluated` means unknown. |
+| `entry_limit` | `integer` | `100` | Maximum returned observations, from 1 to 1000; each call scans up to 1000. |
+| `cursor` | `string \| null` | `null` | Pass `next_cursor` from the previous page to continue, even if it was empty. |
+
+**Returns**
+
+Observations, scope and enumeration states, and an optional `next_cursor`.
+
+<!-- DOMAIN-EXAMPLE-okf_inventory-START -->
+To find untyped candidates under `knowledge`, call:
+
+```json
+{"root": "knowledge", "type_state": "absent", "entry_limit": 100}
+```
+
+Continue with the returned `next_cursor`, even if this page has no entries.
+<!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
 ## `query_documents`
 

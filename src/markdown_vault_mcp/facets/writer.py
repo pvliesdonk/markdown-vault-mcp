@@ -125,52 +125,118 @@ class WriterFacet:
         """
         return self._doc_mgr.okf_preview_log_repair(path)
 
-    def okf_apply_log_repair(self, path: str, *, etag: str) -> LogRepairResult:
+    def okf_apply_log_repair(
+        self, path: str, *, etag: str, allow_protected: bool = False
+    ) -> LogRepairResult:
         """Apply an operator-reviewed legacy repair, retaining the complete original.
 
         Args:
             path: Exact log.md path used for the preview.
             etag: The ``etag`` of the preview the operator reviewed; a log
                 changed since then is refused.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             The resulting byte etag and adjacent recovery artifact path.
         """
-        return self._doc_mgr.okf_apply_log_repair(path, etag=etag)
+        return self._doc_mgr.okf_apply_log_repair(
+            path, etag=etag, allow_protected=allow_protected
+        )
 
-    def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
+    def okf_convert_links(
+        self, *, folder: str | None = None, allow_protected: bool = False
+    ) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
 
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
                 whole vault.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
-        """
-        return self._migrate().convert_links(folder=folder)
 
-    def okf_generate_index(self, *, folder: str = "") -> OkfIndexResult:
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+        """
+        return self._migrate().convert_links(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_generate_index(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing from the TOC (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
-        """
-        return self._migrate().generate_index(folder=folder)
 
-    def okf_seed_log(self, *, folder: str = "") -> OkfLogResult:
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
+        """
+        return self._migrate().generate_index(
+            folder=folder, allow_protected=allow_protected
+        )
+
+    def okf_seed_log(
+        self, *, folder: str = "", allow_protected: bool = False
+    ) -> OkfLogResult:
         """Seed a reserved ``log.md`` from git history (#963).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfLogResult`.
+
+        Raises:
+            InvalidRequestError: If protected paths are skipped; eligible writes remain.
         """
-        return self._migrate().seed_log(folder=folder)
+        return self._migrate().seed_log(folder=folder, allow_protected=allow_protected)
+
+    def okf_author(
+        self,
+        path: str,
+        *,
+        if_match: str,
+        fields: dict[str, Any],
+        producer: str | None = None,
+    ) -> WriteResult:
+        """Apply named OKF fields to an existing, etag-guarded concept.
+
+        Args:
+            path: Vault-relative note path.
+            if_match: Etag of the note read by the caller.
+            fields: Editorial fields to set.
+            producer: Explicit OKF actor, or None to leave generation unchanged.
+
+        Returns:
+            The write result.
+        """
+        from markdown_vault_mcp._okf_author import author_text
+        from markdown_vault_mcp._okf_write import okf_write_suppressed
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        if not if_match:
+            raise InvalidRequestError("if_match is required")
+        self._doc_mgr.ensure_writable()
+        with self._doc_mgr.write_scope():
+            canonical, original = self._doc_mgr._okf_author_snapshot(path)
+            if is_okf_reserved_file(canonical):
+                raise InvalidRequestError(
+                    "Cannot author a reserved OKF file as a concept"
+                )
+            content = author_text(original, fields, producer)
+            with okf_write_suppressed(), self._doc_mgr.exact_byte_writes():
+                result = self.write(canonical, content, if_match=if_match)
+            if self._convention_maintainer is not None:
+                self._convention_maintainer.maintain(canonical, "write")
+            return result
 
     def write(
         self,
@@ -180,6 +246,7 @@ class WriterFacet:
         if_match: str | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -196,6 +263,7 @@ class WriterFacet:
                 modifications.  Pass ``None`` (default) to skip the check.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the write and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.  On an overwrite of
@@ -225,7 +293,11 @@ class WriterFacet:
             with self._doc_mgr.write_scope():
                 breadcrumb = self._breadcrumb_for(path)
                 result = self._doc_mgr.write(
-                    path, content, frontmatter=frontmatter, if_match=if_match
+                    path,
+                    content,
+                    frontmatter=frontmatter,
+                    if_match=if_match,
+                    allow_protected=allow_protected,
                 )
                 if not result.created:
                     result.previous_revision = breadcrumb
@@ -264,6 +336,7 @@ class WriterFacet:
         line_end: int | None = None,
         *,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -282,6 +355,7 @@ class WriterFacet:
             line_end: 1-based end line (inclusive) for line-range mode.
             report_unresolved_links: When ``True``, wait for the index to take
                 in the edit and set the result's ``unresolved_links`` (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.EditResult`.
@@ -307,6 +381,7 @@ class WriterFacet:
                 if_match=if_match,
                 line_start=line_start,
                 line_end=line_end,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
@@ -321,6 +396,7 @@ class WriterFacet:
         *,
         create_if_missing: bool = False,
         report_unresolved_links: bool = False,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Append text to the end of a document without reading it first (#980).
 
@@ -337,6 +413,7 @@ class WriterFacet:
             report_unresolved_links: When ``True``, wait for the index to take
                 in the append and set the result's ``unresolved_links``
                 (#1725).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -360,13 +437,16 @@ class WriterFacet:
                 content,
                 if_match=if_match,
                 create_if_missing=create_if_missing,
+                allow_protected=allow_protected,
             ),
         )
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "edit")
         return result
 
-    def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
+    def delete(
+        self, path: str, if_match: str | None = None, *, allow_protected: bool = False
+    ) -> DeleteResult:
         """Delete a document or attachment.
 
         Removes the file from disk and purges its entries from the FTS and
@@ -376,6 +456,7 @@ class WriterFacet:
             path: Relative path of the document or attachment to remove.
             if_match: Optional etag for optimistic concurrency; see
                 :meth:`WriterFacet.write`.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
@@ -388,7 +469,9 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        result = self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(
+            path, if_match=if_match, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None and is_note(path):
             # The folder's listing still names the deleted note (#1609).
             self._convention_maintainer.refresh_indexes(
@@ -404,6 +487,7 @@ class WriterFacet:
         *,
         update_links: bool = False,
         tolerate_link_rewrites: bool = False,
+        allow_protected: bool = False,
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
@@ -425,6 +509,7 @@ class WriterFacet:
                 this vault made (#1492); the result's
                 ``link_rewrites_since_etag`` counts them.  Defaults to
                 ``False``, the strict whole-file check.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult`.
@@ -446,6 +531,7 @@ class WriterFacet:
             if_match=if_match,
             update_links=update_links,
             tolerate_link_rewrites=tolerate_link_rewrites,
+            allow_protected=allow_protected,
         )
         if (
             self._convention_maintainer is not None
@@ -467,7 +553,9 @@ class WriterFacet:
             )
         return result
 
-    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+    def move_folder(
+        self, old_dir: str, new_dir: str, *, allow_protected: bool = False
+    ) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
 
         Moves every file under *old_dir* (notes, attachments, and other
@@ -481,6 +569,7 @@ class WriterFacet:
         Args:
             old_dir: Relative source folder prefix (e.g. ``"drafts"``).
             new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.MoveFolderResult`.
@@ -500,7 +589,9 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(
+            old_dir, new_dir, allow_protected=allow_protected
+        )
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609). The
@@ -523,10 +614,18 @@ class WriterFacet:
         path: str,
         content: bytes,
         if_match: str | None = None,
+        *,
+        allow_protected: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
         Delegates to :meth:`DocumentManager.write_attachment`.
+
+        Args:
+            path: Relative attachment path.
+            content: Attachment bytes.
+            if_match: Optional current etag.
+            allow_protected: Allow this library call to change protected paths.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -543,4 +642,6 @@ class WriterFacet:
             InvalidRequestError: If the path escapes the source directory or
                 has an extension not in the allowlist.
         """
-        return self._doc_mgr.write_attachment(path, content, if_match=if_match)
+        return self._doc_mgr.write_attachment(
+            path, content, if_match=if_match, allow_protected=allow_protected
+        )

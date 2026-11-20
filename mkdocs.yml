@@ -199,6 +199,7 @@ nav:
           - Reader: reference/tools/reader.md
           - Graph: reference/tools/graph.md
           - Indexing: reference/tools/indexing.md
+          - Transactions: reference/tools/transactions.md
           - Writer: reference/tools/writer.md
           - Git: reference/tools/git.md
           - Vault app tools: reference/tools/vault_app_tools.md

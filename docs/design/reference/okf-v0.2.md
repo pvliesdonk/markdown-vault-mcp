@@ -129,11 +129,11 @@ months, not twelve.
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
   [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
-- The spec says nothing about a tier for a `verified` entry that carries no
-  `by`, or an empty list; "non-`human:` actors only" reads naturally as
-  machine-confirmed for `[{}]`, which is what the server does.
-  [unverified] A spec-maintainer answer or a reference-agent fixture would
-  settle it.
+- The spec says nothing about a tier for a malformed `verified` entry.
+  The server formerly promoted any mapping, including `{}`; #1444 follows
+  the adopted north star instead, counting only usable actor/timestamp
+  records as recorded claims. This is a local interpretation, not a claim
+  that upstream mandates the server's exact supported timestamp subset.
 
 ### Lifecycle: `status` and `stale_after` (§5.4, §5.5)
 
@@ -250,16 +250,16 @@ tree, 2026-09-07].
   `okf_version`; §9 is silent on frontmatter in `log.md`. With
   `required_frontmatter` configured, the server's own `index.md` / `log.md` generators
   (`ReservedFrontmatterPolicy` in `okf.py`) seed the configured keys — the
-  title field with the file's title, any other as `null` — because a
-  generated file with no frontmatter would fail the same index gate the
-  server enforces and vanish from `search` and `list_documents` (#1174,
-  #1175). Existing keys, including the root `okf_version`, are preserved;
-  `okf_version` is never synthesised into a folder index. With nothing
-  required, the files are written body-only as §8 and §9 have them.
+  title field with the file's title, any other as `null`. This seeding
+  originally kept generated files visible under the index gate (#1174,
+  #1175); in an active OKF vault, reserved files now pass that gate without
+  those fields (#1438). Existing keys, including the root `okf_version`, are preserved;
+  a required `okf_version` is seeded as `null` in a folder index, not as a
+  version declaration. With nothing required, the files are written body-only
+  as §8 and §9 have them.
   Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
   and the index gate". The audit does not exempt the result: keys seeded
-  into an `index.md` are reported as `index_frontmatter` (#1396); whether
-  the gate should reach generated files at all is #1438.
+  into an `index.md` are reported as `index_frontmatter` (#1396).
   [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generated_index_is_audited_like_any_index]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires
