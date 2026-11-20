@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.okf_capabilities import OkfCapabilities
 
 #: Where the state file defaulted to before #1693, under the vault root.
 #: Nothing writes there now; ``Vault`` copies a leftover file into the new
@@ -192,7 +193,10 @@ class VaultSettings:
             scalar keys (``type`` / ``status`` / ``stale_after``) extend the
             effective *indexed_frontmatter_fields* set. See
             :attr:`~markdown_vault_mcp.vault.Vault.okf`.
-        okf_write: Enable the OKF enforced-write layer.
+        okf_write: The deprecated ``OKF_WRITE`` alias; it enables authoring,
+            review and maintenance defaults and stamps nothing (#1443).
+        okf_capabilities: Resolved OKF authority, or ``None`` for the legacy
+            library construction behavior controlled by ``okf_write``.
     """
 
     index_path: Path | None = None
@@ -235,6 +239,7 @@ class VaultSettings:
     okf_mode: str = "auto"
     okf_write: bool = False
     owns_index_files: bool = True
+    okf_capabilities: OkfCapabilities | None = None
 
     @classmethod
     def from_project_config(
@@ -333,6 +338,7 @@ class VaultSettings:
             conventions_file=config.content.conventions_file,
             okf_mode=config.content.okf_mode,
             okf_write=config.content.okf_write,
+            okf_capabilities=config.content.okf_capabilities,
         )
 
     def effective_indexed_fields(self, *, okf_active: bool) -> list[str]:

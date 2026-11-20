@@ -10,9 +10,10 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
-import os
 import posixpath
+import re
 import shutil
 import sqlite3
 import stat
@@ -100,9 +101,6 @@ from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
 )
 from markdown_vault_mcp.utils.text import (
-    decode_utf8 as _decode_utf8,
-)
-from markdown_vault_mcp.utils.text import (
     find_closest_match as _find_closest_match,
 )
 from markdown_vault_mcp.utils.text import (
@@ -136,6 +134,59 @@ _ATTACHMENT_UPDATE_LINKS_HINT = (
     "are not tracked as links, so none were rewritten. Notes embedding the "
     "old path still name it; edit them to point at the new path."
 )
+
+
+_EOL = re.compile(r"\r\n|\r|\n")
+
+
+def _read_view(raw: str) -> str:
+    """Return stored note text as :meth:`DocumentManager.read` shows it.
+
+    The BOM is dropped and every line ending becomes ``\\n`` (#673), so an
+    edit matches exactly the text the caller read.
+    """
+    return raw.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _head_end(view: str) -> int:
+    """Return the offset just past *view*'s closing frontmatter delimiter line.
+
+    Detects the block as the reader does, in any registered format.  0 means
+    no frontmatter block: none, or unclosed.
+    """
+    offset = len(view) - len(view.lstrip())
+    candidate = view[offset:]
+    handler = fm.detect_format(candidate, fm.handlers)
+    boundary = None if handler is None else handler.FM_BOUNDARY
+    if boundary is None:
+        return 0
+    fences = list(itertools.islice(boundary.finditer(candidate), 2))
+    if len(fences) < 2:
+        return 0
+    end = view.find("\n", offset + fences[1].start())
+    return len(view) if end < 0 else end + 1
+
+
+def _keep_head(raw: str, view: str, new: str) -> str:
+    """Restore the stored frontmatter bytes of an edit that left them alone.
+
+    *new* is an edit of *view*, the read view of *raw*.  When *new* still
+    opens with *view*'s whole frontmatter block, that block is taken from
+    *raw* instead, so its BOM, comments and line endings stay byte-identical
+    (#1443).  Otherwise *new* is returned unchanged.
+    """
+    n = _head_end(view)
+    if not n or not new.startswith(view[:n]):
+        return new
+    if not view[:n].endswith("\n"):
+        return raw + new[n:]
+    lines = view.count("\n", 0, n)
+    fence = next(itertools.islice(_EOL.finditer(raw), lines - 1, None))
+    tail = new[n:]
+    if fence.group() == "\r" and tail.startswith("\n"):
+        # A bare CR fence then LF would read back as one CRLF line break.
+        tail = "\r" + tail
+    return raw[: fence.end()] + tail
 
 
 def _submodule_links_text(sources: list[str]) -> str:
@@ -193,6 +244,8 @@ class DocumentManager:
             repository, which would never be committed (#1564, #1949). ``None`` refuses nothing.
     """
 
+    _exact_bytes = False  # see exact_byte_writes()
+
     def __init__(
         self,
         fts: KeywordGraphIndex,
@@ -208,7 +261,6 @@ class DocumentManager:
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
-        okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
@@ -237,10 +289,6 @@ class DocumentManager:
         self._sync_index = sync_index
         self._submodule_guard = submodule_guard
         self._title_field = title_field
-        # OKF enforced-write hook (#964): transforms the final note text
-        # (stamp `generated`, clear `verified`) before it lands. None when
-        # OKF_WRITE is off — zero overhead on the write path.
-        self._okf_write_enrich = okf_write_enrich
         # The link rewrites this manager made, so a rename can accept an
         # etag that only those rewrites made stale (#1492).
         self._link_rewrites = LinkRewriteLedger()
@@ -327,6 +375,27 @@ class DocumentManager:
         with self._file_write_lock:
             yield
 
+    @contextlib.contextmanager
+    def exact_byte_writes(self) -> Iterator[None]:
+        """Persist content writes as UTF-8 bytes, with no newline translation.
+
+        Held under the write lock, so no other write sees the mode.  For a
+        caller that splices text it read byte for byte (OKF authoring) and
+        must not have a platform's text-mode staging rewrite its line endings.
+        Edit and append use it to keep a stored frontmatter block's line
+        endings; other content writes keep their text-mode staging.
+        """
+        with self._file_write_lock:
+            self._exact_bytes = True
+            try:
+                yield
+            finally:
+                self._exact_bytes = False
+
+    def _staged(self, content: str) -> str | bytes:
+        """Return *content* in the form the current write mode stages."""
+        return content.encode("utf-8") if self._exact_bytes else content
+
     def ensure_writable(self) -> None:
         """Raise :exc:`ReadOnlyError` if the vault is read-only.
 
@@ -363,6 +432,35 @@ class DocumentManager:
                 not end with ``.md``.
         """
         return validate_path(path, self._source_dir)
+
+    def _read_authorable(self, path: str) -> NoteContent | None:
+        """Read *path*, refusing unparseable frontmatter instead of faulting.
+
+        A note whose frontmatter is not valid YAML is a problem with the note,
+        not the server: the caller must repair it, so it is an
+        :exc:`InvalidRequestError` rather than the fault :meth:`read` reports.
+        Every other read failure propagates unchanged.
+        """
+        try:
+            return self.read(path)
+        except DocumentUnreadableError as exc:
+            if not isinstance(exc.__cause__, yaml.YAMLError):
+                raise
+            raise InvalidRequestError(
+                f"Cannot author {path}: its frontmatter is not valid YAML "
+                "and must be repaired first."
+            ) from exc
+
+    def _okf_author_snapshot(self, path: str) -> tuple[str, str]:
+        """Read exact note bytes and its resolved vault-relative identity under write_scope."""
+        target = self._validate_path(path)
+        canonical = target.relative_to(self._source_dir.resolve()).as_posix()
+        if self._read_authorable(path) is None:
+            raise DocumentNotFoundError.note(path)
+        try:
+            return canonical, target.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.
@@ -935,8 +1033,7 @@ class DocumentManager:
     ) -> None:
         """Run the shared tail of every content write.
 
-        Enriches *content* through the OKF enforced-write hook (when wired),
-        writes it atomically, marks the path dirty for the index writer, and
+        Writes *content* atomically, marks the path dirty for the index writer, and
         fires the write callback.  Must be called with ``_file_write_lock``
         held.
 
@@ -944,34 +1041,10 @@ class DocumentManager:
             abs_path: Absolute path of the target file.
             path: Vault-relative path of the target file.
             content: Full file content to persist.
-            operation: The write operation reported to the enricher and the
-                write callback.
+            operation: The write operation reported to the write callback.
 
-        Raises:
-            InvalidRequestError: The enforced-write layer is on and a *write*'s
-                content opens with a frontmatter block it cannot parse.
-            ValueError: The same for an edit or append, whose block may be the
-                stored note's (a fault, #1608).
         """
-        if self._okf_write_enrich is not None:
-            try:
-                content = self._okf_write_enrich(content, operation)
-            except yaml.YAMLError as exc:
-                # The stamp is written *into* the note's frontmatter, so a
-                # block the parser cannot read leaves the enforced-write layer
-                # nothing to stamp and the write is refused. The parser's own
-                # exception named no path and reached the client looking like a
-                # server fault, so it is restated as the refusal it is (#1454).
-                # A write's frontmatter is the caller's own content; for an
-                # edit or append it may be the stored note's, so that stays a
-                # fault until the edit path can tell which (#1608).
-                error = InvalidRequestError if operation == "write" else ValueError
-                raise error(
-                    f"Cannot {operation} {path}: its frontmatter block is not "
-                    f"parseable, so the OKF enforced-write layer cannot stamp "
-                    f"provenance on it — {exc}"
-                ) from exc
-        atomic_write(abs_path, content)
+        atomic_write(abs_path, self._staged(content))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
@@ -990,10 +1063,10 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content.  Like every content write,
-        the file is persisted in the vault's normalized form (UTF-8, no
-        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
-        first append.
+        directly after the existing content.  The existing text is
+        rewritten as :meth:`read` shows it (``\\n`` line endings, no BOM), so
+        a CRLF file is normalized on its first append; its frontmatter block
+        keeps its stored bytes, BOM included (#1443).
 
         Args:
             path: Relative document path.
@@ -1034,16 +1107,21 @@ class DocumentManager:
             check_if_match(abs_path, path, if_match)
 
             if existed:
-                file_content = _read_text_utf8(abs_path)
+                raw = abs_path.read_bytes().decode("utf-8")
+                file_content = _read_view(raw)
                 needs_newline = bool(file_content) and not file_content.endswith("\n")
-                new_content = file_content + ("\n" if needs_newline else "") + content
+                new_content = _keep_head(
+                    raw,
+                    file_content,
+                    file_content + ("\n" if needs_newline else "") + content,
+                )
             else:
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 new_content = content
 
-            # An append is a content edit for the enforced-write layer and
-            # the git commit callback alike.
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            # An append is a content edit for the commit callback.
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
             result = WriteResult(path=path, created=not existed)
 
         return result
@@ -1169,7 +1247,8 @@ class DocumentManager:
 
             check_if_match(abs_path, path, if_match)
 
-            file_content = _read_text_utf8(abs_path)
+            raw = abs_path.read_bytes().decode("utf-8")
+            file_content = _read_view(raw)
 
             if has_lines:
                 assert line_start is not None and line_end is not None
@@ -1187,7 +1266,9 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            new_content = _keep_head(raw, file_content, new_content)
+            with self.exact_byte_writes():
+                self._finalize_content_write(abs_path, path, new_content, "edit")
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 
@@ -1546,7 +1627,8 @@ class DocumentManager:
         # the ledger would then vouch for (#1492). Newlines are normalised
         # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
-        original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
+        stored = raw.decode("utf-8")
+        original = _read_view(stored)
         content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
@@ -1569,9 +1651,9 @@ class DocumentManager:
                 len(rewrites),
             )
             return None
-        # The bytes a text-mode write would produce, encoded here so the
-        # ledger records the hash of exactly what landed.
-        encoded = content.replace("\n", os.linesep).encode("utf-8")
+        content = _keep_head(stored, original, content)
+        # Encoded here so the ledger records the hash of exactly what landed.
+        encoded = content.encode("utf-8")
         atomic_write(source_abs, encoded)
         self._link_rewrites.record(
             source_path, compute_etag(raw), compute_etag(encoded)

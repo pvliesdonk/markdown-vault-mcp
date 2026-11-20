@@ -207,9 +207,7 @@ def test_read_limit_and_missing_or_invalid_file(
         manager.okf_preview_log_repair("log.md")
 
 
-def test_notifications_precede_target_and_do_not_stamp(
-    manager: DocumentManager, tmp_path: Path
-) -> None:
+def test_notifications_precede_target(manager: DocumentManager, tmp_path: Path) -> None:
     seen: list[str] = []
 
     def notify(path: Path, content: str, operation: str) -> None:
@@ -224,12 +222,9 @@ def test_notifications_precede_target_and_do_not_stamp(
     manager._notifier._callback = notify
     dirty = Mock()
     manager._mark_paths_dirty = dirty
-    enricher = Mock(side_effect=AssertionError("must not stamp"))
-    manager._okf_write_enrich = enricher
     manager.okf_apply_log_repair("log.md", etag=_reviewed(manager))
     assert seen == [BACKUP, "log.md"]
     dirty.assert_called_once_with(["log.md"])
-    enricher.assert_not_called()
 
 
 @pytest.mark.parametrize(
