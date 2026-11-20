@@ -310,11 +310,11 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS",
-          "description": "Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**)."
+          "description": "Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). Repeated keys that normalize to the same prefix must have equal weights."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
-          "description": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary."
+          "description": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. Rejected when all six columns resolve to 0 (omitted columns weigh 1). Repeated keys must have equal weights."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
@@ -967,11 +967,11 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS",
-          "description": "Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**)."
+          "description": "Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). Repeated keys that normalize to the same prefix must have equal weights."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
-          "description": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary."
+          "description": "Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. Rejected when all six columns resolve to 0 (omitted columns weigh 1). Repeated keys must have equal weights."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
