@@ -492,7 +492,6 @@ class BundleInspector:
         )
 
     def _labelled(self, entry: BundleEntry, path: str, root: str) -> BundleEntry:
-        hidden = any(part.startswith(".") for part in path.split("/"))
         outside_bundle = any(
             part.startswith(".") for part in path.split("/")[len(_components(root)) :]
         )
@@ -501,7 +500,7 @@ class BundleInspector:
             visibility="index_excluded"
             if is_path_excluded(path, self._excludes)
             else "visible",
-            hidden_path=hidden,
+            hidden_path=any(part.startswith(".") for part in path.split("/")),
             in_bundle=not outside_bundle,
             is_concept=(
                 not outside_bundle

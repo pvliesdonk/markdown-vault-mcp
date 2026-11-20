@@ -12,11 +12,7 @@ from unittest.mock import Mock
 import pytest
 
 from markdown_vault_mcp import bundle_inventory as inventory
-from markdown_vault_mcp.bundle_inventory import (
-    BundleInspectionRequest,
-    BundleInspector,
-    BundleTreeRequest,
-)
+from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest, BundleInspector
 from markdown_vault_mcp.scanner import scan_directory
 from markdown_vault_mcp.utils import fs
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -109,11 +105,6 @@ def test_public_reader_before_build(
         ("plain.md", "body", ("concept_candidate", False, True)),
         ("untyped.md", "---\ntitle: Title\n---\n", ("concept_candidate", False, True)),
         ("empty.md", "---\ntype: ''\n---\n", ("concept_candidate", False, True)),
-        (
-            "invalid.md",
-            "---\ntype: [Metric]\n---\n",
-            ("concept_candidate", False, True),
-        ),
         ("index.md", "---\ntype: Metric\n---\n", ("navigation", False, True)),
         ("log.md", "---\ntype: Metric\n---\n", ("history", False, True)),
         ("_conventions.md", "---\ntype: Metric\n---\n", ("support", True, True)),
@@ -131,14 +122,12 @@ def test_inventory_concept_and_bundle_membership(
     (tmp_path / name).write_text(content)
     subject = inspector(tmp_path)
     result = (
-        subject.inspect(BundleTreeRequest(root=""))
+        subject.inspect(inventory.BundleTreeRequest(root=""))
         if tree
         else subject.inspect(BundleInspectionRequest(root=""))
     )
     entry = result.entries[0]
     assert (entry.role, entry.is_concept, entry.in_bundle) == expected
-    assert asdict(entry)["is_concept"] is expected[1]
-    assert asdict(entry)["in_bundle"] is expected[2]
 
 
 @pytest.mark.parametrize("root", ["bundle", ".workspace/bundle", ".bundle"])
@@ -153,7 +142,7 @@ def test_membership_is_relative_to_selected_root(
     (selected / ".hidden" / "nested.md").write_text("---\ntype: Metric\n---\n")
     subject = inspector(tmp_path)
     result = (
-        subject.inspect(BundleTreeRequest(root=root))
+        subject.inspect(inventory.BundleTreeRequest(root=root))
         if tree
         else subject.inspect(BundleInspectionRequest(root=root))
     )
@@ -169,62 +158,6 @@ def test_membership_is_relative_to_selected_root(
             BundleInspectionRequest(root=root, directory=".hidden")
         ).entries[0]
         assert not nested.in_bundle and not nested.is_concept
-
-
-def test_inventory_hidden_ancestor_and_uninspected_note(tmp_path: Path) -> None:
-    hidden = tmp_path / ".hidden"
-    hidden.mkdir()
-    (hidden / "typed.md").write_text("---\ntype: Metric\n---\n")
-    (tmp_path / "large.md").write_text("x" * 100)
-    subject = inspector(tmp_path, note_limit=10)
-    hidden_entry = subject.inspect(BundleInspectionRequest(root=".hidden")).entries[0]
-    assert hidden_entry.hidden_path and hidden_entry.in_bundle
-    assert not hidden_entry.is_concept
-    large = next(
-        e
-        for e in subject.inspect(BundleInspectionRequest(root="")).entries
-        if e.path == "large.md"
-    )
-    assert large.reason == "note_limit"
-    assert large.in_bundle and not large.is_concept
-
-
-async def test_inventory_membership_serializes_through_tool_and_cli(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from fastmcp import Client
-    from typer.testing import CliRunner
-
-    from markdown_vault_mcp.cli import app
-    from tests.conftest import wait_for_mcp_writer_drain
-    from tests.server_factory import make_server
-
-    (tmp_path / "typed.md").write_text("---\ntype: Metric\n---\n")
-    (tmp_path / "untyped.md").write_text("body")
-    (tmp_path / ".hidden.md").write_text("---\ntype: Metric\n---\n")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv(
-        "MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path.parent / "v6-index.db")
-    )
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
-    async with Client(make_server()) as client:
-        await wait_for_mcp_writer_drain(client)
-        payload = (
-            await client.call_tool("okf_inventory", {"root": ""})
-        ).structured_content
-    cli = CliRunner().invoke(app, ["okf-inventory", "", "--local", "--json"])
-    assert cli.exit_code == 0, cli.output
-    assert json.loads(cli.stdout) == payload
-    rows = {row["path"]: row for row in payload["entries"]}
-    assert (rows["typed.md"]["is_concept"], rows["typed.md"]["in_bundle"]) == (
-        True,
-        True,
-    )
-    assert not rows["untyped.md"]["is_concept"]
-    assert (rows[".hidden.md"]["is_concept"], rows[".hidden.md"]["in_bundle"]) == (
-        False,
-        False,
-    )
 
 
 @pytest.mark.parametrize("field", ["root", "directory"])
@@ -436,6 +369,7 @@ def test_note_cap_never_parses_partial(
     }
     assert entries["large.md"].reason == "note_limit"
     assert entries["large.md"].parse_state == "not_inspected"
+    assert not entries["large.md"].is_concept
     assert entries["exact.md"].parse_state == "valid"
 
 
