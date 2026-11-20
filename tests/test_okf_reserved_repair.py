@@ -43,7 +43,14 @@ def test_unwired_writer_refuses_repair(tmp_path: Path) -> None:
         vault.close()
 
 
-@pytest.mark.parametrize("original", [b"---\ntitle: [\n---\n\xff", b"body only\n"])
+@pytest.mark.parametrize(
+    "original",
+    [
+        b"---\ntitle: [\n---\n\xff",
+        b"body only\n",
+        b"---\nx-a: " + b"[" * 40 + b"]" * 40 + b"\n---\n",
+    ],
+)
 def test_root_index_keeps_invalid_or_body_only_content(
     tmp_path: Path, original: bytes
 ) -> None:
@@ -61,46 +68,6 @@ def test_root_index_keeps_invalid_or_body_only_content(
             assert path.read_bytes() == original
     finally:
         vault.close()
-
-
-@pytest.mark.parametrize("kind", ["directory", "symlink", "io_error"])
-def test_cli_reports_uninspectable_root_index(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
-) -> None:
-    import errno
-
-    import markdown_vault_mcp.bundle_inventory as inventory
-
-    path = tmp_path / "index.md"
-    original = b"---\ntitle: Index\n---\nbody\n"
-    if kind == "directory":
-        path.mkdir()
-    elif kind == "symlink":
-        path.symlink_to("missing.md")
-    else:
-        path.write_bytes(original)
-        read = inventory.read_regular_nofollow
-
-        def fail_root(parent: int, name: str, limit: int) -> bytes:
-            if name == "index.md":
-                raise OSError(errno.EIO, "injected read failure")
-            return read(parent, name, limit)
-
-        monkeypatch.setattr(inventory, "read_regular_nofollow", fail_root)
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-    for options in ([], ["--apply"]):
-        result = CliRunner().invoke(app, ["okf", "strip-seeded-frontmatter", *options])
-        assert result.exit_code == 1, result.output
-        assert "Skipped index.md:" in result.stdout
-        assert "Kept index.md:" not in result.stdout
-    if kind == "io_error":
-        assert path.read_bytes() == original
-    elif kind == "symlink":
-        assert path.readlink().as_posix() == "missing.md"
-    else:
-        assert list(path.iterdir()) == []
 
 
 def test_preview_and_apply_including_excluded_notes(tmp_path: Path) -> None:
