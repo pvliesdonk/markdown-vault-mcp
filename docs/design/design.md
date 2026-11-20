@@ -16,7 +16,7 @@ three-switch design, are superseded as targets. Each implementation change
 updates the affected behavior sections; this adoption does not change runtime
 behavior.
 
-The internal `_okf_paths` resolver implements [OKF v0.3 §6](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81af/SPEC.md#6-links-and-paths) against supplied bundle-relative file paths without I/O. It distinguishes external references, missing targets and legacy root fallback, and retains URI query and fragment suffixes. Invalid UTF-8 in percent escapes remains unresolved. The fallback applies to path fields in v0.1, v0.2 and undeclared bundles only; callers resolving body links disable it. This helper is not yet wired into consumers.
+The internal `_okf_paths` resolver implements [OKF v0.3 §6](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81af/SPEC.md#6-links-and-paths) against supplied bundle-relative file paths without I/O. It distinguishes absent path fields, external references, missing targets and legacy root fallback, and retains URI query and fragment suffixes. Refused percent escapes remain unresolved, and RFC network-path references beginning `//` are external. Callers supply normalized version declarations and a set of available file identities. The fallback applies to path fields in v0.1, v0.2 and undeclared bundles only; callers resolving body links disable it. This helper is not yet wired into consumers.
 
 ## Terminology
 

@@ -60,7 +60,7 @@ def test_resolution(
 
 
 @given(st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=25))
-def test_encoded_name_resolves_case_sensitively(name: str) -> None:
+def test_percent_encoded_name_resolves(name: str) -> None:
     value = "".join(f"%{ord(char):02X}" for char in name) + ".md"
     result = resolve_okf_path(value, "nested/current.md", {f"nested/{name}.md"}, "0.3")
     assert result.status == "resolved"
@@ -99,3 +99,66 @@ def test_invalid_utf8_never_resolves_replacement_character() -> None:
     assert result.status == "unresolved"
     assert result.path is None
     assert result.suffix == "?view#part"
+
+
+@pytest.mark.parametrize("escape", ["%2F", "%2f", "%00", "%FF"])
+@pytest.mark.parametrize("path_field", [True, False])
+def test_refused_escapes_never_match(escape: str, path_field: bool) -> None:
+    value = f"a{escape}b.md"
+    files = {f"notes/{value}", value, "notes/a/b.md", "notes/a\x00b.md"}
+    result = resolve_okf_path(
+        value, "notes/current.md", files, "0.2", path_field=path_field
+    )
+    assert result.status == "unresolved"
+
+
+@pytest.mark.parametrize(
+    "value", ["target.md/", "/notes/target.md/", "target.md/.", "target.md/child/.."]
+)
+def test_directory_reference_does_not_select_file(value: str) -> None:
+    assert (
+        resolve_okf_path(value, "notes/current.md", {"notes/target.md"}, "0.2").status
+        == "unresolved"
+    )
+
+
+@pytest.mark.parametrize("value", ["https://example.org/a?q#f", "//example.org/a?q#f"])
+def test_external_reference_retains_suffix(value: str) -> None:
+    result = resolve_okf_path(value, "notes/current.md", set(), "0.3")
+    assert (result.status, result.suffix) == ("external", "?q#f")
+
+
+@pytest.mark.parametrize("version", [None, "0.3"])
+def test_empty_path_field_is_absent(version: str | None) -> None:
+    assert (
+        resolve_okf_path("", "notes/current.md", {"notes/current.md"}, version).status
+        == "absent"
+    )
+
+
+def test_encoded_percent_can_name_literal_escape() -> None:
+    result = resolve_okf_path(
+        "a%252Fb.md", "notes/current.md", {"notes/a%2Fb.md"}, "0.3"
+    )
+    assert (result.status, result.path) == ("resolved", "notes/a%2Fb.md")
+
+
+@pytest.mark.parametrize("value", ["", "?view", "#part"])
+def test_empty_body_reference_targets_source(value: str) -> None:
+    result = resolve_okf_path(
+        value, "notes/current.md", {"notes/current.md"}, None, path_field=False
+    )
+    assert (result.status, result.path, result.suffix) == (
+        "resolved",
+        "notes/current.md",
+        value,
+    )
+
+
+def test_query_only_path_field_targets_source() -> None:
+    result = resolve_okf_path("?view", "notes/current.md", {"notes/current.md"}, None)
+    assert (result.status, result.path, result.suffix) == (
+        "resolved",
+        "notes/current.md",
+        "?view",
+    )
