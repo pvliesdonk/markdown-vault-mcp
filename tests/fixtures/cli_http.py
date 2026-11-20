@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import uvicorn
 
+from tests.fixtures.logging import preserve_logging_topology
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -25,11 +27,14 @@ def serve_http(app: Any) -> Iterator[str]:
     Yields:
         Loopback HTTP origin.
     """
-    with socket.socket() as sock:
+    # The server's own logging setup must not outlive it (#2276).
+    with preserve_logging_topology(), socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
         server = uvicorn.Server(
-            uvicorn.Config(app, log_level="critical", lifespan="on")
+            # log_config=None, as run_http pins: uvicorn's default dictConfig
+            # would leave uvicorn.access non-propagating for later tests.
+            uvicorn.Config(app, log_config=None, log_level="critical", lifespan="on")
         )
         thread = threading.Thread(
             target=server.run, kwargs={"sockets": [sock]}, daemon=True

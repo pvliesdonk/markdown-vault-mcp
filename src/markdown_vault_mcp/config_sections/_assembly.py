@@ -9,18 +9,8 @@ construction, the
 chunk-cap heuristic, and the ``from_env`` field validators — lives here instead
 (#900, epic #898).
 
-Imports only fastmcp_pvl_core, stdlib, and sibling domain modules (never
-``config`` at runtime) so ``config.py`` can import these without a cycle.
-
-Module-scope imports here are also bound by the config import floor: every
-module reachable from ``ProjectConfig`` at import time must resolve with only
-``fastmcp-pvl-core`` and PyYAML installed, because the template's
-``scripts/gen_config_surface.py`` imports ``ProjectConfig`` under
-``uv run --no-project`` with exactly those two, before any project
-virtualenv exists (#1259). Anything reaching a further third-party package —
-``markdown_vault_mcp.git`` reaches ``python-frontmatter``, for one — belongs
-in ``TYPE_CHECKING`` plus a function-local import at the use site.
-``tests/test_config_import_floor.py`` enforces this.
+Imports only stdlib and sibling domain modules (never ``config`` at
+runtime) so ``config.py`` can import these without a cycle.
 """
 
 from __future__ import annotations
@@ -30,9 +20,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from fastmcp_pvl_core import env
-from fastmcp_pvl_core import parse_bool as _parse_bool
-
+from markdown_vault_mcp._env import env
+from markdown_vault_mcp._env import parse_bool as _parse_bool
 from markdown_vault_mcp._identity import (
     configure_identity_claims,
     configure_service_subjects,
