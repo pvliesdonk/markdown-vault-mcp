@@ -552,7 +552,7 @@ through the deliberate operation below.
 
 ### Deliberate placeholder repair (#1438)
 
-`vault.writer.okf_strip_seeded_frontmatter()` inventories reserved files independently of index admission. It reports the bundle-root `index.md` as kept, preserving all its bytes because it can contain bundle metadata. For folder indexes and all logs it previews fields matching the historical seeder using the current required-fields configuration. Matching does not prove origin. Applying re-evaluates current files and uses the guarded write path with an etag; unmatched fields and remaining bytes are preserved. The `okf strip-seeded-frontmatter` CLI exposes this migration. Kept files are not errors. Per-file inspection and write failures are reported while other candidates continue; ambiguous or unsafe candidates require manual inspection.
+`vault.writer.okf_strip_seeded_frontmatter()` inventories reserved files independently of index admission. It reports the bundle-root `index.md` as kept because it is outside the repair scope and can contain bundle metadata; when the root index is a regular file, all its bytes are preserved. For folder indexes and all logs it previews fields matching the historical seeder using the current required-fields configuration. Matching does not prove origin. Applying re-evaluates current files and uses the guarded write path with an etag; unmatched fields and remaining bytes are preserved. The `okf strip-seeded-frontmatter` CLI exposes this migration. Kept files are not errors. Per-file inspection and write failures are reported while other candidates continue; ambiguous or unsafe candidates require manual inspection.
 
 ### Deliberate legacy log repair (#1403)
 

@@ -679,7 +679,7 @@ Inspect and repair an OKF vault.
 
 List seeded fields in folder indexes and logs; apply to remove them.
 
-The root index is always preserved.
+The root index is not a repair target.
 
 | Option | Env var | Default | Description |
 |---|---|---|---|

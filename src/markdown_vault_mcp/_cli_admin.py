@@ -40,7 +40,7 @@ def strip_seeded_frontmatter(
 ) -> None:
     """List seeded fields in folder indexes and logs; apply to remove them.
 
-    The root index is always preserved.
+    The root index is not a repair target.
     """
     from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
     from markdown_vault_mcp.exceptions import MarkdownMCPError

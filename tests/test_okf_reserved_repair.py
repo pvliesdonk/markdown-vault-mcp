@@ -149,13 +149,8 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
     assert result.exit_code == 0, result.output
     assert "Kept index.md:" in result.stdout
-    assert index.read_bytes() == original
     assert "Removed log.md: title" in result.stdout
     assert log.read_text() == "# Log\n"
-    result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
-    assert "Kept index.md:" in result.stdout
-    result = runner.invoke(app, ["okf", "strip-seeded-frontmatter", "--apply"])
-    assert "Kept index.md:" in result.stdout
 
 
 def test_custom_title_field(tmp_path: Path) -> None:

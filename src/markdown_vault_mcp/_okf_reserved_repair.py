@@ -203,7 +203,9 @@ class ReservedFrontmatterRepair:
             return None
         if entry.path == "index.md":
             return ReservedRepair(
-                entry.path, (), kept_reason="root index is never changed"
+                entry.path,
+                (),
+                kept_reason="root index holds bundle metadata and is outside repair scope",
             )
         if entry.role not in {"navigation", "history"} or (
             entry.state != "inspected"
