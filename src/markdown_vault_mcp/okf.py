@@ -39,7 +39,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.scanner import _unfenced_lines, parse_frontmatter
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -982,6 +982,20 @@ def build_log_markdown(entries: Any) -> tuple[str, int, int]:
     return body, sum(len(v) for v in by_date.values()), len(order)
 
 
+def _log_section_lines(lines: list[str]) -> list[int]:
+    """Locate top-level H2 boundaries without interpreting fenced examples.
+
+    Use the scanner's fence grammar, including tilde and longer closers. The
+    final blank sentinel is yielded only outside a fence. An unclosed block
+    retains the legacy raw-heading behavior: inserting before its opener can
+    change Markdown list nesting, and refusing it would change the public API.
+    """
+    visible = list(_unfenced_lines([*lines, ""]))
+    if not visible or visible[-1][0] != len(lines):
+        return [index for index, line in enumerate(lines) if line.startswith("## ")]
+    return [index for index, line in visible if line.startswith("## ")]
+
+
 def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     """Append a dated bullet to an OKF ``log.md``, newest date section on top.
 
@@ -998,6 +1012,9 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
 
     Existing content — the header, older sections, and any hand-written prose
     under a date — is preserved verbatim; only the one bullet is inserted.
+    Closed top-level fenced examples do not supply section boundaries. If any
+    fence is unclosed, the whole body retains legacy heading detection; an
+    appended entry can still end up inside code in that case.
 
     Args:
         text: The current ``log.md`` **body**, frontmatter excluded, or
@@ -1018,13 +1035,11 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     if not text or not text.strip():
         return f"# {OKF_LOG_TITLE}\n\n{heading}\n\n{bullet}\n"
     lines = text.splitlines()
-    first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
+    sections = _log_section_lines(lines)
+    first = sections[0] if sections else None
     if first is not None and lines[first].strip() == heading:
         # Append to the existing newest-date section, before the next section.
-        nxt = next(
-            (i for i in range(first + 1, len(lines)) if lines[i].startswith("## ")),
-            len(lines),
-        )
+        nxt = sections[1] if len(sections) > 1 else len(lines)
         insert = nxt
         while insert - 1 > first and not lines[insert - 1].strip():
             insert -= 1

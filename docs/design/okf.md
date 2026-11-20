@@ -543,6 +543,19 @@ Tool tags following switches: #1412.
   warning can ride the existing write-result `conventions`/advisory channel
   without a new mechanism.
 
+When all fences are closed, log appends use the scanner’s top-level fence
+rules when locating `## ` section boundaries, so headings quoted in backtick
+or tilde code blocks do not receive real entries. This shares the scanner’s documented container
+limitations, not a full Markdown block parser (see
+[CommonMark reference](reference/commonmark-gfm.md#code-spans-and-fenced-code-61-45)).
+If any fence is unclosed, the whole body uses the legacy raw-heading
+boundaries, which can still place an appended entry inside code. This bounded
+fallback preserves the public helper’s return behavior: inserting before an
+unclosed indented opener can change Markdown list nesting, and refusing the
+append would introduce a new failure. It does not invent a closing delimiter
+or add a separator. Date grouping and per-write maintenance otherwise remain
+the shipped behavior, not the editorial-event design of #1416.
+
 Concurrency note: log-append and index-refresh are secondary writes riding an
 existing primary write; they flow through the same single-writer index path
 and git-commit callback as any other write, and failures degrade to a logged
