@@ -1,6 +1,6 @@
 """Configuration for Markdown Vault MCP.
 
-Composes :class:`fastmcp_pvl_core.ServerConfig` via the domain
+Composes :class:`~markdown_vault_mcp.config_sections.ServerConfig` via the domain
 :class:`ProjectConfig` dataclass — never inherits.
 
 Add domain-specific fields between the CONFIG-FIELDS sentinels, populate
@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import (
+from markdown_vault_mcp.exceptions import (
     # For CONFIG-VALIDATE, which raises it.  The redundant alias marks an
     # explicit re-export, so ruff accepts the import whether or not a check
     # uses it; a `noqa: F401` would become an unused directive (RUF100) the
@@ -29,25 +29,21 @@ from fastmcp_pvl_core import (
 # (keeps the import above in its own statement, so adding a name to the one
 #  below never makes ruff re-sort the two — that fix would be outside the
 #  sentinels.)
-from fastmcp_pvl_core import (
-    JobsConfig,
-    ServerConfig,
-    TransferConfig,
-    # Used by `_default_server_name` below, and re-exported so CONFIG-FROM-ENV
-    # additions don't need a new import.  No `noqa: F401` — that factory makes
-    # the import genuinely used, and a redundant directive fails RUF100.
-    env,
-)
-
+# Used by `_default_server_name` below, and re-exported so CONFIG-FROM-ENV
+# additions don't need a new import.  No `noqa: F401` — that factory makes
+# the import genuinely used, and a redundant directive fails RUF100.
+from markdown_vault_mcp._env import env
 from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
     EmbeddingsConfig,
     GitConfig,
     IndexingConfig,
+    JobsConfig,
     SearchConfig,
     SummarizeConfig,
     SyncConfig,
+    TransferConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
@@ -75,6 +71,7 @@ from markdown_vault_mcp.config_sections._helpers import (
     parse_weight_map,
 )
 from markdown_vault_mcp.config_sections.indexing import store_default_search
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -1077,23 +1074,23 @@ class ProjectConfig:
     )
     # The soft deadline before a still-running summarize call is promoted to
     # a background job is no longer a summarize-specific knob: it is owned by
-    # the pvl-core jobs subsystem (JOBS_SOFT_DEADLINE_S and friends, #1033).
-    # The transfer subsystem's operator knobs are owned by
-    # ``fastmcp_pvl_core.TransferConfig`` (link TTL default/max, post-success
-    # grace window, crashed-handler lease, per-upload cap). Compose it as a
-    # single field — the config-surface generator discovers its env vars by
-    # AST-walking ``TransferConfig.from_env`` and documents them from core's own
-    # field metadata (help/tags/wizard), so no flat mirror field is needed.
+    # the jobs section (JOBS_SOFT_DEADLINE_S and friends, #1033).
+    # The transfer settings (link TTL default/max, post-success grace window,
+    # crashed-handler lease, per-upload cap) are ``config_sections.TransferConfig``
+    # (#2321). Compose it as a single field: the config-surface generator
+    # discovers its env vars by AST-walking ``TransferConfig.from_env`` and
+    # documents them from its field metadata (help/tags/wizard), so no flat
+    # mirror field is needed.
     transfer: TransferConfig = field(
         default_factory=TransferConfig,
         metadata={"tags": ("transfer",)},
     )
 
-    # The jobs subsystem's operator knobs (soft deadline before a slow tool
-    # call is promoted to a pollable background job, job-record TTL,
-    # per-subject cap) are owned by ``fastmcp_pvl_core.JobsConfig`` (#1033).
-    # Composed the same way as ``transfer`` above so the config-surface
-    # generator discovers the ``JOBS_*`` env vars from core's field metadata.
+    # The jobs settings (soft deadline before a slow tool call is promoted to
+    # a pollable background job, job-record TTL, per-subject cap) are
+    # ``config_sections.JobsConfig`` (#1033, #2308). Composed the same way as
+    # ``transfer`` above, so the config-surface generator discovers the
+    # ``JOBS_*`` env vars from that class's field metadata.
     jobs: JobsConfig = field(
         default_factory=JobsConfig,
         metadata={"tags": ("jobs",)},
@@ -1357,8 +1354,8 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
-        # ``transfer`` and ``jobs`` are composed pvl-core section fields
-        # (not section-view properties); each validates its own bounds in its
+        # ``transfer`` and ``jobs`` are composed section fields (not
+        # section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
         self._check_embedding_store()

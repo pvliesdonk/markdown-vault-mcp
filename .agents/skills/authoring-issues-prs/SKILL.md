@@ -4,8 +4,8 @@ description: >-
   Use when filing a bug, opening or creating a GitHub issue, drafting an
   epic or ticket, writing up a finding or review observation worth
   tracking, sizing a change before coding, or opening a pull request for
-  this repository. Routes the change to the right repo first (this one,
-  or fastmcp-pvl-core for library behaviour), picks the right issue form, sizes the change to one
+  this repository. Routes the change first (CONTRIBUTING.md's "Where to
+  send fixes"), picks the right issue form, sizes the change to one
   PR, links epic children as native sub-issues, and applies CONTRIBUTING.md
   before anything is posted.
 ---
@@ -42,9 +42,9 @@ Where this skill and `CONTRIBUTING.md` disagree, the file wins.
 ### 2. Route before writing
 
 Decide the repo before writing: ask **which file a fix would change**, and
-look that file up in `CONTRIBUTING.md`'s "Where to send fixes" (this
-repository, or `fastmcp-pvl-core` for library behaviour). When it is unclear, file where you think it
-belongs and say so in the issue with an `[unverified]` marker.
+look that file up in `CONTRIBUTING.md`'s "Where to send fixes". When it is
+unclear, file where you think it belongs and say so in the issue with an
+`[unverified]` marker.
 
 ### 3. Search for duplicates
 
