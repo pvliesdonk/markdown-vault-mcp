@@ -93,10 +93,7 @@ Merging is not releasing. When and from where to cut: the `releasing` skill.
   skeleton, `AGENTS.md`, the skills, the documentation pages): open a PR
   here. This project no longer tracks the template, so nothing arrives
   from it and no fix needs to go there.
-- **`fastmcp-pvl-core` behaviour** (anything in `fastmcp_pvl_core`): until
-  #2241 folds the library into this repository, open a PR on
-  `pvliesdonk/fastmcp-pvl-core`, where each public name lives in a private
-  `_<area>.py` module. After the library release, run
-  `uv lock --upgrade-package fastmcp-pvl-core` and commit `uv.lock`, and
-  raise the `fastmcp-pvl-core` constraint in `pyproject.toml` here first if
-  it does not admit the release.
+- **What came from `fastmcp-pvl-core`** (auth, logging, jobs, transfer
+  links, health routes, server info, the instructions builder,
+  `ServerConfig`): it lives in this repository now (#2241), so open a PR
+  here too. Nothing goes to `pvliesdonk/fastmcp-pvl-core` any more.
