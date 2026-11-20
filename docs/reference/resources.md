@@ -19,6 +19,8 @@ Most JSON resources here serve the same data as a tool, whose reference describe
 
 `config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](../use/vault-explorer.md)'s page, for clients that render MCP Apps.
 
+`okf://spec` isn't JSON. It serves the Markdown text of the [Open Knowledge Format](../use/okf.md#reading-the-specification) specification this server follows, behind a notice naming its source revision and license, and it's absent when the format is switched off.
+
 Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 <!-- DOMAIN-INTRO-END -->
 
@@ -55,6 +57,12 @@ Every folder in the vault that holds notes.
 `recent://vault` (application/json)
 
 The 20 most recently modified notes.
+
+## `okf_spec`
+
+`okf://spec` (text/markdown)
+
+The Open Knowledge Format specification, version 0.2, that this server follows.
 
 ## `_app_shell`
 

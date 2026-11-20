@@ -89,6 +89,33 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
 - **Out of scope for this server:** Attested Computations (sanctioned
   SQL/Python with executor/attester machinery) — data-warehouse territory.
 
+### The spec as a resource (`okf://spec`)
+
+The server ships the SPEC.md it implements as package data
+(`static/okf/SPEC.md`, with the upstream Apache-2.0 `LICENSE` and a
+provenance `README.md` beside it) and serves it as the `okf://spec` resource,
+`text/markdown`. An agent asked to write conformant notes needs the format's
+own text, and a client that reaches the server only over MCP cannot open the
+GitHub URL; the alternative, a copy of the spec kept as a vault note, puts a
+non-concept document in the bundle and leaves its upkeep to every operator.
+
+- **One pinned revision.** The file is `okf/SPEC.md` at the commit
+  `reference/okf-v0.2.md` reads (62432a09, 2026-08-21), trailing whitespace
+  stripped and otherwise unchanged; a test pins its digest, so the text, the
+  commit in the served notice and the reference page move together.
+- **Attribution travels with the text.** The resource body opens with a
+  notice naming the source URL at that commit and the license, because the
+  spec is Apache-2.0 inside an MIT package and because "Version 0.2" alone
+  does not say which side of the August amendment a reader holds.
+- **Gated like the OKF tools.** The resource carries the `okf` tag, so
+  `okf_mode=off` hides it in the same disable pass. It reads package data
+  only: no vault, no index, no staleness metadata.
+- **Named in instructions.** The OKF instructions sentence ends with four
+  words naming the URI, since a model does not list resources unprompted.
+  Whether a given client's model can read a resource by itself is the
+  client's choice (`reference/mcp-model-facing-text.md`); where it cannot,
+  the user attaches it.
+
 ### Spec-stability caveat
 
 OKF is pre-1.0 and has one breaking change behind it already

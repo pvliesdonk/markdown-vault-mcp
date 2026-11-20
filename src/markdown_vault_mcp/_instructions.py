@@ -200,7 +200,9 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                 # agent-authored literal space is exactly the defect #1494
                 # fixed on the server's own output.
                 f"{upkeep} Use root-relative Markdown links, "
-                "%20 for spaces.",
+                # The spec pointer is four words for the same budget reason;
+                # the resource is registered whenever this sentence is.
+                "%20 for spaces. Format spec: resource 'okf://spec'.",
                 InstructionRole.INSTANCE,
             )
         )
