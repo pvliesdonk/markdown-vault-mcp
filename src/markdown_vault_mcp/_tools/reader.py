@@ -234,6 +234,42 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool(
+        icons=_TOOL_ICONS["inspect_citations"],
+        annotations={
+            "title": "Inspect Note Citations",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def inspect_citations(
+        path: str,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Join a note's literal footnote labels to its source records.
+
+        Use this for attribution in one known note, not navigation or evidence
+        verification. Reports unmatched labels and duplicate-ID ambiguity without
+        opening source resources; syntax coverage is limited and reported.
+
+        Args:
+            path: Exact case-sensitive .md note path from search or list_documents.
+
+        Returns:
+            Literal sources, citation IDs with occurrence counts and zero-based
+            source indices, source-shape issues, duplicate IDs, and indices of source
+            entries without IDs. Matched means one exact ID, not that the source supports a
+            claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+            fields describe coverage. returned_text_sha256 hashes the LF-normalized
+            returned text encoded as UTF-8; it is not a raw-file etag, a portable
+            identity or a value to use for if_match.
+        """
+        report = await asyncio.to_thread(vault.reader.inspect_citations, path)
+        return asdict(report)
+
+    @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",

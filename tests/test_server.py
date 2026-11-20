@@ -796,6 +796,7 @@ class TestToolManifest:
             "get_similar",
             "get_toc",
             "git_sync",
+            "inspect_citations",
             "list_documents",
             "list_folders",
             "list_tags",
@@ -829,6 +830,7 @@ class TestToolAnnotations:
         for name in (
             "search",
             "read",
+            "inspect_citations",
             "list_documents",
             "list_folders",
             "list_tags",

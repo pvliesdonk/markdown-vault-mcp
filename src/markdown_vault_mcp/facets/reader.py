@@ -3,9 +3,10 @@
 A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
-Methods delegate to :class:`SearchManager`, :class:`DocumentManager`, or
-:class:`GitQueryManager`; OKF stats also include the vault's write-state
-projection. The bucket-3 methods
+Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
+:class:`GitQueryManager`; citation inspection analyzes one returned note-text
+snapshot with the pure citation reader. OKF stats also include the vault's
+write-state projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -15,6 +16,16 @@ the ``Vault.reader`` accessor.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import yaml
+
+from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+)
+from markdown_vault_mcp.utils.content_kind import is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -220,6 +231,37 @@ class ReaderFacet:
                 *section* is empty or names no heading.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def inspect_citations(self, path: str) -> CitationReport:
+        """Inspect exact source attribution in one whole-note text snapshot.
+
+        Args:
+            path: Exact vault-relative .md note path.
+
+        Returns:
+            Literal sources, label joins and explicit syntax limits. This reads
+            no source resources and makes no claim about evidentiary support.
+
+        Raises:
+            InvalidRequestError: If the path is not a .md note or exceeds the
+                existing whole-note read limit.
+            DocumentNotFoundError: If the existing reader finds no note.
+            DocumentUnreadableError: If the existing reader cannot read it.
+        """
+        if not is_note(path):
+            raise InvalidRequestError(
+                f"path {path!r} is not a .md note. Call inspect_citations with "
+                "a .md path from search or list_documents."
+            )
+        note = self.read(path)
+        if note is None:
+            raise DocumentNotFoundError.note(path)
+        # read() may carry metadata/hash from an earlier disk read. Only this
+        # one returned content string is allowed to supply the join and digest.
+        try:
+            return inspect_citation_text(path, note.content)
+        except yaml.YAMLError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
     def read_revision(
         self, path: str, revision: str, *, section: str | None = None
