@@ -175,7 +175,7 @@ months, not twelve.
   entry" and `id`, `title`, `author`, `usage_count` and `last_modified` are
   optional; the server passes the list through on reads and counts it on
   search hits. [source: spec] (§5.1)
-  [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
+  [pins: tests/test_okf.py::test_provenance_shape_matrix]
 - Per-claim attribution is a markdown footnote whose label is a
   `sources[].id`, "keyed rather than positional". Nothing here depends on
   it. [source: spec] (§5.1)
