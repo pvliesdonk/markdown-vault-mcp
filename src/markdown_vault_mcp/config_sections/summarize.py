@@ -47,7 +47,7 @@ class SummarizeConfig:
             timeout so the server-side error wins the race and reaches the
             model/user. The soft deadline before a still-running call is
             promoted to a pollable background job is not a summarize knob:
-            it belongs to the pvl-core jobs subsystem
+            it belongs to the jobs section
             (``JOBS_SOFT_DEADLINE_S``, #1033).
     """
 

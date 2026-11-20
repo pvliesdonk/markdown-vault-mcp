@@ -56,7 +56,8 @@ async def test_get_server_info_tool_registered(client: Client[Any]) -> None:
     result = await client.call_tool("get_server_info", {})
     assert result.data.get("server_name") == "markdown-vault-mcp"
     assert result.data.get("server_version")  # non-empty version string
-    assert result.data.get("core_version")  # non-empty
+    # The fold dropped core_version with fastmcp-pvl-core (#2283).
+    assert "core_version" not in result.data
 
 
 async def test_summarize_prompt_round_trips_path(client: Client[Any]) -> None:
@@ -121,7 +122,7 @@ def test_instructions_env_override(
     # would otherwise drop the record under a stricter env.
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", raising=False)
     monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
-    with caplog.at_level("WARNING", logger="fastmcp_pvl_core"):
+    with caplog.at_level("WARNING", logger="markdown_vault_mcp._instructions_builder"):
         server = make_server()
     assert server.instructions == "Custom operator text."
     warning = next(
