@@ -68,6 +68,7 @@ class IndexWriteCoordinator:
         attachment_extensions: str = "",
     ) -> None:
         self._fts = fts
+        self._index_mgr = index_mgr
         self._index_path = index_path
         # file_write_lock remains a constructor compatibility parameter; build
         # scheduling no longer borrows the file-mutation lock.
@@ -316,6 +317,17 @@ class IndexWriteCoordinator:
             the first mismatching key at INFO, so the rebuild an operator
             sees in the log names its own cause.
         """
+        active = self._index_mgr._admission_snapshot()
+        if active is not None:
+            stored_active = self._index_mgr._stored_exempt()
+            if stored_active != active:
+                logger.info(
+                    "index_provenance_changed key=%s stored=%s current=%s action=rebuild",
+                    "okf_reserved_exempt",
+                    stored_active,
+                    active,
+                )
+                return False
         stored = self._fts.get_chunking_meta()
         checks: tuple[tuple[str, object, object], ...] = (
             ("embed_model_name", stored.model, self._embed_model_name),
@@ -415,8 +427,8 @@ class IndexWriteCoordinator:
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Schedule a build whose Future includes marker and readiness publication.
 
-        An idle warm restart returns an already-resolved Future. A failed marker
-        write fails this Future just like a failed scan. Cancellation is possible
+        An idle warm restart queues an observation sweep while reusing FTS.
+        A failed marker write or sweep fails this Future. Cancellation is possible
         until execution begins; cancelling a pending build does not mark it failed.
         """
         return self._builds.submit(self._writer, force=force)

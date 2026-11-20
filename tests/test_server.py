@@ -221,13 +221,21 @@ class TestServerIdentity:
         )
 
     @pytest.mark.usefixtures("_mcp_env_maximal")
-    def test_maximal_generated_instructions_fit_target(self) -> None:
+    @pytest.mark.parametrize(
+        "folders", [".", ".,projects/*,archive/*,notes/*/*,work/**"]
+    )
+    def test_maximal_generated_instructions_fit_target(
+        self, monkeypatch: pytest.MonkeyPatch, folders: str
+    ) -> None:
         """The complete generated feature matrix keeps operator headroom."""
         from markdown_vault_mcp._instructions_builder import (
             GENERATED_INSTRUCTIONS_TARGET_UTF16,
             utf16_code_units,
         )
 
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_INDEX", "true")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "writes")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_FOLDERS", folders)
         text = make_server(transport="http").instructions or ""
         for required in (
             "READ-WRITE",
@@ -238,7 +246,8 @@ class TestServerIdentity:
             "stay unindexed",
         ):
             assert required in text
-        assert utf16_code_units(text) <= GENERATED_INSTRUCTIONS_TARGET_UTF16
+        units = utf16_code_units(text)
+        assert units <= GENERATED_INSTRUCTIONS_TARGET_UTF16, f"{units} UTF-16 units"
 
     @pytest.mark.usefixtures("_mcp_env_maximal")
     def test_representative_operator_context_fits_client_limit(
@@ -776,11 +785,14 @@ class TestToolManifest:
         assert names == [
             "aggregate_documents",
             "append",
+            "begin_transaction",
             "count_documents",
             "delete",
             "edit",
             "embeddings_status",
+            "end_transaction",
             "fetch",
+            "find_citing_notes",
             "get_backlinks",
             "get_broken_links",
             "get_connection_path",
@@ -796,12 +808,17 @@ class TestToolManifest:
             "get_similar",
             "get_toc",
             "git_sync",
+            "inspect_citations",
             "list_documents",
             "list_folders",
             "list_tags",
             "move_folder",
+            "okf_author",
             "okf_convert_links",
             "okf_generate_index",
+            "okf_inventory",
+            "okf_log_event",
+            "okf_navigation",
             "okf_seed_log",
             "okf_validate",
             "okf_verify",
@@ -829,9 +846,13 @@ class TestToolAnnotations:
         for name in (
             "search",
             "read",
+            "inspect_citations",
+            "find_citing_notes",
             "list_documents",
             "list_folders",
             "list_tags",
+            "okf_inventory",
+            "okf_navigation",
             "stats",
             "embeddings_status",
             "get_backlinks",
@@ -2095,6 +2116,20 @@ class TestFetchTool:
         ]
         assert failed and failed[-1].levelno == logging.INFO
         assert failed[-1].exc_info is None
+
+    async def test_fetch_refuses_protected_before_download(
+        self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROTECTED_PATHS", "guard.md")
+        mock_fetch = AsyncMock(side_effect=ValueError("network failure"))
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            async with Client(make_server()) as client:
+                with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+                    await client.call_tool(
+                        "fetch",
+                        {"url": "https://example.invalid/x", "path": "guard.md"},
+                    )
+        mock_fetch.assert_not_awaited()
 
     @pytest.mark.parametrize("path", ["../escape.md", "../escape.png", "new.exe"])
     async def test_fetch_validates_destination_before_download(

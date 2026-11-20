@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING
 
+import pytest
+from fastmcp import Client
 from typer.testing import CliRunner
 
 from markdown_vault_mcp.cli import app
 from tests.fixtures.cli_discovery import reader_backend
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 def test_stats_okf_write_state(
@@ -30,3 +32,28 @@ def test_stats_okf_write_state(
     section = json.loads(result.stdout)["okf"]
     assert section["write_configured"] is True
     assert section["write_effective"] is False
+
+
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("remote", [False, True])
+def test_cli_matches_config_capabilities(
+    discovery_source: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote: bool,
+    declared: bool,
+) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    if declared:
+        (discovery_source / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+
+    async def resource_report() -> dict:
+        async with Client(make_server()) as client:
+            return json.loads((await client.read_resource("config://vault"))[0].text)[
+                "okf_capabilities"
+            ]
+
+    expected = asyncio.run(resource_report())
+    with reader_backend(remote) as connection:
+        result = CliRunner().invoke(app, ["stats", *connection, "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["okf"]["capabilities"] == expected

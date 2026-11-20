@@ -359,8 +359,7 @@ def test_move_folder_mid_move_oserror_leaves_subtree_partial(
     Asserts the documented partial-failure contract:
     - move_folder raises FolderMoveInterruptedError, an OSError.
     - The first file reached its new path; the second file is still at the old path.
-    - The index was NOT updated: searching a unique token from the first (moved)
-      file does NOT return the new path, confirming mark_paths_dirty never ran.
+    - The completed move is queued for indexing before the error is raised.
     """
     _write(vault, "drafts/alpha.md", "unique_alpha_token_qzx\n")
     _write(vault, "drafts/beta.md", "unique_beta_token_qzx\n")
@@ -399,13 +398,11 @@ def test_move_folder_mid_move_oserror_leaves_subtree_partial(
         "second file should still be at old path"
     )
 
-    # Index was NOT updated by the failed operation: mark_paths_dirty never ran,
-    # so searching the unique token from the moved file returns NO new-path hit.
+    # The completed move is indexed, while the unmoved file stays at its old path.
     hits = vault.reader.search("unique_alpha_token_qzx")
     new_paths = [h.path for h in hits]
-    assert "moved/alpha.md" not in new_paths, (
-        "index should not have been updated after mid-move OSError"
-    )
+    assert "moved/alpha.md" in new_paths
+    assert "drafts/alpha.md" not in new_paths
 
 
 def test_move_folder_best_effort_generic_exception(

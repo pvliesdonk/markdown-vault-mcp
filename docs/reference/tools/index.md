@@ -21,6 +21,8 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 |---|---|---|---|
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
+| Reader | [`inspect_citations`](reader.md#inspect_citations) | Inspect Note Citations | Join a note's literal footnote labels to its source records. |
+| Reader | [`find_citing_notes`](reader.md#find_citing_notes) | Find Citing Notes | Find indexed notes citing an exact source resource and unresolved labels. |
 | Reader | [`list_documents`](reader.md#list_documents) | List Documents | List notes, and optionally attachments, with path, title and frontmatter but no body text. |
 | Reader | [`list_folders`](reader.md#list_folders) | List Folders | List every folder that holds notes; `""` stands for the top level. |
 | Reader | [`list_tags`](reader.md#list_tags) | List Tags | List the distinct values one indexed frontmatter field takes across the vault. |
@@ -31,6 +33,8 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Reader | [`get_context`](reader.md#get_context) | Note Context | Return a note's metadata, backlinks, outlinks, similar notes, folder neighbours, indexed tags and applicable conventions in one call. |
 | Reader | [`get_conventions`](reader.md#get_conventions) | Folder Conventions | Return the vault owner's authoring conventions for a note or folder, vault root first and the most specific last. |
 | Reader | [`okf_validate`](reader.md#okf_validate) | Validate OKF Bundle | Audit how far the vault conforms to the Open Knowledge Format, with example paths per rule; works on a vault not yet declared as a bundle. |
+| Reader | [`okf_inventory`](reader.md#okf_inventory) | Inspect Bundle Inventory | Inspect concept candidates in a bundle, including notes outside search. |
+| Reader | [`okf_navigation`](reader.md#okf_navigation) | Read Folder Navigation | Read a folder's authored or synthesized navigation and its source. |
 | Reader | [`query_documents`](reader.md#query_documents) | Query Notes | Page through all matching indexed notes with an exact total. |
 | Reader | [`count_documents`](reader.md#count_documents) | Count Notes | Count every matching indexed note without fetching content. |
 | Reader | [`aggregate_documents`](reader.md#aggregate_documents) | Aggregate Notes | Group every matching indexed note into bounded frequency buckets. |
@@ -45,6 +49,8 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Indexing | [`get_index_status`](indexing.md#get_index_status) | Index Status | Report FTS index readiness, progress, and last build error. |
 | Indexing | [`reindex`](indexing.md#reindex) | Reindex Vault | Bring the search index up to date with files changed outside this server, such as by an editor or a sync tool; returns counts of added, modified, deleted and unchanged notes. |
 | Indexing | [`build_embeddings`](indexing.md#build_embeddings) | Build Embeddings | Bring the vector index behind semantic and hybrid search up to date with the notes; returns the number of chunks embedded. |
+| Transactions | [`begin_transaction`](transactions.md#begin_transaction) | Begin Transaction | Open a group of writes for one Git commit. |
+| Transactions | [`end_transaction`](transactions.md#end_transaction) | End Transaction | Close a transaction and return its commit status, SHA and file count. |
 | Writer | [`write`](writer.md#write) | Write Note | Create a note or attachment, or replace one whole; returns its path and whether it was created. |
 | Writer | [`edit`](writer.md#edit) | Edit Note | Replace text in an existing note, chosen by an exact `old_text`, by a range of lines, or by an `old_text` within a range of lines. |
 | Writer | [`append`](writer.md#append) | Append to Note | Add text to the end of an existing note without reading it first. |
@@ -53,9 +59,11 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Writer | [`move_folder`](writer.md#move_folder) | Move Folder | Move a folder and everything under it to a new location, rewriting every link into it across the vault: rename for a whole folder. |
 | Writer | [`fetch`](writer.md#fetch) | Fetch to Vault | Download a URL on the server and save it in the vault as a note or attachment; returns its path, size and `final_url`. |
 | Writer | [`okf_convert_links`](writer.md#okf_convert_links) | OKF: Convert Wikilinks | Rewrite wikilinks as bundle-root-absolute Markdown links, the Open Knowledge Format's recommended style; returns counts of links converted and skipped. |
-| Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Write a folder's Open Knowledge Format index.md: a link to each note directly in it with its description, and one to each subfolder's index.md, replacing the old listing and keeping its frontmatter. |
+| Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Generate a folder's Open Knowledge Format index.md, preserving frontmatter. |
 | Writer | [`okf_seed_log`](writer.md#okf_seed_log) | OKF: Seed log.md | Create a folder's Open Knowledge Format log.md from the git history of the notes under it, one dated section per day, newest first. |
-| Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record that a person reviewed a note, raising its Open Knowledge Format trust tier to human-reviewed; returns the verifier recorded. |
+| Writer | [`okf_log_event`](writer.md#okf_log_event) | OKF: Record Editorial Event | Record one explanation for a change spanning existing concepts. |
+| Writer | [`okf_author`](writer.md#okf_author) | OKF: Author Concept | Set editorial fields or repair provenance on an existing OKF concept. |
+| Writer | [`okf_verify`](writer.md#okf_verify) | OKF: Verify Note | Record a review of a note snapshot; returns the verifier recorded. |
 | Git | [`get_history`](git.md#get_history) | Note History | List the commits that touched a note, an attachment, a folder or the whole vault, newest first. |
 | Git | [`get_diff`](git.md#get_diff) | Note Diff | Return how a note or attachment changed from an earlier commit to now, as one unified diff or one per commit. |
 | Git | [`git_sync`](git.md#git_sync) | Sync with Git | Pull from and push to the vault's git remote now; returns what each leg did. |
