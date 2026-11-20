@@ -9,7 +9,7 @@ reverse-proxy rules from that sentence, and a FastMCP upgrade could change
 it silently, so this file fails when a FastMCP bump does and the page needs
 rewording (template#656).
 
-``OAuthProxy`` stands in for the ``OIDCProxy`` pvl-core builds: the subclass
+``OAuthProxy`` stands in for the ``OIDCProxy`` ``_auth`` builds: the subclass
 only adds OIDC discovery of the upstream endpoints, which would need the
 network here, while the route wiring under test lives in the shared base.
 """

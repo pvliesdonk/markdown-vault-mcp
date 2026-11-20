@@ -5,7 +5,8 @@ similarity, recent, context, stats, attachment reads, and git history, diff
 and revision reads.
 Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
 :class:`GitQueryManager`; citation inspection analyzes one returned note-text
-snapshot. OKF stats include the vault's write-state projection. The bucket-3 methods
+snapshot with the pure citation reader. OKF stats also include the vault's
+write-state projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
