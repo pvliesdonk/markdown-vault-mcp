@@ -159,7 +159,7 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
     mcp._mcp_server.icons = _SERVER_ICON
 
     # Contribute the read-only-aware, conventions-aware domain guidance to
-    # pvl-core's instructions builder. Nothing is rendered here: the skeleton
+    # the instructions builder (``_instructions_builder``). Nothing is rendered here: the skeleton
     # body's finalize_instructions() call, after apply_tool_visibility(), is
     # the single point that serialises every contributor's snippets, prunes
     # those naming a tool the operator hid, appends
@@ -184,19 +184,18 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
 
 def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
     """Mount the capability-link transfer routes on an HTTP transport."""
-    # One-time capability-link transfer (#622, #979) via pvl-core's shared
-    # framework. HTTP/SSE only and only with base_url set: the /transfer/{token}
+    # One-time capability-link transfer (#622, #979) via ``_transfer_links``.
+    # HTTP/SSE only and only with base_url set: the /transfer/{token}
     # route needs an HTTP server, and register_transfer_routes raises without a
-    # public base URL. pvl-core owns the route, the KV-backed token store, and
-    # the two generic create_*_link tools (their names, titles, hints, icons,
+    # public base URL. ``_transfer_links`` owns the route, the KV-backed token
+    # store, and the two generic create_*_link tools (their names, titles, hints, icons,
     # and the ``write`` tag on upload that the read-only disable pass
     # honours); the domain supplies only the VaultTransferSink (note/attachment
     # read + write) and its validator. The optional notes add vault-specific
     # context to the generic tool descriptions without changing their shape.
     if transport == "stdio" or not config.server.base_url:
         return
-    from fastmcp_pvl_core import register_transfer_routes
-
+    from markdown_vault_mcp._transfer_links import register_transfer_routes
     from markdown_vault_mcp._transfer_sink import VaultTransferSink
 
     transfer_sink = VaultTransferSink(config)
@@ -269,12 +268,12 @@ def _register_jobs(mcp: FastMCP, config: ProjectConfig) -> None:
     # speaks MCP tasks gets native task execution; any other client past
     # the JOBS_SOFT_DEADLINE_S soft deadline gets a job handle to poll via
     # the generic get_job_result tool.
-    from fastmcp_pvl_core import build_jobs, register_job_tools
-
+    from markdown_vault_mcp._job_tools import register_job_tools
+    from markdown_vault_mcp._jobs import build_jobs
     from markdown_vault_mcp._tools import index as index_tools
     from markdown_vault_mcp._tools import summarize as summarize_tools
 
-    # With no KV backend configured, core's default (>=4.11.1) is
+    # With no KV backend configured, build_kv_store's default is
     # file:///data/state where that directory is usable (the Docker image)
     # and memory:// everywhere else (bare-metal/uvx installs, CI) — so this
     # needs no domain-side backend selection.

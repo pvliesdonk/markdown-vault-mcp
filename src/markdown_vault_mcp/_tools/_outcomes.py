@@ -2,7 +2,7 @@
 
 ``docs/design/design.md`` (Error Handling) maps each library signal to one
 tool outcome. :func:`library_outcomes` is that table in code, applied to every
-tool under pvl-core's ``tool_boundary``:
+tool under ``_tool_boundary.tool_boundary``:
 
 - a request the caller must change (``InvalidRequestError`` and its
   subclasses, ``EditConflictError``, ``DocumentExistsError``,
@@ -185,7 +185,7 @@ def maps_library_outcomes(fn: Callable[..., Any]) -> bool:
 def is_tool_boundary_wrapper(fn: Callable[..., Any]) -> bool:
     """Whether *fn* carries ``tool_boundary``'s marker attribute.
 
-    pvl-core's public ``is_tool_boundary`` follows ``__wrapped__`` all the way
+    ``_tool_boundary.is_tool_boundary`` follows ``__wrapped__`` all the way
     down, so it cannot say where in the chain the boundary sits; this reads
     the same private marker at one level only.
     """
