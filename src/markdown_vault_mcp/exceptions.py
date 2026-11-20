@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Literal
 
-# ConfigurationError is owned by fastmcp-pvl-core — the shared base guaranteed
-# across the whole *-mcp server series — and re-exported here as the project's
-# one canonical config error (#638). env_int/env_float(strict=...) raise it,
-# and config validation + git-remote checks raise the same catchable type, so
-# `markdown_vault_mcp.exceptions.ConfigurationError` and the pvl-core class are
-# identical.
-from markdown_vault_mcp._pvl_core import ConfigurationError as ConfigurationError
+
+class ConfigurationError(Exception):
+    """Operator-visible misconfiguration detected at startup or load time.
+
+    The project's one config error (#638): ``env_int`` / ``env_float`` with
+    ``strict=True``, config validation and the git-remote checks all raise it,
+    so a single ``except ConfigurationError`` catches every such failure. It
+    was fastmcp-pvl-core's class until the fold (#2283); it is deliberately
+    not a :class:`MarkdownMCPError`, because a startup config failure should
+    fail hard rather than be caught by a library-error handler.
+    """
 
 
 class MarkdownMCPError(Exception):

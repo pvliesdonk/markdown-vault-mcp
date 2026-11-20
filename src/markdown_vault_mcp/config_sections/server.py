@@ -346,8 +346,8 @@ class ServerConfig:
         default=None,
         metadata={
             "help": (
-                "Persistent-state backend URL shared by every pvl-core "
-                "subsystem that needs state. ``memory://`` is in-process and "
+                "Persistent-state backend URL shared by every part of the "
+                "server that needs state. ``memory://`` is in-process and "
                 "lost on restart; ``file:///path`` persists on one server; "
                 "``redis://``, ``dynamodb://`` and ``mongodb://`` each need "
                 "their matching extra. When unset, defaults to "

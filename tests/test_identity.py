@@ -7,7 +7,7 @@ claim-extraction edge cases previously pinned on the git strategy's deleted
 ``_extract_claim`` (absent claim, empty string, non-string value, no
 configured key, no token).
 
-The monkeypatch targets are the ``markdown_vault_mcp._pvl_core`` attributes —
+The monkeypatch targets are the ``markdown_vault_mcp._subject`` attributes —
 enabled by the deliberate function-local imports in ``_identity`` (the same
 pattern ``_okf_write`` uses).
 """

@@ -10,9 +10,9 @@ from markdown_vault_mcp._debug import maybe_start_debugpy
 from markdown_vault_mcp._http_path import normalise_http_path
 from markdown_vault_mcp._kv_store import build_event_store
 from markdown_vault_mcp._logging_setup import configure_logging_from_env
-from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp._serve import run_http
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 app = typer.Typer(
     name="markdown-vault-mcp",

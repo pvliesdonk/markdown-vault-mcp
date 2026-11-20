@@ -14,10 +14,9 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import TYPE_CHECKING, Literal, TypeVar, overload
+from typing import Literal, TypeVar, overload
 
-if TYPE_CHECKING:
-    from markdown_vault_mcp._pvl_core import ConfigurationError
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +34,11 @@ def _required_with_default(func: str) -> TypeError:
 
 
 def _configuration_error(message: str) -> ConfigurationError:
-    """Build the config error, importing its class only when one is raised.
+    """Build the config error raised for an invalid or missing variable.
 
-    The class is still pvl-core's: core code not yet moved (``ServerConfig``,
-    auth, transfer) raises it too, and callers here catch one type, so it becomes
-    this project's own class only once no core code is left (#2283). Importing
-    it here, not at module level, keeps a plain read such as the CLI client's
-    profile from loading pvl-core and FastMCP (#2016).
+    ``exceptions`` imports nothing heavy, so a plain read such as the CLI
+    client's profile still loads neither FastMCP nor any server module (#2016).
     """
-    from markdown_vault_mcp._pvl_core import ConfigurationError
-
     return ConfigurationError(message)
 
 

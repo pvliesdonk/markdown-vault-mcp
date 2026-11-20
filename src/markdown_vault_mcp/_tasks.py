@@ -26,8 +26,8 @@ import os
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._env import _resolve_key
-from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp._url import parse_operator_url
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP

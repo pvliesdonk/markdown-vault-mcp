@@ -34,7 +34,7 @@ from __future__ import annotations
 import re
 from urllib.parse import ParseResult, urlparse
 
-from markdown_vault_mcp._pvl_core import ConfigurationError
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 UNPARSEABLE = "<unparseable>"
 """Stand-in for a URL that could not be parsed, for logs and redactions."""

@@ -5,8 +5,8 @@ the server's own version and, optionally, an upstream service's version: the
 one-call check an operator wants when verifying that a fresh image is serving
 traffic (a ``docker pull`` without a restart leaves the old one up).
 
-``core_version`` still reports the installed pvl-core version, read through the
-shim; #2283 decides what it becomes once pvl-core is gone. How FastMCP builds
+The payload no longer carries ``core_version``: it reported the installed
+fastmcp-pvl-core version, which the fold removed (#2283). How FastMCP builds
 the tool description and how clients read it is in
 ``docs/design/reference/mcp-model-facing-text.md``.
 """
@@ -43,9 +43,7 @@ result, if a coroutine is returned) is interpreted per
 :data:`UpstreamResult`."""
 
 
-_RESERVED_KEYS = frozenset(
-    {"server_name", "server_version", "core_version", "protocol"}
-)
+_RESERVED_KEYS = frozenset({"server_name", "server_version", "protocol"})
 """Keys that ``upstream_label`` must not collide with."""
 
 
@@ -88,7 +86,6 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
         {
           "server_name": "<server_name>",
           "server_version": "<server_version>",
-          "core_version": "<installed fastmcp-pvl-core version>",
           "protocol": {
             "supported_versions": ["2024-11-05", ..., "2026-07-28"],
             "version": "<revision of this connection>" | None,
@@ -127,7 +124,7 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
         upstream_label: Key under which the upstream block appears in the
             response.  Defaults to ``"upstream"``.  Must not collide with
             the reserved keys ``server_name``, ``server_version``,
-            ``core_version`` or ``protocol``; this is validated eagerly at registration
+            or ``protocol``; this is validated eagerly at registration
             time, even when ``upstream_version`` is ``None``.  When no
             provider is configured the label is otherwise unused — no
             block keyed under it appears in the payload.
@@ -143,7 +140,7 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
 
     Raises:
         ValueError: If ``upstream_label`` collides with a reserved payload
-            key (``server_name``, ``server_version``, ``core_version``,
+            key (``server_name``, ``server_version``,
             ``protocol``).
     """
     if upstream_label in _RESERVED_KEYS:
@@ -157,13 +154,11 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
     from fastmcp.server.dependencies import get_context
     from mcp.types import ToolAnnotations
 
-    from markdown_vault_mcp._pvl_core import CORE_VERSION as core_version
-
     # Model-facing text: what the call returns and when to choose it, in
     # terms the model sees in the result (``writing-model-facing-text``).
     default_description = (
         f"Report the version information of {server_name}; returns "
-        "server_name, server_version, core_version, the MCP protocol revisions "
+        "server_name, server_version, the MCP protocol revisions "
         "supported and the revision and client of this connection, and, when "
         "configured, the upstream service's version. Use it when asked which "
         "version or build is running or which protocol revision is in use."
@@ -173,7 +168,6 @@ def register_server_info_tool(  # noqa: PLR0913, RUF100 -- ported keyword-only s
         payload: dict[str, Any] = {
             "server_name": server_name,
             "server_version": server_version,
-            "core_version": core_version,
             "protocol": _protocol_block(get_context()),
         }
         if upstream_version is None:

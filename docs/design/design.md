@@ -62,11 +62,12 @@ is recorded in [Python packaging boundaries](reference/python-packaging-boundari
 
 ## Shared Infrastructure
 
-Generic FastMCP infrastructure (auth providers, middleware stack, logging
-bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
-`fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
-via `ServerConfig` (never inheritance) and imports the building blocks
-directly. See `make_server()` in `src/markdown_vault_mcp/server.py` for the
+Generic FastMCP infrastructure (auth providers, the request-logging
+middleware, the logging bootstrap, jobs, transfer links, health routes, server
+info, the instructions builder, `ServerConfig`) came from the
+`fastmcp-pvl-core` PyPI package and was folded into this package in the 015
+pvl-core-fold (#2241); `docs/design/module-map.md` lists the modules. The
+domain config composes `ServerConfig` (never inheritance). See `make_server()` in `src/markdown_vault_mcp/server.py` for the
 assembled call graph.
 
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
@@ -2281,11 +2282,12 @@ unguessable token (32 random bytes, URL-safe) is the authorization; no
 
 The token store is KV-backed (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk state
 by default), so live links survive a server restart. The full state-machine and
-route mechanics are pvl-core's; see its ADR 0001 for the contract.
+route mechanics are `_transfer_store.py` and `_transfer_routes.py`, ported from
+pvl-core, whose ADR 0001 records the contract.
 
 #### Domain seam (`VaultTransferSink`)
 
-The sink is byte-oriented: pvl-core hands it the opaque sink handle and, for an
+The sink is byte-oriented: the route hands it the opaque sink handle and, for an
 upload, the fully-read (size-capped) body.
 
 - **Download** (`read(handle)`): the handle is a vault path. A `.md` note is
@@ -2398,10 +2400,11 @@ unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). The `httpx`
 and `httpcore` loggers are pinned to `WARNING` at the default level so their
 per-request `INFO` line does not flood embedding builds; at `-v` they are reset
 to `NOTSET` so the root `DEBUG` level governs and they become visible. This
-mirrors core's `uvicorn.access` / `mcp.server.lowlevel.server` handling, but
-stays domain-local because `fastmcp-pvl-core` does not own these dependencies.
+mirrors the logging setup's `uvicorn.access` / `mcp.server.lowlevel.server`
+handling, but stays in its own module because these are the vault's HTTP-client
+dependencies.
 
-**Request logging:** `make_server()` wires pvl-core's single
+**Request logging:** `make_server()` wires the single
 `RequestLoggingMiddleware` (via `wire_middleware_stack`), which emits
 family conforming, tool-aware lines: a bare event name first, then
 `key=value` pairs, with request timing carried inline on the terminal line.
@@ -4104,7 +4107,7 @@ acting" is resolved **once, at the MCP tool edge**, into a frozen
 `kind: human|service|local`) — credentials (`GIT_TOKEN`) and permissions
 (`read_only`) deliberately stay off it; they are service configuration, not
 properties of the caller. `resolve_mcp_principal()` performs the single
-request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
+request-context read (`_subject.get_subject()` + `get_claims()`,
 applying the claim keys registered at startup via
 `configure_identity_claims()`), and the write tools bind the result on a
 contextvar (`write_identity_scope()` in `_tools/writer.py`) around
@@ -5867,21 +5870,21 @@ interchangeable:
 - **Python conditionals in `_domain_snippets()`** gate on configuration
   (`read_only`, a configured conventions file, an OKF mode, a summarize
   backend, the boot reindex switch). These are the only gate that works for this server's
-  `mcp.disable(tags=...)` calls, which pvl-core deliberately does not model:
+  `mcp.disable(tags=...)` calls, which the builder deliberately does not model:
   a disabled-but-registered tool still counts as exposed at finalize.
 - **The `requires_tools` declaration on a snippet** gates on the operator's
-  `TOOLS_ALLOW` / `TOOLS_DENY` lists. pvl-core drops a snippet whose declared
+  `TOOLS_ALLOW` / `TOOLS_DENY` lists. The builder drops a snippet whose declared
   tools are not all exposed, so workflow prose can never point the model at a
   tool an operator removed. A name belongs in that declaration only when its
   absence makes the snippet actively wrong — not when the snippet merely
   mentions it or offers it as an alternative.
 
-Ordering comes from pvl-core's semantic roles:
+Ordering comes from the builder's semantic roles:
 `IDENTITY`, `ROUTING`, `INSTANCE`, `POLICY`, `CAPABILITIES`, `WORKFLOWS`, then
 `DOCUMENTATION`, with insertion order preserved within a role. The vault
 prelude uses `CAPABILITIES`, workflow fragments use `WORKFLOWS`, and the
 READ-ONLY/READ-WRITE announcement uses `INSTANCE`. General contributors may
-use only `INSTANCE`, `CAPABILITIES`, and `WORKFLOWS`; pvl-core reserves shaped
+use only `INSTANCE`, `CAPABILITIES`, and `WORKFLOWS`; the builder reserves shaped
 identity, operator routing and policy, and the documentation role.
 
 Operators shape the result with three env vars read inside
@@ -5905,7 +5908,7 @@ Whether instructions reach the model depends on the client; see the
 The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
-must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
+must remain at or below the builder's 1,536 UTF-16-unit generated target. It is
 1,229 units as of #1599, down from 1,507 at #1252's acceptance fix. A second
 case adds representative routing and policy and must remain within Claude Code's 2,048-unit limit.
 The mode, the missing-summarize pointer, conventions, and OKF guidance are
@@ -5925,7 +5928,7 @@ evidence establishes where the floor is.
 category and total ceilings #1253 and #1258 introduced). The only client
 limits with a documented source are per item: Claude Code's 2,048-unit cut on
 each tool description and on the instructions, pinned by the template-owned
-`tests/test_model_facing_text.py`, and pvl-core's 1,536-unit target for the
+`tests/test_model_facing_text.py`, and the builder's 1,536-unit target for the
 generated instructions above. No source derives an aggregate ceiling; the
 category caps were measurements of the day plus one percent, and they
 penalised the move the `writing-model-facing-text` skill prescribes (a fact
@@ -5933,8 +5936,8 @@ leaving a tool description for the parameter that needs it), which is how a
 pvl-core release that only filled empty parameter descriptions tripped one.
 The size of the surface is bounded by writing every description against that
 skill, not by a number. The aggregate cost of an eager client receiving every
-description and schema is pvl-core's problem to solve with a catalog mode
-(pvliesdonk/fastmcp-pvl-core#300); if that study yields a measured threshold,
+description and schema would be addressed by a catalog mode (studied in
+pvliesdonk/fastmcp-pvl-core#300, before the fold); if that study yields a measured threshold,
 a budget derived from it is stated in tokens, per client class, with its
 derivation beside the number.
 
@@ -5992,8 +5995,8 @@ upstream FastMCP #4952).
   Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
   floor the guard lives in the transport httpx sends each hop through, so a
   `Location` pointing at an internal target is refused exactly as a directly
-  supplied one is. The posture is not locally configurable — pvl-core owns
-  it — and it was adopted deliberately rather than inherited silently: per-hop
+  supplied one is. The posture is not configurable — `_fetch.py` fixes it —
+  and it was adopted deliberately rather than inherited silently: per-hop
   revalidation is a stronger guarantee than a blanket refusal, and ordinary
   indirection (`http`→`https`, shortened links, CDN hand-offs) now resolves
   instead of erroring. The cost is that the bytes need not come from the host

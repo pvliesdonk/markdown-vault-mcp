@@ -156,7 +156,7 @@ def apply_summarize_limits(mcp: FastMCP, *, max_notes: int) -> None:
     block calls, where the loaded
     config is available (registration itself is config-free by template
     contract). Uses the same ``local_provider._components`` access as
-    ``fastmcp_pvl_core.register_tool_icons``, with the same guard.
+    ``_tool_visibility._index_tools_by_name``, with the same guard.
 
     Args:
         mcp: The FastMCP instance the summarize tool was registered on.

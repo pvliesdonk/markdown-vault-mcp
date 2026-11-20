@@ -1008,27 +1008,6 @@ tasks = [
 ]
 
 [[package]]
-name = "fastmcp-pvl-core"
-version = "10.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "fastmcp", extra = ["tasks"] },
-    { name = "httpx" },
-    { name = "httpx2" },
-    { name = "opentelemetry-api" },
-    { name = "uvicorn" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/13/4a/1e41c5fb0d59788f39a32269dd155128d122f2ac629341adfc8f842d67be/fastmcp_pvl_core-10.2.0.tar.gz", hash = "sha256:bb649fb60795d6c08adeec47679e5b81c062f84102f02a96231c2d1e62800c90", size = 717469, upload-time = "2026-10-02T09:44:49.154Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/22/9a4039793d37df0540b158b93db8a917fee3238f0c34fa26a12f9d02949b/fastmcp_pvl_core-10.2.0-py3-none-any.whl", hash = "sha256:5d9c053c3462915f51332f08146c629d582597d72db691519bd9cebf23860baa", size = 200421, upload-time = "2026-10-02T09:44:47.492Z" },
-]
-
-[package.optional-dependencies]
-debug = [
-    { name = "debugpy" },
-]
-
-[[package]]
 name = "fastmcp-slim"
 version = "4.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1827,13 +1806,13 @@ version = "6.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp", extra = ["tasks"] },
-    { name = "fastmcp-pvl-core" },
     { name = "httpx" },
     { name = "httpx2" },
     { name = "opentelemetry-api" },
     { name = "python-frontmatter" },
     { name = "requests" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -1849,7 +1828,7 @@ all = [
     { name = "watchdog" },
 ]
 debug = [
-    { name = "fastmcp-pvl-core", extra = ["debug"] },
+    { name = "debugpy" },
 ]
 embeddings = [
     { name = "fastembed" },
@@ -1910,13 +1889,12 @@ docs = ">=3.11.5"
 
 [package.metadata]
 requires-dist = [
+    { name = "debugpy", marker = "extra == 'debug'", specifier = ">=1.8" },
     { name = "fastembed", marker = "extra == 'all'", specifier = ">=0.3" },
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
     { name = "fastmcp", extras = ["tasks"], specifier = ">=4" },
-    { name = "fastmcp-pvl-core", specifier = ">=10.1.0,<11" },
-    { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
@@ -1939,6 +1917,7 @@ requires-dist = [
     { name = "python-frontmatter", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.50" },
     { name = "watchdog", marker = "extra == 'all'", specifier = ">=4.0.2" },
     { name = "watchdog", marker = "extra == 'file-watcher'", specifier = ">=4.0.2" },
 ]

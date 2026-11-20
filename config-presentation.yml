@@ -2,7 +2,7 @@
 #
 # Ships byte-identical to every project: `{PREFIX}` is replaced with the
 # project's env_prefix at generation time.  Core `ServerConfig` vars are NOT
-# listed here — they come from fastmcp_pvl_core.server_config_surface(), which
+# listed here — they come from markdown_vault_mcp._config_surface.server_config_surface(), which
 # owns their help text and tags.  This file declares only the vars core does
 # not know about, plus how every var is laid out in each artifact.
 
@@ -206,7 +206,7 @@ vars:
 # region's own `required:` filter can never disagree about this list.
 #
 # The four OIDC entries below are exactly `build_oidc_proxy_auth`'s guard
-# (`fastmcp_pvl_core._auth.build_oidc_proxy_auth`): it builds
+# (`markdown_vault_mcp._auth.build_oidc_proxy_auth`): it builds
 # `required_public = {"BASE_URL": ..., "OIDC_CONFIG_URL": ..., "OIDC_CLIENT_ID": ...}`
 # plus a separately-checked `oidc_client_secret`, and returns `None` — no
 # OIDC provider at all — unless all four are set. `OIDC_JWT_SIGNING_KEY` is
@@ -309,7 +309,7 @@ markdown_vocabulary:
 documented_defaults:
   # `build_oidc_proxy_auth`: `required_scopes = list(config.oidc_required_scopes)
   # or ["openid"]`. The field default itself is `()`
-  # (`fastmcp_pvl_core._config.ServerConfig.oidc_required_scopes`,
+  # (`config_sections.server.ServerConfig.oidc_required_scopes`,
   # `default_factory=tuple`) — non-`None` but empty, so `_is_empty_default`
   # routes it here instead of printing the literal `()`.
   "{PREFIX}_OIDC_REQUIRED_SCOPES": "openid"
@@ -328,7 +328,7 @@ documented_defaults:
   # explanation.
   "{PREFIX}_OIDC_JWT_SIGNING_KEY": "derived"
   # `kv_store_url`'s own field default is `None` (verified:
-  # `fastmcp_pvl_core.ServerConfig.kv_store_url`,
+  # `config_sections.server.ServerConfig.kv_store_url`,
   # `default=None`/`default_factory=MISSING`) — the runtime fallback to
   # `file:///data/state` lives in pvl-core's KV-backend selection, not in
   # this field, and the help text (`"Defaults to ``file:///data/state`` when

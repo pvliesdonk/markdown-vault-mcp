@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp.exceptions import (
     # For CONFIG-VALIDATE, which raises it.  The redundant alias marks an
     # explicit re-export, so ruff accepts the import whether or not a check
     # uses it; a `noqa: F401` would become an unused directive (RUF100) the

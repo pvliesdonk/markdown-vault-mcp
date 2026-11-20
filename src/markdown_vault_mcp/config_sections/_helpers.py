@@ -1,7 +1,7 @@
 """Shared env-reading helpers for config_sections from_env classmethods.
 
-Imports only pvl-core (through ``_pvl_core``) and stdlib, never config.py, so config.py can
-import these without a cycle.
+Imports only this package's env helpers and stdlib, never config.py, so
+config.py can import these without a cycle.
 """
 
 from __future__ import annotations

@@ -9,8 +9,8 @@ construction, the
 chunk-cap heuristic, and the ``from_env`` field validators — lives here instead
 (#900, epic #898).
 
-Imports only pvl-core (through ``_pvl_core``), stdlib, and sibling domain modules (never
-``config`` at runtime) so ``config.py`` can import these without a cycle.
+Imports only stdlib and sibling domain modules (never ``config`` at
+runtime) so ``config.py`` can import these without a cycle.
 """
 
 from __future__ import annotations
