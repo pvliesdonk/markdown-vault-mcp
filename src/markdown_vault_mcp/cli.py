@@ -720,12 +720,15 @@ def _report_import(report: ImportReport) -> None:
         )
 
 
-from markdown_vault_mcp._cli_admin import register_admin_commands  # noqa: E402
+from markdown_vault_mcp._cli_admin import register_admin_commands, register_okf_commands  # noqa: E402
+from markdown_vault_mcp._cli_bundle import register as register_bundle_commands  # noqa: E402
 from markdown_vault_mcp._cli_reader import register_read_commands  # noqa: E402
 
 # Read commands first, so the help lists them before the admin group (#2005).
 register_read_commands(app)
+register_bundle_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
+register_okf_commands(app)
 
 # DOMAIN-COMMANDS-END
 

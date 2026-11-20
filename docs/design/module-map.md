@@ -34,7 +34,7 @@ src/markdown_vault_mcp/
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
     embedding_import.py -- import_embeddings: `embeddings import` from another store — source resolution (DSN from the environment only), the refusals in order, the dry-run count, ImportReport/ImportRefused (#1505)
-    document.py        -- DocumentManager: note CRUD, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
+    document.py        -- DocumentManager: note CRUD, byte-preserving `replace_body`, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
@@ -53,7 +53,7 @@ src/markdown_vault_mcp/
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
-    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, numbered_files, report_unused_sidecar (#1505)
+    _legacy.py         -- the sidecar files releases and edge builds left beside a store: legacy_paths, matrix_sequence, numbered_files, report_unused_sidecar (#1505)
     _writer_lock.py    -- one writer process per built-in store: the flock on {base}.lock, shared and counted within a process, a no-op where no lock can be taken; StoreBusyError otherwise (#1505)
     _quarantine.py     -- move_aside: a corrupt built-in store's files renamed to .corrupt-<UTC time> under one suffix, undone on a refused rename (StoreUnavailableError) (#1505)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as `{base}.v2.json` naming a per-persist `{base}.v2.m<N>.npy`; a release's or edge build's `{base}.json` is read only through `legacy_only=True`, read-only, as an upgrade or import source (#1505)
@@ -92,7 +92,7 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: its optional paged chunk traversal; StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); RunsExactQueries: an index's optional exact population queries (#1842); ListsNoteStates: an index's optional frontmatter-free build-state listing (#1938); IteratesChunks: optional paged chunk traversal; ReportsRowState: optional single-read document disposition for bundle inventory (#1442); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767); ReportsResources: a store's optional cost report (#1377); DescribesStore: a store's optional account of where it lives (#1504); ReadsMetadataInBatches: a store's optional batched metadata read for reconcile passes (#1937); ReadsRowsInBatches: its optional batched row read for whole-store passes (#1970)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_queries.py      -- exact distinct-note predicates, scoped FTS, consistent pages/counts/buckets and internal Unicode path lookup
   query_types.py       -- validated note/path requests and typed population/discovery results
@@ -106,9 +106,15 @@ src/markdown_vault_mcp/
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  okf_capabilities.py  -- resolve OKF authority, the legacy alias, and designated index paths
+  _cli_bundle.py       -- CLI adapter for bounded OKF inventory
+  bundle_inventory.py -- Bounded selected-directory and pageable subtree observations, independent of index admission (#1442)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
-  _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
-  _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
+  _okf_author.py       -- deliberate editorial and producer changes preserving other frontmatter
+  _okf_convention.py   -- OKF reserved-file maintenance after writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
+  _okf_write.py        -- review subject resolution and maintenance suppression context
+  _okf_reserved_repair.py -- deliberate historical reserved-file placeholder cleanup
+  _path_guard.py       -- operator-configured mutation protection and path matching
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
@@ -170,6 +176,7 @@ src/markdown_vault_mcp/
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
+    okf_inventory.py   -- bounded read-only bundle inventory tool
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations
@@ -201,7 +208,7 @@ src/markdown_vault_mcp/
   _cli_output.py       -- human/JSON/agent read rendering, freshness and terminal-safe records
   _cli_options.py      -- shared Typer option aliases (connection, folder, agent, drain) for the read commands
   _cli_reader.py       -- register_read_commands: search plus every read-only command, one unit a CLI mounts whole (#2005)
-  _cli_admin.py        -- the admin group (index, reindex, embeddings import, repair-log #1403) and the hidden aliases for the first three's old names (#2005)
+  _cli_admin.py        -- the admin group (index, reindex, embeddings import, repair-log #1403), okf strip-seeded-frontmatter, and hidden aliases for the first three's old names (#2005)
   _read_payloads.py    -- SDK-independent search controls, payload validation and injected OKF annotations
   cli.py               -- CLI entry point
 ```
