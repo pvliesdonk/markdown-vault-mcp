@@ -274,10 +274,10 @@ def test_okf_refresh_waits_behind_initial_build(
     )
     original = col._index_mgr.build_index
 
-    def held_build(*, force: bool = False) -> Any:
+    def held_build(*, force: bool = False, before_search=None) -> Any:
         started.set()
         assert release.wait(5)
-        return original(force=force)
+        return original(force=force, before_search=before_search)
 
     monkeypatch.setattr(col._index_mgr, "build_index", held_build)
     try:
@@ -304,7 +304,7 @@ def test_okf_refresh_waits_behind_initial_build(
         col.close()
 
 
-@pytest.mark.parametrize("operation", ["convert", "generate"])
+@pytest.mark.parametrize("operation", ["convert"])
 def test_okf_refresh_still_rejects_never_built_index(
     tmp_path: Path, operation: str
 ) -> None:

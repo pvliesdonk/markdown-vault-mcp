@@ -120,6 +120,8 @@ Envelope dict whose shape depends on `per_commit`:
 Pull from and push to the vault's git remote now; returns what each leg did.
 
 With direction "both" the pull runs first, and a failed pull skips the push.
+A real sync waits up to 30 seconds for your open or pending transaction
+commits. If one is pending or failed, no sync leg runs.
 
 **Parameters**
 
@@ -127,6 +129,7 @@ With direction "both" the pull runs first, and a failed pull skips the push.
 |---|---|---|---|
 | `direction` | `pull \| push \| both` | `"both"` | `pull`, `push` or `both` (default). |
 | `dry_run` | `boolean` | `false` | Report what a pull would do without changing anything; the push leg reports applied false without contacting the remote. |
+| `transaction` | `string \| null` | `null` | Handle to validate and close before syncing. Real sync closes your open transactions and waits for pending closes even when omitted. Omit for `dry_run`; previews leave transactions open. |
 
 **Returns**
 
@@ -160,9 +163,9 @@ Dict with the following fields:
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,
-    optional): present when the search index could not be
-    refreshed after the pull, so search serves stale results
-    until the next reindex.
+    optional): present when the search index or observation
+    state could not be refreshed after the pull, so search may serve
+    stale results until the next reindex.
 
 - push (dict | None): Payload from the push leg, or `None`
   when direction is `"pull"` or when the pull leg failed with
