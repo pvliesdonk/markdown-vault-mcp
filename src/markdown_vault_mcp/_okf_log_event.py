@@ -44,7 +44,7 @@ _deferred: ContextVar[bool] = ContextVar("okf_deferred_event", default=False)
 
 @contextmanager
 def deferred_event() -> Iterator[None]:
-    """Suppress automatic write bullets while retaining index maintenance."""
+    """Suppress automatic write bullets in this context while retaining index maintenance."""
     token = _deferred.set(True)
     try:
         yield
@@ -370,8 +370,7 @@ def record_group_events(
         today: Date captured when the group closed.
 
     """
-    root = doc_mgr._source_dir.resolve()
-    logs: list[Path] = []
+    logs: list[str] = []
     failures: list[Exception] = []
     grouped = _group_by_log(doc_mgr, paths, policy[0], failures)
     for folder, paths_for_log in grouped.items():
@@ -390,11 +389,11 @@ def record_group_events(
             logger.error(
                 "okf_group_event_failed path=%s completed=%s",
                 failed,
-                [str(p.relative_to(root)) for p in logs],
+                logs,
                 exc_info=True,
             )
             failures.append(exc)
             continue
-        logs.append(root / log)
+        logs.append(log)
     if failures:
         raise ExceptionGroup("Group history could not be recorded", failures)

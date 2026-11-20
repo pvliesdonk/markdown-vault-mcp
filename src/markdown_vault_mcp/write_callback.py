@@ -366,10 +366,7 @@ class WriteCallbackDispatcher:
             group.active += 1
             group.touched = time.monotonic()
         try:
-            with (
-                bound_commit_group(group.scope),
-                deferred_event(),
-            ):
+            with bound_commit_group(group.scope), deferred_event():
                 yield
         finally:
             with self._group_lock:
@@ -512,9 +509,7 @@ class WriteCallbackDispatcher:
         with self._group_lock:
             owner = owner_key(principal)
             groups = [
-                g
-                for g in self._groups.values()
-                if g.owner == owner and not g.closed and not g.closing
+                g for g in self._groups.values() if g.owner == owner and not g.closing
             ]
             pending = {
                 h: future
@@ -549,7 +544,7 @@ class WriteCallbackDispatcher:
     def _expire_group(self, handle: str) -> None:
         with self._group_lock:
             group = self._groups.get(handle)
-            if self._groups_closed or group is None or group.closed or group.closing:
+            if self._groups_closed or group is None or group.closing:
                 return
             now = time.monotonic()
             deadline = min(
@@ -711,6 +706,11 @@ class WriteCallbackDispatcher:
 
     def _run(self) -> None:
         """Worker loop: drain the queue until the sentinel is dequeued."""
+        # The worker is started only by ``fire`` (via ``_ensure_worker_locked``),
+        # and ``fire`` starts it only when ``_on_write`` is not None. ``_on_write`` is
+        # set once in ``__init__`` and never reassigned, so it is non-None here.
+        on_write = self._on_write
+        assert on_write is not None  # noqa: S101, RUF100 - worker requires a callback
         try:
             while True:
                 item = self._queue.get()
@@ -832,9 +832,7 @@ class WriteCallbackDispatcher:
 
         with self._group_lock:
             self._groups_closed = True
-            groups = [
-                g for g in self._groups.values() if not g.closed and not g.closing
-            ]
+            groups = [g for g in self._groups.values() if not g.closing]
             pending = [future for _, future in self._finished_groups.values()]
         pending.extend(
             self.close_group(g.handle, g.principal, _automatic=True) for g in groups
