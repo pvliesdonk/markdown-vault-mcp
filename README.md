@@ -36,7 +36,9 @@ The [tools reference](docs/reference/tools/index.md) lists every tool. The same 
 What the server can reach, what it changes and who gets in is set out in the [security model](docs/security-model.md); the block below says who it serves and where it stops.
 
 <!-- DOMAIN-README-FIT-START -->
-It suits one person or a small team who keep notes as Markdown files and want Claude to search them, follow their links and write back into them, on their own machine or as a shared server. It reaches the vault folder, plus only what you configure: a git remote, an embedding or summarizing model, and the URLs a `fetch` call names.
+It suits one person or a small team who keep notes as Markdown files and want Claude to search them, follow their links and write back into them, on their own machine or as a shared server.
+
+It reaches the vault folder, plus only what you configure: a git remote and an embedding or summarizing model. It also reaches the URLs a `fetch` call names.
 
 What it assumes:
 
@@ -85,6 +87,8 @@ uv tool install "markdown-vault-mcp[all]"
 ```
 
 The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
+Library callers can install `"markdown-vault-mcp[libgit2]"` for the optional local versioned store; see the [Git API guide](docs/reference/api/git.md).
+
 
 For VS Code or Goose Desktop, use the
 [remote vault connection examples](docs/get-started/http-client.md#vs-code-connect-to-this-vault)

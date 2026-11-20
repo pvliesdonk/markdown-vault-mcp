@@ -2,6 +2,9 @@
 
 ## 2026-11-17
 
+- [Local Git operations through pygit2](git-libgit2.md): recorded Git 2.56.1 shared repository permissions, frozen-clock noon parsing and UTC author-date formatting, with synthetic parity regressions. Other claims and review deadline remain unchanged.
+- Same reference: recorded split index, case-insensitive names, warmed filter configuration and patch path quoting against Git 2.56.1 and pygit2 1.21.0. Other claims and review deadline remain unchanged.
+
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
   observed `next` URL host for #1853, from a full pagination of both sources.
   Other claims and review date unchanged.
@@ -11,6 +14,8 @@
   creating a probe file.
 
 ## 2026-11-16
+
+- New: [Local Git operations through pygit2](git-libgit2.md), covering the native index, blob and rename APIs and an external-filter counterexample. Next review: 2027-05-16.
 
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
