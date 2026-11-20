@@ -777,8 +777,10 @@ class TestOkfVerifyTrustAuth:
     async def test_written_subject_remains_recorded_on_read(
         self, monkeypatch: pytest.MonkeyPatch, subject: str
     ) -> None:
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
-        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": subject})
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: subject)
+        monkeypatch.setattr(
+            "markdown_vault_mcp._subject.get_claims", lambda: {"sub": subject}
+        )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
