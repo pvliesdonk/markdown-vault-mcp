@@ -122,7 +122,7 @@ def test_instructions_env_override(
     # would otherwise drop the record under a stricter env.
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", raising=False)
     monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
-    with caplog.at_level("WARNING", logger="fastmcp_pvl_core"):
+    with caplog.at_level("WARNING", logger="markdown_vault_mcp._instructions_builder"):
         server = make_server()
     assert server.instructions == "Custom operator text."
     warning = next(
