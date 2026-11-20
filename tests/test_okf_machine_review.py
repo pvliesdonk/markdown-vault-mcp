@@ -77,8 +77,8 @@ async def test_machine_checks_require_service_with_usable_identity(
 ) -> None:
     from fastmcp.exceptions import ToolError
 
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
-    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: claims)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: subject)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_claims", lambda: claims)
     async with Client(make_server()) as client:
         with pytest.raises(ToolError):
             await client.call_tool(

@@ -669,12 +669,12 @@ applied to logs.
 ### Export
 
 Export ships **not as a bespoke tool but as an overloaded download ref** on
-pvl-core's `create_download_link` (the transfer subsystem adopted in #979). The
+`create_download_link` (the transfer subsystem adopted in #979). The
 domain `VaultTransferSink` recognises a bundle ref — `okf-bundle` for the whole
 vault, `okf-bundle:<folder>` for a subtree — validates the scope at link
 creation (gated out when `OKF_MODE=off`), and generates the archive at fetch
-time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
-model (a domain use of the primitives) expressed without a new tool: a
+time via `okf_bundle.build_okf_bundle`. This is a domain use of the transfer
+primitives expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
 The bundle is a conformant *copy*: wikilinks rewritten to root-absolute links

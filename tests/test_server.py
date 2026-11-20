@@ -142,7 +142,7 @@ class TestServerIdentity:
         assert server.instructions.startswith(
             "markdown-vault-mcp: Generic markdown vault MCP with hybrid search"
         )
-        # pvl-core does not append an operator-override hint: the
+        # The instructions builder does not append an operator-override hint: the
         # instructions are model-facing prose, and the env vars that shape
         # them are documented for operators rather than advertised to the
         # model. Pinned so a regression re-adding it is caught.
@@ -155,9 +155,8 @@ class TestServerIdentity:
         library enforced it. This server does enforce it, so the sentence is
         a domain snippet with the semantic ``INSTANCE`` role.
         """
-        from fastmcp_pvl_core import InstructionRole
-
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         for read_only, expected in ((True, "READ-ONLY"), (False, "READ-WRITE")):
             snippets = _domain_snippets(GuidanceConfig(read_only=read_only))
@@ -168,9 +167,8 @@ class TestServerIdentity:
 
     def test_a_server_without_the_boot_reindex_says_to_reindex(self) -> None:
         """#1542: offline changes stay unindexed, so the model is told."""
-        from fastmcp_pvl_core import InstructionRole
-
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         default = _domain_snippets(GuidanceConfig(read_only=False))
         assert not [s for s in default if "reindex" in s.text]
@@ -193,10 +191,9 @@ class TestServerIdentity:
         assert "stay unindexed" not in (make_server().instructions or "")
 
     def test_domain_snippets_use_their_normative_roles(self) -> None:
-        """Pin the role ownership required by pvl-core's #299 design."""
-        from fastmcp_pvl_core import InstructionRole
-
+        """Pin the role ownership required by the fastmcp-pvl-core#299 design."""
         from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
+        from markdown_vault_mcp._instructions_builder import InstructionRole
 
         snippets = _domain_snippets(
             GuidanceConfig(
@@ -231,7 +228,7 @@ class TestServerIdentity:
         self, monkeypatch: pytest.MonkeyPatch, folders: str
     ) -> None:
         """The complete generated feature matrix keeps operator headroom."""
-        from fastmcp_pvl_core import (
+        from markdown_vault_mcp._instructions_builder import (
             GENERATED_INSTRUCTIONS_TARGET_UTF16,
             utf16_code_units,
         )
@@ -257,7 +254,7 @@ class TestServerIdentity:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Routing and policy retain their positions inside the client budget."""
-        from fastmcp_pvl_core import (
+        from markdown_vault_mcp._instructions_builder import (
             CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
             utf16_code_units,
         )
@@ -295,7 +292,7 @@ class TestServerIdentity:
     ) -> None:
         """Every domain fragment survives into the composed instructions.
 
-        pvl-core drops a snippet whose declared ``tools`` are not all
+        The builder drops a snippet whose declared ``tools`` are not all
         exposed, and logs the drop at DEBUG rather than raising — so a tool
         renamed without updating a declaration would silently delete
         guidance from every server. The write half is pinned at import time
@@ -484,7 +481,7 @@ class TestConfigDrivenPrompts:
     ) -> None:
         """A passed config shapes the composed guidance, not a stored string.
 
-        pvl-core 5 owns the ``INSTRUCTIONS`` / ``INSTRUCTIONS_EXTRA`` env
+        ``_instructions_builder`` owns the ``INSTRUCTIONS`` / ``INSTRUCTIONS_EXTRA`` env
         contract inside ``finalize_instructions``, so ``ProjectConfig`` no
         longer carries an ``instructions`` field to override. What a passed
         config still decides is which domain snippets apply — here
@@ -910,17 +907,17 @@ class TestToolAnnotations:
         directly — bypassing ``make_server``'s tag-based disable passes — so
         disabled-by-default tools (``git_sync``, the HTTP-only transfer tools)
         are asserted too. ``get_server_info`` is not in this set: it is added
-        only by ``make_server`` via ``fastmcp-pvl-core``'s
+        only by ``make_server`` via ``_server_info``'s
         ``register_server_info_tool``, not the ``register_*`` functions; its
-        title (``"Server Info"`` on the >=4.1.0 core floor) is asserted
+        title (``"Server Info"`` by default) is asserted
         separately by ``test_get_server_info_has_title``.
         """
         from dataclasses import replace
 
         from fastmcp import FastMCP
-        from fastmcp_pvl_core import register_transfer_routes
 
         from markdown_vault_mcp._server_apps import register_apps
+        from markdown_vault_mcp._transfer_links import register_transfer_routes
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.tools import register_tools
@@ -928,8 +925,8 @@ class TestToolAnnotations:
         mcp = FastMCP("title-test")
         register_tools(mcp)
         register_apps(mcp)
-        # The HTTP-only transfer tools are registered by pvl-core's
-        # register_transfer_routes (core owns their titles/hints/icons); wire
+        # The HTTP-only transfer tools are registered by ``_transfer_links``'s
+        # register_transfer_routes (which sets their titles/hints/icons); wire
         # them here so the sweep asserts them too. base_url is required to mint,
         # so inject one rather than depend on the fixture env.
         config = ProjectConfig.from_env()
@@ -949,8 +946,8 @@ class TestToolAnnotations:
         # DOMAIN-WIRING block (they need the config-built Jobs mechanics,
         # #1033), not register_tools; wire them here the same way so the
         # full-registry sweep keeps asserting their metadata.
-        from fastmcp_pvl_core import build_jobs, register_job_tools
-
+        from markdown_vault_mcp._job_tools import register_job_tools
+        from markdown_vault_mcp._jobs import build_jobs
         from markdown_vault_mcp._tools import index as index_tools
         from markdown_vault_mcp._tools import summarize as summarize_tools
 
@@ -973,9 +970,8 @@ class TestToolAnnotations:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_get_server_info_has_title(self) -> None:
-        """get_server_info is core-owned; its title comes from the
-        fastmcp-pvl-core >=4.1.0 floor (register_server_info_tool's title
-        param, default "Server Info"). It is registered by make_server, not
+        """get_server_info's title comes from ``_server_info``'s
+        register_server_info_tool (its title param, default "Server Info"). It is registered by make_server, not
         the register_* functions, so it sits outside the registry sweep above
         and gets its own integration assertion (#754).
         """
@@ -2037,7 +2033,7 @@ class TestAttachmentSizeCap:
 
 
 class TestFetchTool:
-    """Tests for the fetch MCP tool — MVM's use of pvl-core's ``fetch_url``.
+    """Tests for the fetch MCP tool — its use of ``_fetch.fetch_url``.
 
     ``fetch_url`` is treated as a black-box library: tests stub the tool's
     own imported binding at its public interface (returning a real
@@ -2045,9 +2041,8 @@ class TestFetchTool:
     tool passes in and how it handles what comes back — dispatch, size-cap
     selection and translation, error surfacing, and the write paths. The
     primitive's own behaviour (SSRF blocked-range matrix, DNS pinning,
-    ``trust_env=False``, redirects, streaming caps) is pvl-core contract,
-    covered upstream in fastmcp-pvl-core's ``test_transfer_fetch.py`` and
-    not re-tested here (#1028) — except one zero-mock sentinel
+    ``trust_env=False``, redirects, streaming caps) is ``_fetch``'s contract,
+    covered in ``tests/test_fetch.py`` and not re-tested here (#1028) — except one zero-mock sentinel
     (:meth:`test_fetch_rejects_cgnat_ip`) proving the tool is wired to the
     hardened primitive.
     """
@@ -2070,7 +2065,7 @@ class TestFetchTool:
         URL when nothing redirected, which is what every caller here wants
         (pvl-core 4.11.2 made the field mandatory, #1114).
         """
-        from fastmcp_pvl_core import FetchResult
+        from markdown_vault_mcp._fetch import FetchResult
 
         return AsyncMock(
             return_value=FetchResult(
@@ -2540,9 +2535,9 @@ class TestFetchTool:
         """End-to-end SSRF sentinel (#862): CGNAT space is rejected.
 
         Deliberately unmocked — the IP-literal fast path needs no DNS or
-        network, so this proves the tool is wired to pvl-core's hardened
+        network, so this proves the tool is wired to ``_fetch``'s hardened
         primitive (whose permit-list guard blocks 100.64.0.0/10). The full
-        blocked-range matrix lives upstream in fastmcp-pvl-core's suite
+        blocked-range matrix lives in ``tests/test_fetch.py``
         (#1028); this also exercises the tool's non-size-cap ValueError
         passthrough (no bogus size-limit translation).
         """
@@ -3746,8 +3741,8 @@ class TestAuthModeSelection:
     Exercises the real make_server() assembly for the modes MV is
     responsible for wiring: multi, bearer-only, oidc-proxy, and none, plus
     the OIDC security defaults (blank scopes -> ["openid"], verify_id_token).
-    Remote-mode discovery and RemoteAuthProvider assembly are pvl-core-owned
-    (tested upstream); MV's only remote responsibility — the OIDC env vars
+    Remote-mode discovery and RemoteAuthProvider assembly belong to ``_auth``
+    (tested in ``tests/test_build_auth.py`` and ``tests/test_auth_builders.py``); MV's only remote responsibility — the OIDC env vars
     reaching config.server — is covered by TestServerConfigComposition.
     """
 
@@ -3961,7 +3956,7 @@ class TestAuthModeSelection:
         Guards against the log drifting from reality when e.g. OIDC
         discovery fails: field presence alone would suggest ``oidc-proxy``,
         but the actual auth object is ``None`` so ``server_configured`` must
-        say ``none``. ``build_auth`` is pvl-core's own function, so mocking
+        say ``none``. ``build_auth`` is ``_auth``'s own function, so mocking
         it out here also skips its ``auth_mode_resolved`` announcement —
         the ``server_configured`` line is the one summary this test can
         still observe.
@@ -4037,7 +4032,7 @@ class TestStartupSummaryLogging:
 
 
 class TestMiddlewareStack:
-    """Verify that make_server() wires pvl-core 3.x's logging middleware."""
+    """Verify that make_server() wires the request-logging middleware."""
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_default_middleware_wired(self) -> None:
@@ -4049,8 +4044,7 @@ class TestMiddlewareStack:
         inclusion are its concern now. Rich-vs-JSON output shape is
         exercised at the process level in test_container_logging.py.
         """
-        # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
+        from markdown_vault_mcp._request_logging import RequestLoggingMiddleware
 
         server = make_server()
         mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
@@ -4068,8 +4062,7 @@ class TestMiddlewareStack:
         ``-v`` (or ``MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG``) must be applied
         before ``make_server`` wires the middleware.
         """
-        # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
+        from markdown_vault_mcp._request_logging import RequestLoggingMiddleware
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", "DEBUG")
         root = logging.getLogger()
@@ -4971,7 +4964,7 @@ class TestResourceStaleSignal:
 async def test_transfer_tools_present_on_http(monkeypatch: pytest.MonkeyPatch) -> None:
     """The transfer tools register on HTTP transport with base_url set.
 
-    pvl-core's register_transfer_routes needs a public base URL (to build link
+    register_transfer_routes (``_transfer_links``) needs a public base URL (to build link
     URLs) and a KV backend for the token store; an in-memory backend keeps the
     test off the default on-disk state dir.
     """
@@ -5000,7 +4993,7 @@ async def test_transfer_download_present_upload_hidden_in_readonly(
 ):
     """In read-only mode the download link tool stays visible; upload is hidden.
 
-    create_upload_link carries pvl-core's ``write`` tag, so the read-only
+    create_upload_link carries the ``write`` tag, so the read-only
     ``mcp.disable(tags={"write"})`` pass hides it while download remains.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.test")
