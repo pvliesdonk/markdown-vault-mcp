@@ -35,7 +35,9 @@ id_token
 okf_verify
 
 # --- Write-tool identifiers (READ_ONLY-gated set, #1009) ---
+begin_transaction
 create_upload_link
+end_transaction
 git_sync
 move_folder
 
