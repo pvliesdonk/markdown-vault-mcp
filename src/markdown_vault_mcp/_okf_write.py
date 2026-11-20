@@ -8,7 +8,7 @@ resolvable only inside a tool handler — but the write path runs deep under
 sets ``verified`` deliberately and must not have it cleared) therefore travel via
 a contextvar: ``asyncio.to_thread`` copies the current context into its worker, so
 a value set around the ``to_thread`` call is visible to the enricher. This mirrors
-``fastmcp_pvl_core``'s own ``_current_auth_mode`` contextvar.
+the auth-mode contextvar in ``_subject``.
 
 What the spec requires of the ``generated`` / ``verified`` stamps written here
 (actor convention, timestamp form) is in ``docs/design/reference/okf-v0.2.md``;

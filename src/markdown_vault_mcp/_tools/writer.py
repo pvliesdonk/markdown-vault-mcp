@@ -24,7 +24,6 @@ from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp_pvl_core import fetch_url, tool_boundary
 from mcp.shared.exceptions import MCPError
 from mcp.types import (
     ElicitRequest,
@@ -34,6 +33,8 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from markdown_vault_mcp._fetch import fetch_url
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
@@ -887,8 +888,8 @@ def register(mcp: FastMCP) -> None:
         # All SSRF hardening (scheme allowlist, non-public-address rejection
         # incl. CGNAT, DNS-rebind pinning, trust_env=False, per-redirect-hop
         # revalidation of all of those, streaming size cap, userinfo/query
-        # redaction) lives in pvl-core's fetch_url — the shared primitive this
-        # tool's guard was lifted into (#862; pvl-core #219).
+        # redaction) lives in ``_fetch.fetch_url``: this tool's guard was lifted
+        # into pvl-core (#862; fastmcp-pvl-core#219) and ported back here (#2282).
         try:
             fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
         except ValueError as exc:

@@ -197,9 +197,10 @@ def _entries(section: str) -> list[str]:
 def _module_group(module: str) -> str:
     """The group a module names: its last segment, or the package above a ``register`` module.
 
-    A module called ``register`` names the act, not the feature: pvl-core
-    registers its jobs and transfer-link tools from ``_jobs.register`` and
-    ``_transfer.register``, and a project cannot tag a library's tool (#760).
+    A module called ``register`` names the act, not the feature: before the
+    fold (#2283) fastmcp-pvl-core registered its jobs and transfer-link tools
+    from ``_jobs.register`` and ``_transfer.register``, and a project cannot
+    tag a library's tool (#760).
     """
     parts = [part.lstrip("_") for part in module.split(".")]
     if len(parts) > 1 and parts[-1] == "register":
