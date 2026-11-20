@@ -682,7 +682,7 @@ became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 `033`. Each milestone keeps its identity and membership:
 
 - **[026 okf-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
-  (minor): [#1610][1610], [#1442][1442], [#1606][1606], [#1438][1438],
+  (major since 20 November): [#1610][1610], [#1442][1442], [#1606][1606], [#1438][1438],
   [#1421][1421].
 - **[027 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
   (patch; refactor and tests may need `override_version`): [#1308][1308],
@@ -692,23 +692,43 @@ became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 - **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
   the `028` of the sections above.
 - **[031 okf-storage-policy](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
-  (kind open until [#1412][1412] classifies its transition): [#1412][1412],
+  (major since 20 November): [#1412][1412],
   [#1432][1432], [#1411][1411].
 - **[032 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
   (minor): [#1309][1309].
 - **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
   the `030` of the sections above.
-- **[034 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**,
-  **[035 okf-authoring](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)** and
-  **[036 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
-  (minor, provisional): [#1419][1419] and [#1395][1395]; [#1422][1422];
-  [#1677][1677].
+- **[034 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)** and
+  **[035 okf-authoring](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)**
+  (major since 20 November, provisional): [#1419][1419] and [#1395][1395]; [#1422][1422].
+- **[036 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
+  (minor, provisional): [#1677][1677].
 - **[037 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
   (major, provisional): [#1448][1448].
 
 `derived` — Each package follows the candidate cut of the same name in
 § Follow-up slices, which carries its ordering argument. An open decision
 inside a package is work for that cut, not a reason to keep its issue out.
+
+`stated` — A package is the set of issues to resolve for a release, not a set
+of accepted PRs. A contributor-filed issue joins the package it is meant for,
+and accepting it is work inside that package (20 November 2026). This
+supersedes the 17 November rule that a contributor-proposed issue has no
+package until accepted.
+
+`stated` — A package whose work includes a PR with a breaking marker has major
+intent (20 November 2026). By that rule `024`, `026`, `031`, `034`, `035`,
+`037` and `038` are majors.
+
+`derived` — Two packages were added on 20 November 2026:
+
+- **[030 terminal-followups](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/37)**
+  (minor) holds the contributed follow-ups to the shipped hosted terminal epic
+  [#1829][1829]. The free ordinal before `031` keeps them from waiting on the
+  OKF and Git tracks, which they do not depend on.
+- **[038 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
+  (major) is the evidence-aware retrieval cut of § Follow-up slices, which had
+  no package. It follows the evidence and inventory cuts it reads from.
 
 `derived` — **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
 (minor)** follows `028` with the read-only submodule epic [#1561][1561], less the
@@ -1197,6 +1217,41 @@ until they ship (§ Packages).
 
 `derived` — `024` and later keep their relative order behind them.
 
+### 20 November 2026 — place the pull requests contributed after `025`
+
+`stated` — The owner asked, before work on `024` starts, for the open
+contributed pull requests to be fitted into packages, and approved the
+placements below. Contributor-filed issues are packaged too (§ Packages).
+
+`derived` — Owner-filed issues under [epic #1425][1425] joined the cut their
+candidate row describes:
+
+- `024`: [#1414][1414], because the applicability assessment of
+  [#1413][1413] needs its observations.
+- `031`: [#1443][1443], fixed by the same PR as [#1412][1412].
+- `034`: [#1394][1394], [#1611][1611] and [#1612][1612].
+- `035`: [#1445][1445] and [#1420][1420].
+- `036`: [#1416][1416] and [#1418][1418].
+- `038`: [#1447][1447].
+
+`derived` — Other owner-filed issues: [#1383][1383] joined `024` as a bug in
+the current package, with its link-precedence question as work there.
+[#1415][1415] joined `025`. [#1232][1232], [#1299][1299], [#871][871],
+[#152][152] and [#1498][1498] stay in backlog, because their open PRs only
+reference them or the 18 November hold on [#1498][1498] still applies.
+
+`derived` — Contributor-filed issues: [#2045][2045] and [#2059][2059] joined
+`024`. [#2056][2056], [#2124][2124], [#2311][2311] and [#2090][2090] joined
+`025`. [#2057][2057] joined `031`, because it preserves a supplied
+`generated.by`. [#2061][2061] and [#2062][2062] joined `035`, and
+[#2058][2058] joined `038`. The six hosted terminal follow-ups joined `030`.
+
+`evidenced` — [#1631][1631] had closed when [#2206][2206] merged, while its
+fix [#2143][2143] was still open; it was reopened. The body of
+[#2216][2216] listed other PRs as "Closes #N", which GitHub would have used to
+close ten unrelated issues on merge; the account holder's agent reworded that
+section, leaving only [#1422][1422].
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1307,6 +1362,7 @@ until they ship (§ Packages).
 [2121]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2121
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
+
 [650]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/650
 [752]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/752
 [778]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/778
@@ -1369,3 +1425,28 @@ until they ship (§ Packages).
 [2281]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2281
 [2282]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2282
 [2283]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2283
+[152]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/152
+[1394]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1394
+[1414]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1414
+[1415]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1415
+[1416]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1416
+[1418]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1418
+[1420]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1420
+[1445]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1445
+[1447]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1447
+[1611]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1611
+[1612]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1612
+[2045]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2045
+[2056]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2056
+[2057]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2057
+[2058]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2058
+[2059]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2059
+[2061]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2061
+[2062]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2062
+[2090]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2090
+[2143]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2143
+[2206]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2206
+[2216]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2216
+[2311]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2311
+[1310]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1310
+[2128]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2128
