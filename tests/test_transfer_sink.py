@@ -199,10 +199,16 @@ async def test_read_note_serves_raw_content(sink: VaultTransferSink) -> None:
     assert result.filename == "note.md"
 
 
-async def test_read_attachment_serves_bytes(sink: VaultTransferSink) -> None:
+async def test_read_attachment_serves_bytes(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
     result = await sink.read("pic.png")
     assert result.body == _PNG
-    assert "png" in result.media_type
+    assert result.media_type == "image/png"
     assert result.filename == "pic.png"
 
 
@@ -368,6 +374,98 @@ async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
     assert "note.md" in names
 
 
+async def test_strict_bundle_download_returns_refusal_report(
+    sink: VaultTransferSink,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import json
+
+    ref = "okf-bundle?strict"
+    assert await sink.validate(ref, "download") == ref
+    with caplog.at_level(logging.INFO):
+        result = await sink.read(ref)
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("(root)", "strict")
+        for r in caplog.records
+    )
+    assert result.media_type == "application/json"
+    assert result.filename == "okf-export-refusal.json"
+    payload = json.loads(result.body)
+    assert payload["okf_export"] == "refused"
+    assert payload["report"]["verdict"] == "nonconformant"
+
+
+async def test_bundle_collision_returns_actionable_refusal(
+    sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import json
+
+    (source_dir / "guides").mkdir()
+    (source_dir / "guides/a.md").write_text("[outside](/b.md)")
+    (source_dir / "guides/b.md").write_text("# B")
+    with caplog.at_level(logging.INFO):
+        result = await sink.read("okf-bundle:guides")
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("guides", "collision")
+        for r in caplog.records
+    )
+    payload = json.loads(result.body)
+    assert result.media_type == "application/json"
+    assert payload["reason"] == "collision"
+    assert "external_base" in payload["message"]
+    assert payload["report"] is None
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "okf-bundle?unknown",
+        "okf-bundle?strict&strict",
+        "okf-bundle?strict=1",
+        "okf-bundle?external_base=broken",
+        "okf-bundle?external_base=https%ZZ",
+        "okf-bundle?external_base=https%3A%2F%2Fexample.org%2F%FF",
+    ],
+)
+async def test_invalid_bundle_options_refused(
+    sink: VaultTransferSink, ref: str
+) -> None:
+    with _rejected("."):
+        await sink.validate(ref, "download")
+
+
+async def test_bundle_options_keep_folder_spelling(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    (source_dir / "guides?strict").mkdir()
+    ref = "okf-bundle:guides?strict"
+    assert await sink.validate(ref, "download") == ref
+    result = await sink.read(ref)
+    assert result.media_type == "application/zip"
+
+
+async def test_bundle_selection_flags_reach_export(
+    source_dir: Path, config: ProjectConfig
+) -> None:
+    import io
+    import zipfile
+
+    (source_dir / ".hidden.md").write_text("hidden")
+    (source_dir / "excluded.md").write_text("excluded")
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(exclude_patterns=["excluded.md"])
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        result = await sink.read("okf-bundle?include_hidden&include_index_excluded")
+        with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
+            assert {".hidden.md", "excluded.md"} <= set(archive.namelist())
+    finally:
+        vault.close()
+
+
 async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:
     # A folder scope valid at mint time but deleted before the one-time download
     # yields 410 (matching the single-file path), not an empty zip.
@@ -385,7 +483,7 @@ async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -
     result = await sink.read("okf-bundle:guides")
     assert result.filename == "guides.zip"
     names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
-    assert names == ["guides/g.md"]
+    assert names == ["g.md"]
 
 
 @pytest.mark.parametrize("kind", ["download", "upload"])
@@ -471,3 +569,22 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None:
+    (tmp_path / "guard.md").write_text("original")
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["guard.md"]),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("guard.md", "download") == "guard.md"
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await sink.validate("guard.md", "upload")
+        with pytest.raises(TransferSinkError, match="PROTECTED_PATHS"):
+            await sink.write("guard.md", b"changed")
+        assert (tmp_path / "guard.md").read_text() == "original"
+    finally:
+        vault.close()

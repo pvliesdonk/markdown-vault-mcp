@@ -20,6 +20,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, Literal
 
+    from markdown_vault_mcp.bundle_inventory import (
+        BundleInspection,
+        BundleInspectionRequest,
+        BundleTreeRequest,
+    )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -81,6 +86,28 @@ class ReaderFacet:
         self._require_built = require_built
         self._okf_audit = okf_audit
         self._okf_write_state = okf_write_state
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one explicitly selected bundle directory before or after indexing.
+
+        Args:
+            request: Explicit bundle root, relative directory and bounded entry limit.
+
+        Returns:
+            Live disk observations with available per-entry index state.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
+        """Inspect a page of a selected subtree before or after indexing.
+
+        Args:
+            request: Selection, page limit, and optional path cursor.
+
+        Returns:
+            Live observations and an optional continuation cursor.
+        """
+        return self._doc_mgr.inspect_bundle(request)
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -612,3 +639,19 @@ class ReaderFacet:
         Delegates to :meth:`DocumentManager.read_attachment`.
         """
         return self._doc_mgr.read_attachment(path)
+
+    def read_attachment_bytes(self, path: str) -> bytes:
+        """Read an attachment as raw bytes via the document manager.
+
+        Args:
+            path: Relative attachment path.
+
+        Returns:
+            The attachment bytes.
+
+        Raises:
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the stat or read.
+        """
+        return self._doc_mgr.read_attachment_bytes(path)
