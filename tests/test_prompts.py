@@ -1261,3 +1261,12 @@ def test_a_prompt_that_writes_is_tagged_write(prompt: Path) -> None:
     body = text.split("---", 2)[2]
     if _WRITES.search(body):
         assert re.search(r"^tags:.*write|^  - write$", text, re.MULTILINE)
+
+
+def test_leading_blank_prompt_frontmatter_remains_content(tmp_path: Path) -> None:
+    text = "\n---\ndescription: Greets\narguments:\n  - name: who\n---\nHello $who"
+    (tmp_path / "greet.md").write_text(text)
+    prompt = _load_user_prompt_defs(str(tmp_path))["greet"]
+    assert prompt["description"] == ""
+    assert prompt["arguments"] == []
+    assert prompt["content"] == text.strip()

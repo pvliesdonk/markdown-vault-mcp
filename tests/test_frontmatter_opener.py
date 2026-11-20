@@ -75,3 +75,41 @@ def test_json_header_only_with_trailing_space_remains_readable(
             assert "note.md" in {note.path for note in vault.reader.list_documents()}
     finally:
         vault.close()
+
+
+def test_invalid_yaml_date_raises_normalized_error() -> None:
+    from markdown_vault_mcp.scanner import MalformedFrontmatterError
+
+    with pytest.raises(MalformedFrontmatterError):
+        parse_frontmatter("---\ndate: 2026-13-45\n---\nBody")
+
+
+@pytest.mark.parametrize("leading_blank", [False, True])
+def test_crlf_body_matches_lf_in_public_index(
+    tmp_path: Path, leading_blank: bool
+) -> None:
+    prefix = "\n" if leading_blank else ""
+    text = prefix + "---\ntitle: Test\n---\n# Header\nneedle content\nsecond line\n"
+    crlf = text.replace("\n", "\r\n")
+    expected_raw = (
+        crlf if leading_blank else "# Header\r\nneedle content\r\nsecond line\r\n"
+    )
+    assert strip_frontmatter_block(crlf) == expected_raw
+    (tmp_path / "lf.md").write_bytes(text.encode())
+    (tmp_path / "crlf.md").write_bytes(crlf.encode())
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        notes = {note.path: note for note in vault.reader.list_documents()}
+        assert notes["lf.md"].content_chars == notes["crlf.md"].content_chars
+        results = {
+            result.path: result
+            for result in vault.reader.search("needle", mode="keyword", snippet_words=0)
+        }
+        assert (
+            results["lf.md"].sections[0].content
+            == results["crlf.md"].sections[0].content
+        )
+        assert "\r" not in results["crlf.md"].sections[0].content
+    finally:
+        vault.close()

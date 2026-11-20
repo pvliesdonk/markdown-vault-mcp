@@ -819,9 +819,9 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
 
     The package's shared frontmatter entry point, so no caller has to know
     which handler will run or which error it raises (#1408). A
-    YAML failure propagates as the ``yaml.YAMLError`` it already was; every
-    other handler's failure — all of them ``ValueError`` subclasses — is
-    re-raised as :class:`MalformedFrontmatterError`, which is one.
+    YAML failures already raised as ``yaml.YAMLError`` propagate unchanged;
+    handler failures raised as ``ValueError`` are re-raised as
+    :class:`MalformedFrontmatterError`, which is a ``yaml.YAMLError``.
 
     Args:
         text: Raw markdown text, frontmatter block included.
@@ -833,16 +833,18 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
-    block = _split_yaml(text)
-    if block is not None:
-        header, body = block
-        metadata = _YAML.load(header)
-        return frontmatter.Post(
-            body.strip(), _YAML, **(metadata if isinstance(metadata, dict) else {})
-        )
-    if _yaml_like(text):
-        return frontmatter.Post(text.strip())
     try:
+        block = _split_yaml(text)
+        if block is not None:
+            header, body = block
+            metadata = _YAML.load(header.replace("\r\n", "\n"))
+            return frontmatter.Post(
+                body.replace("\r\n", "\n").strip(),
+                _YAML,
+                **(metadata if isinstance(metadata, dict) else {}),
+            )
+        if _yaml_like(text):
+            return frontmatter.Post(text.replace("\r\n", "\n").strip())
         return frontmatter.loads(text)
     except ValueError as exc:
         raise MalformedFrontmatterError(str(exc)) from exc

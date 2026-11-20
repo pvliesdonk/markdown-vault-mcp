@@ -1268,3 +1268,25 @@ class TestReservedFrontmatterPolicy:
             title_field="heading", required_fields=("heading",)
         )
         assert policy.build(None, title="Log") == {"heading": "Log"}
+
+
+@pytest.mark.parametrize("operation", ["audit", "root_probe"])
+def test_invalid_yaml_date_is_reported_by_audit_and_root_probe(
+    tmp_path: Path, operation: str
+) -> None:
+    from markdown_vault_mcp.okf import audit_bundle
+    from markdown_vault_mcp.vault import Vault
+
+    text = "---\ndate: 2026-13-45\n---\nBody\n"
+    (tmp_path / "index.md").write_text(text)
+    if operation == "audit":
+        (tmp_path / "bad.md").write_text(text)
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("bad.md",)
+    else:
+        vault = Vault(source_dir=tmp_path)
+        try:
+            vault.index.build_index()
+            assert vault.reader.list_documents() == []
+        finally:
+            vault.close()
