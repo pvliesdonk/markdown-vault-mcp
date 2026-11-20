@@ -115,6 +115,20 @@ class TestSettingsDerivations:
             "status",
             "type",
             "stale_after",
+            "tags",
+        ]
+        assert settings.indexed_frontmatter_fields == ["cluster", "status"]
+        settings = VaultSettings(indexed_frontmatter_fields=["tags", "cluster"])
+        assert settings.effective_indexed_fields(okf_active=True) == [
+            "tags",
+            "cluster",
+            "type",
+            "status",
+            "stale_after",
+        ]
+        assert settings.effective_indexed_fields(okf_active=False) == [
+            "tags",
+            "cluster",
         ]
 
     def test_effective_exclude_patterns_passthrough_without_conventions(self) -> None:
