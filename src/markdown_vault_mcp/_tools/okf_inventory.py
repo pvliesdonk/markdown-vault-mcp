@@ -10,9 +10,9 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.bundle_inventory import (
     BundleTreeRequest,
