@@ -215,7 +215,7 @@ Production images ship without `debugpy` to keep the image lean. To attach a rem
     docker build --build-arg DEBUG=true -t markdown-vault-mcp:debug .
     ```
 
-    This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`). Default builds (`DEBUG=false`) skip it.
+    This installs the `[debug]` optional-dependency group, which pulls in `debugpy`. Default builds (`DEBUG=false`) skip it.
 
 2. **Run with the debug env vars set and the port mapped:**
 
