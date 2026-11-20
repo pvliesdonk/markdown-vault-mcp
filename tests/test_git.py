@@ -4722,8 +4722,8 @@ class TestGitPackageImportClean:
         import markdown_vault_mcp.git as git_pkg
 
         pkg_dir = Path(git_pkg.__file__).resolve().parent
-        # Match module imports of fastmcp (and submodules), but not
-        # fastmcp_pvl_core.
+        # Match module imports of fastmcp (and submodules), but not a
+        # distinct package whose name merely starts with ``fastmcp``.
         pattern = re.compile(r"^\s*(?:from|import)\s+fastmcp(?:\.|\s|$)", re.M)
         offenders = [
             str(f.relative_to(pkg_dir))

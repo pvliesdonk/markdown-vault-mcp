@@ -133,7 +133,7 @@ def test_reindex_help_exits_zero() -> None:
 # serve — patch targets:
 #   make_server  → markdown_vault_mcp.server.make_server  (function-local import)
 #   build_event_store → markdown_vault_mcp.cli.build_event_store (top-level import)
-#   run_http     → markdown_vault_mcp.cli.run_http  (pvl-core owns uvicorn now)
+#   run_http     → markdown_vault_mcp.cli.run_http  (``_serve`` owns uvicorn)
 # ---------------------------------------------------------------------------
 
 
@@ -144,7 +144,7 @@ def _invoke_http_serve(
 ) -> tuple[Result, dict[str, object]]:
     """Invoke ``serve --transport http`` with all blocking side effects patched.
 
-    Patches ``make_server``, ``build_event_store``, and pvl-core's
+    Patches ``make_server``, ``build_event_store``, and ``_serve``'s
     ``run_http`` so the test never binds a socket or writes to ``/data``.
     Returns the CliRunner result and the bind address the fake ``run_http``
     resolved the way the real one does: a CLI flag beats ``config.server``,
@@ -183,7 +183,7 @@ def _invoke_http_serve(
 
 
 def test_serve_http_runs_run_http() -> None:
-    """``serve --transport http`` calls pvl-core's ``run_http``."""
+    """``serve --transport http`` calls ``_serve.run_http``."""
     result, captured = _invoke_http_serve(["--host", "127.0.0.1", "--port", "9001"])
     assert result.exit_code == 0, result.output
     assert captured.get("port") == 9001
@@ -361,13 +361,13 @@ def test_serve_http_reads_config_once() -> None:
     assert result.exit_code == 0, result.output
     mock_cfg.from_env.assert_called_once()
     assert mock_ms.call_args.kwargs.get("config") is mock_config
-    mock_bes.assert_called_once_with(_ENV_PREFIX, mock_config.server)
+    mock_bes.assert_called_once_with(mock_config.server)
 
 
 def test_serve_http_passes_config_to_run_http() -> None:
     """``serve --transport http`` hands ``run_http`` the resolved ``config.server``.
 
-    pvl-core's ``run_http`` reads ``lifespan``, ``timeout_graceful_shutdown``
+    ``_serve.run_http`` reads ``lifespan``, ``timeout_graceful_shutdown``
     and ``shutdown_grace_s`` from that object rather than from CLI kwargs
     (v8 adoption), so the CLI's contract is limited to passing the same
     config object through, not choosing those settings itself.
@@ -434,7 +434,7 @@ def test_serve_http_reports_configuration_error_from_event_store() -> None:
     under ``--transport http`` (#1551, fixed upstream in
     fastmcp-server-template v9.0.1).
     """
-    from fastmcp_pvl_core import ConfigurationError
+    from markdown_vault_mcp.exceptions import ConfigurationError
 
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
@@ -1363,7 +1363,7 @@ def test_search_never_builds_an_on_disk_index(
 def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     """``-v`` forces the root logger to DEBUG regardless of any configured level.
 
-    pvl-core v8's ``configure_logging_from_env`` resolves the level itself and
+    ``configure_logging_from_env`` (``_logging_setup``) resolves the level itself and
     installs the root handler chain directly; it never writes the level back
     to the environment, so the effective root level is the only observable
     contract left to assert on.

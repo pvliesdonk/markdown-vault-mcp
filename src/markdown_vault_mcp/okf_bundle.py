@@ -13,8 +13,8 @@ convention and template files, keeps the reserved navigation files
 (``index.md`` / ``log.md``), includes non-conformant notes as-is, and returns a
 deterministic zip.
 
-It is served through pvl-core's ``create_download_link`` via an ``okf-bundle``
-download ref (:class:`~markdown_vault_mcp._transfer_sink.VaultTransferSink`), not
+It is served through ``create_download_link`` (``_transfer_links``) via an
+``okf-bundle`` download ref (:class:`~markdown_vault_mcp._transfer_sink.VaultTransferSink`), not
 a bespoke tool; residual conformance gaps are reported separately by
 ``okf_validate``, so the bundle itself carries no gap payload.
 """

@@ -31,7 +31,7 @@ import pytest
 import markdown_vault_mcp
 
 # Top-level distributions that must never be imported by the package root.
-# beartype arrives via fastmcp_pvl_core (whose claw import hook survives a
+# beartype arrives via py-key-value-aio (whose claw import hook survives a
 # sys.modules purge); yaml arrives via frontmatter (whose single-phase-init
 # C extension keeps first-generation class references across a purge).
 _HEAVY = "{'beartype', 'fastmcp_pvl_core', 'frontmatter', 'yaml'}"

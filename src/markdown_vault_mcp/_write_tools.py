@@ -26,8 +26,8 @@ from __future__ import annotations
 
 #: Every tool registered with ``tags={"write"}``, in user-facing order.
 #: ``git_sync`` additionally requires managed git mode;
-#: ``create_upload_link`` (registered by fastmcp-pvl-core's transfer
-#: routes) additionally requires an HTTP transport.
+#: ``create_upload_link`` (registered by ``_transfer_links``)
+#: additionally requires an HTTP transport.
 WRITE_TOOL_NAMES: tuple[str, ...] = (
     "write",
     "edit",
