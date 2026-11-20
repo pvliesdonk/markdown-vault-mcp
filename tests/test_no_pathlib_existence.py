@@ -17,10 +17,6 @@ _SRC = Path(__file__).resolve().parents[1] / "src" / "markdown_vault_mcp"
 # (file relative to the package, function) -> why "not there" is acceptable.
 _ALLOWED = {
     (
-        "_file_watcher.py",
-        "_derive_watch_roots",
-    ): "an unwatched root is logged by the walk",
-    (
         "git/_run.py",
         "_find_git_root",
     ): "falls back to the parent; git reports its own error",

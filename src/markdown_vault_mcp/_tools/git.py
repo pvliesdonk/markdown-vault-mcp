@@ -132,10 +132,8 @@ async def _reconcile_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None
     reindex an earlier pull lost, and runs after a pull reported as not
     applied that still moved HEAD.
 
-    When the index could not be brought up to date the pull side-effect has
-    still happened, so failing the whole tool would hide it from the caller.
-    Surfaces ``reindex_failed=True`` + ``reindex_hint`` on the pull payload
-    instead so the agent knows the index is stale.
+    If refresh fails, surface ``reindex_failed=True`` and ``reindex_hint``
+    on the pull payload so the caller knows results may be stale.
 
     Mutates ``pull_dict`` in place on failure.
     """
@@ -151,8 +149,9 @@ async def _reconcile_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None
     if outcome == "failed":
         pull_dict["reindex_failed"] = True
         pull_dict["reindex_hint"] = (
-            "The FTS index could not be refreshed after the pull.  "
-            "search / list_documents / get_context will serve stale data "
+            "The search index or observation state could not be refreshed "
+            "after the pull.  "
+            "search / list_documents / get_context may serve stale data "
             "until the next reconcile (the periodic pull, a webhook "
             "delivery, another git_sync) or a call to the reindex tool."
         )
@@ -395,9 +394,9 @@ def register(mcp: FastMCP) -> None:
               - would_apply (bool, dry run only): true when a real pull
                 would change HEAD.
               - reindex_failed (bool, optional) and reindex_hint (str,
-                optional): present when the search index could not be
-                refreshed after the pull, so search serves stale results
-                until the next reindex.
+                optional): present when the search index or observation
+                state could not be refreshed after the pull, so search may serve
+                stale results until the next reindex.
 
             - push (dict | None): Payload from the push leg, or `None`
               when direction is `"pull"` or when the pull leg failed with

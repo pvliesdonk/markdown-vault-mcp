@@ -160,9 +160,9 @@ Dict with the following fields:
   - `would_apply` (bool, dry run only): true when a real pull
     would change HEAD.
   - `reindex_failed` (bool, optional) and `reindex_hint` (str,
-    optional): present when the search index could not be
-    refreshed after the pull, so search serves stale results
-    until the next reindex.
+    optional): present when the search index or observation
+    state could not be refreshed after the pull, so search may serve
+    stale results until the next reindex.
 
 - push (dict | None): Payload from the push leg, or `None`
   when direction is `"pull"` or when the pull leg failed with

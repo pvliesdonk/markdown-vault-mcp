@@ -47,6 +47,7 @@ _DRIVEN = (
 #: ``okf_verify``) an authenticated principal.
 _ATTACHING_NOT_DRIVEN = (
     "fetch",
+    "okf_author",
     "okf_convert_links",
     "okf_generate_index",
     "okf_seed_log",

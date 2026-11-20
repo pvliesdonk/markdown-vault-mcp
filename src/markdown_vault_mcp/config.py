@@ -48,6 +48,7 @@ from markdown_vault_mcp.config_sections import (
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
     normalize_templates_folder,
+    read_okf_verify,
     resolve_attachment_extensions,
     resolve_conventions_file,
     resolve_git_repo_url,
@@ -72,6 +73,7 @@ from markdown_vault_mcp.config_sections._helpers import (
 )
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 from markdown_vault_mcp.config_sections.server import ServerConfig
+from markdown_vault_mcp.okf_capabilities import DEFAULT_VERIFY
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -150,6 +152,14 @@ class ProjectConfig:
                 "then pass if_match. Unaffected: edit, append, delete, "
                 "rename. Set to false to allow blind overwrites."
             ),
+            "tags": ("vault", "readme"),
+        },
+    )
+    protected_paths: Sequence[str] | None = field(
+        default=None,
+        kw_only=True,
+        metadata={
+            "help": "Comma-separated case-insensitive vault-relative globs protecting paths and folder contents, e.g. _conventions.md,**/_conventions.md. Empty by default. The * wildcard crosses folders; **/ requires a folder.",
             "tags": ("vault", "readme"),
         },
     )
@@ -334,8 +344,9 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Comma-separated frontmatter fields required on every "
-                "document; documents missing any are excluded from the index."
+                "Comma-separated required frontmatter fields; documents missing any "
+                "are excluded from the index, except index.md and log.md "
+                "in an active OKF vault."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -421,8 +432,9 @@ class ProjectConfig:
                 "(the default), read annotations switch on when the vault "
                 "declares an OKF version in its root index.md. Use off to "
                 "disable OKF semantics entirely, or on to force them for an "
-                "undeclared vault. Annotations are read-only; write "
-                "behavior is never affected."
+                "undeclared vault. OKF maintenance and independent review require "
+                "active semantics; the OKF_WRITE alias also permits review of an "
+                "undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -432,25 +444,21 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "OKF (Open Knowledge Format) enforced write layer. When true on "
-                "an OKF-active vault, the server stamps generated provenance on "
-                "each write and clears any verified attestation when a note's "
-                "content changes. It also keeps each written folder's log.md and "
-                "index.md current, and exposes the okf_verify tool. Requires "
-                "OKF_MODE to be auto or on (a true value with OKF_MODE=off is a "
-                "config error). Off by default."
+                "Deprecated alias enabling OKF authoring, review, index and log "
+                "maintenance. Explicit individual settings take precedence. Ordinary "
+                "writes preserve provenance and review records. Requires OKF_MODE "
+                "to be auto or on. Off by default."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
         },
     )
     okf_verify: str = field(
-        default="elicit",
+        default=DEFAULT_VERIFY,
         metadata={
             "help": (
-                "How the okf_verify tool attributes a human review. This "
-                "applies only when OKF_WRITE is on, which gates the tool. With "
-                "elicit (the default), okf_verify asks the human to confirm "
+                "How the okf_verify tool attributes a human review. With "
+                "elicit, okf_verify asks the human to confirm "
                 "the review through an MCP elicitation, then records the "
                 "attestation only on an affirmative reply. It fails closed "
                 "when the client cannot elicit or the human declines, so a "
@@ -460,8 +468,11 @@ class ProjectConfig:
                 "client-ID-only identities, and OAuth tokens the issuer marks "
                 "as an application's. This is safe only when the sole "
                 "caller is a human-driven UI. Set off to hide the tool, "
-                "leaving attestation to external tooling. A "
-                "non-default value with OKF_WRITE off is a config error."
+                "leaving attestation to external tooling. "
+                "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
+                "elicit or trust-auth with OKF_MODE=off is a configuration error. "
+                "Independent review requires an active OKF vault and a writable server. "
+                "The OKF_WRITE alias also permits review of an undeclared vault in auto mode."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -472,8 +483,7 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Comma-separated token sub values that belong to applications, "
-                "not people. A caller whose sub is listed is a service: its OKF "
-                "writes stamp the tool actor instead of human:<sub>, and "
+                "not people. A caller whose sub is listed is a service: "
                 "okf_verify records its review as local (elicit) or refuses it "
                 "(trust-auth). Entries match the token's sub exactly. Use it "
                 "for issuers whose "
@@ -884,7 +894,8 @@ class ProjectConfig:
         default=True,
         metadata={
             "help": (
-                "Watch the vault for external filesystem changes; "
+                "Watch for external filesystem changes, including observation "
+                "of excluded notes; "
                 "auto-disabled when git pull is active or a webhook can "
                 "deliver (HTTP/SSE transports only). "
                 "Requires the file-watcher extra."
@@ -897,7 +908,8 @@ class ProjectConfig:
         default=2.0,
         metadata={
             "help": (
-                "Seconds of quiet after the last filesystem event before reindexing."
+                "Seconds of quiet after the last filesystem event before "
+                "reindexing or an observation sweep."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection"},
@@ -910,7 +922,8 @@ class ProjectConfig:
                 "Keep the non-recursive watch on the vault root; set false "
                 "to register zero source-dir-rooted FSEvents streams (avoids "
                 "repeated macOS access prompts on a home-rooted vault) at "
-                "the cost of root-level files relying on scans."
+                "the cost of root-level files and new top-level folders "
+                "relying on scans."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection"},
@@ -1218,6 +1231,10 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
             okf_verify=self.okf_verify,
+            okf_author=self.okf_author,
+            okf_index=self.okf_index,
+            okf_log=self.okf_log,
+            okf_folders=self.okf_folders,
             service_subjects=self.service_subjects,
         )
 
@@ -1290,6 +1307,42 @@ class ProjectConfig:
                 f"between 0 and 2147483.647 (about 24.8 days); got {timeout}."
             )
 
+    okf_author: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Enable explicit OKF concept authoring on an active writable vault; defaults to false, or true with OKF_WRITE.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_index: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Enable automatic index maintenance in designated folders; defaults to false.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_log: str | None = field(
+        default=None,
+        metadata={
+            "help": "OKF log authority: off (default), events, or writes. Writes appends an entry on each server write.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_folders: Sequence[str] | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated designated OKF folder globs; defaults to root (.). "
+                "* matches one folder level; ** spans levels. Leading ./ or / "
+                "and trailing / are ignored."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     # CONFIG-FIELDS-END
 
     def __post_init__(self) -> None:
@@ -1321,6 +1374,13 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
+        from markdown_vault_mcp.config_sections.vault_settings import (
+            normalize_protected_paths,
+        )
+
+        object.__setattr__(
+            self, "protected_paths", normalize_protected_paths(self.protected_paths)
+        )
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.
@@ -1330,6 +1390,7 @@ class ProjectConfig:
             "exclude",
             "searchable_fields",
             "attachment_extensions",
+            "okf_folders",
         )
         for name in sequence_fields:
             value = getattr(self, name)
@@ -1354,6 +1415,12 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
+        if self.okf_write:
+            from markdown_vault_mcp.config_sections._assembly import (
+                warn_okf_write_deprecated,
+            )
+
+            warn_okf_write_deprecated()
         # ``transfer`` and ``jobs`` are composed section fields (not
         # section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
@@ -1380,6 +1447,7 @@ class ProjectConfig:
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True
             ),
+            protected_paths=opt_list(env(_ENV_PREFIX, "PROTECTED_PATHS")),
             report_unresolved_links=to_bool(
                 env(_ENV_PREFIX, "REPORT_UNRESOLVED_LINKS"), default=False
             ),
@@ -1426,9 +1494,15 @@ class ProjectConfig:
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
-            okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
-            .strip()
-            .lower(),
+            okf_verify=read_okf_verify(_ENV_PREFIX),
+            okf_author=to_bool(raw_author, default=False)
+            if (raw_author := env(_ENV_PREFIX, "OKF_AUTHOR")) is not None
+            else None,
+            okf_index=to_bool(raw_index, default=False)
+            if (raw_index := env(_ENV_PREFIX, "OKF_INDEX")) is not None
+            else None,
+            okf_log=(env(_ENV_PREFIX, "OKF_LOG") or "").strip().lower() or None,
+            okf_folders=opt_list(env(_ENV_PREFIX, "OKF_FOLDERS")),
             service_subjects=opt_list(env(_ENV_PREFIX, "SERVICE_SUBJECTS")),
             attachment_extensions=resolve_attachment_extensions(
                 env(_ENV_PREFIX, "ATTACHMENT_EXTENSIONS")

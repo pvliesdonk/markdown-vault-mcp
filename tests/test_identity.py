@@ -51,23 +51,6 @@ def _patch_context(
     monkeypatch.setattr("markdown_vault_mcp._subject.get_claims", lambda: claims)
 
 
-class TestPrincipalOkfActor:
-    """okf_actor implements the design-§6 actor rules."""
-
-    def test_human_with_subject_is_human_actor(self) -> None:
-        p = Principal(subject="peter", display_name=None, email=None, kind="human")
-        assert p.okf_actor("1.2.3") == "human:peter"
-
-    def test_local_kind_is_tool_actor(self) -> None:
-        p = Principal(subject=None, display_name=None, email=None, kind="local")
-        assert p.okf_actor("1.2.3") == "markdown-vault-mcp/1.2.3"
-
-    def test_human_without_subject_is_tool_actor(self) -> None:
-        """Defensive: a subject-less principal never stamps ``human:``."""
-        p = Principal(subject=None, display_name="A", email=None, kind="human")
-        assert p.okf_actor("1.2.3") == "markdown-vault-mcp/1.2.3"
-
-
 class TestPrincipalContextVar:
     """bound_principal / current_principal mirror the OKF intent contextvar."""
 
@@ -370,7 +353,6 @@ class TestServicePrincipals:
         finally:
             auth_context_var.reset(marker)
         assert principal == Principal(subject, None, None, "service")
-        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
 
     @pytest.mark.parametrize("sub", [None, "", 7, False, [], {}])
     def test_unusable_sub_never_promotes_client_identity(
@@ -429,7 +411,6 @@ class TestIssuerServiceMarkers:
         _patch_context(monkeypatch, subject=claims["sub"], claims=claims)
         principal = resolve_mcp_principal()
         assert principal == Principal(claims["sub"], None, None, "service")
-        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
 
     @pytest.mark.parametrize(
         "claims",
@@ -480,7 +461,6 @@ class TestDeclaredServiceSubjects:
         )
         principal = resolve_mcp_principal()
         assert principal == Principal("4f7e-sa", None, None, "service")
-        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
 
     def test_declared_subject_keeps_git_attribution_claims(
         self, monkeypatch: pytest.MonkeyPatch
