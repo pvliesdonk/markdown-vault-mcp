@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-20
+
+- [Open Knowledge Format v0.2](okf-v0.2.md): reworded the project deviation
+  on clearing `verified` for #1413. Clearing on a server write no longer
+  claims the earlier review is invalid. No spec claim changed. Review date
+  unchanged.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the

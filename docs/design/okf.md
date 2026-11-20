@@ -468,12 +468,11 @@ Tool tags following switches: #1412.
   told which note and why rather than being handed the parser's own exception.
   With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
   indexer records the file as a `parse_error` skip (#1408).
-- **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
-  carrying `verified` clears the `verified` list — verification attests to
-  bytes that no longer exist. Frontmatter-only edits that do not touch the
-  body also invalidate (the spec ties verification to the concept, not the
-  body alone); rename does not. This is the highest-value enforcement:
-  it is exactly the invariant an advisory-only setup eventually misses.
+- **Verification clearing** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
+  carrying `verified` clears the `verified` list. Frontmatter-only edits that
+  do not touch the body also clear it; rename does not. This existing write
+  behavior does not establish that a prior review is invalid or that it applies
+  to the current content. The preservation transition is separate work (#1443).
 - **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
@@ -506,10 +505,9 @@ Tool tags following switches: #1412.
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
-  Trust caveat: even `elicit` makes `human-reviewed` mean *"a human deliberately
-  confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
-  It guarantees a deliberate human act gates the tier, not diligence; downstream
-  OKF consumers should calibrate to that.
+  Trust caveat: `elicit` asks a human to confirm this tool's review entry, but
+  the `human-reviewed` tier also classifies supplied metadata. It does not
+  authenticate the reviewer or establish applicability to current content.
 - **Convention maintenance** (gated by `OKF_MAINTAIN` once §6.0 lands;
   today by `OKF_WRITE`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
@@ -794,7 +792,7 @@ so new vaults are conformant from note one.
 | 2 | Query filters (`type`/`status`/`stale`/`trust_tier`), graph `type` field | 1 |
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
-| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
+| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification clearing, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |

@@ -2005,6 +2005,21 @@ the spec itself says, dated and sourced, in
   index semantics. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
+- **Review presentation (#1413, partial)**: `trust_tier` and the stats
+  `trust` histogram retain their existing metadata-classification semantics
+  and keys. They describe recorded claims, not authenticated review or
+  applicability to the current content. Human-readable CLI search results
+  label that distinction; text reads print the notice to stderr without
+  changing content on stdout. App note and context views show a visible
+  notice for a supplied `verified` field, including empty or malformed
+  values, while preserving access to the raw metadata. These app routes
+  supply frontmatter, not OKF annotations, so the notice describes the field
+  without asserting that the vault is an active OKF bundle. Applicability
+  is explicitly unknown; no timestamp comparison, history inference, byte
+  comparison or metadata rewrite is performed. JSON/agent payloads and
+  filters are unchanged. Structured applicability and observation integration
+  remain separate work, coordinated with #1444; this slice does not complete
+  #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows

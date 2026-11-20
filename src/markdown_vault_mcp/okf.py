@@ -1115,8 +1115,8 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    write; ``verified`` is dropped without assessing whether a prior review
+    applies; ``sources`` and every other field are untouched.
     Surviving fields retain their mapping order, including nested mappings;
     a new ``generated`` field appends, while replacing it retains its slot.
     YAML comments and formatting are not retained on serialization.

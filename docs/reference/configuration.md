@@ -290,7 +290,7 @@ on the next startup.
 
 Folder convention files guide clients before writes. OKF read semantics can be
 auto-detected from a root `index.md`; the separately gated OKF write layer adds
-provenance, invalidates stale verification, and maintains `log.md` and
+provenance, clears recorded verification, and maintains `log.md` and
 `index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
 model.
 
