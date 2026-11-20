@@ -166,7 +166,8 @@ def test_debugpy_missing_logs_warning(
     assert "debugpy" in msgs
     # The hint should point at the install path so the operator can act on it.
     assert "extra" in msgs.lower() or "install" in msgs.lower()
-    assert f"{_PREFIX}_DEBUG_PORT" in msgs and f"{_PREFIX}__DEBUG_PORT" not in msgs
+    assert f"{_PREFIX}_DEBUG_PORT" in msgs
+    assert f"{_PREFIX}__DEBUG_PORT" not in msgs
 
 
 def test_happy_path_calls_listen(

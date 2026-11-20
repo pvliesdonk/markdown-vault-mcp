@@ -217,11 +217,12 @@ class TestFailedBuildStillAnnounces:
 
     def test_discovery_failure_announces_the_mode_being_built(self, caplog):
         caplog.set_level(logging.DEBUG)
+        config = _remote_config(auth_mode="remote")
         with (
             patch("httpx.get", side_effect=_boom),
             pytest.raises(ConfigurationError),
         ):
-            build_auth(_remote_config(auth_mode="remote"))
+            build_auth(config)
 
         _assert_sole_announcement(
             caplog, level=logging.WARNING, contains=("mode=remote", "source=explicit")
@@ -239,8 +240,9 @@ class TestFailedBuildStillAnnounces:
         unauthenticated would describe a server that no longer starts.
         """
         caplog.set_level(logging.DEBUG)
+        config = _remote_config(auth_mode="oidc-proxy")
         with pytest.raises(ConfigurationError, match="OIDC_CLIENT_ID"):
-            build_auth(_remote_config(auth_mode="oidc-proxy"))
+            build_auth(config)
 
         _assert_sole_announcement(
             caplog,
@@ -252,11 +254,12 @@ class TestFailedBuildStillAnnounces:
     def test_failed_build_is_not_reported_as_unauthenticated(self, caplog):
         """A server that refuses to start is not a server accepting anyone."""
         caplog.set_level(logging.DEBUG)
+        config = _remote_config()
         with (
             patch("httpx.get", side_effect=_boom),
             pytest.raises(ConfigurationError),
         ):
-            build_auth(_remote_config())
+            build_auth(config)
 
         _assert_sole_announcement(
             caplog,

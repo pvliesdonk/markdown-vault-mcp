@@ -236,8 +236,10 @@ class TestFinalize:
         assert text == mcp.instructions == "server: Product"
 
     def test_zero_identities_raise(self):
+        mcp = _server()
+        config = ServerConfig()
         with pytest.raises(ConfigurationError, match="found none") as exc:
-            finalize_instructions(_server(), ServerConfig(), env_prefix="MY_APP")
+            finalize_instructions(mcp, config, env_prefix="MY_APP")
         assert "IDENTITY fragment" in str(exc.value)
         assert "identity(server_name, product_description)" in str(exc.value)
 

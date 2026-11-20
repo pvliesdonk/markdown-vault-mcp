@@ -153,11 +153,12 @@ class TestBuildOIDCProxyAuthDiscoveryFailure:
         import httpx2
 
         mock_cls = MagicMock(side_effect=httpx2.ConnectError("network down"))
+        config = _oidc_config()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             pytest.raises(ConfigurationError) as excinfo,
         ):
-            build_oidc_proxy_auth(_oidc_config())
+            build_oidc_proxy_auth(config)
         assert f"OIDC discovery failed at {self._URL}: network down" in str(
             excinfo.value
         )
@@ -165,11 +166,12 @@ class TestBuildOIDCProxyAuthDiscoveryFailure:
 
     def test_invalid_document_becomes_configuration_error(self):
         mock_cls = MagicMock(side_effect=ValueError("Missing required OIDC endpoints"))
+        config = _oidc_config()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             pytest.raises(ConfigurationError) as excinfo,
         ):
-            build_oidc_proxy_auth(_oidc_config())
+            build_oidc_proxy_auth(config)
         assert "OIDC discovery failed at" in str(excinfo.value)
         assert "Missing required OIDC endpoints" in str(excinfo.value)
         assert isinstance(excinfo.value.__cause__, ValueError)
@@ -178,11 +180,12 @@ class TestBuildOIDCProxyAuthDiscoveryFailure:
         import httpx2
 
         mock_cls = MagicMock(side_effect=httpx2.ConnectError("boom"))
+        config = _oidc_config(oidc_client_secret="s3cr3t")
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             pytest.raises(ConfigurationError) as excinfo,
         ):
-            build_oidc_proxy_auth(_oidc_config(oidc_client_secret="s3cr3t"))
+            build_oidc_proxy_auth(config)
         assert "s3cr3t" not in str(excinfo.value)
 
     def test_real_proxy_unreachable_idp(self, monkeypatch: pytest.MonkeyPatch):
@@ -194,8 +197,9 @@ class TestBuildOIDCProxyAuthDiscoveryFailure:
             raise httpx2.ConnectError("connection refused")
 
         monkeypatch.setattr(httpx2, "get", _raise)
+        config = _oidc_config()
         with pytest.raises(ConfigurationError, match="OIDC discovery failed at"):
-            build_oidc_proxy_auth(_oidc_config())
+            build_oidc_proxy_auth(config)
 
     def test_real_proxy_malformed_document(self, monkeypatch: pytest.MonkeyPatch):
         """A discovery document missing endpoints fails validation inside
@@ -210,8 +214,9 @@ class TestBuildOIDCProxyAuthDiscoveryFailure:
                 return {"issuer": "https://idp.example"}
 
         monkeypatch.setattr(httpx2, "get", lambda *_a, **_kw: _Resp())
+        config = _oidc_config()
         with pytest.raises(ConfigurationError, match="OIDC discovery failed at"):
-            build_oidc_proxy_auth(_oidc_config())
+            build_oidc_proxy_auth(config)
 
 
 class TestBuildRemoteAuth:

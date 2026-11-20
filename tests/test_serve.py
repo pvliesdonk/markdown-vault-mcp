@@ -40,7 +40,7 @@ def configured_logging_capture(monkeypatch, restore_logging_topology):  # noqa: 
 
     configure_logging_from_env("TEST_MCP")
     logging.getLogger().addHandler(_Capture())
-    yield messages
+    return messages
 
 
 async def _app(scope, receive, send):
@@ -136,7 +136,8 @@ def _running_server_via_run_http(monkeypatch):
             if server is not None and server.started:
                 break
             time.sleep(0.05)
-        assert server is not None and server.started, "server did not start within 10s"
+        assert server is not None, "server did not start within 10s"
+        assert server.started, "server did not start within 10s"
         yield server, port
     finally:
         server = captured.get("server")
@@ -259,8 +260,9 @@ class TestRunServerEpilogue:
 
     def _expect_startup_failure(self, fake):
         """Assert `_run_server` exits 3 — uvicorn's STARTUP_FAILURE — after running."""
+        built = self._built()
         with pytest.raises(SystemExit) as exc_info:
-            _run_server(self._built())
+            _run_server(built)
         assert fake.run_called
         assert exc_info.value.code == 3
 

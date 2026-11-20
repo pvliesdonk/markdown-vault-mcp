@@ -334,8 +334,9 @@ class TestDomainEnvSuffixes:
 
     def test_dataclass_instance_raises_typeerror(self) -> None:
         """An instance (vs the class) is rejected — is_dataclass alone accepts both."""
+        instance = _Flat()
         with pytest.raises(TypeError, match="dataclass"):
-            domain_env_suffixes(_Flat())  # type: ignore[arg-type]
+            domain_env_suffixes(instance)  # type: ignore[arg-type]
 
     def test_list_subconfig_field_traversed(self) -> None:
         """list[Sub] fields are traversed via get_args (one level)."""
@@ -482,8 +483,9 @@ class TestDomainEnvSurface:
             domain_env_surface(int)
 
     def test_dataclass_instance_raises_typeerror(self) -> None:
+        instance = _Flat()
         with pytest.raises(TypeError, match="dataclass"):
-            domain_env_surface(_Flat())  # type: ignore[arg-type]
+            domain_env_surface(instance)  # type: ignore[arg-type]
 
     def test_source_unavailable_raises_oserror_with_context(self) -> None:
         ns: dict[str, object] = {}

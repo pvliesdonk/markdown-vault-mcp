@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import inspect
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.exceptions import ToolError
@@ -296,7 +297,7 @@ def _check_ttl(ttl_s: float | None) -> None:
     the tool boundary as a server fault. The tool descriptions say zero or less
     is rejected, so the model is told which argument to fix.
     """
-    if ttl_s is not None and not ttl_s > 0:
+    if ttl_s is not None and (math.isnan(ttl_s) or ttl_s <= 0):
         raise ToolError(
             "ttl_s must be greater than 0; omit it to use the server's default "
             "link lifetime.",

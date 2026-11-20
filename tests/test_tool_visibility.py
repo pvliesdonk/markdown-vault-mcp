@@ -233,10 +233,10 @@ class TestEffectiveToolNames:
         )
 
     def test_both_set_raises_like_apply(self):
+        server = build_server()
+        server_config = ServerConfig(tools_allow=("a",), tools_deny=("b",))
         with pytest.raises(ConfigurationError):
-            effective_tool_names(
-                build_server(), ServerConfig(tools_allow=("a",), tools_deny=("b",))
-            )
+            effective_tool_names(server, server_config)
 
     def test_tag_disable_uses_fastmcp_effective_visibility(self):
         mcp = build_server()
@@ -290,8 +290,10 @@ class TestEffectiveToolNames:
         )
 
     async def test_active_event_loop_is_rejected(self):
+        server = build_server()
+        server_config = ServerConfig()
         with pytest.raises(RuntimeError, match="synchronous server construction"):
-            effective_tool_names(build_server(), ServerConfig())
+            effective_tool_names(server, server_config)
 
 
 class TestRegisteredToolNames:
@@ -378,5 +380,6 @@ def test_index_raises_runtime_error_on_api_change() -> None:
     class _FakeMCP:
         local_provider = _FakeProvider()
 
+    fake_mcp = _FakeMCP()
     with pytest.raises(RuntimeError, match="FastMCP internal API changed"):
-        _index_tools_by_name(_FakeMCP())  # type: ignore[arg-type]
+        _index_tools_by_name(fake_mcp)  # type: ignore[arg-type]

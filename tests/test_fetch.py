@@ -236,8 +236,9 @@ async def test_fetch_url_aborts_over_size_cap() -> None:
     # Credential-bearing URL so the assertion also guards message redaction on
     # this emit-path (a _redact_url(url) → url regression would leak here).
     url = f"http://user:pass@{PUBLIC_V4}/big?token=s3cr3t"
+    transport = _transport(handler)
     with pytest.raises(ValueError) as excinfo:
-        await fetch_url(url, max_bytes=10, transport=_transport(handler))
+        await fetch_url(url, max_bytes=10, transport=transport)
     msg = str(excinfo.value)
     assert "s3cr3t" not in msg
     assert "pass" not in msg
@@ -275,8 +276,9 @@ async def test_fetch_url_refuses_redirect_to_private_target() -> None:
         return httpx.Response(302, headers={"location": "http://10.0.0.1/internal"})
 
     url = f"http://user:pass@{PUBLIC_V4}/r?token=s3cr3t"
+    transport = _transport(handler)
     with pytest.raises(ValueError) as excinfo:
-        await fetch_url(url, transport=_transport(handler))
+        await fetch_url(url, transport=transport)
     assert len(seen) == 1
     assert "10.0.0.1" not in str(seen[0].url)
     # ...and the refusal message must be redacted on this emit-path.
@@ -291,8 +293,9 @@ async def test_fetch_url_refuses_redirect_to_disallowed_scheme() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(302, headers={"location": "file:///etc/passwd"})
 
+    transport = _transport(handler)
     with pytest.raises(ValueError, match="http and https"):
-        await fetch_url(f"http://{PUBLIC_V4}/x", transport=_transport(handler))
+        await fetch_url(f"http://{PUBLIC_V4}/x", transport=transport)
 
 
 async def test_fetch_url_follows_redirect_to_public_target(monkeypatch) -> None:
@@ -363,8 +366,9 @@ async def test_fetch_url_raises_on_terminal_3xx(code: int) -> None:
         seen.append(request)
         return httpx.Response(code)  # no Location header
 
+    transport = _transport(handler)
     with pytest.raises(httpx.HTTPStatusError, match=f"HTTP {code}"):
-        await fetch_url(f"http://{PUBLIC_V4}/x", transport=_transport(handler))
+        await fetch_url(f"http://{PUBLIC_V4}/x", transport=transport)
     assert len(seen) == 1
 
 
@@ -420,8 +424,9 @@ async def test_fetch_url_raises_on_http_error_status() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, content=b"boom")
 
+    transport = _transport(handler)
     with pytest.raises(httpx.HTTPStatusError):
-        await fetch_url(f"http://{PUBLIC_V4}/x", transport=_transport(handler))
+        await fetch_url(f"http://{PUBLIC_V4}/x", transport=transport)
 
 
 async def test_fetch_url_own_log_is_redacted(caplog) -> None:
@@ -451,8 +456,9 @@ async def test_fetch_url_http_error_message_is_redacted() -> None:
         return httpx.Response(404, content=b"nope")
 
     url = f"http://{PUBLIC_V4}/x?token=s3cr3t"
+    transport = _transport(handler)
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
-        await fetch_url(url, transport=_transport(handler))
+        await fetch_url(url, transport=transport)
     assert "s3cr3t" not in str(excinfo.value)
     # The token must also be absent from the whole exception *message chain* —
     # a `raise ... from exc` would re-attach httpx's original un-redacted
@@ -511,10 +517,9 @@ async def test_fetch_url_size_cap_boundary() -> None:
     def over(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"x" * 11)
 
+    transport = _transport(over)
     with pytest.raises(ValueError):
-        await fetch_url(
-            f"http://{PUBLIC_V4}/x", max_bytes=10, transport=_transport(over)
-        )
+        await fetch_url(f"http://{PUBLIC_V4}/x", max_bytes=10, transport=transport)
 
 
 @pytest.mark.parametrize("bad", [0, -1])
@@ -555,8 +560,9 @@ async def test_fetch_url_propagates_transport_error() -> None:
         raise httpx.ConnectError("connection refused")
 
     # Transport-level failures are documented as propagating uncaught.
+    transport = _transport(handler)
     with pytest.raises(httpx.TransportError):
-        await fetch_url(f"http://{PUBLIC_V4}/x", transport=_transport(handler))
+        await fetch_url(f"http://{PUBLIC_V4}/x", transport=transport)
 
 
 async def test_fetch_url_client_disables_ambient_env(monkeypatch) -> None:
@@ -607,11 +613,12 @@ async def test_fetch_url_size_cap_across_multiple_chunks() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"x" * 200_000)
 
+    transport = _transport(handler)
     with pytest.raises(ValueError):
         await fetch_url(
             f"http://{PUBLIC_V4}/big",
             max_bytes=100_000,
-            transport=_transport(handler),
+            transport=transport,
         )
 
 
