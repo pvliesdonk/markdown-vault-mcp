@@ -100,7 +100,9 @@ The reader uses CommonMark block and inline parsing with a small literal marker
 extension. It recognizes single-line labels with no whitespace, brackets or
 backslashes. It skips code spans and fences, escaped markers, HTML blocks and
 attributes, navigation links, images, wikilinks, and footnote definition blocks.
-A citation beside inline code or a navigation link is still recognized. Footnote
+A citation right after inline code, an inline link or a wikilink is still
+recognized. A marker right after other bracketed text, such as the reference-style
+link in `[text][ref][^a]`, is read as part of that link and skipped. Footnote
 definition prose never supplies the source join. Other Markdown dialect
 extensions are not interpreted; an empty result is not an exhaustive citation
 audit. The response's `syntax` and `scope` fields retain these limits.
