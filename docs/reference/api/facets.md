@@ -94,7 +94,11 @@ and `unavailable`. A missing configured source is `unavailable`; only a missing
 directory within an accessible source is `missing`.
 
 Each entry contains its vault-relative `path`, filename-based `role`, `state`,
-`reason`, `parse_state`, `type_state`, `visibility`, `hidden_path` and `search_state`. Exact
+`reason`, `parse_state`, `type_state`, `visibility`, `hidden_path`, `search_state`,
+`in_bundle` and `is_concept`. `in_bundle` is false for dot components below the
+selected root; `hidden_path` counts all vault-relative components. `is_concept`
+requires bundle membership, a non-reserved Markdown file and an observed
+non-empty string type. An entry whose content was not inspected does not establish concept status. Exact
 `index.md` and `log.md` names mean `navigation` and `history`; the configured
 conventions filename has role `support` unless it is `index.md` or `log.md`;
 other `.md` files are `concept_candidate`.

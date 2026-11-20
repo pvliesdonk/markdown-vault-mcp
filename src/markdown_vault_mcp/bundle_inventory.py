@@ -135,7 +135,7 @@ class BundleEntry:
         visibility: Whether the path matches an effective index exclusion.
         hidden_path: Whether any vault-relative component begins with a dot.
         search_state: Last observed index admission, or not_evaluated.
-        in_bundle: Whether the vault-relative path has no dot components.
+        in_bundle: Whether the path below the selected root has no dot components.
         is_concept: Whether an in-bundle, non-reserved note has an observed type.
     """
 
@@ -491,17 +491,20 @@ class BundleInspector:
             else None,
         )
 
-    def _labelled(self, entry: BundleEntry, path: str) -> BundleEntry:
+    def _labelled(self, entry: BundleEntry, path: str, root: str) -> BundleEntry:
         hidden = any(part.startswith(".") for part in path.split("/"))
+        outside_bundle = any(
+            part.startswith(".") for part in path.split("/")[len(_components(root)) :]
+        )
         return replace(
             entry,
             visibility="index_excluded"
             if is_path_excluded(path, self._excludes)
             else "visible",
             hidden_path=hidden,
-            in_bundle=not hidden,
+            in_bundle=not outside_bundle,
             is_concept=(
-                not hidden
+                not outside_bundle
                 and entry.role in {"concept_candidate", "support"}
                 and entry.type_state == "present"
             ),
@@ -542,7 +545,7 @@ class BundleInspector:
                         continue
                     remaining -= consumed
                     if entry is not None:
-                        entries.append(self._labelled(entry, path))
+                        entries.append(self._labelled(entry, path, request.root))
         except OSError:
             enumeration = "unavailable"
         return BundleInspection(
@@ -685,7 +688,7 @@ class _TreeWalk:
         if entry.role == "directory" and depth >= 32:
             entry = replace(entry, state="unavailable", reason="depth_limit")
             self.enumeration = "unavailable"
-        self.entries.append(self.inspector._labelled(entry, path))
+        self.entries.append(self.inspector._labelled(entry, path, self.request.root))
         if len(self.entries) == self.request.entry_limit:
             self.stopped = True
         elif entry.role == "directory" and entry.reason == "directory":

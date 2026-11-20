@@ -12,7 +12,11 @@ from unittest.mock import Mock
 import pytest
 
 from markdown_vault_mcp import bundle_inventory as inventory
-from markdown_vault_mcp.bundle_inventory import BundleInspectionRequest, BundleInspector
+from markdown_vault_mcp.bundle_inventory import (
+    BundleInspectionRequest,
+    BundleInspector,
+    BundleTreeRequest,
+)
 from markdown_vault_mcp.scanner import scan_directory
 from markdown_vault_mcp.utils import fs
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -97,6 +101,7 @@ def test_public_reader_before_build(
     assert "bundle/plain.md" not in {note.path for note in admitted}
 
 
+@pytest.mark.parametrize("tree", [False, True])
 @pytest.mark.parametrize(
     ("name", "content", "expected"),
     [
@@ -117,14 +122,53 @@ def test_public_reader_before_build(
     ],
 )
 def test_inventory_concept_and_bundle_membership(
-    tmp_path: Path, name: str, content: str, expected: tuple[str, bool, bool]
+    tmp_path: Path,
+    name: str,
+    content: str,
+    expected: tuple[str, bool, bool],
+    tree: bool,
 ) -> None:
     (tmp_path / name).write_text(content)
-    result = inspector(tmp_path).inspect(BundleInspectionRequest(root=""))
+    subject = inspector(tmp_path)
+    result = (
+        subject.inspect(BundleTreeRequest(root=""))
+        if tree
+        else subject.inspect(BundleInspectionRequest(root=""))
+    )
     entry = result.entries[0]
     assert (entry.role, entry.is_concept, entry.in_bundle) == expected
     assert asdict(entry)["is_concept"] is expected[1]
     assert asdict(entry)["in_bundle"] is expected[2]
+
+
+@pytest.mark.parametrize("root", ["bundle", ".workspace/bundle", ".bundle"])
+@pytest.mark.parametrize("tree", [False, True])
+def test_membership_is_relative_to_selected_root(
+    tmp_path: Path, root: str, tree: bool
+) -> None:
+    selected = tmp_path / root
+    selected.mkdir(parents=True)
+    (selected / "typed.md").write_text("---\ntype: Metric\n---\n")
+    (selected / ".hidden").mkdir()
+    (selected / ".hidden" / "nested.md").write_text("---\ntype: Metric\n---\n")
+    subject = inspector(tmp_path)
+    result = (
+        subject.inspect(BundleTreeRequest(root=root))
+        if tree
+        else subject.inspect(BundleInspectionRequest(root=root))
+    )
+    entries = {entry.path: entry for entry in result.entries}
+    typed = entries[f"{root}/typed.md"]
+    assert typed.in_bundle and typed.is_concept
+    assert typed.hidden_path == root.startswith(".")
+    assert not entries[f"{root}/.hidden"].in_bundle
+    if tree:
+        assert not entries[f"{root}/.hidden/nested.md"].is_concept
+    else:
+        nested = subject.inspect(
+            BundleInspectionRequest(root=root, directory=".hidden")
+        ).entries[0]
+        assert not nested.in_bundle and not nested.is_concept
 
 
 def test_inventory_hidden_ancestor_and_uninspected_note(tmp_path: Path) -> None:
@@ -134,7 +178,7 @@ def test_inventory_hidden_ancestor_and_uninspected_note(tmp_path: Path) -> None:
     (tmp_path / "large.md").write_text("x" * 100)
     subject = inspector(tmp_path, note_limit=10)
     hidden_entry = subject.inspect(BundleInspectionRequest(root=".hidden")).entries[0]
-    assert hidden_entry.hidden_path and not hidden_entry.in_bundle
+    assert hidden_entry.hidden_path and hidden_entry.in_bundle
     assert not hidden_entry.is_concept
     large = next(
         e
