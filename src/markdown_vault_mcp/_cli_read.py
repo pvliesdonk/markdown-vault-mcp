@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp._cli_remote import RemoteReply, run_read
 
 if TYPE_CHECKING:
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.cli import _BuiltVault
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
@@ -100,11 +101,18 @@ def local_read(tool: str, arguments: dict[str, Any], source_dir: str | None) -> 
 
 
 def _build_reader_vault(
-    config: ProjectConfig, source_dir: str | None, in_memory: bool
+    config: ProjectConfig,
+    source_dir: str | None,
+    in_memory: bool,
+    *,
+    inspection_policy: InspectionPolicy | None = None,
 ) -> _BuiltVault:
     from dataclasses import replace
     from pathlib import Path
+    from typing import cast
 
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp.bundle_inventory import InspectionPolicy
     from markdown_vault_mcp.cli import _BuiltVault, _vectors_kept
     from markdown_vault_mcp.config_sections._assembly import (
         source_dir_problem,
@@ -112,9 +120,11 @@ def _build_reader_vault(
         to_vault_settings,
     )
     from markdown_vault_mcp.exceptions import ConfigurationError
+    from markdown_vault_mcp.indexing.observations import ObservationLedger
     from markdown_vault_mcp.vault import Vault
 
     # A read uses the existing checkout: never bootstrap or sync a managed clone.
+    configured = config.source_dir
     config = replace(
         config,
         source_dir=Path(source_dir) if source_dir is not None else config.source_dir,
@@ -126,26 +136,70 @@ def _build_reader_vault(
         raise ConfigurationError(problem[1])
     # Native reads resolve note paths, so their root must use the same identity.
     config = replace(config, source_dir=config.source_dir.resolve())
+    same_source = source_dir is None
+    if not same_source:
+        try:
+            same_source = config.source_dir == configured.resolve()
+        except (OSError, RuntimeError):
+            same_source = False
     if not _vectors_kept(config, None):
         config = replace(config, embedding_provider=None)
     instances = to_vault_instances(config)
     try:
         settings = to_vault_settings(config, instances=instances)
+        evidence_path = (
+            (
+                inspection_policy.state_paths[0]
+                if inspection_policy is not None and inspection_policy.state_paths
+                else settings.effective_state_path(config.source_dir)
+            )
+            if same_source
+            else None
+        )
+        if in_memory and evidence_path is not None:
+            observation_path = evidence_path.with_name(
+                evidence_path.name + ".observations.json"
+            )
+            if inspection_policy is None:
+                inspection_policy = InspectionPolicy(
+                    settings.conventions_file,
+                    (evidence_path, observation_path),
+                    settings.effective_embeddings_path(),
+                    settings.index_path,
+                )
+            else:
+                inspection_policy = replace(
+                    inspection_policy,
+                    state_paths=(*inspection_policy.state_paths, observation_path),
+                )
         settings = replace(
             settings,
             owns_index_files=False,
             state_path=None if in_memory else settings.state_path,
         )
-        return _BuiltVault(
-            Vault(
-                source_dir=config.source_dir,
-                settings=settings,
-                embedding_provider=instances.embedding_provider,
-                summarizer=instances.summarizer,
-                git_strategy=instances.git_strategy,
-            ),
-            instances,
+        vault = Vault(
+            source_dir=config.source_dir,
+            settings=settings,
+            inspection_policy=inspection_policy,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
         )
+        if not same_source:
+            vault.reader._receipt_store = None
+            vault._doc_mgr._observations = None
+        elif in_memory and evidence_path is not None:
+            # Index builds keep their own in-memory tracker and ledger. Only
+            # the read-facing collaborators see the matching vault's evidence.
+            ledger = cast("ObservationLedger", vault._doc_mgr._observations)
+            vault._doc_mgr._observations = ObservationLedger(
+                observation_path, ledger._inspector
+            )
+            vault.reader._receipt_store = ReceiptStore(
+                evidence_path.with_name(evidence_path.name + ".receipts.json"),
+                config.source_dir,
+            )
+        return _BuiltVault(vault, instances)
     except BaseException:
         instances.close()
         raise
@@ -180,9 +234,7 @@ def _facet_payload(
         return [_plain(item) for item in result]
     data = _plain(result)
     if tool == "stats":
-        okf = vault.reader.okf_stats()
-        if okf is not None:
-            data["okf"] = okf
+        data["okf"] = vault.okf_stats_report()
     if tool == "get_context":
         _context_annotations(vault, data, arguments["path"])
     return data
@@ -244,7 +296,13 @@ def read_payload(
     """
     from dataclasses import asdict
 
-    from markdown_vault_mcp.exceptions import DocumentNotFoundError
+    import yaml
+
+    from markdown_vault_mcp._okf_review import concept_snapshot
+    from markdown_vault_mcp.exceptions import (
+        DocumentNotFoundError,
+        DocumentUnreadableError,
+    )
     from markdown_vault_mcp.okf import derive_annotation
     from markdown_vault_mcp.utils import is_note
 
@@ -256,8 +314,24 @@ def read_payload(
     if note is None:
         raise DocumentNotFoundError.note(path)
     data = asdict(note)
-    if section is None and vault.okf.state().active:
-        data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+    active = vault.okf.state().active
+    if section is None and (
+        active or vault.okf_capability_report(active=False)["verify"]["effective"]
+    ):
+        try:
+            snapshot = concept_snapshot(note.content)
+        except (yaml.YAMLError, ValueError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+        data["okf"] = {}
+        if active:
+            reviews, observation = vault.reader.review_evidence(
+                note.path, note.frontmatter, snapshot
+            )
+            data["okf"] = derive_annotation(
+                note.frontmatter, include_sources=True, assessments=reviews
+            )
+            data["okf"]["observation"] = observation
+        data["okf"]["snapshot"] = snapshot
     return data
 
 

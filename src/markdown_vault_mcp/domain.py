@@ -325,10 +325,9 @@ class Service:
         await asyncio.to_thread(vault.sync_from_remote_before_index)
 
         # Submit the initial build jobs to the IndexWriter and yield
-        # immediately (#559). build_index_async() short-circuits in
-        # O(1) on warm restarts (existing FTS sentinel from PR #526);
-        # cold restarts submit a BuildIndex job that the writer
-        # processes asynchronously while the lifespan yields.
+        # immediately (#559). Warm restarts reuse FTS and queue a ledger
+        # sweep; cold restarts queue a full build. The writer processes both
+        # asynchronously while the lifespan yields.
         # Bucket-3 tools block on @needs_queryable until the build
         # completes; bucket-2 tools return whatever is currently in
         # the index per #526.
@@ -336,9 +335,8 @@ class Service:
         logger.info("build_index_job_submitted")
 
         # Reconcile offline changes (#665): files added, modified, or
-        # deleted while no server was running are invisible to both the
-        # warm-restart short-circuit above (O(1), no filesystem scan) and
-        # the file watcher below (future events only).  Enqueue an
+        # deleted while no server was running are not applied to search by
+        # the warm build or the file watcher below (future events only). Enqueue an
         # incremental reindex behind the build: the writer's FIFO ordering
         # guarantees build-before-reindex, and on a cold boot the full
         # build has just recorded tracker state (including skipped files),

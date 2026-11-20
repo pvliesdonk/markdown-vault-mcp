@@ -57,7 +57,11 @@
       ? '<button class="prop-toggle" id="preview-props-toggle">' + CHEVRON
         + '<span id="preview-props-toggle-label">Show ' + more + ' more properties</span></button>'
       : '';
-    return '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
+    // The supplied field is a claim, not evidence about the displayed content.
+    const review = Object.prototype.hasOwnProperty.call(fm, 'verified')
+      ? '<p>Supplied verified field. Review applicability to current content: unknown.</p>'
+      : '';
+    return review + '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
   }
 
   function renderTags(fm) {
