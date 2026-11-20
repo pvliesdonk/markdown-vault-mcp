@@ -16,6 +16,8 @@ three-switch design, are superseded as targets. Each implementation change
 updates the affected behavior sections; this adoption does not change runtime
 behavior.
 
+The internal `_okf_paths` resolver implements [OKF v0.3 §6](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81af/SPEC.md#6-links-and-paths) without I/O. Callers supply case-sensitive file identities and directory identities ending in `/`, including each ancestor they want resolvable and `/` for the bundle root. A slashless target selects a file first, then a directory; directory-form targets select only directories. Results distinguish absent fields, missing targets, external references and legacy root fallback, retaining query and fragment suffixes. Refused percent escapes remain unresolved. Callers supply normalized versions; fallback applies only to path fields in v0.1, v0.2 and undeclared bundles. RFC 3986 scheme detection includes one-letter schemes; the generic scanner retains its Windows-drive rule (#1335). Values beginning `//` resolve from the bundle root under §6 rule 2. Above-root traversal is external here; the scanner clamps it. This helper has no callers and changes no scanner or body-link behavior.
+
 ## Terminology
 
 This spec uses the following terms consistently:
