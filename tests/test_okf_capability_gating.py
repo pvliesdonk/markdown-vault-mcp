@@ -354,8 +354,10 @@ async def test_independent_review_is_retained_after_edit(
     )
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
-    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "peter")
+    monkeypatch.setattr(
+        "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "peter"}
+    )
     async with Client(make_server()) as client:
         await client.call_tool("okf_verify", review_args("note.md"))
         await wait_for_mcp_writer_drain(client)

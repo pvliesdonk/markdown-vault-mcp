@@ -62,11 +62,12 @@ is recorded in [Python packaging boundaries](reference/python-packaging-boundari
 
 ## Shared Infrastructure
 
-Generic FastMCP infrastructure (auth providers, middleware stack, logging
-bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
-`fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
-via `ServerConfig` (never inheritance) and imports the building blocks
-directly. See `make_server()` in `src/markdown_vault_mcp/server.py` for the
+Generic FastMCP infrastructure (auth providers, the request-logging
+middleware, the logging bootstrap, jobs, transfer links, health routes, server
+info, the instructions builder, `ServerConfig`) came from the
+`fastmcp-pvl-core` PyPI package and was folded into this package in the 015
+pvl-core-fold (#2241); `docs/design/module-map.md` lists the modules. The
+domain config composes `ServerConfig` (never inheritance). See `make_server()` in `src/markdown_vault_mcp/server.py` for the
 assembled call graph.
 
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
@@ -90,7 +91,7 @@ markdown-vault-mcp (new package)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
 +-- server.py         -- template-owned skeleton; DOMAIN-WIRING calls _server_wiring.wire_domain (#901)
-+-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
++-- _instructions.py  -- contribute_instructions: domain snippets for the instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
 +-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
@@ -1329,7 +1330,7 @@ the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredEr
 is a change of request.
 
 The table is applied in one place. Every tool is `@mcp.tool` over
-pvl-core's `@tool_boundary` over `@library_outcomes`
+`@tool_boundary` (`_tool_boundary.py`) over `@library_outcomes`
 (`_tools/_outcomes.py`); a long-running tool's coroutine takes
 `@library_outcomes` under `register_long_running_tool`, which carries the
 boundary itself. `library_outcomes` raises each "change the request" and
@@ -2218,7 +2219,7 @@ the spec itself says, dated and sourced, in
   gets the same unstamped rewrite the tool does. Bundle export
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
-  ref on pvl-core's ``create_download_link`` and generates the archive at
+  ref on ``create_download_link`` and generates the archive at
   fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
   convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
   non-conformant notes as-is, reproducible bytes, never mutating the vault;
@@ -2335,21 +2336,24 @@ lifespan scaffold constructs and drives; the lifespan's `finally` block calls
 (#902/#910, #1765). Callers using `Vault` as a Python library must call
 `close()` explicitly, then close the collaborators they passed in.
 
-### One-Time Transfer Links (pvl-core `register_transfer_routes`)
+### One-Time Transfer Links (`register_transfer_routes`)
 
 The transfer subsystem lets vault files move out-of-band (to a browser or
 another service) without passing bytes through the LLM context. It is an
 HTTP-layer feature: the route and tools are registered only on HTTP/SSE
 transports and only when `MARKDOWN_VAULT_MCP_BASE_URL` is set.
 
-The capability-link machinery — the `/transfer/{token}` route, the KV-backed
+The capability-link machinery is the `/transfer/{token}` route, the KV-backed
 token store, the generic `create_download_link` / `create_upload_link` tools
 (with their titles, hints, icons, and the `write` tag on upload), the TTL
-clamp, and the per-upload size cap — is owned by `fastmcp-pvl-core`
-(`register_transfer_routes`, ADR 0001). It was previously a hand-rolled
-in-memory subsystem in this repo (`transfer/`); #979 retired that and adopted
-the shared framework. markdown-vault-mcp now supplies only the domain hook: a
-`VaultTransferSink` (`_transfer_sink.py`) implementing the core `TransferSink`
+clamp, and the per-upload size cap. It was a hand-rolled in-memory subsystem
+in this repo (`transfer/`) until #979 adopted `fastmcp-pvl-core`'s shared
+framework, and #2241 folds that back in: the registration and the link tools
+are `_transfer_links.py` (#2318), the route handler `_transfer_routes.py` and
+the sink contract `_transfer_contract.py` (#2319), the token store
+`_transfer_store.py` (#2320) and the settings `config_sections.TransferConfig`
+(#2321). The domain part
+is a `VaultTransferSink` (`_transfer_sink.py`) implementing the `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
 vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
 DOMAIN-WIRING block calls; it calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
@@ -2381,11 +2385,12 @@ unguessable token (32 random bytes, URL-safe) is the authorization; no
 
 The token store is KV-backed (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk state
 by default), so live links survive a server restart. The full state-machine and
-route mechanics are pvl-core's; see its ADR 0001 for the contract.
+route mechanics are `_transfer_store.py` and `_transfer_routes.py`, ported from
+pvl-core, whose ADR 0001 records the contract.
 
 #### Domain seam (`VaultTransferSink`)
 
-The sink is byte-oriented: pvl-core hands it the opaque sink handle and, for an
+The sink is byte-oriented: the route hands it the opaque sink handle and, for an
 upload, the fully-read (size-capped) body.
 
 - **Download** (`read(handle)`): the handle is a vault path. A `.md` note is
@@ -2434,8 +2439,8 @@ route logs only the status and class, so the sink logs the reason itself
 The route releases the token reservation on these errors without extending its
 expiry; another upload will still conflict while the destination exists. Any
 other failure still maps to 500. See the versioned
-[pvl-core transfer reference](reference/fastmcp-transfer.md) for the upstream
-error and retry contract.
+[transfer reference](reference/fastmcp-transfer.md) for the error and retry
+contract, recorded against pvl-core before the fold and ported unchanged.
 
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.
@@ -2497,10 +2502,11 @@ unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). The `httpx`
 and `httpcore` loggers are pinned to `WARNING` at the default level so their
 per-request `INFO` line does not flood embedding builds; at `-v` they are reset
 to `NOTSET` so the root `DEBUG` level governs and they become visible. This
-mirrors core's `uvicorn.access` / `mcp.server.lowlevel.server` handling, but
-stays domain-local because `fastmcp-pvl-core` does not own these dependencies.
+mirrors the logging setup's `uvicorn.access` / `mcp.server.lowlevel.server`
+handling, but stays in its own module because these are the vault's HTTP-client
+dependencies.
 
-**Request logging:** `make_server()` wires pvl-core's single
+**Request logging:** `make_server()` wires the single
 `RequestLoggingMiddleware` (via `wire_middleware_stack`), which emits
 family conforming, tool-aware lines: a bare event name first, then
 `key=value` pairs, with request timing carried inline on the terminal line.
@@ -4305,7 +4311,7 @@ acting" is resolved **once, at the MCP tool edge**, into a frozen
 `kind: human|service|local`) — credentials (`GIT_TOKEN`) and permissions
 (`read_only`) deliberately stay off it; they are service configuration, not
 properties of the caller. `resolve_mcp_principal()` performs the single
-request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
+request-context read (`_subject.get_subject()` + `get_claims()`,
 applying the claim keys registered at startup via
 `configure_identity_claims()`), and the write tools bind the result on a
 contextvar (`write_identity_scope()` in `_tools/writer.py`) around
@@ -5832,7 +5838,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
 | `summarize` | LLM summary of a note/set/subtree (references sources by path); dual-mode: native background task, or promotion to a pollable job (#1033) | `True` | `False` | **`False`** |
-| `get_job_result` | Retrieve a background job (a promoted `summarize`, `reindex`, or `build_embeddings`) by `job_id`; pvl-core-owned generic poller (#1033) | `True` | `False` | **`False`** |
+| `get_job_result` | Retrieve a background job (a promoted `summarize`, `reindex`, or `build_embeddings`) by `job_id`; the generic poller from `_job_tools.register_job_tools` (#1033, #2281) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Append semantics (#980)**: `append` adds `content` at the end of an
@@ -5991,7 +5997,7 @@ contain this, both operator-tunable:
   The operator's lever, a higher ``SUMMARIZE_TIMEOUT``, goes in the
   ``summarize_timeout`` WARNING log line, not the model's text (#1608).
 - **Dual-mode execution with background promotion (#1033)** — ``summarize``
-  is registered through ``fastmcp_pvl_core.register_long_running_tool``
+  is registered through ``register_long_running_tool`` (``_job_tools``)
   rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled
   ``SummaryJobStore`` + ``get_summary`` pair (#937). An MCP client that
   speaks background tasks (SEP-2663) runs the call as a protocol-native
@@ -6030,12 +6036,14 @@ contain this, both operator-tunable:
   foreground soft-deadline/pollable-job path remains the fallback for clients
   that do not negotiate tasks, including a handshake-era client.
 
-**Composed instructions**: from fastmcp-pvl-core 6 the server's MCP
+**Composed instructions**: since fastmcp-pvl-core 6 the server's MCP
 `instructions` string is not a single templated value but a collection of
 snippets, each added with a semantic role and the tool names it directs calls
-to. The template-owned scaffold contributes a shaped
+to. The builder and finalizer are `_instructions_builder.py`, folded in from
+pvl-core 10.2.0 (#2305). `server.py` contributes a shaped
 `<server name>: <product description>` identity and the documentation pointer;
-pvl-core's `register_*` helpers contribute job-polling and transfer workflows;
+`register_job_tools` contributes the job-polling workflow and
+`register_transfer_routes` the transfer workflow;
 the domain contributes vault capabilities, workflows, and deployment mode.
 All contributors add to one builder obtained via `instructions_for(mcp)`.
 `finalize_instructions(mcp, config.server, env_prefix=...)` renders it once,
@@ -6067,21 +6075,21 @@ interchangeable:
 - **Python conditionals in `_domain_snippets()`** gate on configuration
   (`read_only`, a configured conventions file, an OKF mode, a summarize
   backend, the boot reindex switch). These are the only gate that works for this server's
-  `mcp.disable(tags=...)` calls, which pvl-core deliberately does not model:
+  `mcp.disable(tags=...)` calls, which the builder deliberately does not model:
   a disabled-but-registered tool still counts as exposed at finalize.
 - **The `requires_tools` declaration on a snippet** gates on the operator's
-  `TOOLS_ALLOW` / `TOOLS_DENY` lists. pvl-core drops a snippet whose declared
+  `TOOLS_ALLOW` / `TOOLS_DENY` lists. The builder drops a snippet whose declared
   tools are not all exposed, so workflow prose can never point the model at a
   tool an operator removed. A name belongs in that declaration only when its
   absence makes the snippet actively wrong — not when the snippet merely
   mentions it or offers it as an alternative.
 
-Ordering comes from pvl-core's semantic roles:
+Ordering comes from the builder's semantic roles:
 `IDENTITY`, `ROUTING`, `INSTANCE`, `POLICY`, `CAPABILITIES`, `WORKFLOWS`, then
 `DOCUMENTATION`, with insertion order preserved within a role. The vault
 prelude uses `CAPABILITIES`, workflow fragments use `WORKFLOWS`, and the
 READ-ONLY/READ-WRITE announcement uses `INSTANCE`. General contributors may
-use only `INSTANCE`, `CAPABILITIES`, and `WORKFLOWS`; pvl-core reserves shaped
+use only `INSTANCE`, `CAPABILITIES`, and `WORKFLOWS`; the builder reserves shaped
 identity, operator routing and policy, and the documentation role.
 
 Operators shape the result with three env vars read inside
@@ -6105,7 +6113,7 @@ Whether instructions reach the model depends on the client; see the
 The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
-must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
+must remain at or below the builder's 1,536 UTF-16-unit generated target. It is
 1,229 units as of #1599, down from 1,507 at #1252's acceptance fix. A second
 case adds representative routing and policy and must remain within Claude Code's 2,048-unit limit.
 The mode, the missing-summarize pointer, conventions, and OKF guidance are
@@ -6125,7 +6133,7 @@ evidence establishes where the floor is.
 category and total ceilings #1253 and #1258 introduced). The only client
 limits with a documented source are per item: Claude Code's 2,048-unit cut on
 each tool description and on the instructions, pinned by the template-owned
-`tests/test_model_facing_text.py`, and pvl-core's 1,536-unit target for the
+`tests/test_model_facing_text.py`, and the builder's 1,536-unit target for the
 generated instructions above. No source derives an aggregate ceiling; the
 category caps were measurements of the day plus one percent, and they
 penalised the move the `writing-model-facing-text` skill prescribes (a fact
@@ -6133,8 +6141,8 @@ leaving a tool description for the parameter that needs it), which is how a
 pvl-core release that only filled empty parameter descriptions tripped one.
 The size of the surface is bounded by writing every description against that
 skill, not by a number. The aggregate cost of an eager client receiving every
-description and schema is pvl-core's problem to solve with a catalog mode
-(pvliesdonk/fastmcp-pvl-core#300); if that study yields a measured threshold,
+description and schema would be addressed by a catalog mode (studied in
+pvliesdonk/fastmcp-pvl-core#300, before the fold); if that study yields a measured threshold,
 a budget derived from it is stated in tokens, per client class, with its
 derivation beside the number.
 
@@ -6170,8 +6178,8 @@ upstream FastMCP #4952).
 - `fetch(url, path, frontmatter?, if_match?, timeout_s?)` downloads content
   from an HTTP/HTTPS URL and dispatches to `write()` (for `.md` paths) or
   `write_attachment()` (for other extensions). The download delegates to
-  `fastmcp_pvl_core.fetch_url`, the hardened shared primitive the tool's
-  original SSRF guard was lifted into (#862; pvl-core #219): scheme
+  `_fetch.fetch_url`, the hardened fetch the tool's original SSRF guard was
+  lifted into in pvl-core (#862; pvl-core #219) and ported back from (#2282): scheme
   allowlist (`http`/`https` only), rejection of any host resolving to a
   non-public address (permit-list model — private, loopback, link-local,
   CGNAT/shared 100.64/10, and reserved ranges are all blocked, with NAT64
@@ -6192,8 +6200,8 @@ upstream FastMCP #4952).
   Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
   floor the guard lives in the transport httpx sends each hop through, so a
   `Location` pointing at an internal target is refused exactly as a directly
-  supplied one is. The posture is not locally configurable — pvl-core owns
-  it — and it was adopted deliberately rather than inherited silently: per-hop
+  supplied one is. The posture is not configurable — `_fetch.py` fixes it —
+  and it was adopted deliberately rather than inherited silently: per-hop
   revalidation is a stronger guarantee than a blanket refusal, and ordinary
   indirection (`http`→`https`, shortened links, CDN hand-offs) now resolves
   instead of erroring. The cost is that the bytes need not come from the host
@@ -6375,42 +6383,19 @@ Owned-store CLI commands report typed store-open failures on stderr and exit wit
 
 ## Configuration
 
-### The config import floor (#1259)
+### The config import floor (retired, #2355)
 
-Importing `markdown_vault_mcp.config` must succeed with only
-`fastmcp-pvl-core` and PyYAML installed. That is not a style preference: the
-template-owned `scripts/gen_config_surface.py` imports `ProjectConfig` to
-discover this project's domain env vars, and it runs from copier's
-`_migrations` under `uv run --no-project --with fastmcp-pvl-core --with
-pyyaml` — before any project virtualenv exists. Nothing else this project
-declares as a dependency is importable at that moment.
-
-A module-scope import that reaches further fails in a way that reads as
-someone else's bug. `_import_project_config` treats the `ModuleNotFoundError`
-as tolerable (a stderr warning, then `None`), so discovery yields zero domain
-vars; the mcpb install-screen `files:` guard then aborts the run with
-"names config vars that do not exist (check for a typo…)" — pointing at the
-install screen rather than at the import. That is how the weekly copier-update
-workflow failed twice in August 2026, invisibly to anyone running the
-generator locally: from inside the repository, `uv run --no-project` still
-resolves the project's own `.venv`, which has everything installed.
-
-So a domain module reachable from `ProjectConfig` puts any heavier import
-behind `TYPE_CHECKING` (annotations — `from __future__ import annotations` is
-on everywhere, so they never evaluate) plus a function-local import at the
-runtime use site. `config_sections/_assembly.py` → `markdown_vault_mcp.git`
-(the `GitWriteStrategy` construction in `_build_git_strategy`) is one such
-edge; `config_sections/vault_settings.py` → `markdown_vault_mcp.okf` (the
-`OKF_INDEXED_FIELDS` table in `effective_indexed_fields`) is another, and both
-reach `python-frontmatter`. Note that importing `markdown_vault_mcp.git.types`
-would not have helped: a submodule import executes the package `__init__`
-first, and that is where the chain to `frontmatter` runs — which is also why
-the git edge is the older of the two, and why it, not the OKF edge, is what
-the pre-`config_sections/` tree tripped over in August.
-
-`tests/test_config_import_floor.py` enforces the floor by importing
-`config` in a fresh interpreter and asserting it adds no third-party module
-beyond what `fastmcp_pvl_core` and `yaml` already pull in.
+From #1259 to #2355, importing `markdown_vault_mcp.config` had to succeed with
+only `fastmcp-pvl-core` and PyYAML installed, because the config-surface
+generator re-executed itself under `uv run --no-project` with just those two,
+for copier's `_tasks`, before any project virtualenv existed. With the template
+detached (#2240) and the generator's introspection moving into this project
+(#2289), the generator runs in the project's own environment instead, and the
+floor and `tests/test_config_import_floor.py` are gone (owner's choice, recorded
+on #2273). Function-local imports that kept `config_sections/` inside the floor
+(the `markdown_vault_mcp.git` edge in `_assembly.py`, the OKF edge in
+`vault_settings.py`) stay: they also keep `import markdown_vault_mcp.config`
+cheap.
 
 ### Phase 1: Python API Only
 
@@ -6995,11 +6980,10 @@ Properties this depends on:
   latency but are not isolated from each other's filesystem changes. Library
   scope closing remains nonblocking, and non-batch callbacks retain
   their asynchronous per-write timing. Push remains deferred.
-- **The scope is read in `fire`, never on the worker.** `fire` runs on the
-  request's `to_thread` worker, whose copied context carries the contextvar;
-  the dispatcher thread has no request context, so reading there would always
-  see `None`. The dispatcher binds the captured folder roots only while invoking
-  the batch callback and resets them afterward (#1218).
+- **The scope is captured in `fire`.** `fire` runs on the request's
+  `to_thread` worker, whose copied context carries the contextvar. The
+  dispatcher thread has no request context; it binds only the captured folder
+  roots while invoking the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
