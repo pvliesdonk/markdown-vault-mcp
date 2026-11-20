@@ -47,6 +47,29 @@ def _write(vault: Vault, name: str, text: str) -> None:
     vault._index_mgr.flush_dirty_embeddings({name})
 
 
+def test_backlink_rewrite_flush_batches(tmp_path):
+    provider = _Counting()
+    vault = _vault(tmp_path, provider)
+    try:
+        for name in ("alpha.md", "beta.md"):
+            (vault.source_dir / name).write_text(f"# {name}\n\nSee [[old]].\n")
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        for name in ("alpha.md", "beta.md"):
+            path = vault.source_dir / name
+            path.write_text(path.read_text().replace("[[old]]", "[[new]]"))
+        paths = {"alpha.md", "beta.md"}
+        vault._index_mgr.process_dirty_paths(paths)
+        store = vault._vectors
+        provider.calls = 0
+        vault._index_mgr.flush_dirty_embeddings(paths)
+        assert provider.calls == 1
+        for path in paths:
+            assert "[[new]]" in store.rows_for(path)[0].metadata["content"]
+    finally:
+        vault.close()
+
+
 class TestTokens:
     def test_every_document_carries_its_content_hash(self, tmp_path):
         vault = _vault(tmp_path, MockEmbeddingProvider())

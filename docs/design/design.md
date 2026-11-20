@@ -1187,8 +1187,9 @@ Custom non-scalar metadata remains resident to preserve its original objects.
 The built-in publishers still materialize their own generation copies. The
 largest document and path bookkeeping also grow independently of the window.
 
-Convergence embeds per document, in the same bounded batches as the cold
-build (#159): a provider failure on one document's chunks (token-context
+Convergence packs missing inputs across documents in bounded requests (#1496).
+If a shared request fails, it retries each affected document separately; a
+provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
 vectors stay intact) and the rest still converge. The store write is
 guarded the same way (#935): `replace_document` refuses a vector of another
@@ -1617,7 +1618,11 @@ signature with the store's before calling the provider, so repeated FTS/graph
 retries reuse completed embeddings. Changed content, chunk boundaries/positions,
 titles, headings, or configured frontmatter preambles replace the note's rows,
 embedding only the chunks whose input changed (the others keep their stored
-vectors); an unchanged input under a new token is re-tokened without a provider call. A provider
+vectors); an unchanged input under a new token is re-tokened without a provider call.
+Flush and convergence passes pack inputs across notes up to the configured batch size (#1496).
+A failed shared request retries only each affected note’s remaining inputs; a
+provider exception or wrong vector count on a partial request containing one
+note is not repeated. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued
@@ -4798,13 +4803,17 @@ re-tokens (signature equal, token moved or absent: the stored vectors are
 republished, no provider call), embeds (signature differs), or removes (a
 body-less document, or one the keyword index holds no rows for on a
 tombstone, an exclusion or a `SourceProbe` answering *absent*, #1785; from
-#1505 a tombstone for an unparseable note keeps its rows).
+#1505 a tombstone for an unparseable note keeps its rows). Incremental
+reconciliation can pack missing inputs across documents up to the configured batch
+size (#1496); after a shared failure it retries only each affected document’s
+remaining inputs, preserving successful siblings. A provider exception or wrong
+vector count on a partial request containing one document is not repeated.
 `IndexManager`'s exclusion purge and reindex deletion loop delete their
 keyword rows and hand the paths to the reconciler too, so every vector
 write carries the token it observed. An empty cold build is published only
 when the keyword index's last build completed and read every directory
 (`is_build_walk_complete()`); the source walk and root check are gone
-from the embedding path. It embeds before
+from the embedding path. The reconciler embeds before
 touching the store and publishes with `replace_document` /
 `remove_document` passing the token it observed, read before the
 keyword-index rows (a revision the rows miss was published after that
