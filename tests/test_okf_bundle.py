@@ -305,7 +305,7 @@ def test_inventory_selected_read_failure_refuses(
 
 
 @pytest.mark.parametrize(
-    ("kind", "index_pattern", "include_index_excluded"),
+    "case",
     [
         ("read_failure", False, False),
         ("dangling", False, False),
@@ -317,12 +317,11 @@ def test_dot_entry_omitted_before_refusal(
     source_dir: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    kind: str,
-    index_pattern: bool,
-    include_index_excluded: bool,
+    case: tuple[str, bool, bool],
 ) -> None:
     from markdown_vault_mcp import bundle_inventory
 
+    kind, index_pattern, include_index_excluded = case
     if kind == "read_failure":
         (source_dir / ".hidden.md").write_text("hidden")
         original = bundle_inventory.read_regular_nofollow
