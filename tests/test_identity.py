@@ -7,7 +7,7 @@ claim-extraction edge cases previously pinned on the git strategy's deleted
 ``_extract_claim`` (absent claim, empty string, non-string value, no
 configured key, no token).
 
-The monkeypatch targets are the ``fastmcp_pvl_core`` package attributes —
+The monkeypatch targets are the ``markdown_vault_mcp._subject`` attributes —
 enabled by the deliberate function-local imports in ``_identity`` (the same
 pattern ``_okf_write`` uses).
 """
@@ -47,8 +47,8 @@ def _patch_context(
     subject: str | None,
     claims: dict[str, Any] | None,
 ) -> None:
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: subject)
-    monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: claims)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: subject)
+    monkeypatch.setattr("markdown_vault_mcp._subject.get_claims", lambda: claims)
 
 
 class TestPrincipalOkfActor:
@@ -206,7 +206,7 @@ class TestOkfResolversPreferBoundPrincipal:
     ) -> None:
         from markdown_vault_mcp._okf_write import resolve_human_subject
 
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "other")
+        monkeypatch.setattr("markdown_vault_mcp._subject.get_subject", lambda: "other")
         p = Principal(subject="peter", display_name=None, email=None, kind="human")
         with bound_principal(p):
             assert resolve_human_subject() == "peter"
@@ -349,14 +349,12 @@ class TestAbsentCommitClaimIsReported:
 class TestServicePrincipals:
     @pytest.mark.parametrize("subject", ["bearer-anon", "agent", "user:peter", "local"])
     async def test_real_bearer_verifier_is_not_human(self, subject: str) -> None:
-        from fastmcp_pvl_core import (
-            ServerConfig,
-            build_bearer_auth,
-            get_claims,
-            get_subject,
-        )
         from mcp.server.auth.middleware.auth_context import auth_context_var
         from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        from markdown_vault_mcp._auth import build_bearer_auth
+        from markdown_vault_mcp._subject import get_claims, get_subject
+        from markdown_vault_mcp.config_sections.server import ServerConfig
 
         verifier = build_bearer_auth(
             ServerConfig(bearer_token="test-only-1463", bearer_default_subject=subject)

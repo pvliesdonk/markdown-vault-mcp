@@ -19,7 +19,7 @@ import dataclasses
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from fastmcp_pvl_core import ConfigurationError
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
