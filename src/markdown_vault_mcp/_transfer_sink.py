@@ -1,6 +1,6 @@
-"""Vault-backed transfer hooks for pvl-core's capability-link routes (#979).
+"""Vault-backed transfer hooks for the capability-link routes (#979).
 
-``fastmcp_pvl_core.register_transfer_routes`` owns the token store, the
+``_transfer_links.register_transfer_routes`` owns the token store, the
 ``/transfer/{token}`` route, the generic ``create_download_link`` /
 ``create_upload_link`` tools (with their titles, hints, and icons), and all
 size-cap / TTL mechanics. This module supplies the one domain hook it consumes:

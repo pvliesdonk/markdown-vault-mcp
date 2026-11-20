@@ -164,6 +164,7 @@ src/markdown_vault_mcp/
   resources.py         -- register_resources: MCP resource registrations
   prompts.py           -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
+  _transfer_links.py   -- register_transfer_routes / build_transfer_links / TransferLinks / add_transfer_workflow: the /transfer route mount, the create_*_link tools and the transfer workflow snippet (#2318)
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)
   _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)

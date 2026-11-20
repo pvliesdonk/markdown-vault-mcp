@@ -1,12 +1,10 @@
 """Tests for transfer-route wiring (#979).
 
-``fastmcp_pvl_core.register_transfer_routes`` registers the
+``_transfer_links.register_transfer_routes`` registers the
 ``create_download_link`` / ``create_upload_link`` tools and the
 ``/transfer/{token}`` route, gated on an HTTP transport with ``base_url`` set.
-markdown-vault-mcp supplies only the ``VaultTransferSink`` domain hook; the tool
-names, titles, hints, icons, and the ``write`` tag come from pvl-core (v4.8.0),
-adopted as-is with no downstream mutation. The sink logic itself is covered by
-``test_transfer_sink.py``.
+The ``VaultTransferSink`` supplies the reads and writes. The sink logic itself
+is covered by ``test_transfer_sink.py``.
 """
 
 from __future__ import annotations
@@ -21,7 +19,8 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from httpx import ASGITransport, AsyncClient
 
-from markdown_vault_mcp._pvl_core import ServerConfig, TransferLinks
+from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp._transfer_links import TransferLinks
 from markdown_vault_mcp.config import ProjectConfig
 from tests.fixtures.git import make_nested_repository, make_superproject
 from tests.server_factory import make_server

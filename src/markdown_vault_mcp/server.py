@@ -244,10 +244,10 @@ def make_server(
     # MARKDOWN_VAULT_MCP_TRANSFER_* env vars are ignored and the defaults always win.
     #
     # Path 1 — the generic tools, the common case. Registers create_download_link
-    # and create_upload_link with pvl-core's shared metadata (names, icons, tags):
+    # and create_upload_link with their shared metadata (names, icons, tags):
     #
     # if transport != "stdio":
-    #     from markdown_vault_mcp._pvl_core import register_transfer_routes
+    #     from markdown_vault_mcp._transfer_links import register_transfer_routes
     #
     #     register_transfer_routes(
     #         mcp,
@@ -271,10 +271,10 @@ def make_server(
     # caller ref itself, then mints over the already-validated sink handle:
     #
     # if transport != "stdio":
-    #     from markdown_vault_mcp._pvl_core import (
+    #     from markdown_vault_mcp._tool_boundary import tool_boundary
+    #     from markdown_vault_mcp._transfer_links import (
     #         add_transfer_workflow,
     #         build_transfer_links,
-    #         tool_boundary,
     #     )
     #
     #     links = build_transfer_links(
@@ -288,7 +288,7 @@ def make_server(
     #         handle = _resolve_and_check(doc_id)  # your validation -> sink handle
     #         return await links.mint_download(handle)
     #
-    #     # Contribute the core's capability-link workflow prose for your tool
+    #     # Contribute the capability-link workflow prose for your tool
     #     # (dropped automatically if the tool is hidden by TOOLS_DENY):
     #     add_transfer_workflow(mcp, download_tool="share_document")
     #
