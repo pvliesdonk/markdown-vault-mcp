@@ -1096,6 +1096,10 @@ class Vault:
         """
         self._write_callback.end_scope(scope)
 
+    def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue a scope's end and return its callback-attempt future."""
+        return self._write_callback._enqueue_scope_end(scope)
+
     def close(self) -> None:
         """Release what the vault opened.
 

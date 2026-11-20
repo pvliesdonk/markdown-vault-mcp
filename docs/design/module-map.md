@@ -114,6 +114,7 @@ src/markdown_vault_mcp/
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   source_probe.py      -- FileSourceProbe: the file-backed SourceProbe, a stat classified by errno; present carries the content hash (#1785)
   vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
+  _commit_groups.py    -- Internal commit-group handles and accumulated status, SHA, and path counts (#1677)
   _commit_scope.py     -- CommitScope and context helpers for per-tool-call commit boundaries (#1264)
   _server_commit_scope.py -- CommitScopeMiddleware: server-side scope binding and closing (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)

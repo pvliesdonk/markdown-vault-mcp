@@ -61,6 +61,10 @@ OKF updates share that commit. Folder names with control characters, boundary
 whitespace, quotes, backslashes or the arrow delimiter are quoted and escaped
 to keep the subject identifiable on one line.
 
+With Git commits enabled, a writing MCP call waits up to 30 seconds for its
+local commit attempt before returning; on timeout or failure, the result returns
+and the commit may be late or absent. Push remains deferred.
+
 No setting changes this. In managed mode, the deferred push sends
 whatever commits accumulated during the idle delay, however many calls
 produced them.

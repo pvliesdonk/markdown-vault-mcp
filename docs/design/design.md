@@ -6709,6 +6709,30 @@ subject of the form `<tool>: N files` — or the single-file `<operation>: <path
 subject when the call staged exactly one path. Folder moves name their source
 and destination instead.
 
+An internal commit group binds a persistent scope to an opaque, server-minted
+handle. The dispatcher provides `open_group`, `bind_group`, and `close_group`
+for this internal API. It buffers writes across calls and closes the group with
+its description as the Git subject. One principal may hold several groups;
+nested binding and closing a group with active writes are refused. A close while
+a timed-out dispatcher shutdown is still running refuses because the result is
+unavailable. The result reports `committed`, `failed`,
+or `no_changes`: a commit was made, a flush failed, or no commit was needed.
+An interrupted group callback records `failed` before the worker exits; other
+queued groups or close markers can remain unresolved after worker death. Failure
+remains sticky across flushes. It reports a SHA when available and the
+number of paths in the commit (a rename counts both paths), or zero when the
+count is unknown. Untracked ignored writes are skipped; tracked updates are
+committed even when they match an ignore rule. A failed flush consumes
+its buffer without rollback or retry; staged work remains for the operator.
+Ordinary scopes keep their per-call behavior. A drain flushes open groups before
+a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
+deferral. The result carries the last SHA and summed path counts. Writes remain
+immediately readable, and indexing proceeds independently of the commit.
+Callbacks that do not opt into groups flush ordinary batches or individual
+writes and report `no_changes`. No group tools or arguments are registered in
+this slice. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
+in a Git command argument.
+
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each
@@ -6736,8 +6760,17 @@ committing all moved and derived files. Unusual roots are quoted and escaped
 on one line. Other batch callbacks keep their existing contract
 (#2139).
 
-Three properties this depends on:
+Properties this depends on:
 
+- **A writing call waits for its callback attempt (#2128).** The server
+  awaits a per-scope marker without occupying an executor thread or flushing other
+  open scopes. Empty scopes return immediately. The wait is bounded at 30
+  seconds; a timeout is logged and the result returns best
+  effort, with a commit possibly landing later. Callback failure is also logged;
+  completion does not guarantee Git succeeded. Concurrent calls share FIFO
+  latency but are not isolated from each other's filesystem changes. Library
+  scope closing remains nonblocking, and non-batch callbacks retain
+  their asynchronous per-write timing. Push remains deferred.
 - **The scope is captured in `fire`.** `fire` runs on the request's
   `to_thread` worker, whose copied context carries the contextvar. The
   dispatcher thread has no request context; it binds only the captured folder
