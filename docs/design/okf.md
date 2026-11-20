@@ -123,7 +123,7 @@ that shapes behavior advisorily while the server enforces nothing.
 
 Explicitly rejected alternatives:
 
-- **Always-on (or opt-out) semantics keyed on frontmatter shape** — `type`,
+- **Always-on (or opt-out) annotations keyed on frontmatter shape** — `type`,
   `status`, `tags` are ubiquitous folk-vocabulary keys; inferring OKF from
   their presence reinterprets user metadata (e.g. `status: draft` meaning
   "unfinished blog post" acquiring lifecycle semantics), taxes every
@@ -143,7 +143,7 @@ placement in `config.py`, wizard metadata via field
 
 | Env var | Values | Default | Meaning |
 |---|---|---|---|
-| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
+| `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: disable OKF annotations and advisory conventions (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. In the shipped code it also switches on reserved-file maintenance, which §6.0 gives its own switch. |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `elicit` | How `okf_verify` attributes a human review (§6). Only meaningful with `OKF_WRITE` on; a non-default value with it off is a config validation error. |
 | `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | bool | `false` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
@@ -151,6 +151,12 @@ placement in `config.py`, wizard metadata via field
 
 The names of the two proposed settings are candidates; the `config-contract`
 skill fixes them at implementation.
+
+The note modification clock is independent of these OKF switches (#2057).
+For every note, including with `OKF_MODE=off`, a parseable offset-aware
+`generated.at` supplies `modified_at`; otherwise file mtime does. This does
+not enable annotations, advisory conventions, or write authority. Attachments
+retain file mtime.
 
 ### Detection
 
@@ -421,10 +427,11 @@ Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
-  example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
+  example form (`2026-06-30T14:00:00Z`, a string; #1372). An incoming
+  `generated.by` is preserved by key presence, including null or empty values,
+  and extension keys survive. When `by` is absent, the fallback actor is
   the token's usable `sub` when the principal is human (`human:<subject>`), else
-  `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
-  values are overwritten (it describes the current bytes); `sources` are
+  `markdown-vault-mcp/<version>` as a tool actor. `sources` are
   never touched. Client-ID-only identities, including static and mapped
   bearer credentials, use the tool actor (#1463). So does an OAuth token the
   issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`

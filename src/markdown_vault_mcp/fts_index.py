@@ -508,7 +508,12 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#:
+#: Version 13 (#2057) derives documents.modified_at from an offset-aware
+#: generated.at when present, falling back to disk mtime. Version 12 shipped
+#: in v6.1.2 for #1384, so unchanged hashes must re-parse once more to replace
+#: their stored mtime with the content's declared instant.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):

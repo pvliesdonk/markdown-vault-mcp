@@ -349,6 +349,40 @@ def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
 
 
+@pytest.mark.parametrize("stored_version", [11, 12])
+def test_generated_clock_replaces_persisted_mtime_without_byte_changes(
+    tmp_path: Path,
+    stored_version: int,
+) -> None:
+    """An upgrade replaces old clock rows even when their hashes still match."""
+    path = tmp_path / "a.md"
+    path.write_text(
+        '---\ngenerated: {at: "1970-01-01T00:00:00Z"}\n---\n# A\n', encoding="utf-8"
+    )
+    original_bytes = path.read_bytes()
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    # Both v6.1.1 (11) and v6.1.2 (12) stored mtime with a valid hash.
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE documents SET modified_at = 1234567890")
+        conn.execute(
+            "UPDATE meta SET value = ? WHERE key = 'index_semantics_version'",
+            (str(stored_version),),
+        )
+    upgraded = make_coordinator(tmp_path, db=db)
+    try:
+        assert upgraded.build_index().chunks_indexed > 0
+        row = upgraded._fts.get_note("a.md")
+        assert row is not None and row["modified_at"] == 0.0
+    finally:
+        upgraded.close(timeout=5)
+    assert path.read_bytes() == original_bytes
+
+
 def test_absent_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
     """An index written before the key existed reads as 0 and rebuilds once."""
     db = tmp_path / "index.db"
