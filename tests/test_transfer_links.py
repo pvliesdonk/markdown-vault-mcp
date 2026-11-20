@@ -35,12 +35,11 @@ from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool
 from starlette.routing import Route
 
-from markdown_vault_mcp._pvl_core import (
-    ServerConfig,
-    apply_tool_visibility,
+from markdown_vault_mcp._instructions_builder import (
     finalize_instructions,
     instructions_for,
 )
+from markdown_vault_mcp._pvl_core import ServerConfig, apply_tool_visibility
 from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE, is_tool_boundary
 from markdown_vault_mcp._transfer_contract import TransferReadResult
 from markdown_vault_mcp._transfer_links import (

@@ -30,12 +30,12 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.exceptions import ToolError
 from mcp.types import Icon, ToolAnnotations
 
+from markdown_vault_mcp._instructions_builder import InstructionRole, instructions_for
 from markdown_vault_mcp._job_store import (
     JOB_POLL_TOOL_NAME,
     JobLimitExceededError,
     JobNotFoundError,
 )
-from markdown_vault_mcp._pvl_core import InstructionRole, instructions_for
 from markdown_vault_mcp._tool_boundary import tool_boundary
 
 if TYPE_CHECKING:

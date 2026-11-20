@@ -116,7 +116,7 @@ def _contribute_identity(mcp: FastMCP, config: ProjectConfig) -> None:
     mcp._mcp_server.icons = _SERVER_ICON
 
     # Contribute the read-only-aware, conventions-aware domain guidance to
-    # pvl-core's instructions builder. Nothing is rendered here: the skeleton
+    # the instructions builder (``_instructions_builder``). Nothing is rendered here: the skeleton
     # body's finalize_instructions() call, after apply_tool_visibility(), is
     # the single point that serialises every contributor's snippets, prunes
     # those naming a tool the operator hid, appends

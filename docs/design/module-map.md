@@ -144,7 +144,8 @@ src/markdown_vault_mcp/
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)
   _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
   _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)
-  _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
+  _instructions.py     -- contribute_instructions: domain snippets added to the instructions builder from server.py's DOMAIN-WIRING (#901)
+  _instructions_builder.py -- instructions_for / finalize_instructions / InstructionRole: per-server snippet builder, tool-aware pruning, role ordering, INSTANCE_DESCRIPTION / INSTRUCTIONS_EXTRA / INSTRUCTIONS env contract, UTF-16 budget warnings (#2305)
   _server_apps.py      -- template-owned MCP Apps scaffold; its sentinels keep the template's text and call into _vault_apps / _vault_app_tools (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: the app-shell AppConfig (Claude sandbox domain + CDN CSP) + GraphView→SPA wire serializer (#905)
   _vault_app_tools.py  -- the vault's MCP Apps tools (browse_vault, show_context, the SPA's app-only tools), registered from DOMAIN-APP-TOOLS

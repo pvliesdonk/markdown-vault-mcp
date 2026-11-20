@@ -22,6 +22,10 @@ from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool
 from mcp.types import TextContent
 
+from markdown_vault_mcp._instructions_builder import (
+    finalize_instructions,
+    instructions_for,
+)
 from markdown_vault_mcp._job_store import JOB_POLL_TOOL_NAME
 from markdown_vault_mcp._job_tools import (
     register_job_tools,
@@ -31,8 +35,6 @@ from markdown_vault_mcp._jobs import Jobs, build_jobs
 from markdown_vault_mcp._pvl_core import (
     ServerConfig,
     apply_tool_visibility,
-    finalize_instructions,
-    instructions_for,
     wire_middleware_stack,
 )
 from markdown_vault_mcp._tasks import configure_task_backend

@@ -33,11 +33,8 @@ import re
 from pathlib import Path
 
 import markdown_vault_mcp
-from markdown_vault_mcp._pvl_core import (
-    ServerConfig,
-    finalize_instructions,
-    register_health_routes,
-)
+from markdown_vault_mcp._instructions_builder import finalize_instructions
+from markdown_vault_mcp._pvl_core import ServerConfig, register_health_routes
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -254,13 +251,14 @@ def server_inventory() -> set[str]:
 
 
 def _instructions_source_file() -> Path:
-    """Resolve pvl-core's instructions module (server tier).
+    """Resolve the instructions-builder module (server tier).
 
     ``INSTRUCTIONS`` and ``INSTRUCTIONS_EXTRA`` are read by
-    :func:`fastmcp_pvl_core.finalize_instructions`, which lives outside
-    ``ServerConfig``'s own module — so scanning ``ServerConfig`` alone misses
-    them. Scanning the module that actually reads them keeps the inventory
-    true if pvl-core renames either var, which a hardcoded allowlist would not.
+    :func:`~markdown_vault_mcp._instructions_builder.finalize_instructions`,
+    which lives outside ``ServerConfig``'s own module, so scanning
+    ``ServerConfig`` alone misses them. Scanning the module that actually reads
+    them keeps the inventory true if either var is renamed, which a hardcoded
+    allowlist would not.
     """
     src = inspect.getsourcefile(finalize_instructions)
     assert src is not None, "finalize_instructions source file not found"

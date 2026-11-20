@@ -31,11 +31,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.exceptions import ToolError
 from mcp.types import Icon, ToolAnnotations
 
-from markdown_vault_mcp._pvl_core import (
-    InstructionRole,
-    ServerConfig,
-    instructions_for,
-)
+from markdown_vault_mcp._instructions_builder import InstructionRole, instructions_for
 from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._transfer_routes import make_transfer_handler
 from markdown_vault_mcp._transfer_store import TransferStore
@@ -44,6 +40,7 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+    from markdown_vault_mcp._pvl_core import ServerConfig
     from markdown_vault_mcp._transfer_contract import (
         TransferKind,
         TransferSink,
