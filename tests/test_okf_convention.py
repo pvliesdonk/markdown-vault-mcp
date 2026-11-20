@@ -24,14 +24,15 @@ import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
-from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
+from markdown_vault_mcp.utils.fs import path_exists
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 from tests.fixtures.git import make_superproject
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 _FIXED = date(2026, 8, 9)
@@ -55,7 +56,10 @@ class _FakeMigrate:
         self.index_calls: list[str] = []
         self.raise_on_index = False
 
-    def generate_index(self, *, folder: str = "") -> None:
+    def generate_index(
+        self, *, folder: str = "", designated: Callable[[str], bool] | None = None
+    ) -> None:
+        del designated
         if self.raise_on_index:
             raise RuntimeError("boom")
         self.index_calls.append(folder)
@@ -65,6 +69,7 @@ class _FakeDoc:
     def __init__(self) -> None:
         self.writes: list[tuple[str, str]] = []
         self.write_kwargs: list[dict[str, object]] = []
+        self.replacements: list[tuple[str, str | None, str]] = []
         self.raise_on_write = False
         #: Stands in for an existing log.md: ``(body, frontmatter)`` or None.
         self.existing: tuple[str, dict[str, Any]] | None = None
@@ -73,19 +78,25 @@ class _FakeDoc:
         "Return false for a document manager without a git guard."
         return False
 
-    def read(self, _path: str) -> Any:
-        """Model ``DocumentManager.read``: ``content`` is the *whole file*.
+    def _read_note(self, _path: str, capped: bool) -> Any:
+        """Model the internal whole-note read: ``content`` is the *whole file*.
 
         The frontmatter block is serialised back into ``content`` exactly as
         the real read hands it back. A double that returned the body alone is
         what let #1391 stay green: the maintainer fed the block back to a
         ``write(frontmatter=...)``, which stacked a second one.
         """
+        assert not capped
         if self.existing is None:
             return None
         body, metadata = self.existing
         raw = fm.dumps(fm.Post(body, **metadata)) if metadata else body
         return type("N", (), {"content": raw, "frontmatter": metadata})()
+
+    def replace_body(self, path: str, original: str | None, body: str) -> bool:
+        self.replacements.append((path, original, body))
+        self.write(path, body)
+        return original is not None and original.startswith("---")
 
     def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:
@@ -97,7 +108,6 @@ class _FakeDoc:
 def _maintainer(
     *,
     active: bool = True,
-    reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
 ) -> tuple[ConventionMaintainer, _FakeDoc, _FakeMigrate]:
     doc, migrate = _FakeDoc(), _FakeMigrate()
     m = ConventionMaintainer(
@@ -106,7 +116,6 @@ def _maintainer(
         detector=_FakeDetector(active),  # type: ignore[arg-type]
         sync_index=lambda: None,
         today=lambda: _FIXED,
-        reserved_frontmatter=reserved_frontmatter,
     )
     return m, doc, migrate
 
@@ -206,54 +215,18 @@ class TestMaintainerFailureIsolation:
 
 
 class TestMaintainedLogFrontmatter:
-    """The maintained ``log.md`` keeps satisfying the vault's index gate (#1174).
+    """Maintained logs retain their existing header and never add one."""
 
-    ``_append_log`` is a read-modify-write, so the log's frontmatter has to be
-    carried across the rewrite explicitly — the maintainer runs on *every*
-    enforced write, so getting this wrong strips it again after each save.
-    ``read()`` returns the whole file, block included, and ``write()`` puts
-    the ``frontmatter=`` mapping above the body it is given, so the block also
-    has to come *off* the text before the append (#1391).
-    """
-
-    def test_unconfigured_vault_writes_no_frontmatter(self) -> None:
-        m, doc, _ = _maintainer()
-        m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] is None
-
-    def test_hand_authored_frontmatter_survives_the_rewrite(self) -> None:
+    def test_existing_header_is_retained(self) -> None:
         m, doc, _ = _maintainer()
         doc.existing = ("# Log\n", {"title": "Change history", "type": "log"})
         m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] == {
-            "title": "Change history",
-            "type": "log",
-        }
-        # ...and comes off the text, or write() serialises a second block
-        # above the one still in it (#1391).
-        assert "---" not in doc.writes[0][1]
-
-    def test_an_empty_block_is_dropped_on_an_unconfigured_vault(self) -> None:
-        """A block with no keys does not survive the rewrite, deliberately.
-
-        Taking the block off is unconditional; putting one back is the
-        policy's call, and with no required fields it returns ``None``. So a
-        hand-seeded ``---\n---`` goes away on the next append. It carried
-        nothing, and leaving it in the body is what stacks (#1391) — a block
-        with keys is still carried across, which is the case #1174 is about.
-        """
-        m, doc, _ = _maintainer()
-        doc.existing = ("---\n---\n# Log\n", {})
-        m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] is None
-        assert "---" not in doc.writes[0][1]
-
-    def test_required_field_is_seeded_on_a_fresh_log(self) -> None:
-        m, doc, _ = _maintainer(
-            reserved_frontmatter=ReservedFrontmatterPolicy(required_fields=("title",))
+        path, original, body = doc.replacements[0]
+        assert path == "log.md"
+        assert original == fm.dumps(
+            fm.Post("# Log\n", title="Change history", type="log")
         )
-        m.maintain("note.md", "write")
-        assert doc.write_kwargs[0]["frontmatter"] == {"title": "Log"}
+        assert not body.startswith("---")
 
 
 # ---------------------------------------------------------------------------
@@ -374,17 +347,6 @@ class TestConventionMaintenanceIntegration:
         for i in range(n):
             assert f"wrote `guides/n{i}.md`" in log
 
-    def test_reserved_files_are_not_provenance_stamped(
-        self, enforced_vault: Vault
-    ) -> None:
-        enforced_vault.writer.write("guides/note.md", "# N\n")
-        wait_for_writer_drain(enforced_vault)
-        # The secondary writes are suppressed: no generated/verified churn.
-        log_note = enforced_vault.reader.read("guides/log.md")
-        index_note = enforced_vault.reader.read("guides/index.md")
-        assert log_note is not None and "generated" not in log_note.frontmatter
-        assert index_note is not None and "generated" not in index_note.frontmatter
-
     def test_editing_a_reserved_file_does_not_recurse(
         self, enforced_vault: Vault
     ) -> None:
@@ -393,7 +355,9 @@ class TestConventionMaintenanceIntegration:
         enforced_vault.writer.write("guides/note.md", "# N\n")
         wait_for_writer_drain(enforced_vault)
         log_before = _content(enforced_vault, "guides/log.md")
-        enforced_vault.writer.write("guides/index.md", "# Manual index\n")
+        enforced_vault.writer.write(
+            "guides/index.md", "# Manual index\n", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         # log.md unchanged by the reserved-file write.
         assert _content(enforced_vault, "guides/log.md") == log_before
@@ -423,17 +387,10 @@ class TestConventionMaintenanceIntegration:
             col.close()
 
 
-class TestUpkeepUnderRequiredFrontmatter:
-    """End-to-end for #1174 on the path that runs on every save.
+class TestLogUpkeep:
+    """Log upkeep writes body-only files and preserves existing headers."""
 
-    The one-shot ``okf_seed_log`` is not the only generator of a reserved
-    ``log.md``: with ``OKF_WRITE`` on, the maintainer creates and rewrites it
-    after every content write. Under a required-field gate that made the
-    bundle's own history and navigation permanently unlistable, and repairing
-    the files by hand did not survive the next save.
-    """
-
-    def test_maintained_reserved_files_are_indexed(self, tmp_path: Path) -> None:
+    def test_maintained_log_is_body_only(self, tmp_path: Path) -> None:
         root = tmp_path / "gated_vault"
         (root / "guides").mkdir(parents=True)
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
@@ -442,45 +399,51 @@ class TestUpkeepUnderRequiredFrontmatter:
             col.writer.write("guides/playbook.md", "---\ntitle: P\n---\n# P\n")
             wait_for_writer_drain(col)
 
-            assert col.reader.read("guides/log.md").frontmatter["title"] == "Log"
-            indexed = {note.path for note in col.reader.list_documents()}
-            assert {"guides/log.md", "guides/index.md"} <= indexed
+            assert not (root / "guides" / "log.md").read_text().startswith("---")
         finally:
             col.close()
 
-    def test_a_second_write_does_not_strip_the_log_frontmatter(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        "header", [b"---\r\ntitle: 'Legacy' # retained\r\n---\r\n", b"---\n---\n"]
+    )
+    def test_log_upkeep_preserves_header_bytes(
+        self, tmp_path: Path, header: bytes
     ) -> None:
-        """The rewrite is the regression: one save seeded it, the next dropped it."""
-        root = tmp_path / "gated_vault_twice"
+        """Retain headers without stacking another block (#1391)."""
+        root = tmp_path / "header_bytes"
         (root / "guides").mkdir(parents=True)
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        log = root / "guides" / "log.md"
+        log.write_bytes(header + b"# Log\r\n")
+        col = _build_vault(root, okf_write=True)
         try:
             col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
             wait_for_writer_drain(col)
-            col.writer.write("guides/b.md", "---\ntitle: B\n---\n# B\n")
-            wait_for_writer_drain(col)
-
-            log = col.reader.read("guides/log.md")
-            assert log.frontmatter["title"] == "Log"
-            # Both bullets are still there — carrying frontmatter across the
-            # rewrite must not cost the append its accumulated body.
-            assert "wrote `guides/a.md`" in log.content
-            assert "wrote `guides/b.md`" in log.content
-            assert "guides/log.md" in {n.path for n in col.reader.list_documents()}
+            assert log.read_bytes().startswith(header)
+            assert log.read_bytes().count(b"---") == 2
         finally:
             col.close()
 
-    def test_repeated_writes_keep_exactly_one_frontmatter_block(
-        self, tmp_path: Path
-    ) -> None:
-        """#1391: the read-modify-write stacked one block per write.
+    def test_maintained_log_notifies_write(self, tmp_path: Path) -> None:
+        (tmp_path / "index.md").write_text(_ROOT_INDEX)
+        calls: list[tuple[str, str]] = []
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+            on_write=lambda path, _content, op: calls.append((path.name, op)),
+        )
+        try:
+            vault.index.build_index()
+            for name in ("a", "b"):
+                vault.writer.write(f"{name}.md", f"# {name}\n")
+                wait_for_writer_drain(vault)
+            assert vault._write_callback.drain()
+            assert [op for path, op in calls if path == "log.md"] == ["write", "write"]
+        finally:
+            vault.close()
 
-        ``read()`` hands back the whole file, frontmatter included; the append
-        passed that straight to ``write(frontmatter=...)``, which serialises a
-        fresh block above whatever it is given. Three writes, three blocks.
-        """
+    def test_repeated_writes_keep_the_log_body_only(self, tmp_path: Path) -> None:
+        """Repeated writes retain all entries in a body-only log."""
         root = tmp_path / "gated_vault_thrice"
         (root / "guides").mkdir(parents=True)
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
@@ -493,32 +456,8 @@ class TestUpkeepUnderRequiredFrontmatter:
                 wait_for_writer_drain(col)
 
             text = (root / "guides" / "log.md").read_text(encoding="utf-8")
-            assert text.count("title: Log") == 1
+            assert not text.startswith("---")
             assert text.count("- **Update**:") == 3
-        finally:
-            col.close()
-
-    def test_an_empty_seeded_block_is_replaced_not_stacked_above(
-        self, tmp_path: Path
-    ) -> None:
-        """#1391: an empty block carries no keys but is still a block.
-
-        A guard that asked "did the frontmatter parse to anything?" would read
-        ``---\\n---`` as no block at all and leave it in the body, so the
-        seeded ``title`` would land above it — the exact defect.
-        """
-        root = tmp_path / "gated_vault_empty_block"
-        (root / "guides").mkdir(parents=True)
-        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-        (root / "guides" / "log.md").write_text("---\n---\n# Log\n", encoding="utf-8")
-        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
-        try:
-            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
-            wait_for_writer_drain(col)
-
-            text = (root / "guides" / "log.md").read_text(encoding="utf-8")
-            assert text.count("---") == 2
-            assert text.startswith("---\ntitle: Log\n---\n\n# Log\n")
         finally:
             col.close()
 
@@ -561,13 +500,13 @@ class TestIndexRefreshOnStructuralChanges:
         monkeypatch.setattr(maintainer, "subtree_folders", walk)
         monkeypatch.setattr(maintainer, "refresh_indexes", refresh)
 
-        enforced_vault.writer.move_folder("guides/sub", "b")
+        enforced_vault.writer.move_folder("guides/sub", "b", allow_protected=True)
 
         walk.assert_called_once_with("b")
         refresh.assert_called_once_with(
             [*folders, "guides"],
             trigger_paths=["guides/sub", "b"],
-            create=[""],
+            create=["b", ""],
         )
 
     def test_delete_drops_the_note_from_its_folder_index(
@@ -599,7 +538,9 @@ class TestIndexRefreshOnStructuralChanges:
         enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
         enforced_vault.writer.write("guides/top.md", "# Top\n\nt\n")
         enforced_vault.writer.write("archive/old.md", "# Old\n\no\n")
-        enforced_vault.writer.move_folder("guides/sub", "archive/sub")
+        enforced_vault.writer.move_folder(
+            "guides/sub", "archive/sub", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         moved = _content(enforced_vault, "archive/sub/index.md") or ""
         assert "/archive/sub/a.md" in moved
@@ -751,7 +692,7 @@ class TestIndexRefreshEdgeCases:
         )
         vault.index.build_index()
         try:
-            vault.writer.move_folder("index.md/", "log.md/")
+            vault.writer.move_folder("index.md/", "log.md/", allow_protected=True)
             wait_for_writer_drain(vault)
             assert (root / "log.md/note.md").is_file()
             assert "Unique hand-written content." in (
@@ -765,7 +706,9 @@ class TestIndexRefreshEdgeCases:
     ) -> None:
         """No regeneration may overwrite the file the rename just placed."""
         enforced_vault.writer.write("guides/a.md", "# A\n\nbody A precious\n")
-        enforced_vault.writer.rename("guides/a.md", "newf/index.md")
+        enforced_vault.writer.rename(
+            "guides/a.md", "newf/index.md", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         assert "body A precious" in (_content(enforced_vault, "newf/index.md") or "")
 
@@ -784,7 +727,9 @@ class TestIndexRefreshEdgeCases:
     ) -> None:
         """A reserved-file change never triggers its own regeneration (#1414)."""
         enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
-        enforced_vault.writer.rename("guides/index.md", "guides/was-index.md")
+        enforced_vault.writer.rename(
+            "guides/index.md", "guides/was-index.md", allow_protected=True
+        )
         wait_for_writer_drain(enforced_vault)
         assert _content(enforced_vault, "guides/index.md") is None
 
@@ -802,9 +747,47 @@ class TestIndexRefreshEdgeCases:
         self, enforced_vault: Vault
     ) -> None:
         enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
-        enforced_vault.writer.move_folder("guides/sub", "top/sub")
+        enforced_vault.writer.move_folder("guides/sub", "top/sub", allow_protected=True)
         wait_for_writer_drain(enforced_vault)
         assert "(/top/index.md)" in (_content(enforced_vault, "index.md") or "")
         top = _content(enforced_vault, "top/index.md") or ""
         assert "(/top/sub/index.md)" in top
         assert _index_links_broken(enforced_vault) == []
+
+
+def test_unowned_write_does_not_create_index(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    (root / "other").mkdir(parents=True)
+    caps = ContentConfig(
+        okf_mode="on", okf_index=True, okf_log="writes", okf_folders=("projects/*",)
+    ).okf_capabilities
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_capabilities=caps),
+    )
+    try:
+        vault.index.build_index()
+        vault.writer.write("other/note.md", "# Note\n")
+        wait_for_writer_drain(vault)
+        assert not path_exists(root / "index.md")
+        assert not path_exists(root / "other/index.md")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    ("patterns", "universal"),
+    [
+        (("**",), True),
+        (("./**", "docs"), True),
+        (("/**/",), True),
+        ((".", "projects/*"), False),
+        (("*/**", "**/*"), False),
+    ],
+)
+def test_universal_designation_uses_pattern_normalization(
+    patterns: tuple[str, ...], universal: bool
+) -> None:
+    from markdown_vault_mcp._okf_convention import _designates_every_folder
+
+    assert _designates_every_folder(patterns) is universal
