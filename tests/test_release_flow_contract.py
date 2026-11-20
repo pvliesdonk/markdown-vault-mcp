@@ -1928,6 +1928,23 @@ def test_build_backend_is_bounded_at_the_minor() -> None:
     )
 
 
+def test_mcpb_build_backend_matches_the_root_pin() -> None:
+    """``packaging/mcpb/pyproject.toml.in`` pins the same hatchling as the root.
+
+    Renovate bumps the root ``[build-system]`` pin but does not read the
+    ``.in`` file, which also pins this package as ``${VERSION}`` (#2259).
+    This fails the bump's pull request until the bundle's copy follows.
+    """
+    text = (REPO_ROOT / "packaging" / "mcpb" / "pyproject.toml.in").read_text(
+        encoding="utf-8"
+    )
+    pins = re.findall(r'"(hatchling[<>=!~ ][^"]*)"', text)
+    assert pins == [_hatchling_requirement()], (
+        f"packaging/mcpb/pyproject.toml.in pins {pins!r}; the root "
+        f"pyproject.toml pins {_hatchling_requirement()!r}. Make them match."
+    )
+
+
 def test_pypi_publisher_understands_current_metadata() -> None:
     """The pinned publisher is new enough to accept what the backend emits.
 
