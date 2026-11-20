@@ -8,12 +8,12 @@ from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import tool_boundary
 from pydantic import Field
 
 from markdown_vault_mcp._file_inventory import ScanLimits, Window, scan_current_files
 from markdown_vault_mcp._icons import _TOOL_ICONS
 from markdown_vault_mcp._server_deps import get_service
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.domain import Service

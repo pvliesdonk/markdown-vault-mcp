@@ -14,9 +14,9 @@ from unittest.mock import patch
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import is_tool_boundary
 
 from markdown_vault_mcp._file_inventory import ScanLimits, Window, scan_current_files
+from markdown_vault_mcp._tool_boundary import is_tool_boundary
 from markdown_vault_mcp._tools.inventory import register
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from tests.fixtures.inventory import inventory_server
