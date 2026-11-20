@@ -57,7 +57,7 @@ def strip_seeded_frontmatter(
             items = built.vault.writer.okf_strip_seeded_frontmatter(
                 apply=apply, allow_protected=True
             )
-            if not items:
+            if not any(item.keys or item.skip_reason for item in items):
                 typer.echo("Nothing to repair.")
             action = "Removed" if apply else "Would remove"
             for item in items:

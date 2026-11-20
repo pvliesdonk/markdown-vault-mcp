@@ -151,6 +151,10 @@ def test_cli_dry_run_and_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "Kept index.md:" in result.stdout
     assert "Removed log.md: title" in result.stdout
     assert log.read_text() == "# Log\n"
+    result = runner.invoke(app, ["okf", "strip-seeded-frontmatter"])
+    assert result.exit_code == 0, result.output
+    assert "Nothing to repair." in result.stdout
+    assert "Kept index.md:" in result.stdout
 
 
 def test_custom_title_field(tmp_path: Path) -> None:
