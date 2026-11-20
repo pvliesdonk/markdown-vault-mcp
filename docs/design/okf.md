@@ -168,7 +168,7 @@ absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
 OKF is active, and the vault is not read-only. Independent services remain
 the subject of #1412.
 
-Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
+Unknown `okf_version` values (e.g. `"9.9"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
 itself.
 
