@@ -2,9 +2,11 @@
 
 ``index``, ``reindex`` and ``embeddings import`` change the shared index or the
 stored vectors, and ``repair-log`` changes one ``log.md`` (#1403), so they live
-under ``admin``; every other command except ``serve`` only reads
-(:mod:`._cli_reader`). The names the first three shipped under stay as hidden
-top-level aliases that run the same command and name the new form on stderr.
+under ``admin``. The top-level ``okf strip-seeded-frontmatter`` (#1438), which
+sits outside ``admin``, writes only with ``--apply``; every other command except
+``serve`` only reads (:mod:`._cli_reader`). The names the first three shipped
+under stay as hidden top-level aliases that run the same command and name the
+new form on stderr.
 """
 
 from __future__ import annotations
@@ -14,12 +16,64 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
+from markdown_vault_mcp._cli_output import terminal_text as _safe
 from markdown_vault_mcp.config import _ENV_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from markdown_vault_mcp._okf_log_repair import LogRepairPreview
+
+
+def register_okf_commands(app: typer.Typer) -> None:
+    """Register deliberate OKF migrations."""
+    okf = typer.Typer(help="Inspect and repair an OKF vault.", no_args_is_help=True)
+    okf.command("strip-seeded-frontmatter")(strip_seeded_frontmatter)
+    app.add_typer(okf, name="okf")
+
+
+def strip_seeded_frontmatter(
+    source_dir: str | None = typer.Option(
+        None, help=f"Path to markdown vault (overrides ${_ENV_PREFIX}_SOURCE_DIR)."
+    ),
+    apply: bool = typer.Option(False, "--apply", help="Remove the listed keys."),
+) -> None:
+    """List seeded fields in folder indexes and logs; apply to remove them.
+
+    The root index is not a repair target.
+    """
+    from markdown_vault_mcp.cli import _build_owning_vault, _build_vault
+    from markdown_vault_mcp.exceptions import MarkdownMCPError
+
+    try:
+        built = (
+            _build_owning_vault("okf strip-seeded-frontmatter", source_dir)
+            if apply
+            else _build_vault(
+                source_dir, ":memory:", scratch_state=True, shared_files=True
+            )
+        )
+        try:
+            items = built.vault.writer.okf_strip_seeded_frontmatter(
+                apply=apply, allow_protected=True
+            )
+            if not any(item.keys or item.skip_reason for item in items):
+                typer.echo("Nothing to repair.")
+            action = "Removed" if apply else "Would remove"
+            for item in items:
+                if item.kept_reason:
+                    typer.echo(_safe(f"Kept {item.path}: {item.kept_reason}"))
+                if item.skip_reason:
+                    typer.echo(_safe(f"Skipped {item.path}: {item.skip_reason}"))
+                for key in item.keys:
+                    typer.echo(_safe(f"{action} {item.path}: {key}"))
+            if any(item.skip_reason for item in items):
+                raise typer.Exit(1)
+        finally:
+            built.close()
+    except (MarkdownMCPError, OSError) as exc:
+        typer.echo(_safe(f"ERROR: {exc}"), err=True)
+        raise typer.Exit(1) from exc
 
 
 def register_admin_commands(
@@ -161,7 +215,9 @@ def _apply(path: str, source_dir: str | None, etag: str) -> None:
 
     built = _build_owning_vault("admin repair-log", source_dir)
     try:
-        result = built.vault.writer.okf_apply_log_repair(path, etag=etag)
+        result = built.vault.writer.okf_apply_log_repair(
+            path, etag=etag, allow_protected=True
+        )
     except ConcurrentModificationError as exc:
         typer.echo(
             f"ERROR: {path} changed since the preview, so nothing was changed. "

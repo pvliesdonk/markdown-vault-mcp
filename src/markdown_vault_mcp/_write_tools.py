@@ -41,6 +41,7 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "okf_generate_index",
     "okf_seed_log",
     "okf_verify",
+    "okf_author",
     "create_upload_link",
 )
 

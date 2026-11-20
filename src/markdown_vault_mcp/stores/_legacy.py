@@ -22,6 +22,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def matrix_sequence(name: str, stem: str, suffix: str = ".npy") -> str | None:
+    """Extract a numeric matrix sequence from a name selected by its stem.
+
+    Args:
+        name: Filename to parse after matching its stem and suffix.
+        stem: Filename prefix before the sequence.
+        suffix: Filename suffix after the sequence.
+
+    Returns:
+        The digit sequence, or ``None`` when it is not numeric.
+    """
+    sequence = name[len(stem) : -len(suffix)]
+    return sequence if sequence.isdigit() else None
+
+
 def numbered_files(base: Path, prefix: str) -> dict[int, Path]:
     """Return the ``{base}{prefix}{seq}.npy`` files beside *base*, by ``seq``.
 
@@ -39,8 +54,8 @@ def numbered_files(base: Path, prefix: str) -> dict[int, Path]:
     stem, suffix = base.with_suffix(prefix).name, ".npy"
     found: dict[int, Path] = {}
     for path in base.parent.glob(f"{stem}*{suffix}"):
-        seq = path.name[len(stem) : -len(suffix)]
-        if seq.isdigit():
+        seq = matrix_sequence(path.name, stem, suffix)
+        if seq is not None:
             found[int(seq)] = path
     return found
 

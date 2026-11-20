@@ -8,7 +8,7 @@ kind: reference
 # Command line
 
 <!-- DOMAIN-INTRO-START -->
-`serve` runs the server, and the `admin` group holds the commands that write: `admin index`, `admin reindex`, `admin embeddings import` and `admin repair-log`, which removes the frontmatter blocks old releases stacked in a `log.md` ([Repairing legacy log frontmatter](../use/okf.md#repairing-legacy-log-frontmatter)). The first three's former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. Every other command only reads. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index path, an embeddings path or a [PostgreSQL store](../use/postgresql.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](../use/embeddings.md#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+`serve` runs the server. The `admin` group has these write commands: `admin index`, `admin reindex`, `admin embeddings import` and `admin repair-log`, which removes the frontmatter blocks old releases stacked in a `log.md` ([Repairing legacy log frontmatter](../use/okf.md#repairing-legacy-log-frontmatter)). The first three's former top-level names, `index`, `reindex` and `embeddings import`, still work and name the new form on stderr. The top-level `okf strip-seeded-frontmatter` command previews by default and writes with `--apply` ([removing seeded placeholder fields](../use/okf.md#removing-seeded-placeholder-fields)); the other commands only read. `admin index`, `admin reindex` and `search` work on the vault and its index directly, without a server; `search` and the reader commands below can also query a hosted MCP endpoint (see [Search a hosted vault](#search-a-hosted-vault)). They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `admin index` and `admin reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured and an index path, an embeddings path or a [PostgreSQL store](../use/postgresql.md) keeps them. Only one process writes the embeddings at a time, so while a running server writes the same store they stop with an error saying the store "is being written by another process. Stop the server first, then run reindex again." (or `admin index`) and leave the embeddings as they were; for PostgreSQL the server's writer lease on the schema is what holds it. The keyword index is locked the same way, by `index.db.lock` beside it, so they stop with the same error before writing either store and leave both as they were, as `admin embeddings import` does. `admin reindex` also exits 1 without reindexing when the vault folder is empty while the index holds notes, as when its volume is not mounted, and so does `admin index` without `--force` when it has to rebuild the index, as after a settings change. `admin embeddings import` copies vectors from another store into the configured one ([Moving vectors between stores](../use/embeddings.md#moving-vectors-between-stores)). Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set and no PostgreSQL store, `--mode semantic` or `hybrid` with an [embedding provider](../use/embeddings.md) configured embeds the whole vault for the query, which a paid provider bills each time. With a PostgreSQL store, `search` reads the vectors from the database and embeds only the query. With an index path, `search` only reads the stored index and its vectors, which `admin index` and `admin reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
 
 
 ### Search a hosted vault
@@ -17,7 +17,7 @@ kind: reference
 markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
 ```
 
-Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values can contain equals signs; duplicate keys fail. Filters use the vault's existing indexed-field and OKF rules.
+Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values are strings and can contain equals signs; duplicate keys fail. For the missing-type selector, use the [MCP tools or library](../use/okf.md).
 
 ```bash
 markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-file 2 --snippet-words 40 --agent
@@ -126,6 +126,7 @@ indexed metadata without constructing embedding or summarization providers or
 loading vector sidecars. Follow a returned path with `read`, `read --section`,
 `similar`, `context` or a graph command. Local freshness remains unknown.
 
+The `stats` command reports [OKF capability state](../use/okf.md) in `stats.okf.capabilities`, including when OKF is inactive.
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -322,6 +323,28 @@ Collect note links, neighbors, folder peers and conventions.
 | `--json` |  | False | Return the structured context dossier. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp okf-inventory`
+
+Inspect concept candidates, including notes outside search.
+
+| Argument | Description |
+|---|---|
+| `ROOT` | Vault-relative bundle root; empty for vault root. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--type-state` |  |  | Filter by type presence. |
+| `--parse-state` |  |  | Filter by parsing outcome. |
+| `--search-state` |  |  | Filter by search admission. |
+| `--entry-limit` |  | 100 | Maximum returned rows. |
+| `--cursor` |  |  | Continue from the previous `next_cursor`. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the structured report. |
+| `--agent` |  | False | Return escaped agent records. |
 
 ## `markdown-vault-mcp links`
 
@@ -647,3 +670,18 @@ Copy vectors from another store into the configured one, embedding only what it 
 | `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
 | `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
 | `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
+
+## `markdown-vault-mcp okf`
+
+Inspect and repair an OKF vault.
+
+## `markdown-vault-mcp okf strip-seeded-frontmatter`
+
+List seeded fields in folder indexes and logs; apply to remove them.
+
+The root index is not a repair target.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
+| `--apply` |  | False | Remove the listed keys. |

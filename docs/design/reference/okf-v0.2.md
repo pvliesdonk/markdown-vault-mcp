@@ -58,7 +58,7 @@ months, not twelve.
   the v0.3 proposal.
 - Depended on by: `src/markdown_vault_mcp/okf.py` (detection, annotations,
   filters, ranking weights, the audit, index/log builders, write stamps),
-  `_okf_write.py` and `_okf_convention.py` (write-side stamping and log
+  `_okf_write.py` and `_okf_convention.py` (explicit authoring and log
   maintenance), `okf_bundle.py` (export), `_tools/reader.py` and
   `writer.py` (the `okf_*` tools); `docs/design/okf.md` decides what this
   project does with these rules.
@@ -101,7 +101,7 @@ months, not twelve.
 - Producers "MAY include any additional keys"; consumers "SHOULD preserve
   unknown keys when round-tripping and MUST NOT reject documents with
   unrecognized fields". [source: spec] (§4.1)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf.py::TestOkfAudit::test_mixed_vault_report]
+  [pins: tests/test_okf_write.py::test_ordinary_write_preserves_supplied_provenance, tests/test_okf.py::TestOkfAudit::test_mixed_vault_report]
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3, §7)
 
@@ -109,7 +109,7 @@ months, not twelve.
   `generated.by` is required within `generated` and is an actor;
   `generated.at` is "an ISO 8601 datetime marking the content's last
   meaningful change". [source: spec] (§5.2) [source: spec-july] (§5.2)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_stamps_generated_on_a_note_without_frontmatter, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_a_local_offset_instant_is_written_as_utc]
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
 - `verified` is "a list of verification events, each with `by` (an actor)
   and `at` (an ISO 8601 datetime)"; it "is independent of `generated.at`:
   content can change without re-confirmation, and facts can be re-confirmed
@@ -128,12 +128,12 @@ months, not twelve.
   person, `process:<id>` for an automated process; "producers MUST use
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
-  [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
-- The spec says nothing about a tier for a `verified` entry that carries no
-  `by`, or an empty list; "non-`human:` actors only" reads naturally as
-  machine-confirmed for `[{}]`, which is what the server does.
-  [unverified] A spec-maintainer answer or a reference-agent fixture would
-  settle it.
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
+- The spec says nothing about a tier for a malformed `verified` entry.
+  The server formerly promoted any mapping, including `{}`; #1444 follows
+  the adopted north star instead, counting only usable actor/timestamp
+  records as recorded claims. This is a local interpretation, not a claim
+  that upstream mandates the server's exact supported timestamp subset.
 
 ### Lifecycle: `status` and `stale_after` (§5.4, §5.5)
 
@@ -167,7 +167,7 @@ months, not twelve.
   form a `str`; python-frontmatter uses the same loader] The server's own
   stamps are therefore written as strings, UTC with `Z`, the spec's example
   form (#1372).
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp]
+  [pins: tests/test_okf_author.py::test_author_preserves_evidence_and_records_explicit_producer]
 
 ### Provenance: `sources` (§5.1)
 
@@ -233,34 +233,22 @@ tree, 2026-09-07].
   datetime *without* an offset — allowed by neither text — is ignored.
   Decided in `docs/design/okf.md` § 3 (#1373).
   [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
-- **`verified` is cleared on a content-changing write.** The spec keeps
-  `verified` "independent of `generated.at`: content can change without
-  re-confirmation"; the server's enforced write layer clears it so an
-  attestation cannot outlive the bytes it attested. Deliberate; decided in
-  `docs/design/okf.md` § 6.
-  [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
+- **`verified` survives content changes.** The spec keeps `verified`
+  "independent of `generated.at`: content can change without re-confirmation".
+  Ordinary writes preserve the record; applicability remains unbound.
+  [pins: tests/test_okf_write.py::TestProvenancePreservation::test_supplied_claims_survive]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
   frontmatter block". §8 allows an index file none beyond the root's
   `okf_version`, and §9 says nothing about frontmatter in `log.md`, so the
   exemption reads rule 2 as a rule for concepts, which §3.1 bars reserved
   files from being.
-- **A generated reserved file carries frontmatter when the operator requires
-  it.** §8 allows frontmatter in an `index.md` only for the bundle root's
-  `okf_version`; §9 is silent on frontmatter in `log.md`. With
-  `required_frontmatter` configured, the server's own `index.md` / `log.md` generators
-  (`ReservedFrontmatterPolicy` in `okf.py`) seed the configured keys — the
-  title field with the file's title, any other as `null` — because a
-  generated file with no frontmatter would fail the same index gate the
-  server enforces and vanish from `search` and `list_documents` (#1174,
-  #1175). Existing keys, including the root `okf_version`, are preserved;
-  `okf_version` is never synthesised into a folder index. With nothing
-  required, the files are written body-only as §8 and §9 have them.
-  Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
-  and the index gate". The audit does not exempt the result: keys seeded
-  into an `index.md` are reported as `index_frontmatter` (#1396); whether
-  the gate should reach generated files at all is #1438.
-  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generated_index_is_audited_like_any_index]
+- **Generated reserved files have no new frontmatter.** §8 allows an index
+  header only for the root `okf_version`; §9 is silent on log headers. The
+  generators preserve existing headers, including legacy seeded fields, and
+  add no keys. The audit reports disallowed index fields as
+  `index_frontmatter` (#1396, #1438).
+  [pins: tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_finding, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generators_write_body_only, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_regeneration_preserves_header_bytes]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires
   `stale_after` to be `YYYY-MM-DD` and reads `verified` only as a list, both

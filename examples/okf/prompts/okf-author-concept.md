@@ -34,7 +34,9 @@ Propose a frontmatter block:
   external source. Attribute claims in the body to these ids.
 - `tags` — optional grouping tags.
 
-Do **not** hand-write `generated` or `verified`; the server manages those.
+Do **not** hand-write `generated` or `verified`. The server never adds them on
+an ordinary write: record the producer with `okf_author` (Step 4), and leave
+`verified` to a person's review with `okf_verify`.
 
 ## Step 3: Draft the body
 
@@ -51,5 +53,9 @@ frontmatter, and etag, preserve its existing material while assembling the
 extension, then call `write(path=<existing note>, content=<extended body>, frontmatter=<updated dict>, if_match=<etag from that read>)`.
 If the write conflicts, report it and stop; do not retry without `if_match` or
 delete the existing note.
+
+To record who produced the note, read it for a fresh etag and call
+`okf_author(path=<path>, if_match=<etag>, fields={"status": "draft"}, producer=<your producer actor, such as agent/1.0>)`.
+Skip this when authoring is not enabled.
 
 Then call `okf_validate` and report whether the new note is counted conformant.
