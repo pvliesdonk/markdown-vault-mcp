@@ -197,8 +197,8 @@ def test_owner_settlement_preflights_and_selects_closes(
         manual_result = dispatcher.close_group(manual.handle, alice)
         auto_result = dispatcher.close_group(automatic.handle, alice, _automatic=True)
         other_result = dispatcher.close_group(other.handle, bob, _automatic=True)
-        assert len(results := dispatcher.close_owner_groups(alice)) == 3
-        assert {manual_result, auto_result} < set(results)
+        results = dispatcher.close_owner_groups(alice)
+        assert len(results) == 3 and {manual_result, auto_result} < set(results)
         assert dispatcher.close_group(manual.handle, alice) is manual_result
         complete(manual.handle)
         complete(automatic.handle)
@@ -602,18 +602,18 @@ async def _prepare_automatic_close(
     """Arrange a pending automatic close for the sync probe."""
     import asyncio
 
+    entered, release = Event(), Event()
+
+    def fail(group: Any, *_args: Any) -> None:
+        if group.description == "Partial":
+            if selection == "pending":
+                entered.set()
+                assert release.wait(5)
+            raise OSError("synthetic history failure")
+
+    monkeypatch.setattr(vault._write_callback, "group_event", fail)
     if selection != "pending":
         return None
-    entered, release = Event(), Event()
-    event = vault._write_callback.group_event
-    assert event is not None
-
-    def paused(*args: Any) -> None:
-        entered.set()
-        assert release.wait(5)
-        event(*args)
-
-    monkeypatch.setattr(vault._write_callback, "group_event", paused)
     vault._write_callback.close_group(handle, None, _automatic=True)
     assert await asyncio.to_thread(entered.wait, 5)
     return release
@@ -633,22 +633,16 @@ async def test_sync_reports_settled_history_failures(
 
     root = git_repo_pair.local_path
 
-    def prepare_logs() -> None:
-        (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
-        (root / "bad").mkdir()
-        (root / "bad/log.md").write_text("# Log\n\n```\nunclosed\n")
-
-    prepare_logs()
-    for key, value in (("MODE", "on"), ("LOG", "events"), ("FOLDERS", "bad")):
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_OKF_{key}", value)
+    (root / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_LOG", "events")
     async with Client(make_server()) as client:
         handle = (
             await client.call_tool("begin_transaction", {"description": "Partial"})
         ).data["handle"]
-        for path in ("good.md", "bad/note.md"):
-            await client.call_tool(
-                "write", {"path": path, "content": "# Note\n", "transaction": handle}
-            )
+        await client.call_tool(
+            "write", {"path": "good.md", "content": "# Note\n", "transaction": handle}
+        )
         vault = domain.get_vault_singleton()
         assert vault is not None
         if selection == "implicit":

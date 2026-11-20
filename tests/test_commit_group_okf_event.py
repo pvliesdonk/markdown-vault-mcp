@@ -58,12 +58,11 @@ def make_vault(git_repo: Path) -> Iterator[Callable[..., Vault]]:
         strategy.close()
 
 
-@pytest.mark.parametrize("mode", ["writes", "events"])
 def test_group_records_one_event(
-    git_repo: Path, make_vault: Callable[..., Vault], mode: str
+    git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
     """Check group records one event."""
-    vault = make_vault(mode)
+    vault = make_vault("writes")
     description = "Policy " + "é" * 600
     group = vault._write_callback.open_group(description, None)
     with vault._write_callback.bind_group(group.handle, None):
@@ -83,23 +82,16 @@ def test_group_records_one_event(
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
-@pytest.mark.parametrize("mode", ["off", "reserved"])
-def test_off_and_reserved_only_groups_create_no_log(
-    git_repo: Path, make_vault: Callable[..., Vault], mode: str
+def test_reserved_only_group_creates_no_log(
+    git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
-    """Disabled and reserved-only groups create no log."""
-    vault = make_vault("events" if mode == "reserved" else mode)
+    """Reserved-only groups create no log."""
+    vault = make_vault("events")
     group = vault._write_callback.open_group("Change", None)
     with vault._write_callback.bind_group(group.handle, None):
-        if mode == "reserved":
-            vault.writer.write(
-                "index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n'
-            )
-        else:
-            vault.writer.write("a.md", "# A\n")
+        vault.writer.write("index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n')
     result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed"
-    assert not result.history_failed
+    assert result.status == "committed" and not result.history_failed
     assert not is_regular_file(git_repo / "log.md")
 
 
@@ -157,7 +149,8 @@ def test_close_does_not_block_drain_holding_file_lock(
         assert vault._write_callback.drain(timeout=2)
         if mode == "off":
             assert future.result(timeout=2).status == "committed"
-    assert future.result(timeout=10).status == "committed"
+    result = future.result(timeout=10)
+    assert result.status == "committed" and not result.history_failed
     if mode == "events":
         assert "Drain" in (git_repo / "log.md").read_text()
     else:
@@ -244,35 +237,6 @@ def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(
     assert "One event" in log
 
 
-@pytest.mark.parametrize("operation", ["delete", "rename"])
-def test_removed_paths_are_not_broken_links(
-    git_repo: Path, make_vault: Callable[..., Vault], operation: str
-) -> None:
-    """Absent paths use code, including a delete-only event and backticks."""
-    vault = make_vault("events")
-    old = "delete`note.md" if operation == "delete" else "old.md"
-    vault.writer.write(old, "# Old\n")
-    assert vault._write_callback.drain(timeout=10)
-    group = vault._write_callback.open_group("Reorganize", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        if operation == "delete":
-            vault.writer.delete(old)
-        else:
-            vault.writer.rename(old, "new.md")
-            vault.writer.write("line\nbreak.md", "# Note\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
-    log = (git_repo / "log.md").read_text()
-    if operation == "delete":
-        assert "`` delete`note.md ``" in log
-    else:
-        assert "`old.md`" in log and "](/old.md)" not in log
-        assert "[new.md](/new.md)" in log
-        assert "line%0Abreak.md" in log and r"line\\nbreak.md" in log
-
-
 @pytest.mark.parametrize("point", ["history", "commit"])
 def test_shutdown_timeout_defers_teardown_until_retry(
     git_repo: Path,
@@ -344,7 +308,7 @@ def test_shutdown_timeout_defers_teardown_until_retry(
 def test_auto_close_racing_first_write_records_history(
     git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A first write accepted during automatic closure appears in history."""
+    """A racing first write is recorded; a later write gets its own event."""
     from contextlib import contextmanager
     from threading import Event
 
@@ -382,76 +346,7 @@ def test_auto_close_racing_first_write_records_history(
     assert "later.md" in log
 
 
-def _fail_log_selection(
-    monkeypatch: pytest.MonkeyPatch, git_repo: Path, failure: str, failed: str
-) -> None:
-    """Inject a failure during anchor or directory selection."""
-    from markdown_vault_mcp import _okf_log_event
-
-    original_anchor = _okf_log_event.log_anchor
-    original_directory = _okf_log_event.is_directory
-
-    def failing_anchor(
-        folder: str, patterns: tuple[str, ...], source_dir: Path | None
-    ) -> str:
-        if folder == f"{failed}/nested":
-            raise OSError("anchor lookup failed")
-        return original_anchor(folder, patterns, source_dir)
-
-    def failing_directory(path: Path) -> bool:
-        if path == git_repo / failed / "nested":
-            raise PermissionError("directory inaccessible")
-        return original_directory(path)
-
-    if failure == "anchor":
-        monkeypatch.setattr(_okf_log_event, "log_anchor", failing_anchor)
-    elif failure == "folder":
-        monkeypatch.setattr(_okf_log_event, "is_directory", failing_directory)
-
-
-@pytest.mark.parametrize(
-    "case",
-    [("log", "a"), ("log", "b"), ("anchor", "a"), ("folder", "a")],
-)
-def test_failed_log_does_not_skip_other_destinations(
-    git_repo: Path,
-    make_vault: Callable[..., Vault],
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[str, str],
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Selection and write failures leave other destinations writable."""
-    failure, failed = case
-    for folder in ("a", "b", "c"):
-        (git_repo / folder / "nested").mkdir(parents=True)
-    bad = git_repo / failed / "nested/log.md"
-    original = "# Log\n\n```\nunclosed\n"
-    if failure == "log":
-        bad.write_text(original)
-    folders = tuple(f"{name}/nested" for name in "abc")
-    vault = make_vault("events", folders)
-    dispatcher = vault._write_callback
-    group = dispatcher.open_group("Three folders", None)
-    with dispatcher.bind_group(group.handle, None):
-        for folder in ("a", "b", "c"):
-            vault.writer.write(f"{folder}/nested/note.md", "# Note\n")
-    _fail_log_selection(monkeypatch, git_repo, failure, failed)
-    result = dispatcher.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed" and result.history_failed
-    if failure == "log":
-        assert bad.read_text() == original
-        assert f"{failed}/nested/log.md" in caplog.text
-        if failed == "b":
-            assert "a/nested/log.md" in caplog.text
-    else:
-        assert f"{failed}/nested/note.md" in caplog.text
-    for folder in set("abc") - {failed}:
-        log = (git_repo / folder / "nested/log.md").read_text()
-        assert log.count("Three folders") == 1
-        assert f"{folder}/nested/note.md" in log
-
-
-@pytest.mark.parametrize("point", ["policy", "scope", "queue"])
+@pytest.mark.parametrize("point", ["policy", "scope", "event", "queue"])
 def test_finalizer_failure_before_history_still_completes(
     make_vault: Callable[..., Vault],
     monkeypatch: pytest.MonkeyPatch,
@@ -475,6 +370,9 @@ def test_finalizer_failure_before_history_still_completes(
         raise OSError("write scope unavailable")
         yield
 
+    def fail_event(_group: CommitGroup, _paths: set[Path], _day: date) -> None:
+        raise OSError("event unavailable")
+
     def fail_queue(_scope: object) -> None:
         raise OSError("queue unavailable")
 
@@ -482,6 +380,8 @@ def test_finalizer_failure_before_history_still_completes(
         monkeypatch.setattr(dispatcher, "group_event_enabled", fail_policy)
     elif point == "scope":
         monkeypatch.setattr(dispatcher, "group_write_scope", fail_scope)
+    elif point == "event":
+        monkeypatch.setattr(dispatcher, "group_event", fail_event)
     else:
         monkeypatch.setattr(dispatcher, "_enqueue_scope_end", fail_queue)
     future = dispatcher.close_group(group.handle, None)

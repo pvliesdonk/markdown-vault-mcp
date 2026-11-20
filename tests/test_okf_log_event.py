@@ -1,11 +1,13 @@
 """Editorial events group related concept changes into one log entry."""
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from markdown_vault_mcp._okf_log_event import (
     deferred_event,
+    record_group_events,
 )
 from markdown_vault_mcp._okf_log_event import (
     record_event as _record_event,
@@ -560,3 +562,113 @@ def test_real_dated_section_with_subheading_accepts_event(tmp_path):
         assert "New" in MarkdownIt("commonmark").render(result)
     finally:
         vault.close()
+
+
+@pytest.mark.parametrize("case", ["delete", "rename", "control"])
+def test_grouped_event_renders_touched_paths(tmp_path: Path, case: str) -> None:
+    """Removed paths use code and existing control names use safe links."""
+    paths = (
+        {"delete`note.md"}
+        if case == "delete"
+        else {"old.md", "new.md"}
+        if case == "rename"
+        else {"line\nbreak.md"}
+    )
+    if case == "rename":
+        (tmp_path / "new.md").write_text("# New\n")
+    if case == "control":
+        (tmp_path / "line\nbreak.md").write_text("# Note\n")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        record_group_events(
+            vault._doc_mgr,
+            {tmp_path / p for p in paths},
+            "Reorganize",
+            ((".",), lambda: {"effective": True}),
+            date(2026, 1, 2),
+        )
+        log = (tmp_path / "log.md").read_text()
+        if case == "delete":
+            assert "`` delete`note.md ``" in log
+        elif case == "rename":
+            assert "`old.md`" in log and "](/old.md)" not in log
+            assert "[new.md](/new.md)" in log
+        else:
+            assert "line%0Abreak.md" in log and r"line\\nbreak.md" in log
+    finally:
+        vault.close()
+
+
+def _fail_log_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str, failed: str
+) -> None:
+    """Inject a failure during anchor or directory selection."""
+    from markdown_vault_mcp import _okf_log_event
+
+    original_anchor = _okf_log_event.log_anchor
+    original_directory = _okf_log_event.is_directory
+
+    def failing_anchor(
+        folder: str, patterns: tuple[str, ...], source_dir: Path | None
+    ) -> str:
+        if folder == f"{failed}/nested":
+            raise OSError("anchor lookup failed")
+        return original_anchor(folder, patterns, source_dir)
+
+    def failing_directory(path: Path) -> bool:
+        if path == tmp_path / failed / "nested":
+            raise PermissionError("directory inaccessible")
+        return original_directory(path)
+
+    if failure == "anchor":
+        monkeypatch.setattr(_okf_log_event, "log_anchor", failing_anchor)
+    elif failure == "folder":
+        monkeypatch.setattr(_okf_log_event, "is_directory", failing_directory)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [("log", "a"), ("log", "b"), ("anchor", "a"), ("folder", "a")],
+)
+def test_failed_log_does_not_skip_other_destinations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Selection and write failures leave other destinations writable."""
+    failure, failed = case
+    for folder in ("a", "b", "c"):
+        (tmp_path / folder / "nested").mkdir(parents=True)
+    bad = tmp_path / failed / "nested/log.md"
+    original = "# Log\n\n```\nunclosed\n"
+    if failure == "log":
+        bad.write_text(original)
+    folders = tuple(f"{name}/nested" for name in "abc")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    paths = {tmp_path / folder / "nested/note.md" for folder in "abc"}
+    for path in paths:
+        path.write_text("# Note\n")
+    _fail_log_selection(monkeypatch, tmp_path, failure, failed)
+    try:
+        with pytest.raises(ExceptionGroup):
+            record_group_events(
+                vault._doc_mgr,
+                paths,
+                "Three folders",
+                (folders, lambda: {"effective": True}),
+                date(2026, 1, 2),
+            )
+    finally:
+        vault.close()
+    if failure == "log":
+        assert bad.read_text() == original
+        assert f"{failed}/nested/log.md" in caplog.text
+        if failed == "b":
+            assert "a/nested/log.md" in caplog.text
+    else:
+        assert f"{failed}/nested/note.md" in caplog.text
+    for folder in set("abc") - {failed}:
+        log = (tmp_path / folder / "nested/log.md").read_text()
+        assert log.count("Three folders") == 1
+        assert f"{folder}/nested/note.md" in log

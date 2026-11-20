@@ -129,10 +129,12 @@ def test_local_delete_upstream_modify_concept_keeps_failure_outcome(
         strategy.close()
 
 
+@pytest.mark.parametrize("point", ["refresh", "generate"])
 def test_unexpected_refresh_failure_is_logged_and_convergence_heals(
     git_repo_pair: GitRepoPair,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    point: str,
 ) -> None:
     from tests.conftest import wait_for_writer_drain
     from tests.fixtures.conflict_recovery import _setup_generated_conflict
@@ -141,15 +143,24 @@ def test_unexpected_refresh_failure_is_logged_and_convergence_heals(
     strategy, vault = recovery_vault(vault_root, build=True)
     assert vault._okf_convention is not None
 
-    def fail(_paths: list[Path]) -> None:
-        raise RuntimeError("unexpected refresh error")
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("unexpected recovery error")
 
     try:
         assert strategy.force_pull().reason == "rebased"
         with monkeypatch.context() as patch:
-            patch.setattr(vault, "_refresh_recovered_indexes", fail)
-            vault._regenerate_recovered_indexes(defer_group_recovery=False)
-        assert "git_pending_index_regeneration_failed" in caplog.text
+            if point == "refresh":
+                patch.setattr(vault, "_refresh_recovered_indexes", fail)
+                vault._regenerate_recovered_indexes(defer_group_recovery=False)
+            else:
+                patch.setattr(vault._okf_migrate, "generate_index", fail)
+                vault.reconcile_index_with_head(source="git_sync")
+        marker = (
+            "git_pending_index_regeneration_failed"
+            if point == "refresh"
+            else "okf_convention_index_failed"
+        )
+        assert marker in caplog.text
         assert "local.md" not in index.read_text()
         vault.reconcile_index_with_head(source="git_sync")
         wait_for_writer_drain(vault)
@@ -349,35 +360,6 @@ def test_saved_sibling_does_not_mask_unsaved_concept_deletion(
         assert result.conflict_files == (str(siblings[0].relative_to(root)),)
         assert result.to_sha == _run_git(root, "rev-parse", "HEAD").strip()
         assert (root / "concept.md").read_text() == "remote concept\n"
-    finally:
-        vault.close()
-        strategy.close()
-
-
-def test_generation_failure_logs_and_convergence_retries(
-    git_repo_pair: GitRepoPair,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    from tests.conftest import wait_for_writer_drain
-    from tests.fixtures.conflict_recovery import _setup_generated_conflict
-
-    _root, vault_root, index = _setup_generated_conflict(git_repo_pair, False)
-    strategy, vault = recovery_vault(vault_root, build=True)
-
-    def fail(*_args: object, **_kwargs: object) -> None:
-        raise OSError("synthetic generation failure")
-
-    try:
-        assert strategy.force_pull().reason == "rebased"
-        with monkeypatch.context() as patch:
-            patch.setattr(vault._okf_migrate, "generate_index", fail)
-            vault.reconcile_index_with_head(source="git_sync")
-        assert "okf_convention_index_failed" in caplog.text
-        assert "local.md" not in index.read_text()
-        vault.reconcile_index_with_head(source="git_sync")
-        wait_for_writer_drain(vault)
-        assert "local.md" in index.read_text()
     finally:
         vault.close()
         strategy.close()
