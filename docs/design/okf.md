@@ -20,7 +20,8 @@ of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 document decides are listed there. The current pinned specification is
 [OKF v0.3](reference/okf-v0.3.md); server alignment with v0.3 remains
 incomplete. The superseded v0.2 reference remains a historical account of
-semantics that have not yet been aligned, including timestamps and trust tiers.
+historical semantics. Date-only expiry and review timestamps now follow v0.3
+UTC rules, and null or empty expiry is absent; other v0.3 slices remain pending.
 
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
@@ -186,7 +187,7 @@ frontmatter blob; not persisted):
 - `staleness`: a date expires at the start of that day in UTC, per OKF
   v0.3 §5. This reverses the server-local day rule from #1357 and #1373.
   An offset datetime expires at its represented instant; a datetime without
-  an offset is invalid. Absent, null, or empty expiry is not stale.
+  an offset is invalid. Absent, null, empty string, or empty list expiry is not stale.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
   or `<producer>/<version>`, with nonempty, whitespace-free components)
@@ -197,7 +198,7 @@ frontmatter blob; not persisted):
   public helper and filter behavior from v6.1.2 (#1444).
 - `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
   `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
-  or `utc_date`. Null and empty expiry report `missing`. The compatibility `stale: false` includes missing
+  or `utc_date`. Null, empty-string, and empty-list expiry report `missing`. The compatibility `stale: false` includes missing
   and malformed expiry and therefore does not mean fresh or true.
 - `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.

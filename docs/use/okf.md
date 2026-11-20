@@ -48,7 +48,7 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 - **Evidence**: `freshness.state` distinguishes `missing`, `malformed`, `unexpired`, and `expired`. `review` separates recorded and malformed entry counts. Whole reads include the parsed values under `recorded`; compact results keep the summary. `stale: false` includes absent or malformed expiry, so it does not establish freshness.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 
-Date-only expiry previously used the server-local day. To retain an intended local midnight, replace the date with a datetime carrying the appropriate offset, such as `2026-12-31T00:00:00-08:00`. Null or empty expiry is reported as missing.
+Date-only expiry previously used the server-local day. To retain an intended local midnight, replace the date with a datetime carrying the appropriate offset, such as `2026-12-31T00:00:00-08:00`. Null, an empty string, or an empty list for expiry is reported as missing.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 

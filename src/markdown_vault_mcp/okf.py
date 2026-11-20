@@ -356,8 +356,12 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
 
 
 def _expiry_missing(value: Any) -> bool:
-    """Treat null and blank expiry as absent."""
-    return value is None or (isinstance(value, str) and not value.strip())
+    """Treat null, blank, and empty-list expiry as absent."""
+    return (
+        value is None
+        or (isinstance(value, str) and not value.strip())
+        or (isinstance(value, list) and not value)
+    )
 
 
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:

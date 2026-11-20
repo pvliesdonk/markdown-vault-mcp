@@ -31,7 +31,7 @@ AT = "2026-11-14T09:00:00Z"
     [
         0,
         True,
-        [],
+        [1],
         {},
         "2026-13-01",
         "2026-11-15T12:00:00",
@@ -207,9 +207,9 @@ def test_audit_limit_withholds_only_new_evidence_findings(tmp_path: Path) -> Non
 
 
 def test_audit_evidence_examples_capped_sorted(tmp_path: Path) -> None:
-    for name in ("z.md", "b.md", "a.md"):
+    for name, expiry in (("z.md", "null"), ("b.md", "[]"), ("a.md", "null")):
         (tmp_path / name).write_text(
-            "---\ntype: Concept\nstale_after: null\nverified: nope\n---"
+            f"---\ntype: Concept\nstale_after: {expiry}\nverified: nope\n---"
         )
     report = audit_bundle(tmp_path, example_cap=1)
     assert report.missing_freshness == OkfFinding(3, ("a.md",))
@@ -248,7 +248,7 @@ def test_date_only_review_is_recorded(value: Any) -> None:
     assert result["review"]["recorded_entries"] == 1
 
 
-@pytest.mark.parametrize("value", [None, "", "  "])
+@pytest.mark.parametrize("value", [None, "", "  ", []])
 def test_empty_expiry_is_missing(value: Any) -> None:
     result = derive_annotation({"stale_after": value}, now=NOW)
     assert result["freshness"] == {"state": "missing", "basis": "no_expiry_supplied"}
