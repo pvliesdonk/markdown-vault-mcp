@@ -285,7 +285,10 @@ _INSTANT_RE = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ](?:[01][0-9]|2[0-3]):[0-5][0-9]"
     r"(?::[0-5][0-9](?:[.,][0-9]+)?)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
 )
-_ACTOR_RE = re.compile(r"(?:(?:human|process):[^\s]+|[^\s/:]+/[^\s/]+)")
+# A human:/process: id may contain internal spaces, so a subject such as
+# "Jane Doe" that okf_verify writes reads back as recorded (#2393); tabs and
+# line breaks stay malformed, and <producer>/<version> stays space-free.
+_ACTOR_RE = re.compile(r"(?:(?:human|process):\S(?:[ \S]*\S)?|[^\s/:]+/[^\s/]+)")
 
 
 def _review_recorded(entry: Any) -> bool:

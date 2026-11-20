@@ -6,6 +6,7 @@ import datetime as dt
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+import frontmatter
 import pytest
 from pydantic_core import to_json
 
@@ -13,6 +14,7 @@ from markdown_vault_mcp.okf import (
     _MAX_READ_CHARS,
     OkfAuditReport,
     OkfFinding,
+    append_okf_verification,
     audit_bundle,
     derive_annotation,
     derive_stale,
@@ -81,7 +83,8 @@ def test_freshness_basis(value: Any, state: str, basis: str) -> None:
         {"by": 42, "at": AT},
         {"by": "human:", "at": AT},
         {"by": "process:", "at": AT},
-        {"by": "human:user alice", "at": AT},
+        {"by": "human: alice", "at": AT},
+        {"by": "human:alice\nbob", "at": AT},
         {"by": "process:build\tci", "at": AT},
         {"by": "agent/", "at": AT},
         {"by": "/1.0", "at": AT},
@@ -116,6 +119,8 @@ def test_malformed_review_never_promotes(entry: Any) -> None:
         ("human:user:alice", "human-reviewed"),
         ("human:urn:uuid:123", "human-reviewed"),
         ("human:team/alice", "human-reviewed"),
+        ("human:user alice", "human-reviewed"),
+        ("process:nightly build", "machine-confirmed"),
         ("agent/1.0", "machine-confirmed"),
     ],
 )
@@ -275,3 +280,12 @@ def test_review_applicability(
     result = derive_annotation(metadata, now=NOW)
     assert result["review_applicability"] == applicability
     assert result["review"]["state"] == review_state
+
+
+def test_review_written_for_a_spaced_subject_reads_back_recorded() -> None:
+    text = append_okf_verification(
+        "---\ntype: concept\n---\nBody\n", subject="Jane Doe", now=NOW
+    )
+    metadata = frontmatter.loads(text).metadata
+    assert metadata["verified"][0]["by"] == "human:Jane Doe"
+    assert derive_trust_tier(metadata) == "human-reviewed"
