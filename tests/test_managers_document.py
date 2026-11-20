@@ -1218,3 +1218,22 @@ def test_write_marks_path_dirty_via_vault(tmp_path: Path) -> None:
         assert "new.md" in col._coordinator.writer.snapshot_dirty_paths()
     finally:
         col.close()
+
+
+def test_windows_crlf_write_preserves_bytes(
+    doc_vault: Path, doc_mgr: DocumentManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    from markdown_vault_mcp.managers import _write_kernel
+
+    original = _write_kernel.tempfile.NamedTemporaryFile
+
+    def windows_newlines(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("mode") == "w":
+            kwargs["newline"] = "\r\n"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_write_kernel.tempfile, "NamedTemporaryFile", windows_newlines)
+    doc_mgr.write("windows.md", "new\r\nsecond\r\n")
+    assert (doc_vault / "windows.md").read_bytes() == b"new\r\nsecond\r\n"

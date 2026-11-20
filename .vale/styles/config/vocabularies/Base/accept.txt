@@ -38,6 +38,7 @@ okf_verify
 create_upload_link
 git_sync
 move_folder
+replace_text
 
 # --- Python / runtime ecosystem ---
 debugpy

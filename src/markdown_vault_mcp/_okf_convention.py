@@ -107,6 +107,11 @@ class ConventionMaintainer:
         self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
         self._source_dir = source_dir
 
+    @property
+    def active(self) -> bool:
+        """Whether the detector currently enables OKF maintenance."""
+        return self._detector.state().active
+
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and its listing.
 
@@ -133,7 +138,7 @@ class ConventionMaintainer:
             return
         if is_okf_reserved_file(Path(path).as_posix()):
             return
-        if not self._detector.state().active:
+        if not self.active:
             return
         folder = folder_of(path)
         with okf_write_suppressed(), auxiliary_commit_writes():
@@ -233,7 +238,7 @@ class ConventionMaintainer:
             return False
         if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
             return False
-        return self._detector.state().active
+        return self.active
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* already carries an ``index.md`` to keep current.

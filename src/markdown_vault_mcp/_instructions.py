@@ -35,7 +35,15 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: on every server.
 _WRITE_SNIPPET_TOOLS = tuple(
     gated_tool(name)
-    for name in ("write", "edit", "append", "rename", "delete", "move_folder")
+    for name in (
+        "write",
+        "edit",
+        "replace_text",
+        "append",
+        "rename",
+        "delete",
+        "move_folder",
+    )
 )
 
 

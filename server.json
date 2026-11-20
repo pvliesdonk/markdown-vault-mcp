@@ -124,7 +124,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
-          "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
+          "description": "Set to true to hide the write tools (write, edit, replace_text, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
           "format": "boolean",
           "default": "false"
         },
@@ -781,7 +781,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
-          "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
+          "description": "Set to true to hide the write tools (write, edit, replace_text, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
           "format": "boolean",
           "default": "false"
         },

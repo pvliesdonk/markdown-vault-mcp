@@ -45,6 +45,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Indexing | [`get_index_status`](indexing.md#get_index_status) | Index Status | Report FTS index readiness, progress, and last build error. |
 | Indexing | [`reindex`](indexing.md#reindex) | Reindex Vault | Bring the search index up to date with files changed outside this server, such as by an editor or a sync tool; returns counts of added, modified, deleted and unchanged notes. |
 | Indexing | [`build_embeddings`](indexing.md#build_embeddings) | Build Embeddings | Bring the vector index behind semantic and hybrid search up to date with the notes; returns the number of chunks embedded. |
+| Writer | [`replace_text`](writer.md#replace_text) | Replace Text | Preview or apply one textual replacement across selected notes. |
 | Writer | [`write`](writer.md#write) | Write Note | Create a note or attachment, or replace one whole; returns its path and whether it was created. |
 | Writer | [`edit`](writer.md#edit) | Edit Note | Replace text in an existing note, chosen by an exact `old_text`, by a range of lines, or by an `old_text` within a range of lines. |
 | Writer | [`append`](writer.md#append) | Append to Note | Add text to the end of an existing note without reading it first. |

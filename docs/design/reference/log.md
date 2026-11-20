@@ -12,6 +12,8 @@
 
 ## 2026-11-16
 
+- Updated: [Replacement worker](regex-timeout.md), for #2031. The implementation uses Python standard-library subprocess and re instead of the third-party regex engine. Next review 2027-05-16.
+
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
   shapes; checked variants against the chosen patterns. Next review: 2027-05-16.

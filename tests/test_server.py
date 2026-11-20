@@ -811,6 +811,7 @@ class TestToolManifest:
             "query_documents",
             "read",
             "rename",
+            "replace_text",
             "search",
             "search_paths",
             "stats",

@@ -8,6 +8,7 @@ These pages record external behavior, with source markers and review dates.
 Read the relevant page before relying on its claims; research it again when
 its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
+- [Replacement worker](regex-timeout.md) — Python subprocess deadlines and replacement semantics.
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) — tag shapes and pagination for the scheduled image check.
 - [Watchdog event filtering](watchdog-event-filtering.md) — mutation-only
   subscriptions, Linux native masks and the FSEvents 4.0.2 API floor. Read

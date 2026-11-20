@@ -138,3 +138,17 @@ Arguments received by the callback:
 
 ::: markdown_vault_mcp.query_types.PathSearchResult
 <!-- vale on -->
+
+## Scoped replacement types
+
+These types are imported from `markdown_vault_mcp.managers.bulk_replace`.
+
+<!-- vale off -->
+::: markdown_vault_mcp.managers.bulk_replace.ReplaceRequest
+
+::: markdown_vault_mcp.managers.bulk_replace.ReplaceResult
+
+::: markdown_vault_mcp.managers.bulk_replace.NoteReplacement
+
+::: markdown_vault_mcp.managers.bulk_replace.ReplaceInterruptedError
+<!-- vale on -->

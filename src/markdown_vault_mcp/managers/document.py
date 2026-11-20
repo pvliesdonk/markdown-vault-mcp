@@ -58,6 +58,7 @@ from markdown_vault_mcp.managers._write_notifier import (
     WriteNotifier,
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
@@ -86,7 +87,9 @@ from markdown_vault_mcp.utils import (
 )
 from markdown_vault_mcp.utils.fs import (
     is_directory,
+    is_directory_excluded,
     is_regular_file,
+    iter_markdown_files,
     path_exists,
     walk_files_strict,
 )
@@ -336,6 +339,229 @@ class DocumentManager:
         would otherwise silently no-op.
         """
         self._check_writable()
+
+    def replace_candidates(
+        self,
+        paths: Sequence[str],
+        folders: Sequence[str],
+        limit: int,
+        *,
+        skip_reserved: bool = False,
+    ) -> list[str]:
+        """Collect eligible notes for a scoped replacement.
+
+        Args:
+            paths: Explicit note paths, including reserved notes if desired.
+            folders: Recursive folder scopes; an empty string selects the root.
+            limit: Maximum number of notes.
+            skip_reserved: Skip reserved folder notes and refuse explicit ones.
+
+        Returns:
+            Sorted, deduplicated vault-relative paths.
+        """
+        selected: dict[tuple[int, int], str] = {}
+        root = self._source_dir
+        scopes = [self._selection_scope(folder) for folder in folders]
+
+        def add(path: str, *, explicit: bool) -> None:
+            candidate = self._selection_entry(
+                path, explicit=explicit, scopes=scopes, skip_reserved=skip_reserved
+            )
+            if candidate is not None:
+                name, identity, links = candidate
+                self._selection_add(selected, name, identity, links)
+            if len(selected) > limit:
+                raise InvalidRequestError("Too many notes; narrow paths or folders.")
+
+        for path in paths:
+            add(path, explicit=True)
+        if scopes:
+
+            def fail(exc: OSError) -> None:
+                self._selection_walk_error(exc, scopes)
+
+            def prune(directory: Path) -> bool:
+                return not self._selection_directory_allowed(directory, scopes)
+
+            for scope, _ in scopes:
+                for file in iter_markdown_files(
+                    root / scope,
+                    self._exclude_patterns,
+                    on_error=fail,
+                    exclude_root=root,
+                    prune_dir=prune,
+                ):
+                    add(file.relative_to(root).as_posix(), explicit=False)
+        return sorted(selected.values())
+
+    @staticmethod
+    def _selection_add(
+        selected: dict[tuple[int, int], str],
+        name: str,
+        identity: tuple[int, int],
+        links: int,
+    ) -> None:
+        previous = selected.get(identity, name)
+        if links > 1 and previous != name:
+            raise InvalidRequestError(
+                "Selection includes hardlink aliases; select one path at a time."
+            )
+        selected[identity] = min(name, previous)
+
+    def _selection_scope(self, folder: str) -> tuple[Path, Path]:
+        resolved = (
+            self._source_dir.resolve()
+            if not folder
+            else self._validate_dir_path(folder)
+        )
+        if not is_directory(resolved):
+            raise DocumentNotFoundError(
+                f"Folder {folder!r} does not exist; choose an existing folder."
+            )
+        lexical = Path(os.path.normpath(folder)) if folder else Path()
+        target = resolved.relative_to(self._source_dir.resolve())
+        if folder and (
+            not self._selection_directory_policy(lexical)
+            or not self._selection_directory_policy(target)
+        ):
+            raise InvalidRequestError(
+                f"Cannot select folder {folder!r}; choose an eligible folder."
+            )
+        return lexical, resolved
+
+    def _selection_directory_policy(self, relative: Path) -> bool:
+        return not (
+            any(part.startswith(".") for part in relative.parts)
+            or is_directory_excluded(relative.as_posix(), self._exclude_patterns or ())
+            or self.in_submodule((relative / "placeholder.md").as_posix())
+        )
+
+    def _selection_directory_allowed(
+        self, directory: Path, scopes: list[tuple[Path, Path]]
+    ) -> bool:
+        relative = directory.relative_to(self._source_dir)
+        if not self._selection_directory_policy(relative):
+            return False
+        try:
+            resolved = directory.resolve()
+            target = resolved.relative_to(self._source_dir.resolve())
+        except (OSError, ValueError, RuntimeError):
+            return False
+        return self._selection_directory_policy(target) and any(
+            relative.is_relative_to(scope) and resolved.is_relative_to(target_scope)
+            for scope, target_scope in scopes
+        )
+
+    def _selection_walk_error(
+        self, exc: OSError, scopes: list[tuple[Path, Path]]
+    ) -> None:
+        if exc.filename is None:
+            raise exc
+        failed = Path(exc.filename).relative_to(self._source_dir)
+        if any(part.startswith(".") for part in failed.parts):
+            return
+        if self.in_submodule((failed / "placeholder.md").as_posix()):
+            return
+        if any(
+            failed.is_relative_to(scope) or scope.is_relative_to(failed)
+            for scope, _ in scopes
+        ):
+            raise exc
+
+    def _selection_allowed(self, path: str, *, explicit: bool) -> bool:
+        if self._is_path_excluded(path) or self.in_submodule(path):
+            if explicit:
+                raise InvalidRequestError(
+                    f"Cannot select {path!r}; choose a note outside exclusions and submodules."
+                )
+            return False
+        parts = Path(path).parts
+        return explicit or not any(part.startswith(".") for part in parts)
+
+    def _selection_entry(
+        self,
+        path: str,
+        *,
+        explicit: bool,
+        scopes: list[tuple[Path, Path]],
+        skip_reserved: bool,
+    ) -> tuple[str, tuple[int, int], int] | None:
+        if not self._selection_allowed(path, explicit=explicit):
+            return None
+        try:
+            absolute = self._validate_path(path)
+        except InvalidRequestError:
+            if explicit:
+                raise
+            return None
+        if not explicit and not any(
+            Path(path).is_relative_to(scope) and absolute.is_relative_to(resolved)
+            for scope, resolved in scopes
+        ):
+            return None
+        relative = absolute.relative_to(self._source_dir.resolve()).as_posix()
+        if not self._selection_allowed(relative, explicit=explicit):
+            return None
+        if skip_reserved and (
+            Path(path).name in OKF_RESERVED_FILENAMES
+            or Path(relative).name in OKF_RESERVED_FILENAMES
+        ):
+            if explicit:
+                raise InvalidRequestError(
+                    f"Cannot select reserved note {path!r} with OKF maintenance."
+                )
+            return None
+        try:
+            info = absolute.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError.note(path) from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise DocumentNotFoundError.note(path)
+        return relative, (info.st_dev, info.st_ino), info.st_nlink
+
+    def read_for_replace(
+        self, path: str, max_bytes: int, *, aggregate: bool = False
+    ) -> tuple[str, str, int]:
+        """Read a bounded note snapshot and its raw-byte etag.
+
+        Args:
+            path: Vault-relative note path.
+            max_bytes: Maximum bytes to read.
+            aggregate: Whether *max_bytes* is the remaining aggregate budget.
+
+        Returns:
+            Decoded text, raw-byte etag, and bytes read.
+        """
+        cap = min(max_bytes, self._max_note_read_bytes or max_bytes)
+        with self._validate_path(path).open("rb") as stream:
+            raw = stream.read(cap + 1)
+        if len(raw) > cap:
+            kind = "aggregate" if aggregate and cap == max_bytes else "note"
+            raise InvalidRequestError(
+                f"Note {path!r} exceeds the {cap}-byte {kind} replacement read cap; narrow paths or folders."
+            )
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidRequestError(
+                f"Note {path!r} is not UTF-8; narrow paths or folders."
+            ) from exc
+        return text, compute_etag(raw), len(raw)
+
+    def validate_for_replace(self, path: str, text: str) -> None:
+        """Preflight the existing OKF write enricher for a candidate note.
+
+        Args:
+            path: Vault-relative path for a refusal message.
+            text: Proposed full note text.
+        """
+        if self._okf_write_enrich is not None:
+            try:
+                self._okf_write_enrich(text, "write")
+            except yaml.YAMLError as exc:
+                raise InvalidRequestError(
+                    f"Cannot write {path}: its frontmatter block is not parseable; correct the replacement."
+                ) from exc
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
@@ -971,7 +1197,7 @@ class DocumentManager:
                     f"parseable, so the OKF enforced-write layer cannot stamp "
                     f"provenance on it — {exc}"
                 ) from exc
-        atomic_write(abs_path, content)
+        atomic_write(abs_path, content.encode("utf-8"))
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
@@ -990,10 +1216,9 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        directly after the existing content.  Like every content write,
-        the file is persisted in the vault's normalized form (UTF-8, no
-        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
-        first append.
+        directly after the existing content. Existing content is read as
+        UTF-8 without a BOM and with line endings normalized to ``\\n``;
+        supplied content retains its line endings when written.
 
         Args:
             path: Relative document path.

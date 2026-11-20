@@ -14,7 +14,49 @@ Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
+
+`read` and `edit` normalize input line endings to LF; writes persist the supplied UTF-8 line endings, including on Windows.
 <!-- DOMAIN-INTRO-END -->
+
+## `replace_text`
+
+**Replace Text.** Destructive. Tags: `write`.
+
+Preview or apply one textual replacement across selected notes.
+
+Matches cover the whole note, including frontmatter, code and links.
+Matching includes the UTF-8 BOM and carriage returns, if present.
+Select notes with hard links one path at a time.
+The preview shows text edits. With OKF enforcement, apply stamps
+generated and removes verified, overwriting edits to those fields and
+potentially reformatting frontmatter.
+OKF folder maintenance also updates index.md and log.md.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `pattern` | `string` | required | Exact text or regular expression to match. |
+| `replacement` | `string` | `""` | Replacement text; regex mode accepts capture references. |
+| `paths` | `array of string \| null` | `null` | Explicit note paths, including hidden notes; index.md and log.md are reserved when OKF maintenance is enabled. |
+| `folders` | `array of string \| null` | `null` | Recursive folder scopes; an empty string selects the vault. Hidden folders and folders wholly excluded by directory patterns are refused. With OKF maintenance, index.md and log.md are skipped. |
+| `regex` | `boolean` | `false` | Interpret pattern as a Python regular expression with inline flags such as (?i), (?m) and (?s); otherwise match exact text. |
+| `dry_run` | `boolean` | `true` | Preview complete diffs when true; apply when false. |
+| `plan` | `string \| null` | `null` | Plan returned by the preview of this same request, for apply. |
+
+**Returns**
+
+Selection count, plan, per-note counts and preview diffs.
+
+<!-- DOMAIN-EXAMPLE-replace_text-START -->
+Preview `replace_text(pattern="old.example", replacement="new.example", folders=["guides"])`. Review every diff, then send the same arguments with `dry_run=false` and `plan` set to the returned plan. Apply refuses a stale plan. Matching covers the whole note, including frontmatter, and regex mode uses Python `re` syntax.
+
+A request selects at most 500 notes, 256 KiB per note and 8 MiB total. Patterns may be up to 4 KiB and replacements up to 64 KiB. Output is limited to 8 MiB and 10,000 matches. Preview diffs are limited to 1,048,576 characters. The worker deadline includes startup and JSON transport as well as matching. OKF provenance and folder maintenance happen during apply and are not shown in the text diffs. Maintenance runs for each written note, so hundreds of notes in one folder can take seconds. This tool does not return folder conventions or unresolved-link diagnostics; use `get_conventions` and `get_broken_links` when needed.
+
+The bulk result does not include a `previous_revision` for each note. In a git-backed vault, use [`get_history`](git.md#get_history) to find earlier revisions.
+
+For large notes, the preview groups the span between the first and last change into one complete hunk. This can reach the diff limit sooner when changes are far apart.
+<!-- DOMAIN-EXAMPLE-replace_text-END -->
 
 ## `write`
 
