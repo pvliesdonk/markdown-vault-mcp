@@ -7,6 +7,28 @@ kind: how-to
 
 The `markdown-vault-mcp` command can look things up in a vault without Claude, from a quick search to a count of every matching note. It reads either a vault on the same machine or one that a server elsewhere publishes over MCP. The [command reference](../reference/cli.md) lists every command and option.
 
+## Find a command by task
+
+Describe what you want to do before setting up a vault or connection:
+
+```bash
+markdown-vault-mcp cli search "count matching notes"
+markdown-vault-mcp cli search show headings in a note --limit 3
+markdown-vault-mcp cli search "read a section" --json
+```
+
+Discovery searches the installed command names, summaries and visible flags.
+It runs offline without reading a client profile, opening a vault or contacting
+a server. Quoted and unquoted task words work alike. It suggests up to five
+commands by default; `--limit` accepts 1 through 20. Text results end with a
+command to run for flags and examples.
+
+JSON contains `query` and `results`; each result contains `command`, `summary`
+and native `usage`. An unmatched task succeeds with an empty `results` array.
+Text instead points to `markdown-vault-mcp --help`. Missing or blank tasks and
+invalid limits are usage errors. This discovers commands; use the top-level
+`search` command to search notes.
+
 ## From another machine
 
 ### Install the command
