@@ -168,6 +168,10 @@ dependencies = [
     # SDK, declared because this project imports it directly; no floor, mcp
     # owns the version. The API only: no SDK or exporter ships here.
     "opentelemetry-api",
+    # _auth catches httpx2.HTTPError from fastmcp's OIDC discovery fetch
+    # (#2277). A transitive through fastmcp, declared because this project
+    # imports it directly; no floor, fastmcp owns the version.
+    "httpx2",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",

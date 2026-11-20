@@ -14,6 +14,7 @@ from importlib.metadata import version as _pkg_version
 
 from fastmcp import FastMCP
 
+from markdown_vault_mcp._auth import build_auth
 from markdown_vault_mcp._env import env
 from markdown_vault_mcp._health import HealthCheck, register_health_routes
 from markdown_vault_mcp._http_path import normalise_http_path
@@ -22,7 +23,7 @@ from markdown_vault_mcp._instructions_builder import (
     instructions_for,
 )
 from markdown_vault_mcp._logging_setup import configure_logging_from_env
-from markdown_vault_mcp._pvl_core import build_auth, get_current_auth_mode
+from markdown_vault_mcp._pvl_core import get_current_auth_mode
 from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import (
@@ -96,7 +97,7 @@ def make_server(
     server_name = config.server_name
 
     auth = build_auth(config.server)
-    # pvl-core records the mode ``build_auth`` resolved and announces it as
+    # ``build_auth`` (``_auth``) records the mode it resolved and announces it as
     # ``auth_mode_resolved mode=… source=…`` (pvl-core#310); reading it back
     # here replaces a second ``resolve_auth_mode`` run and a second
     # announcement (#605).
