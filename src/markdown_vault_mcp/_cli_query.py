@@ -124,6 +124,18 @@ def _run(ctx: typer.Context, tool: str, params: dict[str, Any]) -> None:
             params["json_output"], params["agent"]
         )
         render_reply(command_label(ctx) or tool, reply, output)
+        if (
+            ctx.info_name in {"metadata", "body"}
+            and output != "json"
+            and reply.data["truncated"]
+        ):
+            offset = reply.data["offset"] + len(reply.data["items"])
+            prefix = "Hint:" if output == "agent" else "hint:"
+            typer.echo(
+                f"{prefix} Repeat the same query with --offset {offset}, "
+                "keeping all other options unchanged.",
+                err=True,
+            )
     except (ClientError, ReadPayloadError) as exc:
         typer.echo(f"ERROR: {terminal_text(str(exc))}", err=True)
         raise typer.Exit(exc.code) from None
