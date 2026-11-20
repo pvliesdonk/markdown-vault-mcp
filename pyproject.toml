@@ -358,12 +358,6 @@ ignore = ["E501"]
 # (which excludes S). If your project needs its own tests/** ignores, EXTEND
 # this list in place — do not add a second "tests/**" key (duplicate TOML key).
 "tests/**" = ["S101", "S603", "S607"]
-# The config-surface generator's bootstrap re-execs itself under `uv run`
-# (os.execvpe with a `shutil.which`-resolved absolute path — see
-# ensure_core_available). S606 flags any no-shell process start for review;
-# here the no-shell form is the safer one, and a `# noqa` instead of this
-# entry would trip RUF100 on the whole-repo pass, where `S` isn't selected.
-"scripts/gen_config_surface.py" = ["S606"]
 # The release stamper stages its rewrites with a fixed-argv `git add`
 # (subprocess with a list, never a shell). S607 flags the bare `git` name
 # (a partial executable path) and S603 the subprocess call itself; both are

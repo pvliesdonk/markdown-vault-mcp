@@ -18,11 +18,8 @@ CORE = "fastmcp_pvl_core"
 #: Files allowed to import pvl-core directly, with the reason.
 ALLOWED = {
     SHIM: "the shim itself",
-    # Runs under `uv run --no-project` before this project is importable, so
-    # it cannot reach the shim; its core use goes with #2275.
-    REPO_ROOT / "scripts" / "gen_config_surface.py": "runs without the project",
-    # Imports core to measure the dependency floor, not to use it.
-    REPO_ROOT / "tests" / "test_config_import_floor.py": "measures the floor",
+    # Its config-surface introspection still comes from pvl-core until #2289.
+    REPO_ROOT / "scripts" / "gen_config_surface.py": "introspection until #2289",
 }
 
 _PATCHERS = {"setattr", "patch", "delattr", "setitem"}

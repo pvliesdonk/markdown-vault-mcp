@@ -17,10 +17,9 @@ than hard-coding a package name or version. ``config-presentation.yml``
 ships the same way; ``{PREFIX}`` in it is substituted with the project's
 ``env_prefix`` at generation time, not by Jinja.
 
-copier's ``_tasks`` run before any virtualenv exists for the freshly
-rendered project, so this script cannot assume ``fastmcp-pvl-core`` or
-PyYAML are importable; ``ensure_core_available`` re-execs itself under
-``uv run --no-project`` with both pinned ad hoc when the import fails.
+It runs in the project's own environment (``uv run python
+scripts/gen_config_surface.py``, as CI does), where ``fastmcp-pvl-core``,
+PyYAML and the project itself are installed (#2355).
 
 Usage::
 
@@ -35,9 +34,7 @@ import ast
 import dataclasses
 import importlib
 import json
-import os
 import re
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,13 +83,6 @@ _NO_DEFAULT = object()
 # Rank order for the provenance merge; vars are ordered by this rank first,
 # then by declaration order within each provenance.
 _PROVENANCE_ORDER = ("core", "template", "external", "domain")
-
-# Captures the full version constraint (e.g. ">=4.11.0,<5"), not just the
-# floor: the bootstrap re-exec must resolve the SAME version `uv sync` will
-# resolve for the project venv, or copy-time generation and a later venv
-# regeneration disagree the moment a core release changes any help text
-# (#335). A bare `==floor` pin did exactly that.
-_CORE_CONSTRAINT_RE = re.compile(r"fastmcp-pvl-core(?:\[[^\]]*\])?\s*([><=!~][^\"']*)")
 
 
 def _clean_help(help_text: str) -> str:
@@ -218,8 +208,7 @@ def _import_project_config(project_root: Path, python_module: str) -> type | Non
     the exception class and message to stderr. Silently returning ``None``
     for *every* exception (the previous behaviour) let a broken ``config.py``
     make every domain var vanish from the generated artifacts with no
-    diagnostic at all, most realistically during copier-update's bootstrap
-    re-exec, which has none of the project's own dependencies installed.
+    diagnostic at all.
 
     Only ``sys.path`` is restored before returning. ``sys.modules`` is
     deliberately left alone here: `typing.get_type_hints` (used inside
@@ -3329,148 +3318,6 @@ def write_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# Self-bootstrap
-# ---------------------------------------------------------------------------
-
-
-def _core_constraint(project_root: Path) -> str:
-    """Parse the full `fastmcp-pvl-core` version constraint from pyproject.toml.
-
-    Returns the constraint exactly as the project declares it (e.g.
-    `>=4.11.0,<5`), so the bootstrap re-exec resolves the same core version
-    `uv sync` resolves for the project venv — pinning only the floor made
-    copy-time generation and check-time regeneration disagree whenever a
-    newer core changed any surface text (#335). Tolerates an extras marker
-    (`fastmcp-pvl-core[redis]>=4.5.0,<5`) and a floor with fewer than three
-    components (`>=4.5`) — both appear in real rendered `pyproject.toml`s.
-    """
-    pyproject_path = project_root / "pyproject.toml"
-    if not pyproject_path.exists():
-        raise SystemExit(f"ERROR: {pyproject_path} not found.")
-    text = pyproject_path.read_text(encoding="utf-8")
-    match = _CORE_CONSTRAINT_RE.search(text)
-    if match is None:
-        raise SystemExit(
-            f"ERROR: no 'fastmcp-pvl-core>=X.Y.Z' dependency found in {pyproject_path}"
-        )
-    return match.group(1).strip()
-
-
-def _core_importable() -> bool:
-    """Whether `fastmcp_pvl_core` is importable AND new enough for this generator.
-
-    Checks for the specific symbols this generator imports at runtime, not
-    merely that the package imports. On `copier update`, the project's
-    existing virtualenv may still hold the pre-update `fastmcp-pvl-core`,
-    which imports fine but lacks a symbol a newer generator needs
-    (``domain_env_surface`` landed in core 4.6.0). A bare
-    ``import fastmcp_pvl_core`` would succeed there, so `ensure_core_available`
-    would skip the re-exec and the generator would then hit a hard
-    ``ImportError`` mid-update (#306). Probing the symbols instead makes a
-    too-old core count as "not available", so the bootstrap re-execs under
-    ``uv run`` with the pyproject floor pinned and the generation succeeds.
-    Keep this list in step with the ``from fastmcp_pvl_core import ...`` names
-    the generator relies on at their newest floor.
-    """
-    try:
-        from fastmcp_pvl_core import (  # noqa: F401
-            domain_env_surface,
-            server_config_surface,
-        )
-    except ImportError:
-        return False
-    return True
-
-
-def _yaml_importable() -> bool:
-    """Whether `yaml` (PyYAML) can be imported in the current interpreter."""
-    try:
-        import yaml  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
-def ensure_core_available(
-    project_root: Path, argv: Sequence[str] | None = None
-) -> None:
-    """Re-exec under `uv run` if fastmcp-pvl-core or PyYAML is not importable.
-
-    copier's ``_tasks`` run before any virtualenv exists for the freshly
-    rendered project, so this script cannot assume its dependencies are
-    installed. When either import fails, re-exec the whole process under
-    ``uv run --no-project`` with the core library constrained exactly as the
-    project's pyproject.toml declares it — the same resolution ``uv sync``
-    performs later, so copy-time generation and a venv regeneration cannot
-    disagree (#335) — and PyYAML added ad hoc. This must NOT create a
-    persistent virtualenv, since template-ci renders the template twice and
-    diffs the results.
-
-    ``_GEN_CONFIG_BOOTSTRAPPED`` guards against re-exec'ing more than once:
-    if the dependencies are still missing right after a re-exec, that is a
-    real, unrecoverable problem (not something a second re-exec would fix),
-    so this raises a clear error instead of looping forever.
-
-    *argv* is the script's own arguments (excluding argv[0]) to preserve
-    across the re-exec; defaults to ``sys.argv[1:]``.
-    """
-    if _core_importable() and _yaml_importable():
-        return
-
-    if os.environ.get("_GEN_CONFIG_BOOTSTRAPPED") == "1":
-        raise SystemExit(
-            "ERROR: fastmcp-pvl-core and/or PyYAML are still not importable "
-            "after re-executing under `uv run` — check that `uv` is on PATH "
-            "and that both packages are resolvable from this environment."
-        )
-
-    # Resolved to an absolute path (rather than letting exec search PATH) so a
-    # missing `uv` fails with the install pointer below instead of a bare
-    # FileNotFoundError, and so the exec target is unambiguous (ruff S607).
-    uv_path = shutil.which("uv")
-    if uv_path is None:
-        raise SystemExit(
-            "ERROR: `uv` is not on PATH — install `uv` "
-            "(https://docs.astral.sh/uv/) or run this script inside an "
-            "environment that already has fastmcp-pvl-core and PyYAML "
-            "installed."
-        )
-
-    constraint = _core_constraint(project_root)
-    script = str(Path(__file__).resolve())
-    extra_argv = list(sys.argv[1:] if argv is None else argv)
-    args = [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        f"fastmcp-pvl-core{constraint}",
-        "--with",
-        "pyyaml",
-        "python",
-        script,
-        *extra_argv,
-    ]
-    env = dict(os.environ)
-    env["_GEN_CONFIG_BOOTSTRAPPED"] = "1"
-    try:
-        # A no-shell exec is deliberate: every element of `args` is built
-        # here, none comes from outside input, and adding a shell would only
-        # add quoting/injection surface. S606 (start-process-without-shell)
-        # is per-file-ignored for this script in pyproject.toml — a `noqa`
-        # here would trip RUF100 on the whole-repo lint pass, where `S` is
-        # not selected.
-        os.execvpe(uv_path, args, env)
-    except OSError as exc:
-        raise SystemExit(
-            f"ERROR: could not re-exec under `uv run` ({exc}) — install `uv` "
-            "(https://docs.astral.sh/uv/) or run this script inside an "
-            "environment that already has fastmcp-pvl-core and PyYAML "
-            "installed."
-        ) from exc
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -3509,7 +3356,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = _project_root()
-    ensure_core_available(project_root, argv)
 
     answers = load_answers(project_root)
     variables = collect_vars(project_root, answers)
