@@ -56,8 +56,6 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
 @pytest.mark.parametrize(
     ("value", "state", "basis"),
     [
-        ("2026-11-15", "expired", "utc_date"),
-        (dt.date(2026, 11, 16), "unexpired", "utc_date"),
         ("2026-11-15T12:00:00Z", "expired", "offset_instant"),
         ("2026-11-15T14:00:01+02:00", "unexpired", "offset_instant"),
         ("2026-11-15 14:00:00.123+02:00", "unexpired", "offset_instant"),
@@ -66,8 +64,7 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
 def test_freshness_basis(value: Any, state: str, basis: str) -> None:
     result = derive_annotation({"stale_after": value}, now=NOW)
     assert result["freshness"] == {"state": state, "basis": basis}
-    if basis == "offset_instant":
-        assert result["stale"] == (state == "expired")
+    assert result["stale"] == (state == "expired")
 
 
 @pytest.mark.parametrize(
@@ -207,12 +204,13 @@ def test_audit_limit_withholds_only_new_evidence_findings(tmp_path: Path) -> Non
 
 
 def test_audit_evidence_examples_capped_sorted(tmp_path: Path) -> None:
-    for name, expiry in (("z.md", "null"), ("b.md", "[]"), ("a.md", "null")):
+    for name, expiry in (("z.md", "null"), ("b.md", "[]"), ("a.md", "nonsense")):
         (tmp_path / name).write_text(
             f"---\ntype: Concept\nstale_after: {expiry}\nverified: nope\n---"
         )
     report = audit_bundle(tmp_path, example_cap=1)
-    assert report.missing_freshness == OkfFinding(3, ("a.md",))
+    assert report.missing_freshness == OkfFinding(2, ("b.md",))
+    assert report.malformed_freshness == OkfFinding(1, ("a.md",))
     assert report.malformed_review == OkfFinding(3, ("a.md",))
 
 

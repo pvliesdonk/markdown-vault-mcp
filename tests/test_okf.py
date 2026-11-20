@@ -236,7 +236,8 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
     [
         ({}, False),
         ({"stale_after": dt.date(2026, 8, 6)}, True),
-        # OKF v0.3 §5 places date-only expiry at midnight UTC.
+        # Date parsing, including whitespace and past/future dates; the
+        # zone rule is covered by test_date_expiry_uses_utc_midnight.
         ({"stale_after": dt.date(2026, 8, 7)}, True),
         ({"stale_after": dt.date(2026, 8, 8)}, False),
         ({"stale_after": "2026-08-07"}, True),
