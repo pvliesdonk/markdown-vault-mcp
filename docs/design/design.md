@@ -1985,11 +1985,11 @@ the spec itself says, dated and sourced, in
   `_tools/_common.py` mirroring `attach_conventions`): when active,
   `search` hits, whole-document `read`s, and `get_context` carry an `okf`
   key — `type` (when declared), `status` (absent ⇒ `stable` per spec),
-  `stale` (a bare `stale_after` date: the server-local day has reached it;
-  an instant with an offset: `now >= stale_after`; an offset-less datetime
-  is ignored — #1357, #1373), and
+  `stale` (a bare `stale_after` date expires at midnight UTC;
+  an instant with an offset expires when `now >= stale_after`; an offset-less
+  datetime is ignored), and
   `trust_tier` as a recorded-claim label. Only records with a recognized
-  actor shape and an offset-aware `at` contribute; malformed records never
+  actor shape and a date or offset-aware `at` contribute; malformed records never
   promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
   evidence and its basis; `review` counts usable and malformed records with
   `basis: supplied_metadata_only`. Neither certifies truth or applicability.

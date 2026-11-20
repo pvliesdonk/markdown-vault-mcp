@@ -268,13 +268,11 @@ def test_derive_stale(metadata: dict, expected: bool) -> None:
     assert derive_stale(metadata, now=NOW) is expected
 
 
-def test_derive_stale_bare_date_uses_the_server_local_day() -> None:
-    """A bare date is judged against now's local calendar day, not UTC's."""
-    # 2026-08-08T00:30 at +02:00 is still 2026-08-07 in UTC; the bare date
-    # 2026-08-08 is stale there because the server's day has turned.
+def test_derive_stale_bare_date_uses_utc_day() -> None:
+    """A bare date expires at midnight UTC regardless of local day."""
     now = dt.datetime(2026, 8, 8, 0, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is True
-    assert derive_stale({"stale_after": dt.date(2026, 8, 9)}, now=now) is False
+    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is False
+    assert derive_stale({"stale_after": dt.date(2026, 8, 7)}, now=now) is True
 
 
 class TestDeriveAnnotation:
@@ -308,7 +306,7 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
-            "freshness": {"state": "expired", "basis": "server_local_date"},
+            "freshness": {"state": "expired", "basis": "utc_date"},
             "review": {
                 "state": "recorded",
                 "recorded_entries": 1,

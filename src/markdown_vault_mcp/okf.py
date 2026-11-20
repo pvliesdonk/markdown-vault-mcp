@@ -289,14 +289,14 @@ _ACTOR_RE = re.compile(r"(?:(?:human|process):[^\s]+|[^\s/:]+/[^\s/]+)")
 
 
 def _review_recorded(entry: Any) -> bool:
-    """Whether a review has a usable actor and an offset-aware instant."""
+    """Whether a review has a usable actor and timestamp."""
     if not isinstance(entry, dict):
         return False
     actor = entry.get("by")
     return (
         isinstance(actor, str)
         and _ACTOR_RE.fullmatch(actor.strip()) is not None
-        and isinstance(_parse_stale_after(entry.get("at")), _dt.datetime)
+        and _parse_stale_after(entry.get("at")) is not None
     )
 
 
@@ -309,13 +309,7 @@ def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
 
 
 def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
-    """Read a ``stale_after`` value into the shape its text of v0.2 gives it.
-
-    Returns a ``date`` for the July text's calendar-day form, an aware
-    ``datetime`` for the August text's instant form, and ``None`` for
-    anything else — including a datetime without an offset, which neither
-    text allows and the amendment says to ignore (#1373).
-    """
+    """Read a date or offset-aware instant, rejecting unsupported timestamps."""
     if isinstance(raw, _dt.datetime):
         return _aware_or_none(raw, raw)
     if isinstance(raw, _dt.date):
@@ -340,19 +334,15 @@ def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     """Derive staleness from ``stale_after``.
 
-    Both texts of OKF v0.2 are honoured (``docs/design/reference/okf-v0.2.md``,
-    "Lifecycle"): a calendar date is stale from that day on, judged by the
-    server-local day of *now* (the July rule, #1357); an instant with an
-    offset is stale when ``now >= stale_after`` (the August rule, #1373). A
-    datetime without an offset is ignored, as the amendment asks.
+    A date expires at midnight UTC; an offset-aware datetime expires at its
+    represented instant. A datetime without an offset is ignored.
 
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
             ``date`` or ``datetime`` (YAML parses bare timestamps) or their
             supported extended-calendar spellings (see ``okf.md`` §3);
             anything else yields false, not an assurance of freshness.
-        now: The current instant, timezone-aware. Its local calendar day is
-            what a bare date is compared against.
+        now: The current instant, timezone-aware.
 
     Returns:
         ``True`` iff ``stale_after`` parses and *now* has reached it.
@@ -362,21 +352,26 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
         return False
     if isinstance(boundary, _dt.datetime):
         return now >= boundary
-    return now.date() >= boundary
+    return now.astimezone(_dt.UTC).date() >= boundary
+
+
+def _expiry_missing(value: Any) -> bool:
+    """Treat null and blank expiry as absent."""
+    return value is None or (isinstance(value, str) and not value.strip())
 
 
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
     """Describe the supplied expiry without implying knowledge is true."""
-    if "stale_after" not in metadata:
+    if _expiry_missing(metadata.get("stale_after")):
         return {"state": "missing", "basis": "no_expiry_supplied"}
     boundary = _parse_stale_after(metadata["stale_after"])
     if boundary is None:
         return {"state": "malformed", "basis": "unsupported_expiry"}
     instant = isinstance(boundary, _dt.datetime)
-    expired = now >= boundary if instant else now.date() >= boundary
+    expired = now >= boundary if instant else now.astimezone(_dt.UTC).date() >= boundary
     return {
         "state": "expired" if expired else "unexpired",
-        "basis": "offset_instant" if instant else "server_local_date",
+        "basis": "offset_instant" if instant else "utc_date",
     }
 
 
@@ -720,7 +715,7 @@ def _evaluate_note(
 
 def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> None:
     """Report supplied-field shape findings, not local editorial policy."""
-    if "stale_after" not in metadata:
+    if _expiry_missing(metadata.get("stale_after")):
         acc.missing_freshness.add(rel)
     elif _parse_stale_after(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)

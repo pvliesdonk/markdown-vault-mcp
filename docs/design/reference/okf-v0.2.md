@@ -224,16 +224,12 @@ months, not twelve.
 Behaviour lines are [observed: `okf.py`, `_okf_write.py` on the working
 tree, 2026-09-07].
 
-- **Both texts' `stale_after` forms are honoured, and the bare date is
-  kept.** `derive_stale` compares an instant with an offset as an instant
-  (`now >= stale_after`, the August rule) and a bare date against the
-  server-local calendar day (the July rule, #1357). Against the August
-  text this is lenient on purpose: the amendment says to ignore an
-  offset-less value, but a bare date is what the July text prescribed and
-  what an Obsidian author writes, and upstream #242 is still open. A
-  datetime *without* an offset — allowed by neither text — is ignored.
-  Decided in `docs/design/okf.md` § 3 (#1373).
-  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
+- **Historical expiry interpretation.** The server formerly compared a bare
+  date with its local calendar day (#1357, #1373). OKF v0.3 §5 instead fixes
+  the date at midnight UTC; the server now follows that rule. Offset
+  datetimes remain instants, and datetimes without offsets remain invalid.
+  See [the v0.3 reference](okf-v0.3.md).
+  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_utc_day]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
   re-confirmation"; the server's enforced write layer clears it so an

@@ -29,8 +29,6 @@ AT = "2026-11-14T09:00:00Z"
 @pytest.mark.parametrize(
     "value",
     [
-        None,
-        "",
         0,
         True,
         [],
@@ -58,8 +56,8 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
 @pytest.mark.parametrize(
     ("value", "state", "basis"),
     [
-        ("2026-11-15", "expired", "server_local_date"),
-        (dt.date(2026, 11, 16), "unexpired", "server_local_date"),
+        ("2026-11-15", "expired", "utc_date"),
+        (dt.date(2026, 11, 16), "unexpired", "utc_date"),
         ("2026-11-15T12:00:00Z", "expired", "offset_instant"),
         ("2026-11-15T14:00:01+02:00", "unexpired", "offset_instant"),
         ("2026-11-15 14:00:00.123+02:00", "unexpired", "offset_instant"),
@@ -88,7 +86,6 @@ def test_freshness_basis(value: Any, state: str, basis: str) -> None:
         {"by": "agent/1.0/extra", "at": AT},
         {"by": "agent/one two", "at": AT},
         {"by": " ", "at": AT},
-        {"by": "human:alice", "at": "2026-11-14"},
         {"by": "human:alice", "at": "2026-11-14T10:00:00"},
         "human:alice",
         None,
@@ -214,7 +211,7 @@ def test_audit_evidence_examples_capped_sorted(tmp_path: Path) -> None:
             "---\ntype: Concept\nstale_after: null\nverified: nope\n---"
         )
     report = audit_bundle(tmp_path, example_cap=1)
-    assert report.malformed_freshness == OkfFinding(3, ("a.md",))
+    assert report.missing_freshness == OkfFinding(3, ("a.md",))
     assert report.malformed_review == OkfFinding(3, ("a.md",))
 
 
@@ -225,3 +222,37 @@ def test_report_old_positional_constructor() -> None:
     )
     assert report.evidence_unavailable == empty
     assert report.malformed_review == empty
+
+
+@pytest.mark.parametrize("value", ["2026-06-30", dt.date(2026, 6, 30)])
+@pytest.mark.parametrize("offset", [-8, 2, 14])
+def test_date_expiry_uses_utc_midnight(value: Any, offset: int) -> None:
+    zone = dt.timezone(dt.timedelta(hours=offset))
+    boundary = dt.datetime(2026, 6, 30, tzinfo=dt.UTC)
+    for now, state in [
+        (boundary - dt.timedelta(seconds=1), "unexpired"),
+        (boundary, "expired"),
+    ]:
+        result = derive_annotation(
+            {"stale_after": value}, now=now.astimezone(zone), include_sources=True
+        )
+        assert result["freshness"] == {"state": state, "basis": "utc_date"}
+        assert result["stale"] is (state == "expired")
+        assert result["recorded"] == {"stale_after": value}
+
+
+@pytest.mark.parametrize("value", ["2026-11-14", dt.date(2026, 11, 14)])
+def test_date_only_review_is_recorded(value: Any) -> None:
+    metadata = {"verified": [{"by": "human:alice", "at": value}]}
+    result = derive_annotation(metadata, now=NOW, include_sources=True)
+    assert result["trust_tier"] == "human-reviewed"
+    assert result["review"]["state"] == "recorded"
+    assert result["recorded"] == metadata
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_empty_expiry_is_missing_and_preserves_recorded(value: Any) -> None:
+    metadata = {"stale_after": value}
+    result = derive_annotation(metadata, now=NOW, include_sources=True)
+    assert result["freshness"] == {"state": "missing", "basis": "no_expiry_supplied"}
+    assert result["recorded"] == metadata

@@ -183,25 +183,21 @@ server's ranking math — layer 1 surfaces signal and lets the agent judge.
 **Computed per-note properties** (derived at annotation time from the stored
 frontmatter blob; not persisted):
 
-- `staleness`: both texts of v0.2 honoured (#1357, #1373). A bare date is
-  stale from that server-local day on (the named date is the first stale
-  day); an instant with an offset is stale when `now >= stale_after`,
-  compared as instants; a datetime *without* an offset is allowed by neither
-  text and is ignored (treated as absent), as the 2026-08-21 amendment
-  asks; absent field → not stale. Accepting the bare date is a deliberate
-  lenience against the amended text's "ignore" — Obsidian authors write
-  dates, and the upstream issue behind the amendment is still open.
+- `staleness`: a date expires at the start of that day in UTC, per OKF
+  v0.3 §5. This reverses the server-local day rule from #1357 and #1373.
+  An offset datetime expires at its represented instant; a datetime without
+  an offset is invalid. Absent, null, or empty expiry is not stale.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
   or `<producer>/<version>`, with nonempty, whitespace-free components)
-  and an offset-aware `at` instant counts. A usable human record yields
+  and a date or offset-aware `at` instant counts. A usable human record yields
   `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
   otherwise `unverified`. A bare mapping is still one record. Malformed
   siblings do not erase usable records. This deliberately changes the
   public helper and filter behavior from v6.1.2 (#1444).
 - `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
   `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
-  or `server_local_date`. The compatibility `stale: false` includes missing
+  or `utc_date`. Null and empty expiry report `missing`. The compatibility `stale: false` includes missing
   and malformed expiry and therefore does not mean fresh or true.
 - `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
@@ -817,8 +813,7 @@ phase owns.
 - Review applicability after observed changes remains separate from recorded
   claim interpretation (#1413).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
-  amendment and #1373: the value carries its own offset; a bare date is the
-  server-local day.
+  amendment, then revised by v0.3 §5: a bare date starts at midnight UTC.
 - Whether `okf_export` should optionally include a generated bundle-root
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
