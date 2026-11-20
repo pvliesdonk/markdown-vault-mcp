@@ -326,6 +326,11 @@ NOT_IN_WIZARD = {
     f"{PREFIX}_TRANSPORT": "implied by deployment target / image CMD",
     f"{PREFIX}_HOST": "bind host fixed per deployment (0.0.0.0 in Docker)",
     f"{PREFIX}_PORT": "default 8000; deployment-fixed",
+    # Development-only debugger knobs, read by _debug.maybe_start_debugpy since
+    # #2335; they do nothing unless the image was built with DEBUG=true, so
+    # config-presentation.yml documents them without a wizard control.
+    f"{PREFIX}_DEBUG_PORT": "development-only; needs a DEBUG=true image build",
+    f"{PREFIX}_DEBUG_WAIT": "development-only; needs a DEBUG=true image build",
     # Upstream ServerConfig explicit auth-mode override; the wizard derives auth
     # from credential presence (BEARER_TOKEN / OIDC_*), not an explicit selector,
     # and AUTH_MODE is undocumented in this project's configuration surface.
