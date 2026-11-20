@@ -1138,10 +1138,9 @@ class TestStripFrontmatterBlock:
         body = "    indented code\n\nprose\n\n\n"
         assert strip_frontmatter_block(f"---\ntitle: T\n---\n\n{body}") == body
 
-    def test_blank_lines_before_the_block_do_not_hide_it(self) -> None:
-        # ``frontmatter.parse`` strips before detecting, so the indexer reads
-        # this as frontmatter; leaving the block in the body would stack it.
-        assert strip_frontmatter_block("\n\n---\ntitle: T\n---\n\n# T\n") == "# T\n"
+    def test_blank_lines_before_the_block_make_it_body(self) -> None:
+        text = "\n\n---\ntitle: T\n---\n\n# T\n"
+        assert strip_frontmatter_block(text) == text
 
 
 def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> None:

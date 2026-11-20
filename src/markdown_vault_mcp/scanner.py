@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
+from frontmatter.default_handlers import BaseHandler, YAMLHandler
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import (
@@ -794,11 +795,32 @@ class MalformedFrontmatterError(yaml.YAMLError):
     """
 
 
+_YAML_BOUNDARY = re.compile(r"^---\r?$", re.MULTILINE)
+
+
+def _split_frontmatter(text: str) -> tuple[BaseHandler, str, str] | None:
+    """Find one complete frontmatter block and retain its unstripped body."""
+    candidate = text.removeprefix("\ufeff")
+    handler: BaseHandler | None
+    if _YAML_BOUNDARY.match(candidate):
+        handler = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
+    else:
+        candidate = text.lstrip()
+        handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+        if handler is None or isinstance(handler, YAMLHandler):
+            return None
+    try:
+        metadata, body = handler.split(candidate)
+    except ValueError:
+        return None
+    return handler, metadata, body
+
+
 def parse_frontmatter(text: str) -> frontmatter.Post:
     """Parse *text* as markdown-with-frontmatter, one error for one failure.
 
-    The package's single entry point to ``frontmatter.loads``, so no caller
-    has to know which handler will run or which error it raises (#1408). A
+    The package's shared frontmatter entry point, so no caller has to know
+    which handler will run or which error it raises (#1408). A
     YAML failure propagates as the ``yaml.YAMLError`` it already was; every
     other handler's failure — all of them ``ValueError`` subclasses — is
     re-raised as :class:`MalformedFrontmatterError`, which is one.
@@ -813,12 +835,17 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
+    block = _split_frontmatter(text)
+    if block is None:
+        return frontmatter.Post(text.strip())
+    handler, raw_metadata, body = block
     try:
-        return frontmatter.loads(text)
+        metadata = handler.load(raw_metadata)
     except ValueError as exc:
-        # yaml.YAMLError is not a ValueError, so it is never caught here and
-        # reaches the caller unchanged.
         raise MalformedFrontmatterError(str(exc)) from exc
+    return frontmatter.Post(
+        body.strip(), handler, **(metadata if isinstance(metadata, dict) else {})
+    )
 
 
 def strip_frontmatter_block(text: str) -> str:
@@ -830,11 +857,9 @@ def strip_frontmatter_block(text: str) -> str:
     ``NoteContent.content`` — and every other raw file text in this package —
     includes the block, so it has to come off first.
 
-    Detection is delegated to ``python-frontmatter`` and so agrees with
-    :func:`parse_note` about *where* the block ends: the same handlers, the
-    same offset-zero anchoring (an identical block later in the body is body
-    text), and the same reading of an unterminated block as no frontmatter at
-    all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
+    Detection is shared with :func:`parse_frontmatter`: YAML delimiters must
+    be exact lines, beginning at the first line after an optional BOM. An
+    unterminated block is body text. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
     line that is an indented code block keeps its indentation.
 
     The newlines separating the block from the body are dropped — they are the
@@ -847,17 +872,10 @@ def strip_frontmatter_block(text: str) -> str:
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
-    candidate = text.lstrip()
-    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-    if handler is None:
+    block = _split_frontmatter(text)
+    if block is None:
         return text
-    try:
-        _, body = handler.split(candidate)
-    except ValueError:
-        # Never closed — frontmatter.parse reads that as a file with no
-        # frontmatter, and so does the indexer that calls it.
-        return text
-    return body.lstrip("\n")
+    return block[2].lstrip("\r\n")
 
 
 def _restore_first_indent(text: str, stripped: str) -> str:

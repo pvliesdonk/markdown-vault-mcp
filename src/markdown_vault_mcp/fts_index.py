@@ -511,6 +511,8 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: in v6.1.1; rebuilding adds the previously missing link rows.
 #: Version 13 (#1438) admits OKF reserved files without required concept fields.
 #: Version 12 shipped in v6.1.2, so existing indexes need a rebuild.
+#: Version 13 also covers exact first-line YAML frontmatter boundaries: notes
+#: with a leading blank or non-exact delimiter lose their indexed metadata.
 INDEX_SEMANTICS_VERSION = 13
 
 
