@@ -253,9 +253,10 @@ async def test_sync_explicit_closed_and_auto_closed_handles(
 
 
 @pytest.mark.usefixtures("_mcp_env")
-async def test_no_git_result_reports_no_changes(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_no_git_result_reports_failed_commit(
+    monkeypatch: pytest.MonkeyPatch, vault_path: Path
 ) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(vault_path.parent))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     async with Client(make_server()) as client:
         handle = (
@@ -266,7 +267,7 @@ async def test_no_git_result_reports_no_changes(
         )
         result = await client.call_tool("end_transaction", {"handle": handle})
         assert result.data == {
-            "status": "no_changes",
+            "status": "failed",
             "sha": None,
             "files": 0,
             "history_failed": False,

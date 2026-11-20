@@ -180,9 +180,8 @@ def register(mcp: FastMCP) -> None:
         Returns:
             Dict with status (committed, no_changes or failed), `sha` (str or null),
             files (number of committed paths; zero if unknown), and history_failed
-            (whether an editorial history entry could not be recorded). With no
-            write callback, a group reports no_changes; a callback that cannot
-            report its grouped commit can report failed. Files remain written.
-            An empty group reports no_changes.
+            (whether an editorial history entry could not be recorded). Without
+            Git, a group with writes reports failed; files remain written. An
+            empty group reports no_changes.
         """
         return await close_transaction(vault, handle)
