@@ -124,7 +124,7 @@ requires_tools=(...))` in the `DOMAIN-WIRING` block. Two sentences at
 most: the sequence that spans tools, naming them. Under tool search the
 model sees this text before any tool description, so it says what the
 server is for and which tool starts a task; it never restates a tool's
-own description. pvl-core warns above 1,536 units for generated text and
+own description. The builder warns above 1,536 units for generated text and
 drops the snippet when a required tool is hidden, so name the tools in
 `requires_tools`.
 
