@@ -33,9 +33,8 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 _MARKER = "_pvl_tool_boundary"
 """Attribute that marks a wrapper as a boundary.
 
-The same name pvl-core's own ``tool_boundary`` sets, so :func:`is_tool_boundary`
-also recognises the tools pvl-core still wraps (server info, transfer links)
-until those areas move here (#2278, #2282).
+The value is the name fastmcp-pvl-core's ``tool_boundary`` set, kept from the
+port; ``_tools._outcomes.is_tool_boundary_wrapper`` reads the same literal.
 """
 
 FAULT_MESSAGE = (

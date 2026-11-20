@@ -81,7 +81,7 @@ async def test_transfer_absent_on_http_without_base_url(tmp_path: Path) -> None:
 
 
 async def test_transfer_tools_carry_title_hints_and_icons(tmp_path: Path) -> None:
-    """pvl-core (v4.8.0) registers the transfer tools with full metadata; the
+    """``_transfer_links`` registers the transfer tools with full metadata; the
     domain adopts them as-is (no finalizer, no mutation)."""
     server = make_server(
         transport="http",
@@ -116,7 +116,7 @@ async def test_download_description_names_okf_bundle_refs(
 
 
 async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
-    """create_upload_link carries pvl-core's ``write`` tag, so read-only mode
+    """create_upload_link carries the ``write`` tag, so read-only mode
     (``mcp.disable(tags={"write"})``) must hide it while download stays."""
     server = make_server(
         transport="http",

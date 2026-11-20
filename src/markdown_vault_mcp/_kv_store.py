@@ -1,8 +1,7 @@
 """The key-value store behind the event store, chosen by one operator URL.
 
 Ported from ``fastmcp_pvl_core._kv_store`` and ``_factory.build_event_store``
-10.2.0 (#2279). Core's health checks, jobs and transfer links still call
-core's own copy until their areas move (#2278, #2281, #2282).
+10.2.0 (#2279). The health checks, jobs and transfer links call it too.
 
 URL scheme dispatch:
 

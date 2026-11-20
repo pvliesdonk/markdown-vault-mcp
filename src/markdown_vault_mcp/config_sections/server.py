@@ -2,8 +2,8 @@
 
 Ported from ``fastmcp_pvl_core._config`` 10.2.0 (#2288), up to and including
 ``server_config_env_suffixes``; the config-surface introspection
-(``server_config_surface``, ``domain_env_surface``) stays in pvl-core until
-#2289. ``ProjectConfig`` composes :class:`ServerConfig` as its ``server`` field.
+(``server_config_surface``, ``domain_env_surface``) is in ``_config_surface``
+(#2289). ``ProjectConfig`` composes :class:`ServerConfig` as its ``server`` field.
 """
 
 from __future__ import annotations

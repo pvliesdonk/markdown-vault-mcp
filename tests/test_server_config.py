@@ -149,14 +149,14 @@ class TestServerConfigFromEnv:
         assert config.oidc_required_scopes == ("openid", "profile")
 
     def test_reads_advertised_scopes(self, monkeypatch: pytest.MonkeyPatch):
-        """The advertised set is read separately from the required one (#280)."""
+        """The advertised set is read separately from the required one (fastmcp-pvl-core#280)."""
         monkeypatch.setenv("MYAPP_OIDC_ADVERTISED_SCOPES", "openid, groups")
         config = ServerConfig.from_env("MYAPP")
         assert config.oidc_advertised_scopes == ("openid", "groups")
         assert config.oidc_required_scopes == ()
 
     def test_advertised_scopes_default_to_empty(self, monkeypatch: pytest.MonkeyPatch):
-        """Empty means "pvl-core picks", not "advertise nothing"."""
+        """Empty means "``_auth`` picks", not "advertise nothing"."""
         monkeypatch.delenv("MYAPP_OIDC_ADVERTISED_SCOPES", raising=False)
         assert ServerConfig.from_env("MYAPP").oidc_advertised_scopes == ()
 

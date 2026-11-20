@@ -1,9 +1,9 @@
-"""Contract tests for the scopes advertised to MCP clients (issue #280).
+"""Contract tests for the scopes advertised to MCP clients (fastmcp-pvl-core#280).
 
 Ported from fastmcp-pvl-core v10.2.0 ``tests/test_auth_advertised_scopes.py`` (#2277).
 
 Protected-resource metadata (RFC 9728) tells a client which scopes to put in
-its authorization request. pvl-core keeps that set separate from the token
+its authorization request. ``_auth`` keeps that set separate from the token
 verifier's ``required_scopes`` — the latter answers "what must a token carry
 for this server to accept it", which in ``multi`` mode must be empty so scope-
 less bearer tokens are not rejected (#249).
@@ -143,7 +143,7 @@ class TestRemoteModeAdvertisedScopes:
     def test_dropping_a_default_scope_warns(
         self, discovery, caplog: pytest.LogCaptureFixture
     ):
-        """Silently losing refresh capability is what made #280 hard to see."""
+        """Silently losing refresh capability is what made fastmcp-pvl-core#280 hard to see."""
         discovery(scopes_supported=["openid"])
         with caplog.at_level("WARNING"):
             build_remote_auth(_remote_config())
@@ -175,7 +175,7 @@ class TestRemoteModeAdvertisedScopes:
 
 
 class TestMultiModeAdvertisedScopes:
-    """``multi`` mode is where #280 was observed: ``required_scopes=[]``."""
+    """``multi`` mode is where fastmcp-pvl-core#280 was observed: ``required_scopes=[]``."""
 
     async def test_advertises_scopes_despite_empty_required_scopes(self, discovery):
         discovery()
@@ -196,7 +196,7 @@ class TestOIDCProxyAdvertisedScopes:
     carried one, and upstream issues one only when ``offline_access`` was
     requested — and what the proxy requests upstream is the scope set it
     advertises. Left at ``required_scopes`` (``["openid"]``) the proxy's own
-    sessions expire exactly like the ``remote`` ones in #280.
+    sessions expire exactly like the ``remote`` ones in fastmcp-pvl-core#280.
     """
 
     @staticmethod

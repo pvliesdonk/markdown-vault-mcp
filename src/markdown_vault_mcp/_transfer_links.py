@@ -13,8 +13,7 @@ Two entry points share one route mount and one token store:
   DOMAIN-WIRING block). ``register_transfer_routes`` is
   ``build_transfer_links`` plus the two tools.
 
-The instructions builder still comes from pvl-core through the shim, until
-#2305 moves it.
+The instructions builder is ``_instructions_builder`` (#2305).
 
 How FastMCP builds the tool descriptions, parameter descriptions and
 instructions snippets registered here, and how clients read them, is in

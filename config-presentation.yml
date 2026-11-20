@@ -62,7 +62,8 @@ vars:
     default: 5678
     help: "debugpy listen port; the image must be built with `--build-arg DEBUG=true`."
     tags: [debug]
-    # Development-only; read by _debug.maybe_start_debugpy (#2335). Documented in the env artifacts but offered no wizard control —
+    # Development-only; read by _debug.maybe_start_debugpy (#2335).
+    # Documented in the env artifacts but offered no wizard control —
     # `control: none`, not `inferred`, since the value is not derived from
     # anything else.
     wizard: {control: none}
@@ -95,7 +96,7 @@ vars:
     tags: [container]
     wizard: {control: none}
 
-  # Read by pvl-core's configure_logging_from_env, outside ServerConfig, so
+  # Read by _logging_setup.configure_logging_from_env, outside ServerConfig, so
   # core's surface does not list them — the same shape as {PREFIX}_DEBUG_PORT
   # above.  Both replaced unprefixed FastMCP-native vars in pvl-core v8:
   # FASTMCP_LOG_LEVEL still works for one major and logs a deprecation
@@ -117,14 +118,14 @@ vars:
     wizard: {group: Logging}
 
   # Native fastmcp background-task (Docket) worker tunables.  Deliberately
-  # NOT wrapped in `{PREFIX}_*` vars (pvl-core ADR 0002 §4.3): they are worker
+  # NOT wrapped in `{PREFIX}_*` vars (fastmcp-pvl-core ADR 0002 §4.3): they are worker
   # tuning with sensible upstream defaults, not backend selection, so they
   # stay on the acknowledged native `FASTMCP_*` axis (the logging vars above
   # left it for `{PREFIX}_*` with pvl-core v8).  Backend *selection* is `{PREFIX}_TASKS_URL`,
   # which core's own surface documents (tagged persistence + tasks) — the two
   # native vars that would configure it a second time, FASTMCP_DOCKET_URL and
-  # FASTMCP_DOCKET_NAME, are deliberately absent here: pvl-core's
-  # configure_task_backend outranks the former and derives the latter, and
+  # FASTMCP_DOCKET_NAME, are deliberately absent here:
+  # _tasks.configure_task_backend outranks the former and derives the latter, and
   # listing them as peers would recreate the configured-twice confusion the
   # unified surface exists to remove.  `control: none` throughout — worker
   # tuning is not a guided-setup decision.
@@ -279,7 +280,7 @@ packaging:
   "{PREFIX}_OIDC_ADVERTISED_SCOPES": [oci]
   "{PREFIX}_OIDC_VERIFY_ACCESS_TOKEN": [oci]
   # Not HTTP-specific despite the wizard's shorthand label: this backs every
-  # pvl-core subsystem that keeps state, so a stdio install still wants it to
+  # subsystem that keeps state, so a stdio install still wants it to
   # persist to a file instead of losing everything on restart.
   "{PREFIX}_KV_STORE_URL": [pypi, oci]
   "{PREFIX}_APP_DOMAIN": [oci]
@@ -304,7 +305,7 @@ markdown_vocabulary:
 # The effective value a var falls back to at runtime when its own dataclass
 # `default` renders empty (see `_is_empty_default`) — core's field metadata
 # carries no such key, so this template asserts it here, and it must be
-# re-verified against core on every dependency bump. Keyed by full var name,
+# re-verified against core whenever ServerConfig changes. Keyed by full var name,
 # same lookup shape as `examples:` below.
 documented_defaults:
   # `build_oidc_proxy_auth`: `required_scopes = list(config.oidc_required_scopes)
@@ -313,8 +314,8 @@ documented_defaults:
   # `default_factory=tuple`) — non-`None` but empty, so `_is_empty_default`
   # routes it here instead of printing the literal `()`.
   "{PREFIX}_OIDC_REQUIRED_SCOPES": "openid"
-  # `_resolve_advertised_scopes`: an unset field advertises pvl-core's
-  # `_DEFAULT_ADVERTISED_SCOPES`, filtered against the authorization server's
+  # `_auth._resolve_advertised_scopes`: an unset field advertises
+  # `_auth._DEFAULT_ADVERTISED_SCOPES`, filtered against the authorization server's
   # published `scopes_supported` and with `oidc_required_scopes` added on top.
   # Same `default_factory=tuple` shape as the required-scopes field above, so
   # the same `(none)` cell to displace.
@@ -330,7 +331,7 @@ documented_defaults:
   # `kv_store_url`'s own field default is `None` (verified:
   # `config_sections.server.ServerConfig.kv_store_url`,
   # `default=None`/`default_factory=MISSING`) — the runtime fallback to
-  # `file:///data/state` lives in pvl-core's KV-backend selection, not in
+  # `file:///data/state` lives in `_kv_store.build_kv_store`, not in
   # this field, and the help text (`"Defaults to ``file:///data/state`` when
   # unset."`) already promises exactly that. Without this entry the
   # generated README CORE table's Default cell would regress from the
@@ -340,15 +341,15 @@ documented_defaults:
 
 # The schema is normative here: "If provided, the user must select one of
 # these values", so an omission blocks a valid configuration. The level set
-# is pvl-core's `_VALID_LEVELS`, the names `configure_logging_from_env`
+# is `_logging_setup._VALID_LEVELS`, the names `configure_logging_from_env`
 # accepts; an unrecognised name falls back to INFO at runtime, but the wizard
 # should not offer one.
 choices:
   "{PREFIX}_LOG_LEVEL": [DEBUG, INFO, WARNING, ERROR, CRITICAL]
-  # pvl-core's `_VALID_FORMATS`; unset means auto, which is not a value an
+  # `_logging_setup._VALID_FORMATS`; unset means auto, which is not a value an
   # operator writes, so it is not offered.
   "{PREFIX}_LOG_FORMAT": [rich, json]
-  # pvl-core's `_health._DETAIL_LEVELS`; an unrecognised value warns and
+  # `_health._DETAIL_LEVELS`; an unrecognised value warns and
   # falls back to `standard` at runtime, but the wizard should not offer one.
   "{PREFIX}_HEALTH_DETAIL": [status, standard, full]
 
@@ -365,7 +366,7 @@ examples:
   "{PREFIX}_ACL_PATH": "/etc/{PROJECT_NAME}/acl.toml"
   "{PREFIX}_AUTHZ_GRANTS": '{"app-writers": ["read", "write"], "app-admins": ["*"]}'
   # Without the first four, examples/oidc.env rendered every
-  # OIDC var required to actually enable OIDC as blank — core's env() treats
+  # OIDC var required to actually enable OIDC as blank — `_env.env()` treats
   # empty-after-strip as unset, so an operator copying that file got
   # auth_mode=None (no authentication) with no error at all. Those four
   # reuse the values the old hand-written oidc.env.jinja shipped. AUDIENCE is
@@ -436,7 +437,8 @@ wizard_help:
 # AUTH_MODE, which auto-detects) — nothing derives these two; they are
 # ordinary operator inputs (#321/#322). No `when`: apply_tool_visibility
 # runs regardless of transport, so a stdio deployment can trim tools too.
-# Drop both entries once core stops shipping them as inferred.
+# Drop both entries once ServerConfig's field metadata stops tagging them
+# inferred.
 wizard_hints:
   "{PREFIX}_TOOLS_ALLOW": {group: Tools}
   "{PREFIX}_TOOLS_DENY": {group: Tools}

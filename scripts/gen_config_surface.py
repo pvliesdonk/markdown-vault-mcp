@@ -12,14 +12,14 @@ declaration-ordered variable list:
 - ``domain`` — reserved for a project's own ``ProjectConfig`` fields.
 
 This script is template-owned and ships byte-identical to every project, so
-it discovers the project root and its dependency floor at runtime rather
-than hard-coding a package name or version. ``config-presentation.yml``
+it discovers the project root at runtime rather than hard-coding a package
+name. ``config-presentation.yml``
 ships the same way; ``{PREFIX}`` in it is substituted with the project's
 ``env_prefix`` at generation time, not by Jinja.
 
 It runs in the project's own environment (``uv run python
-scripts/gen_config_surface.py``, as CI does), where ``fastmcp-pvl-core``,
-PyYAML and the project itself are installed (#2355).
+scripts/gen_config_surface.py``, as CI does), where PyYAML and the
+project itself are installed (#2355).
 
 Usage::
 
@@ -1421,7 +1421,7 @@ def _documented_default(var: Var, documented_defaults: Mapping[str, str]) -> str
     Declared in `config-presentation.yml`'s `documented_defaults:` map, keyed
     by full var name, because core's field metadata carries no such key. That
     makes it a claim this template asserts about core's behaviour, so it must
-    be re-verified against core on every dependency bump — the same standing
+    be re-verified against core whenever ``ServerConfig`` changes — the same standing
     obligation `required_vars:` carries, and for the same reason.
     """
     return documented_defaults.get(var.name)
@@ -2443,7 +2443,7 @@ _EG_CLAUSE_RE = re.compile(r", ?e\.g\.,? (\S.*?)(\.(?= |$)|;)", re.IGNORECASE)
 # is handled first so it can take a capitalised replacement.
 _EG_SENTENCE_INITIAL_RE = re.compile(r"(?:^|(?<=\.\s))E\.g\.,?\s+(\w)", re.IGNORECASE)
 _EG_RESIDUAL_RE = re.compile(r"\be\.g\.,?\s+", re.IGNORECASE)
-# pvl-core 5.0 (#285) spells the abbreviation out as `for example` to satisfy
+# pvl-core 5.0 (fastmcp-pvl-core#285) spells the abbreviation out as `for example` to satisfy
 # Google.Latin — which trips `ai-tells.FormalTransitions` instead, in every
 # position.  Fold it back onto the `e.g.` pipeline above so both spellings
 # get the same mid-clause parenthetical / sentence-initial treatment.

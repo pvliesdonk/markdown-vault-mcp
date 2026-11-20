@@ -1,7 +1,7 @@
 """The log-call grammar: ``event_name key=value`` templates.
 
-Ported from ``fastmcp_pvl_core._log_grammar`` 10.2.0 (#2340). pvl-core's
-renderer reads its own copy until #2342 moves the renderer here.
+Ported from ``fastmcp_pvl_core._log_grammar`` 10.2.0 (#2340). The renderer,
+``_log_render``, reads it too (#2342).
 
 The logging standard every first-party module follows (the
 ``logging-standard`` skill) writes

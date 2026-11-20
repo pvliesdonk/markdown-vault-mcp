@@ -1,9 +1,9 @@
 """Markdown Vault MCP — FastMCP server entry point.
 
-Composes the primitives from ``fastmcp-pvl-core`` into a
+Composes the package's server primitives (auth, logging, instructions,
+jobs, transfer, health; ``docs/design/module-map.md`` lists them) into a
 project-specific ``make_server()``.  See
-https://gofastmcp.com/servers for the FastMCP server surface and
-``fastmcp-pvl-core``'s README for the composable helpers used below.
+https://gofastmcp.com/servers for the FastMCP server surface.
 """
 
 from __future__ import annotations
@@ -92,13 +92,13 @@ def make_server(
     # name) via a default_factory, so the operator override still works
     # unchanged — but a config passed in programmatically now wins, which
     # reading the environment here would have ignored.  Instructions are
-    # composed by pvl-core's InstructionsBuilder below and finalised last; see
+    # composed by the InstructionsBuilder below and finalised last; see
     # finalize_instructions() at the end.
     server_name = config.server_name
 
     auth = build_auth(config.server)
     # ``build_auth`` (``_auth``) records the mode it resolved and announces it as
-    # ``auth_mode_resolved mode=… source=…`` (pvl-core#310); reading it back
+    # ``auth_mode_resolved mode=… source=…`` (fastmcp-pvl-core#310); reading it back
     # here replaces a second ``resolve_auth_mode`` run and a second
     # announcement (#605).
     auth_mode = get_current_auth_mode() or "none"
@@ -163,11 +163,11 @@ def make_server(
     configure_task_backend(mcp, _ENV_PREFIX, config.server)
 
     # Server instructions are composed, not templated: every contributor adds
-    # a snippet to the builder (identity here; core register_* helpers add
+    # a snippet to the builder (identity here; the register_* helpers add
     # their workflow prose; domain code adds its own via
     # ``instructions_for(mcp).add(text, role=InstructionRole.WORKFLOWS,
     # requires_tools=(...))`` in the DOMAIN-WIRING block. General contributors
-    # may use only INSTANCE, CAPABILITIES, and WORKFLOWS; pvl-core reserves the
+    # may use only INSTANCE, CAPABILITIES, and WORKFLOWS; the builder reserves the
     # shaped identity, operator routing/policy, and documentation roles.
     # ``finalize_instructions`` renders them once, after tool visibility.
     # One argument per line with a trailing comma, which ruff keeps as it is at
@@ -206,7 +206,7 @@ def make_server(
     )
 
     # Readiness checks for ``<prefix>/health/ready``, registered below once
-    # the DOMAIN-WIRING block has had its say.  pvl-core contributes the
+    # the DOMAIN-WIRING block has had its say.  ``_health`` contributes the
     # ``kv_store`` write probe itself; this dict is the domain hook, filled
     # from inside the block (the name ``kv_store`` is reserved).  A check is
     # a zero-arg callable, sync or async, answering "does this make the
@@ -230,7 +230,7 @@ def make_server(
     # -- Transfer subsystem (capability-link upload + download) ----------------
     #
     # Wiring the /transfer/{token} route needs HTTP transport (the route cannot
-    # be served under stdio) and, at build time, base_url — pvl-core raises
+    # be served under stdio) and, at build time, base_url — the transfer wiring raises
     # ConfigurationError when it is unset, so gate only on the transport and let
     # that error surface a misconfigured deployment rather than silently
     # dropping the feature.
@@ -323,7 +323,7 @@ def make_server(
     # Operator tool visibility (MARKDOWN_VAULT_MCP_TOOLS_ALLOW /
     # MARKDOWN_VAULT_MCP_TOOLS_DENY) applies last: fastmcp resolves visibility
     # transforms in call order, so the operator's lists win over any
-    # visibility calls in the wiring above, and pvl-core's zero-tools-exposed
+    # visibility calls in the wiring above, and the zero-tools-exposed
     # diagnostic judges the full registered tool set.
     apply_tool_visibility(mcp, config.server)
 

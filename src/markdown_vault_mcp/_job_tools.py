@@ -12,8 +12,7 @@ Two entry points, both built on the ``Jobs`` mechanics (``build_jobs``):
 - :func:`register_job_tools` registers the one polling tool,
   ``get_job_result``, which retrieves every job on the shared ``Jobs``.
 
-The instructions builder still comes from pvl-core through the shim, until
-#2305 moves it.
+The instructions builder is ``_instructions_builder`` (#2305).
 
 How FastMCP builds the tool descriptions and instructions snippets
 registered here, and how clients read them, is in

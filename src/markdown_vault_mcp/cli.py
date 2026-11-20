@@ -111,7 +111,7 @@ def serve(
         raise typer.Exit(code=1) from exc
 
     if transport == "http":
-        # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
+        # ``_serve.run_http`` runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
         # startup/shutdown hooks run through the ASGI lifespan protocol),
         # ``log_config=None`` (uvicorn must not reinstall its own handlers
         # over the root chain ``_root`` set up) and the SIGTERM drain window

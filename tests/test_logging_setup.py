@@ -195,7 +195,7 @@ def _only_owned_handlers_at_root() -> Iterator[None]:
     — it is exactly the "handler an operator attached to root" the
     guarantee does not cover, and it calls ``record.getMessage()`` itself
     while formatting for its own buffer, which raises straight through it
-    for a genuinely malformed record regardless of what pvl-core's own
+    for a genuinely malformed record regardless of what this package's own
     handlers do. Detaching it for the scope of a never-raise assertion
     isolates the thing actually under test — the chain
     ``_install_root_handlers`` built — from that unrelated interference,
@@ -371,7 +371,7 @@ def test_format_is_case_insensitive(monkeypatch):
 
 
 def test_format_change_leaves_exactly_one_owned_chain(monkeypatch):
-    # This is the case _OWNED_ATTR exists for: pvl-core must recognise and
+    # This is the case _OWNED_ATTR exists for: ``_logging_setup`` must recognise and
     # remove its own handlers from a *previous* mode, not just a previous
     # call in the same mode.
     monkeypatch.setenv("TEST_MCP_LOG_FORMAT", "json")
@@ -714,7 +714,7 @@ def test_access_filter_passes_records_of_another_shape(monkeypatch):
     assert log_filter.filter(other) is True
 
 
-def test_access_filter_attaches_pvl_core_fields_when_it_keeps_a_record(monkeypatch):
+def test_access_filter_attaches_access_fields_when_it_keeps_a_record(monkeypatch):
     from markdown_vault_mcp._log_render import _ACCESS_FIELDS_ATTR
 
     (log_filter,) = _access_filter(monkeypatch)
@@ -938,7 +938,7 @@ def test_access_line_dropped_by_level_before_the_filter_sees_it(monkeypatch):
 def test_filter_and_redaction_survive_a_direct_uvicorn_dictconfig():
     """Defence in depth for a downstream that calls uvicorn directly.
 
-    ``run_http`` pins ``log_config=None``, so pvl-core's own path never
+    ``run_http`` pins ``log_config=None``, so this package's own path never
     triggers this. But nothing stops a downstream from bypassing
     ``run_http`` and calling ``uvicorn.Config(...).configure_logging()``
     itself — the way ``uvicorn.run(...)`` does by default — which
@@ -956,7 +956,7 @@ def test_filter_and_redaction_survive_a_direct_uvicorn_dictconfig():
     access = logging.getLogger("uvicorn.access")
 
     # The direct uvicorn.run(...) behaviour this simulates: uvicorn
-    # reinstalled its own chain, not pvl-core's.
+    # reinstalled its own chain, not ``_logging_setup``'s.
     assert access.propagate is False
     assert access.level == logging.INFO
     assert len(access.handlers) == 1

@@ -284,7 +284,7 @@ class _NeverRaiseFilter(logging.Filter):
 
     On a record whose ``getMessage()`` raises, replaces ``record.msg``
     with :func:`_unrenderable_placeholder` and clears ``record.args`` —
-    the rewrite pvl-core's ``SecretMaskFilter`` performs when masking, so
+    the rewrite fastmcp-pvl-core's ``SecretMaskFilter`` performed when masking, so
     this handler and every one after it, and
     this module's own renderers, all see a ``getMessage()`` that returns
     cleanly from then on. A record that renders fine passes through
@@ -457,7 +457,7 @@ class JsonFormatter(logging.Formatter):
         ``record.otelTraceID``/``record.otelSpanID``, the attribute names
         ``opentelemetry-instrumentation-logging`` injects into every
         record once ``OTEL_PYTHON_LOG_CORRELATION=true`` (see the Telemetry
-        recipe in pvl-core's ``README.md``). Nothing in this project sets
+        recipe in fastmcp-pvl-core's ``README.md``). Nothing in this project sets
         ``trace_id``/``span_id`` itself outside a test — a first-party
         conforming record carries them as ordinary *fields* instead (see
         ``_request_logging._trace_fields``), which reach the envelope

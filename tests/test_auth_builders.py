@@ -143,7 +143,7 @@ class TestBuildOIDCProxyAuth:
 
 class TestBuildOIDCProxyAuthDiscoveryFailure:
     """Discovery-time failures inside ``OIDCProxy.__init__`` surface as
-    :class:`ConfigurationError`, matching ``build_remote_auth`` (#69)."""
+    :class:`ConfigurationError`, matching ``build_remote_auth`` (fastmcp-pvl-core#69)."""
 
     _URL = "https://idp.example/.well-known/openid-configuration"
 
@@ -341,7 +341,7 @@ class TestMissingForModeTracksTheBuilders:
     ``build_remote_auth`` and ``build_bearer_auth`` test their fields
     inline for the type narrowing, so they can — and a helper that
     disagreed would make ``build_auth`` refuse a mode while naming no
-    variable, leaving the operator with nothing to fix (#316).
+    variable, leaving the operator with nothing to fix (fastmcp-pvl-core#316).
     """
 
     @pytest.mark.parametrize(

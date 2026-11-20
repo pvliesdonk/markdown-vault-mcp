@@ -1027,9 +1027,9 @@ class TestLoadConfigServerIdentityFields:
     def test_instructions_env_never_reaches_project_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``INSTRUCTIONS`` is pvl-core's to read, not this config's.
+        """``INSTRUCTIONS`` is the instructions builder's to read, not this config's.
 
-        pvl-core 5 composes instructions from builder snippets and reads both
+        ``_instructions_builder`` composes instructions from snippets and reads both
         ``INSTRUCTIONS`` (legacy full replacement) and ``INSTRUCTIONS_EXTRA``
         inside ``finalize_instructions``. A ``ProjectConfig.instructions``
         field would be a second, silently-diverging reader of the same var,
@@ -1369,7 +1369,7 @@ class TestServerConfigComposition:
 
 
 def test_domain_env_suffixes_sees_decomposed_reads() -> None:
-    """pvl-core's drift-gate scanner sees MVM's decomposed config surface.
+    """The drift-gate scanner (``_config_surface``) sees MVM's decomposed config surface.
 
     Guards the #767 convergence: a top-level scalar read (now via un-aliased
     ``env()``) plus reads sampled from four representative ``config_sections/``

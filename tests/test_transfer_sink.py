@@ -1,7 +1,8 @@
-"""Tests for VaultTransferSink — the domain hook behind pvl-core's transfer (#979).
+"""Tests for VaultTransferSink — the domain hook behind the transfer routes (#979).
 
-The sink is the only piece markdown-vault-mcp owns now that the capability-link
-route, token store, and generic tools live in ``fastmcp_pvl_core``. These tests
+The sink is the vault-specific piece; the capability-link route, token store,
+and generic tools live in ``_transfer_routes``, ``_transfer_store`` and
+``_transfer_links``. These tests
 exercise ``validate`` / ``read`` / ``write`` directly against a writable vault,
 covering the note/attachment split, path validation, and the failure paths the
 old in-memory subsystem's tests covered.
