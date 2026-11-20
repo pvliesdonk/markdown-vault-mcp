@@ -510,13 +510,15 @@ async def test_bundle_selection_flags_reach_export(
     import io
     import zipfile
 
-    (source_dir / ".hidden.md").write_text("hidden")
     (source_dir / "excluded.md").write_text("excluded")
     vault = Vault(
         source_dir=source_dir, settings=VaultSettings(exclude_patterns=["excluded.md"])
     )
     try:
         sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        default_result = await sink.read("okf-bundle")
+        with zipfile.ZipFile(io.BytesIO(default_result.body)) as archive:
+            assert "excluded.md" not in archive.namelist()
         result = await sink.read("okf-bundle?include_index_excluded")
         with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
             assert "excluded.md" in archive.namelist()

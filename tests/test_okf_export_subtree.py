@@ -809,7 +809,7 @@ def test_only_first_used_reference_definition_is_relocated(usage):
     )
 
 
-def test_dot_path_wikilink_winner_collides(tmp_path):
+def test_wikilink_outside_scope_winner_collides(tmp_path):
     (tmp_path / "guides/nested").mkdir(parents=True)
     (tmp_path / ".x").mkdir()
     (tmp_path / "guides/a.md").write_text("[[b]]")

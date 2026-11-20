@@ -245,7 +245,6 @@ def test_cli_options_externalize_collision(tmp_path: Path) -> None:
     with zipfile.ZipFile(destination) as archive:
         assert set(archive.namelist()) == {"a.md", "b.md"}
     (scope / "a.md").write_text("[outside](/b.md)")
-    (scope / ".hidden.md").write_text("# hidden")
     result = runner.invoke(
         app,
         [
@@ -549,5 +548,5 @@ def test_cli_rejects_removed_hidden_option(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app, ["export", str(tmp_path / "out.zip"), "--include-hidden"]
     )
-    assert result.exit_code != 0
-    assert "--include-hidden" in result.output
+    assert result.exit_code == 2
+    assert "No such option: --include-hidden" in result.output

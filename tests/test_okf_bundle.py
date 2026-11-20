@@ -138,7 +138,7 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
                 == b"---\ntype: Note\nx-extra: yes\n---\ntext\n"
             )
         assert "typed.md" in members and "b.md" in members
-        assert "excluded.md" not in members and ".hidden.md" not in members
+        assert "excluded.md" not in members
         assert "_conventions.md" not in members and "_templates/t.md" not in members
         assert "typed.md" in result.report.local_policy.non_admitted
         assert "typed.md" not in {
@@ -146,13 +146,12 @@ def test_inventory_membership_and_report(source_dir: Path) -> None:
         }
         assert "b.md" in {finding.path for finding in result.report.format_findings}
         assert result.report.omitted["index_excluded"] == 3
-        assert result.report.omitted["not_part_of_bundle"] == 1
         assert result.report.omitted["conventions"] == 1
         assert result.report.omitted["templates"] == 1
         excluded_only = _members(
             build_okf_bundle(vault, config, include_index_excluded=True).data
         )
-        assert ".hidden.md" not in excluded_only and "excluded.md" in excluded_only
+        assert "excluded.md" in excluded_only
     finally:
         vault.close()
 
@@ -305,25 +304,59 @@ def test_inventory_selected_read_failure_refuses(
         vault.close()
 
 
-def test_omitted_hidden_inventory_failure(
-    source_dir: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("kind", "index_pattern", "include_index_excluded"),
+    [
+        ("read_failure", False, False),
+        ("dangling", False, False),
+        ("dangling", True, True),
+        ("directory_symlink", False, False),
+    ],
+)
+def test_dot_entry_omitted_before_refusal(
+    source_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    index_pattern: bool,
+    include_index_excluded: bool,
 ) -> None:
     from markdown_vault_mcp import bundle_inventory
 
-    (source_dir / ".hidden.md").write_text("hidden")
-    original = bundle_inventory.read_regular_nofollow
+    if kind == "read_failure":
+        (source_dir / ".hidden.md").write_text("hidden")
+        original = bundle_inventory.read_regular_nofollow
 
-    def fail(parent, filename, limit):
-        if filename == ".hidden.md":
-            raise OSError(5, "failed")
-        return original(parent, filename, limit)
+        def fail(parent, filename, limit):
+            if filename == ".hidden.md":
+                raise OSError(5, "failed")
+            return original(parent, filename, limit)
 
-    monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail)
-    vault = Vault(source_dir=source_dir, settings=VaultSettings())
+        monkeypatch.setattr(bundle_inventory, "read_regular_nofollow", fail)
+    elif kind == "dangling":
+        bin_dir = source_dir / ".venv" / "bin"
+        bin_dir.mkdir(parents=True)
+        (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
+    else:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text("secret")
+        (source_dir / ".alias").symlink_to(outside, target_is_directory=True)
+    vault = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(exclude_patterns=[".venv/**"] if index_pattern else []),
+    )
     try:
-        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=source_dir),
+            include_index_excluded=include_index_excluded,
+        )
         assert result.report.omitted["not_part_of_bundle"] == 1
-
+        members = _members(result.data)
+        assert "a.md" in members
+        assert ".venv/bin/python3.14" not in members
+        assert not any("secret" in name for name in members)
     finally:
         vault.close()
 
@@ -370,33 +403,6 @@ def test_reserved_conventions_omitted_with_options(
         assert name not in _members(result.data)
         assert f"guides/{name}" not in _members(result.data)
         assert result.report.omitted["conventions"] == 2
-    finally:
-        vault.close()
-
-
-@pytest.mark.parametrize(
-    ("excluded", "include_index_excluded"),
-    [(False, False), (True, False), (True, True)],
-)
-def test_hidden_symlink_selection(
-    source_dir: Path, tmp_path: Path, excluded: bool, include_index_excluded: bool
-) -> None:
-    bin_dir = source_dir / ".venv" / "bin"
-    bin_dir.mkdir(parents=True)
-    (bin_dir / "python3.14").symlink_to(tmp_path / "missing")
-    vault = Vault(
-        source_dir=source_dir,
-        settings=VaultSettings(exclude_patterns=[".venv/**"] if excluded else []),
-    )
-    try:
-        result = build_okf_bundle(
-            vault,
-            ProjectConfig(source_dir=source_dir),
-            include_index_excluded=include_index_excluded,
-        )
-        assert "a.md" in _members(result.data)
-        assert ".venv/bin/python3.14" not in _members(result.data)
-        assert result.report.omitted["not_part_of_bundle"] == 1
     finally:
         vault.close()
 
@@ -511,21 +517,5 @@ def test_dot_paths_are_never_exported(source_dir: Path) -> None:
         scoped = build_okf_bundle(vault, config, folder=".private")
         assert not _members(scoped.data)
         assert scoped.report.omitted["not_part_of_bundle"] == 2
-    finally:
-        vault.close()
-
-
-def test_hidden_directory_symlink_is_not_followed(
-    source_dir: Path, tmp_path: Path
-) -> None:
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "secret.md").write_text("secret")
-    (source_dir / ".alias").symlink_to(outside, target_is_directory=True)
-    vault = Vault(source_dir=source_dir, settings=VaultSettings())
-    try:
-        result = build_okf_bundle(vault, ProjectConfig(source_dir=source_dir))
-        assert result.report.omitted["not_part_of_bundle"] == 1
-        assert not any("secret" in name for name in _members(result.data))
     finally:
         vault.close()
