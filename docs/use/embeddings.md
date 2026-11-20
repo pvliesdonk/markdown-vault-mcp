@@ -16,6 +16,8 @@ This guide covers configuring each supported embedding provider for semantic sea
 
 All four providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
 
+When `OKF_INDEX` is enabled, `index.md` files in designated `OKF_FOLDERS` do not receive embeddings, even in a read-only vault or without an OKF declaration. They remain available to keyword and hybrid search. Indexes outside those folders and all `log.md` files retain their existing embedding inputs. A listed concept gets extra vector rows for its title and description, including when its body is empty. Each row stays within the chunk character cap (`MAX_CHUNK_CHARS`, or the derived default), and a long description spans several rows. The note's body and any `SEARCHABLE_FRONTMATTER_FIELDS` are embedded exactly as without the policy. A search that matches only the title or description returns the note's real first chunk, once, as it would for any body match. The configured folder determines this treatment, regardless of authorship. The default `OKF_FOLDERS=.` designates the root `index.md`; the legacy `OKF_WRITE=true` setting designates every folder. `get_similar` and the similar section of `get_context` are empty for a skipped index. The embedding input identity includes the `OKF_INDEX` setting and, when enabled, the designated `OKF_FOLDERS` patterns. Each effective identity change re-embeds an owned store on its next open; an unowned incompatible store is refused. Server startup runs an embedding build. Equivalent folder spellings, duplicate patterns and their order do not change that identity. Upgrading a vault using the legacy `OKF_WRITE=true` alias has the same one-time cost. See [OKF conventions](okf.md).
+
 The server needs the matching package extra: `embeddings` for FastEmbed, `embeddings-api` for Ollama, OpenAI and Voyage (quoted, as in `uv tool install "markdown-vault-mcp[embeddings-api]"`). `[all]` covers both, and the Docker image, the `.mcpb` bundle and the Claude Code plugin install it.
 
 ## Ollama
@@ -438,7 +440,7 @@ Regardless of which provider you choose:
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - **A failed model change fails the search.** When a changed model or vector size requires a rebuild and no new embeddings are saved, semantic and hybrid searches report an error. The previous stored vectors remain untouched; they cannot answer queries from the new model. Later searches retry the rebuild and recover once the provider works again. A completed rebuild of an empty vault still returns no matches.
 - **A damaged `numpy` or `sqlite` store is set aside, not overwritten.** When the vectors' files no longer read back, at startup, during a search, while updating embeddings or before a full rebuild, the server renames them with a `.corrupt-<time>` suffix (such as `index-db-embeddings.v2.json.corrupt-20261024T120000Z`) and builds the vectors again; the log line `vector_store_moved_aside` names the renamed files. If the 5.x files from an upgrade are still there, it copies every vector whose note text is unchanged from them instead of embedding it again. If an update finds a `sqlite` store damaged after it opened and recovery cannot build every vector, the job reports an error and keeps every note for the next embedding update, which embeds the ones still missing once the provider answers; nothing retries on its own while the provider is down. To finish the rebuild at once, run [`build_embeddings`](../reference/tools/indexing.md#build_embeddings), or restart the server if a failed full index build left the tool unavailable; startup builds the index, then the missing vectors. The renamed copies are yours to inspect or delete; the server never touches them again. A store in a read-only folder cannot be renamed: the server leaves it in place, and searches by meaning fail until the folder is writable.
-- **A note that stops parsing keeps its embeddings.** A note whose frontmatter does not parse, that lacks a field `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` asks for, or that is not valid UTF-8 is left out of the index and listed in `get_index_status`'s `skipped_files`. Its embeddings stay stored but never appear in search results. Once you fix the note, only the sections whose text changed are embedded again; a changed title counts as a change to every section. Deleting, renaming or excluding the note removes them; a full rebuild while it is broken drops them too.
+- **A note that stops parsing keeps its embeddings.** A note whose frontmatter does not parse, that lacks a field `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` asks for, or that is not valid UTF-8 is left out of the index and listed in `get_index_status`'s `skipped_files`. In an active OKF vault, reserved `index.md` and `log.md` files are exempt from the required-field gate; see [OKF indexing](okf.md). A skipped note's embeddings stay stored but never appear in search results. Once you fix the note, only the sections whose text changed are embedded again; a changed title counts as a change to every section. Deleting, renaming or excluding the note removes them; a full rebuild while it is broken drops them too.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
 
@@ -531,7 +533,7 @@ The [CLI reference](../reference/cli.md#markdown-vault-mcp-admin-embeddings-impo
 
 ### Notes with no body
 
-A note with no body is indexed for keyword search but is not embedded. This
+By default, a note with no body is indexed for keyword search but is not embedded. This
 covers zero-byte files, notes that are nothing but frontmatter, and notes
 whose body is only whitespace. These notes hold no text to embed, so they
 carry no semantic signal either way.
@@ -547,11 +549,14 @@ Nothing is required of you. The notes still appear in keyword search and in
 `list_documents`, and they gain vectors as soon as they get a body. If you set
 `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` or `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`,
 the enriched input carries the title and frontmatter values, so those notes are
-embedded as before.
+embedded as before. Listed concepts in designated OKF folders also receive
+title and description inputs, even when their bodies are empty.
 
 ### Slow or CPU-only backends
 
 Each embedding request has a wall-clock budget, `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` (default `30.0` seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.
+
+A flush or convergence pass groups chunks from several notes in each request, up to the configured batch size. Reindex processes notes individually. If a shared request fails, the server retries each affected note separately for its remaining inputs; the failed shared request can consume a full timeout before those retries begin. A provider exception or wrong vector count on a partial request containing one note is not repeated.
 
 The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as `bge-m3`, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue [#954](https://github.com/pvliesdonk/markdown-vault-mcp/issues/954)).
 

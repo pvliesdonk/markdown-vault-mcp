@@ -137,20 +137,19 @@ Explicitly rejected alternatives:
 
 ### Config surface
 
-Three settings today and two proposed (§6.0), standard `CONFIG-*` sentinel
+OKF settings use standard `CONFIG-*` sentinel
 placement in `config.py`, wizard metadata via field
 `metadata={"help": ..., "tags": (...)}`:
 
 | Env var | Values | Default | Meaning |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. In the shipped code it also switches on reserved-file maintenance, which §6.0 gives its own switch. |
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `elicit` | How `okf_verify` attributes a human review (§6). Only meaningful with `OKF_WRITE` on; a non-default value with it off is a config validation error. |
-| `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | bool | `false` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
-| `MARKDOWN_VAULT_MCP_OKF_RECONCILE` (proposed, #1412) | bool | `false` | The server may repair provenance on notes it did not write (§6.0). Same read-mode requirement. |
-
-The names of the two proposed settings are candidates; the `config-contract`
-skill fixes them at implementation.
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Deprecated alias that preserves legacy stamping, review and maintenance defaults; explicit settings take precedence. |
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | Independently enables review and selects how a human review is attributed. |
+| `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
+| `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | folder globs | `.` | Designates folders for automatic maintenance; `*` matches one level and `**` spans levels. Leading `./` or `/` and trailing `/` are ignored. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Reserves authority for the future explicit authoring tool; it does not enable stamping. |
 
 ### Detection
 
@@ -162,8 +161,7 @@ mode, declared version and active state, as well as `okf_write_configured`
 and `okf_write_effective`. Active `stats.okf` reports the configured and
 effective write layer as `write_configured` and `write_effective`; it is
 absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
-OKF is active, and the vault is not read-only. Independent services remain
-the subject of #1412.
+OKF is active, and the vault is not read-only. This legacy flag does not report each independent capability.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -340,13 +338,11 @@ byte-identical.
 
 Everything here changes bytes or write outcomes; all of it is operator-gated
 by one of the switches in §6.0, none of it is implied by vault declaration,
-and each behaviour below names the switch that owns it. Until §6.0 lands,
-`OKF_WRITE` is the only switch and owns all of it; the section was headed
-"enforced write layer (`OKF_WRITE=true`)" for that reason.
+and each behaviour below names the switch that owns it. The resolved capabilities gate review and maintenance independently; legacy stamping remains tied to `OKF_WRITE`.
 
 ### 6.0 Ownership: three independent switches (proposed, #1412)
 
-**Status:** design, 2026-09-09; not implemented. Supersedes the single
+**Status:** historical proposal, 2026-09-09; superseded by the independent capabilities in the config surface above and the OKF roadmap. Supersedes the single
 `OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
 that both earlier ownership drafts (PR #1426, PR #1429) carried. This
 section says what to build; how to get there from the shipped code is
@@ -394,8 +390,9 @@ the server's own generators; and `okf_verify` exists only under
 initiates nothing, not that an operation is unreachable. Each
 switch defaults to off, and none implies another. What the server then
 actually does additionally requires an active bundle and a writable
-vault, so all three are inert on `auto` with no declaration and on a
-read-only vault, and `OKF_MODE=off` conflicts with a switch only when it
+vault, so the write maintenance of all three is inert on `auto` with no
+declaration and on a read-only vault (the `OKF_INDEX` vector designation
+is not a write and still applies), and `OKF_MODE=off` conflicts with a switch only when it
 is true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
 ownership question and never depends on the switches. The switches are per
 instance; how one instance treats another's commits is the ingest
@@ -456,7 +453,7 @@ Tool tags following switches: #1412.
   body also invalidate (the spec ties verification to the concept, not the
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
-- **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
+- **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
@@ -466,7 +463,7 @@ Tool tags following switches: #1412.
   is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
   and the write-time `generated` stamp is provenance that does not affect the
   tier. So the attestation path is operator-configurable via
-  `MARKDOWN_VAULT_MCP_OKF_VERIFY` (meaningful only when `OKF_WRITE` is on):
+  `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
 
   - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
     human to confirm they personally reviewed the note, and writes the
@@ -492,8 +489,8 @@ Tool tags following switches: #1412.
   confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
   It guarantees a deliberate human act gates the tier, not diligence; downstream
   OKF consumers should calibrate to that.
-- **Convention maintenance** (gated by `OKF_MAINTAIN` once §6.0 lands;
-  today by `OKF_WRITE`): on successful writes, append a `log.md` entry
+- **Convention maintenance** (gated independently by `OKF_INDEX`, `OKF_LOG`,
+  and `OKF_FOLDERS`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
   refresh the affected folder's `index.md` listing. The section heading is
   the server's *local* calendar day, as §9 has it and as a reader of the
@@ -607,22 +604,33 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-The generated `index.md` / `log.md` are subject to the same
-`required_frontmatter` gate as any other note, so a body-only reserved file is
-a deterministic `missing_frontmatter` skip on a vault that configures one — the
-server generating a file its own indexer then rejects (#1174, #1175). Two
-second-order effects follow: the bundle's change history disappears from
-`search` and `list_documents` while staying readable from disk, and a folder
-whose only indexed file would have been its generated `index.md` loses its
-pointer in the parent listing, because `generate_index` synthesises sub-folder
-pointers from index entries.
+With `OKF_INDEX` enabled, `index.md` files in designated folders are omitted from the vector index regardless of runtime detection or whether the vault is read-only. They remain in the keyword index; indexes outside those folders and all logs keep their existing embedding inputs. Designation, not authorship, controls the policy. Listed concepts gain separate vector rows for their title and description, even with an empty body; each row stays within the chunk character cap and the note's body and configured fields are embedded as without the policy (see the embeddings design). Changing `OKF_INDEX` or its folder scope, including legacy alias upgrades, changes the vector identity: opening an old store rebuilds it once or refuses it when unowned.
+
+In an active OKF vault, `index.md` and `log.md` bypass the
+`required_frontmatter` gate. Concept notes and all notes outside an active
+OKF vault remain subject to it. Full builds, incremental scans and dirty-path
+refreshes use the same admission rule (#1438). A root index change also
+reconciles the other reserved files on the next indexing pass. After a dirty
+refresh changes the scope, the admission marker stays unknown until a reindex
+also reconciles tracker state. Successful dirty refreshes remember the reconciled
+scope in process, so later writes only refresh their own paths until the scope
+changes again. Warm reopen compares the effective state
+recorded with a complete build. An upgrade from older index semantics rebuilds
+the index once. Keyword backends without the optional OKF
+admission provenance capability rebuild conservatively on reopen. An unread
+build candidate is retried on the next reindex; the version 13 rebuild also
+clears old tracker-only skips left by version 12. Reopening before a reindex
+after a dirty scope change triggers one conservative rebuild. If reading the
+root `index.md` fails with an I/O error, admission keeps its last confirmed
+state when available and logs `okf_scope_probe_failed`; without a confirmed
+state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
+and forced-on mode is unaffected.
 
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:
 
-- **Conditional, not unconditional.** With no required fields configured a
-  reserved file needs no frontmatter to be indexed, and the policy returns
-  `None` so the generators keep emitting the body-only files existing bundles
+- **Conditional, not unconditional.** With no required fields configured,
+  the policy returns `None` so the generators keep emitting the body-only files existing bundles
   already have on disk. Closing the defect costs an unaffected vault no churn
   — and, on a git vault, no commits.
 - **Existing keys win.** A hand-authored title and the root `index.md`'s
@@ -638,8 +646,7 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 The audit does not exempt these files. A key the policy seeds into an
 `index.md` is an `index_frontmatter` finding like any hand-written one
 (#1396): the finding describes the file against §8, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits. Whether the
-gate should reach generated reserved files at all is open (#1438).
+changes neither what the policy seeds nor what the gate admits.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a

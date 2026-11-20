@@ -167,7 +167,9 @@ class OkfMigrationManager:
             notes_scanned=scanned,
         )
 
-    def generate_index(self, *, folder: str = "") -> OkfIndexResult:
+    def generate_index(
+        self, *, folder: str = "", designated: Callable[[str], bool] | None = None
+    ) -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing for *folder* from the TOC.
 
         Progressive disclosure (OKF spec): the listing carries only the
@@ -191,6 +193,8 @@ class OkfMigrationManager:
                 :func:`~markdown_vault_mcp.utils.normalize_folder`, so the
                 path arithmetic below is never handed a spelling with
                 surrounding slashes.
+            designated: Optional predicate restricting automatically created
+                descendant indexes; omitted for the usual migration behavior.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
@@ -237,6 +241,12 @@ class OkfMigrationManager:
             if not self._doc_mgr.in_submodule(prefix + sub)
             or self._has_index(prefix + sub)
         }
+        if designated is not None:
+            subfolders = {
+                sub
+                for sub in subfolders
+                if designated(prefix + sub) or self._has_index(prefix + sub)
+            }
         # Immediate notes first, then a pointer into each subfolder's index.
         entries = note_entries + [
             (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
@@ -245,7 +255,9 @@ class OkfMigrationManager:
         for sub in sorted(subfolders):
             # A kept submodule subfolder has an index, so it is never generated.
             if not self._has_index(f"{prefix}{sub}"):
-                child = self.generate_index(folder=f"{prefix}{sub}")
+                child = self.generate_index(
+                    folder=f"{prefix}{sub}", designated=designated
+                )
                 created += [child.path, *child.created]
 
         index_path = f"{folder}/index.md" if folder else "index.md"

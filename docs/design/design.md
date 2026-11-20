@@ -208,7 +208,8 @@ Vault(
 - `None` (default): all `.md` files are indexed regardless of frontmatter.
 - `["title", "cluster"]`: documents missing any listed field are excluded from
   the index entirely and will not be searchable. At scan completion, the
-  number of skipped documents is logged at `INFO` level.
+  number of skipped documents is logged at `INFO` level. In an active OKF
+  vault, reserved `index.md` and `log.md` files bypass this field gate.
 
 ### Frontmatter Filtering
 
@@ -949,6 +950,11 @@ Two methods manage the index:
   `reindex(force=True)` is the manual counterpart, surfacing the
   already-existing `build_index(force=True)` for an index an operator has
   reason to distrust.
+
+  Version 13 (#1438) rebuilds indexes written with version 12, which shipped
+  in v6.1.2, so reserved OKF files can be admitted without required concept
+  fields. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
+
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
@@ -1107,13 +1113,14 @@ surface; the shared `_is_path_excluded` / `_discover_indexable_candidates`
 helpers stay on `IndexManager` and are injected into the collaborator as
 callables (#736).
 
-`build_embeddings(force=False)` over a **non-empty** vector index does not
+`build_embeddings(force=False)` over a **compatible, non-empty** vector index does not
 skip and does not rebuild: it diffs the FTS `sections` table (the
 canonical chunk set, via `FTSIndex.list_chunks()`, which carries each
 document's `content_hash` as its token) against the stored rows and
 tokens (the store's `tokens()` and `rows_for()`) and reconciles:
 
-- Documents missing from the vector index are embedded and added.
+- Designated indexes have no vector inputs. Changing the designation changes the store identity: opening an old store rebuilds it or refuses it when unowned (#1498).
+- Eligible documents missing from the vector index are embedded and added.
 - Documents whose per-path `(title, heading, content, start_line,
   preamble)` chunk multiset differs in any way (modified content, changed
   title, re-chunked boundaries) have their rows replaced. The multiset is
@@ -1188,8 +1195,9 @@ Custom non-scalar metadata remains resident to preserve its original objects.
 The built-in publishers still materialize their own generation copies. The
 largest document and path bookkeeping also grow independently of the window.
 
-Convergence embeds per document, in the same bounded batches as the cold
-build (#159): a provider failure on one document's chunks (token-context
+Convergence packs missing inputs across documents in bounded requests (#1496).
+If a shared request fails, it retries each affected document separately; a
+provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
 vectors stay intact) and the rest still converge. The store write is
 guarded the same way (#935): `replace_document` refuses a vector of another
@@ -1227,7 +1235,7 @@ cold-boot rebuild ran the resilient batch path instead.
 
 A note with no body — zero-byte, frontmatter-only, or whitespace-only —
 chunks to a single chunk whose `content` is `""`. Under the default (v1)
-embedding format `EmbedTextBuilder.build()` returns that content verbatim,
+embedding format without the listed-concept policy, `EmbedTextBuilder.build()` returns that content verbatim,
 so the empty string would be submitted to the provider. Every
 OpenAI-compatible endpoint rejects an empty input string with HTTP 400
 (Voyage: `Input cannot contain empty strings or empty lists`), **and the
@@ -1249,7 +1257,7 @@ it:
   chunk excluded only at embed time would leave the two permanently
   unequal and re-embed that document on *every* pass.
 
-A body-less note stays fully keyword-searchable through FTS; only its
+A body-less note stays fully keyword-searchable through FTS; without listed-concept or v2 enrichment its
 vector is skipped, which costs nothing — there is no content to match
 semantically. Under the v2 format the same note builds a non-empty text
 (title, heading, first-chunk preamble) and is embedded as before, so
@@ -1618,7 +1626,11 @@ signature with the store's before calling the provider, so repeated FTS/graph
 retries reuse completed embeddings. Changed content, chunk boundaries/positions,
 titles, headings, or configured frontmatter preambles replace the note's rows,
 embedding only the chunks whose input changed (the others keep their stored
-vectors); an unchanged input under a new token is re-tokened without a provider call. A provider
+vectors); an unchanged input under a new token is re-tokened without a provider call.
+Flush and convergence passes pack inputs across notes up to the configured batch size (#1496).
+A failed shared request retries only each affected note’s remaining inputs; a
+provider exception or wrong vector count on a partial request containing one
+note is not repeated. A provider
 failure keeps the note's rows and holds its path for the next flush, without
 queueing one and without counting as pending work, so a note the provider keeps
 rejecting never leaves the writer undrained; a conflicting write is re-queued
@@ -4804,13 +4816,17 @@ re-tokens (signature equal, token moved or absent: the stored vectors are
 republished, no provider call), embeds (signature differs), or removes (a
 body-less document, or one the keyword index holds no rows for on a
 tombstone, an exclusion or a `SourceProbe` answering *absent*, #1785; from
-#1505 a tombstone for an unparseable note keeps its rows).
+#1505 a tombstone for an unparseable note keeps its rows). Incremental
+reconciliation can pack missing inputs across documents up to the configured batch
+size (#1496); after a shared failure it retries only each affected document’s
+remaining inputs, preserving successful siblings. A provider exception or wrong
+vector count on a partial request containing one document is not repeated.
 `IndexManager`'s exclusion purge and reindex deletion loop delete their
 keyword rows and hand the paths to the reconciler too, so every vector
 write carries the token it observed. An empty cold build is published only
 when the keyword index's last build completed and read every directory
 (`is_build_walk_complete()`); the source walk and root check are gone
-from the embedding path. It embeds before
+from the embedding path. The reconciler embeds before
 touching the store and publishes with `replace_document` /
 `remove_document` passing the token it observed, read before the
 keyword-index rows (a revision the rows miss was published after that
@@ -7576,3 +7592,13 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+
+### OKF capability transition
+
+The configuration resolves independent author, verify, index, log and folder
+capabilities. Unset capabilities grant no semantic writes. The deprecated
+`OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
+resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
+remains tied to `OKF_WRITE`.
+
+Designated OKF indexes are skipped for vectors: designation is operator configuration, independent of generator provenance or runtime detection; keyword indexing remains in place (#1498). A changed designation is a changed store identity: the next store open rebuilds an owned store or refuses an unowned one, so no reader keeps vectors from the old designation. A listed concept (a non-reserved note in a designated folder) gains extra rows for its title and description, including when the body is empty, because the generated listing that carried them has no vector. `EmbeddingReconciler._with_listing` yields them after the note's chunk rows. Each extra row copies its first chunk's source metadata (title, heading, content, line), so a search hit on it is a hit on that chunk and shows the real chunk text, never the generated text. It also carries `kind: "listing"` and the exact piece it embeds as `listing`. `EmbedTextBuilder.row_input` reconstructs the input of a row from its metadata and is the one place that knows the kind: both `_embedding_input` and `stored_inputs` call it, so reuse, restart and retry see the text that was embedded, and `_signature` includes `listing` so an edited description re-embeds. `EmbedTextBuilder.listing_pieces` joins the title and description and wraps them with `textwrap` to the chunk character cap (the derived `max_chunk_chars`), breaking even a single longer token. Each piece is embedded verbatim, with no v2 title or heading head and no half-cap allowance, so every listing input is within the cap and so within `max(cap, policy-off inputs)`; with no cap (a `VaultSettings` built without one) the text is one piece. Chunk inputs never change: no body or configured field is clipped, and a note's chunk vectors are the ones it has with the policy off. The semantic adapter (`_distinct_chunks`) keeps the best-scoring row of each `(path, heading, start_line, content)`, so a chunk matched by both its text and its listing is returned once, with the better score, in semantic, hybrid and similar searches. The cap is not part of the identity. Other notes keep their existing inputs. The listed policy has a versioned identity, so changing `OKF_INDEX` or its folder scope, or upgrading a legacy `OKF_WRITE=true` vault causes a one-time embedding rebuild.

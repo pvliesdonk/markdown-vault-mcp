@@ -95,6 +95,7 @@ class EmbeddingsManager:
             :class:`~markdown_vault_mcp.source_probe.FileSourceProbe` over
             ``source_dir`` (#1785).
         scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
+        skip_embedding: Identifies documents whose vectors should be removed.
         vector_slot: Opens, rebuilds and describes the vector store. ``None``
             with a provider builds a numpy store over ``embeddings_path``
             (in memory when that is ``None``), owned by this manager and
@@ -114,6 +115,7 @@ class EmbeddingsManager:
         vector_slot: VectorStoreSlot | None = None,
         source_probe: SourceProbe | None = None,
         scratch_dir: Path | None = None,
+        skip_embedding: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -147,6 +149,7 @@ class EmbeddingsManager:
                 source_probe=source_probe or FileSourceProbe(source_dir),
                 is_excluded=is_path_excluded,
                 scratch_dir=scratch_dir,
+                skip_embedding=skip_embedding,
             )
             if embedding_provider is not None
             else None
@@ -255,7 +258,7 @@ class EmbeddingsManager:
 
         The store is opened again to tell the two apart. One of another
         identity, including one that differs only in dimension and so
-        opens, is rebuilt with ``force``, re-embedding every chunk. A
+        opens, is rebuilt with ``force``, re-embedding eligible inputs. A
         corrupt one, which the slot moved aside, reopens empty and takes the
         ordinary cold build, where a compatible 5.x sidecar donates, so
         unchanged notes cost no provider call (#1505). A store found
@@ -360,8 +363,8 @@ class EmbeddingsManager:
         reconciled (#665): chunks present in the FTS index but missing
         from the vector index are embedded and added, vectors for
         documents no longer in the FTS index are removed, and documents
-        whose indexed content changed are re-embedded.  After every call
-        the vector index mirrors the FTS chunk set, so external changes
+        whose indexed content changed are re-embedded.  After a successful call
+        the vector index reflects eligible FTS chunks, so external changes
         picked up by the boot reconciliation reindex (while no vector
         index was loaded) cannot accumulate as permanent semantic-search
         drift.  Work scales with the size of the diff, not the size of
@@ -375,7 +378,7 @@ class EmbeddingsManager:
                 chunks with a matching embedding input (#1505). Ignored when
                 a populated store converges instead.
             reuse_own: Let the full build copy the store's own matching
-                vectors; off by default, so ``force`` re-embeds every chunk.
+                vectors; off by default, so ``force`` re-embeds eligible inputs.
             _recovery: Report provider batch failures after condemning damage.
 
         Returns:
@@ -456,7 +459,7 @@ class EmbeddingsManager:
         donor: Donor | None,
         reuse_own: bool,
     ) -> RebuildOutcome:
-        """Build every chunk into *store* and report it: the cold build and the import.
+        """Build eligible inputs into *store* and report the cold build or import.
 
         Returns:
             What the build did; ``published`` also counts an authoritative
@@ -847,7 +850,11 @@ class EmbeddingsManager:
         logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def reconcile_paths(
-        self, vectors: EmbeddingStore, paths: Collection[str] | None, *, site: str
+        self,
+        vectors: EmbeddingStore,
+        paths: Collection[str] | None,
+        *,
+        site: str,
     ) -> ReconcileResult:
         """Reconcile *paths* in *vectors* with the keyword index (#1785).
 

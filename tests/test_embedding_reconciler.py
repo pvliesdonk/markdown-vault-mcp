@@ -36,9 +36,11 @@ class _Counting(MockEmbeddingProvider):
     def __init__(self) -> None:
         super().__init__(dim=8)
         self.texts: list[str] = []
+        self.calls: list[list[str]] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         self.texts.extend(texts)
+        self.calls.append(list(texts))
         return super().embed(texts)
 
 
@@ -106,6 +108,282 @@ def _setup(
 
 
 NOTES = {"a.md": "# A\n\nApples.\n", "b.md": "# B\n\nBoats.\n"}
+
+
+@pytest.mark.parametrize("batch_size", [0, -1])
+def test_reconciler_rejects_nonpositive_batch_size(tmp_path, batch_size):
+    fts, provider, _, _ = _setup(tmp_path, NOTES)
+    with pytest.raises(ValueError, match="batch_size"):
+        EmbeddingReconciler(
+            fts=fts,
+            provider=provider,
+            embed_builder=EmbedTextBuilder(),
+            batch_size=batch_size,
+            source_probe=_Probe(),
+            is_excluded=lambda _: False,
+        )
+
+
+def test_changed_documents_share_one_request(tmp_path):
+    fts, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.reconcile(store, site="test")
+    for path, body in (("a.md", "Quinces"), ("b.md", "Harbours")):
+        (tmp_path / path).write_text(f"# {path[0].upper()}\n\n{body}.\n")
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, HeadingChunker()))
+    provider.calls.clear()
+    result = rec.reconcile(store, ["a.md", "b.md"], site="flush")
+    assert len(provider.calls) == 1
+    assert len(provider.calls[0]) == 2
+    assert result.embedded == 2
+    for path, text in zip(("a.md", "b.md"), provider.calls[0], strict=True):
+        row = store.rows_for(path)[0]
+        assert row.metadata["path"] == path
+        vector = np.array(MockEmbeddingProvider.embed(provider, [text])[0])
+        assert list(row.vector) == pytest.approx(vector / np.linalg.norm(vector))
+
+
+def _five_chunk_notes(tmp_path, sibling=False):
+    body = "# A\n\n" + "\n".join(f"## Section {i}\n\nBody {i}.\n" for i in range(5))
+    notes = {"a.md": body}
+    if sibling:
+        notes["b.md"] = "# B\n\nOther.\n"
+    chunker = HeadingChunker(short_doc_lines=0)
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("a.md")
+    for path, text in notes.items():
+        (tmp_path / path).write_text(
+            text.replace("Body", "Changed").replace("Other", "New other")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    return provider, store, rec, old
+
+
+@pytest.mark.parametrize(("failure_call", "expected"), [(1, [4]), (2, [4, 1])])
+def test_lone_split_request_failure_is_not_replayed(
+    tmp_path, monkeypatch, failure_call, expected
+):
+    provider, store, rec, old = _five_chunk_notes(tmp_path)
+    embed = provider.embed
+
+    def fail(texts):
+        if len(provider.calls) + 1 == failure_call:
+            provider.calls.append(list(texts))
+            raise RuntimeError("down")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", fail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == expected
+    assert result.retry == {"a.md"}
+    assert result.kept == 5
+    assert store.rows_for("a.md") == old
+
+
+def test_lone_partial_wrong_count_is_retried_on_next_pass(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path)
+    embed = provider.embed
+
+    def malformed_once(texts):
+        if not provider.calls:
+            provider.calls.append(list(texts))
+            return []
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", malformed_once)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4]
+    assert result.retry == {"a.md"}
+    assert store.rows_for("a.md") == old
+
+
+def test_shared_failure_retries_only_unembedded_suffix(tmp_path, monkeypatch):
+    provider, store, rec, old = _five_chunk_notes(tmp_path, sibling=True)
+    embed = provider.embed
+
+    def fail_tail(texts):
+        if any("Changed 4" in text for text in texts):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", fail_tail)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [4, 2, 1, 1]
+    assert result.retry == {"a.md"}
+    assert store.rows_for("a.md") == old
+    assert "New other" in store.rows_for("b.md")[0].metadata["content"]
+    monkeypatch.setattr(provider, "embed", embed)
+    provider.calls.clear()
+    recovered = rec.reconcile(store, site="flush")
+    assert not recovered.retry
+    assert all("Changed" in row.metadata["content"] for row in store.rows_for("a.md"))
+
+
+@pytest.mark.parametrize("shape", ["single", "multi", "oversized"])
+def test_requests_pack_across_documents(tmp_path, shape):
+    if shape == "single":
+        notes = {f"{i}.md": f"# Note {i}\n\nBody {i}.\n" for i in range(5)}
+        expected, counts = [4, 1], [1] * 5
+    elif shape == "multi":
+        notes = {
+            f"{i}.md": f"# Note {i}\n\nIntro {i}.\n\n## One\n\nApple {i}.\n\n## Two\n\nBoat {i}.\n"
+            for i in range(4)
+        }
+        expected, counts = [4, 4, 4], [3] * 4
+    else:
+        notes = {
+            "a.md": "# A\n\n"
+            + "\n".join(f"## Section {i}\n\nContent {i}.\n" for i in range(5)),
+            "b.md": "# B\n\nOther.\n",
+        }
+        expected, counts = [4, 2], [5, 1]
+    _, provider, store, rec = _setup(
+        tmp_path, notes, chunker=HeadingChunker(short_doc_lines=0)
+    )
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == expected
+    assert [len(store.rows_for(path)) for path in sorted(notes)] == counts
+    assert result.embedded == sum(counts)
+
+
+def test_failure_across_document_boundary_keeps_whole_failed_document(
+    tmp_path, monkeypatch
+):
+    chunker = HeadingChunker(short_doc_lines=0)
+    notes = {
+        f"{c}.md": f"# {c}\n\nIntro {c}.\n\n## One\n\nApple {c}.\n\n## Two\n\nBoat {c}.\n"
+        for c in "abc"
+    }
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("b.md")
+    for path, body in notes.items():
+        (tmp_path / path).write_text(
+            body.replace("Intro", "Changed Intro")
+            .replace("Apple", "Changed Apple")
+            .replace("Boat", "Changed Boat")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    embed = provider.embed
+
+    def reject(texts):
+        if any("Changed Apple b" in text for text in texts):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected b")
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", reject)
+    result = rec.reconcile(store, site="flush")
+    assert result.retry == {"b.md"}
+    assert store.rows_for("b.md") == old
+    assert all(
+        "Changed" in row.metadata["content"]
+        for p in ("a.md", "c.md")
+        for row in store.rows_for(p)
+    )
+    assert [len(call) for call in provider.calls] == [4, 4, 2, 3]
+
+
+def test_cross_boundary_batch_preserves_conditional_conflict(tmp_path, monkeypatch):
+    chunker = HeadingChunker(short_doc_lines=0)
+    notes = {
+        f"{c}.md": f"# {c}\n\nIntro {c}.\n\n## One\n\nApple {c}.\n\n## Two\n\nBoat {c}.\n"
+        for c in "ab"
+    }
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    for path, body in notes.items():
+        (tmp_path / path).write_text(
+            body.replace("Intro", "New Intro")
+            .replace("Apple", "New Apple")
+            .replace("Boat", "New Boat")
+        )
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    embed = provider.embed
+    changed = []
+
+    def concurrent(texts):
+        if not changed:
+            rows = store.rows_for("b.md")
+            store.replace_document(
+                DocumentRows("b.md", "other", rows),
+                expected_token=store.tokens()["b.md"],
+            )
+            changed.append(True)
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", concurrent)
+    result = rec.reconcile(store, site="flush")
+    assert result.conflicts == {"b.md"}
+    assert store.tokens()["b.md"] == "other"
+    assert all("New" in row.metadata["content"] for row in store.rows_for("a.md"))
+
+
+@pytest.mark.parametrize("failure", ["rejected", "count", "outage"])
+def test_shared_request_falls_back_per_document(tmp_path, monkeypatch, failure):
+    fts, provider, store, rec = _setup(tmp_path, NOTES)
+    rec.reconcile(store, site="test")
+    old = store.rows_for("a.md")
+    for path in NOTES:
+        (tmp_path / path).write_text(f"# {path[0].upper()}\n\nNew {path}.\n")
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, HeadingChunker()))
+    provider.calls.clear()
+    embed = provider.embed
+
+    def flaky(texts):
+        if failure == "outage" or (
+            failure == "rejected" and any("New a.md" in t for t in texts)
+        ):
+            provider.calls.append(list(texts))
+            raise RuntimeError("rejected")
+        if failure == "count" and len(texts) > 1:
+            provider.calls.append(list(texts))
+            return []
+        return embed(texts)
+
+    monkeypatch.setattr(provider, "embed", flaky)
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [2, 1, 1]
+    if failure == "outage":
+        assert result.retry == {"a.md", "b.md"}
+        assert store.rows_for("a.md") == old
+        return
+    assert "New b.md" in store.rows_for("b.md")[0].metadata["content"]
+    if failure == "rejected":
+        assert result.retry == {"a.md"}
+        assert store.rows_for("a.md") == old
+    else:
+        assert not result.retry
+        assert "New a.md" in store.rows_for("a.md")[0].metadata["content"]
+
+
+def test_reuse_only_document_is_published_in_a_pass_with_a_miss(tmp_path):
+    notes = {
+        "a.md": "# A\n\nApple.\n",
+        "b.md": "# S\n\nIntro.\n\n## One\n\nApples.\n\n## Two\n\nBoats.\n\n## End\n\nFin.\n",
+    }
+    chunker = HeadingChunker(short_doc_lines=0)
+    fts, provider, store, rec = _setup(tmp_path, notes, chunker=chunker)
+    rec.reconcile(store, site="test")
+    (tmp_path / "a.md").write_text("# A\n\nNew apples.\n")
+    (tmp_path / "b.md").write_text(
+        "# S\n\nIntro.\n\n## Two\n\nBoats.\n\n## One\n\nApples.\n\n## End\n\nFin.\n"
+    )
+    for path in notes:
+        fts.upsert_note(parse_note(tmp_path / path, tmp_path, chunker))
+    provider.calls.clear()
+    result = rec.reconcile(store, site="flush")
+    assert [len(call) for call in provider.calls] == [1]
+    assert result.reused == 4
+    assert [r.metadata["heading"] for r in store.rows_for("b.md")] == [
+        "S",
+        "Two",
+        "One",
+        "End",
+    ]
 
 
 class TestDecisions:
@@ -566,6 +844,14 @@ class TestRemovalRule:
         rec.reconcile(store, site="test")
         fts.delete_by_path("a.md")
         return fts, store, rec
+
+    def test_skip_backed_document_without_request(self, tmp_path):
+        _, provider, store, rec = _setup(tmp_path, NOTES)
+        rec._skip_embedding = lambda path: path == "a.md"
+        rec.reconcile(store, site="test")
+        assert not store.rows_for("a.md")
+        assert store.rows_for("b.md")
+        assert all("Apples" not in text for call in provider.calls for text in call)
 
     def test_absent_removes(self, tmp_path):
         _, store, rec = self._orphan(tmp_path, probe=_Probe({"a.md": "absent"}))

@@ -412,6 +412,12 @@ class Vault:
                 or ``settings.conventions_file`` contains fnmatch
                 metacharacters.
         """
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        self._okf_capabilities = (
+            settings.okf_capabilities
+            or ContentConfig(okf_write=settings.okf_write).okf_capabilities
+        )
         self._index_path = settings.index_path
         self._embeddings_path = settings.effective_embeddings_path()
         self._embedding_batch_size = settings.embedding_batch_size
@@ -454,9 +460,8 @@ class Vault:
             # max_chunk_words only takes effect for the conventional default
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
-        # The derived cap (max_chunk_chars) is passed straight to the chunker
-        # above and kept nowhere else — it is deliberately NOT a warm-restart
-        # key, so a transient model-context read does not trigger a rebuild.
+        # The derived cap (max_chunk_chars) goes to the chunker and the builder's
+        # listed bound only; it is NOT a warm-restart key (no transient rebuild).
         # Stable warm-restart keys recorded into FTS meta at build time (#649):
         # the embedding model name and the explicit char-cap override. A change
         # to either rejects the short-circuit and cold-rebuilds.
@@ -477,6 +482,9 @@ class Vault:
         self._embed_builder = EmbedTextBuilder(
             embed_context=settings.embed_context,
             searchable_fields=tuple(self._searchable_frontmatter_fields),
+            listed=self._okf_capabilities.index,
+            listed_scope=self._okf_capabilities.folders,
+            listed_limit=settings.max_chunk_chars,
         )
         self._git_pull_interval_s = settings.git_pull_interval_s
         # The resolver prunes its folder walk with the *configured* patterns
@@ -529,6 +537,29 @@ class Vault:
             text_format=self._embed_builder.format_token(),
             owns_files=settings.owns_index_files,
             store=self._injected_vector_store,
+        )
+
+    def _reserved_exempt(self) -> bool | None:
+        """Return whether reserved files skip the field gate, or ``None`` if no gate.
+
+        Raises:
+            OSError: When the OKF scope could not be read, so the caller keeps
+                its last confirmed admission instead of treating it as inactive.
+        """
+        if not self._required_frontmatter:
+            return None
+        state = self._okf.state()
+        if state.probe_error:
+            raise OSError("OKF scope probe failed")
+        return state.active
+
+    def _is_generated_index(self, path: str) -> bool:
+        """Return whether the operator designated this index for generation."""
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+
+        parent, _, name = path.rpartition("/")
+        return name == "index.md" and folder_is_designated(
+            parent, self._okf_capabilities.folders
         )
 
     def _build_managers(self, settings: VaultSettings) -> None:
@@ -585,6 +616,7 @@ class Vault:
         #    see one store.  No write_lock — the IndexWriter thread is the
         #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
+
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -594,6 +626,10 @@ class Vault:
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
+            okf_admission_active=self._reserved_exempt,
+            skip_embedding=(
+                self._is_generated_index if self._okf_capabilities.index else None
+            ),
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
             vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
@@ -679,7 +715,11 @@ class Vault:
         # OKF_WRITE is on; when on, it stamps provenance and clears verification
         # for write/edit on an OKF-active vault.
         self._okf_write_enrich = build_okf_write_enrich(
-            okf_write=settings.okf_write,
+            okf_write=(
+                settings.okf_capabilities.legacy_stamping
+                if settings.okf_capabilities is not None
+                else settings.okf_write
+            ),
             detector=self._okf,
             version=package_version(),
         )
@@ -765,12 +805,11 @@ class Vault:
             require_built=self._require_built,
             reserved_frontmatter=reserved_frontmatter,
         )
-        # OKF enforced-write convention maintenance (#964, phase 5b): built only
-        # under OKF_WRITE (mirroring the enricher gating). On a successful
-        # write/edit it appends to the folder's log.md and refreshes its
-        # index.md as secondary writes; failures degrade to a WARNING.
+        # Direct library settings retain the legacy alias mapping.
         self._okf_convention = None
-        if settings.okf_write:
+        if not settings.read_only and (
+            self._okf_capabilities.index or self._okf_capabilities.log == "writes"
+        ):
             from markdown_vault_mcp._okf_convention import ConventionMaintainer
 
             self._okf_convention = ConventionMaintainer(
@@ -780,6 +819,7 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
                 source_dir=self._source_dir,
+                capabilities=self._okf_capabilities,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

@@ -233,3 +233,79 @@ class TestIsEmbeddable:
             is_first_chunk=True,
         )
         assert is_embeddable(text) is True
+
+
+def test_listed_policy_token_and_unchanged_chunk_inputs() -> None:
+    plain = EmbedTextBuilder()
+    listed = EmbedTextBuilder(listed=True)
+    v2 = EmbedTextBuilder(searchable_fields=("summary",), listed=True)
+    assert plain.format_token() == "v1"
+    assert listed.format_token() == "v1;listed;scope=[]"
+    assert v2.format_token() == "v2;fields=summary;listed;scope=[]"
+    # The policy never changes a chunk's input; listing adds rows instead.
+    for builder in (plain, listed):
+        assert (
+            builder.build(
+                title="Title",
+                heading=None,
+                content="body",
+                fields_text="",
+                is_first_chunk=True,
+            )
+            == "body"
+        )
+
+
+def test_is_listed_follows_designation_and_excludes_reserved_files() -> None:
+    root = EmbedTextBuilder(listed=True, listed_scope=(".",))
+    assert root.is_listed("note.md")
+    assert not root.is_listed("sub/note.md")
+    assert not root.is_listed("index.md")
+    assert not root.is_listed("log.md")
+    assert not root.is_listed("")
+    assert EmbedTextBuilder(listed=True, listed_scope=("**",)).is_listed("a/b/c.md")
+    assert not EmbedTextBuilder(listed_scope=(".",)).is_listed("note.md")
+
+
+def test_listing_pieces_hold_the_whole_title_and_description_within_the_cap() -> None:
+    data = {"description": " ".join(f"word{i}" for i in range(100))}
+    builder = EmbedTextBuilder(listed=True, listed_limit=100)
+    pieces = builder.listing_pieces("Title", data)
+    assert pieces[0].startswith("Title word0 word1")
+    assert all(len(piece) <= 100 for piece in pieces)
+    words = " ".join(pieces).split()
+    assert words == ["Title", *data["description"].split()]
+    # A description that fits makes one piece with its title.
+    assert builder.listing_pieces("Title", {"description": "short"}) == ["Title short"]
+    # A title alone, a description alone and neither.
+    assert builder.listing_pieces("Title", {}) == ["Title"]
+    assert builder.listing_pieces("", {"description": "short"}) == ["short"]
+    assert builder.listing_pieces("", {}) == []
+    # No limit leaves the text in one piece.
+    whole = EmbedTextBuilder(listed=True).listing_pieces("T", data)
+    assert whole == ["T " + data["description"]]
+    # One token longer than the cap is still split to the cap.
+    token = builder.listing_pieces("T", {"description": "x" * 250})
+    assert [len(piece) for piece in token] == [100, 100, 52]
+    assert "".join(token).replace("T", "", 1).strip() == "x" * 250
+
+
+def test_row_input_rebuilds_a_listing_row_from_its_stored_metadata() -> None:
+    v2 = EmbedTextBuilder(embed_context=True, listed=True)
+    chunk = {"title": "T", "heading": "H", "content": "body"}
+    assert v2.row_input(chunk, "") == "T\nH\n\nbody"
+    listing = {**chunk, "kind": "listing", "listing": "T words"}
+    # The exact input, with no title or heading head, whatever the chunk holds.
+    assert v2.row_input(listing, "") == "T words"
+    assert v2.row_input({**listing, "listing": None}, "") == "T\nH\n\nbody"
+
+
+def test_listed_scope_token_normalizes_designation_patterns() -> None:
+    def token(*patterns: str) -> str:
+        return EmbedTextBuilder(listed=True, listed_scope=patterns).format_token()
+
+    assert token("docs", "other") == token("/other/", "./docs/", "docs")
+    assert token("./a//./b/") == token("a/b")
+    assert token(".") == token("/")
+    assert token("docs") != token("docs/**")
+    assert token("docs") != token("other")

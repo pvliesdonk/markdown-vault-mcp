@@ -7,11 +7,16 @@ deferred flush). Using a single builder everywhere is load-bearing: if any
 site embedded plain chunk content while another embedded enriched text, the
 boot convergence pass would "heal" the enriched vectors back to plain.
 
-The builder has two formats:
+The builder has these formats:
 
 * **v1** — the default: :meth:`EmbedTextBuilder.build` returns the chunk
   content byte-for-byte unchanged, so default configurations are an exact
-  behavioural no-op.
+  behavioural no-op when listed-concept enrichment is disabled.
+* **v1;listed** — chunk inputs stay byte-identical to v1. A designated
+  folder's listed concept gains separate inputs for its title and
+  description (:meth:`EmbedTextBuilder.listing_pieces`), each within the chunk
+  character cap, because the generated listing that carried them has no
+  vector.
 * **v2** — active when ``embed_context`` is enabled or any
   ``searchable_fields`` are configured: the chunk content is prefixed with
   the document title, the chunk heading (when present), and — on the first
@@ -28,8 +33,11 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import textwrap
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -135,14 +143,22 @@ class EmbedTextBuilder:
         searchable_fields: Frontmatter keys whose scalar values form the
             first-chunk preamble (also switches to format v2 when
             non-empty).
+        listed: Embed a listed concept's title and description as separate inputs.
+        listed_scope: Folder patterns that select listed concepts.
+        listed_limit: The chunk character cap each listing input is
+            bounded by; ``None`` leaves it unbounded. It is not part
+            of the format token, like the chunker cap it comes from.
     """
 
     embed_context: bool = False
     searchable_fields: tuple[str, ...] = field(default=())
+    listed: bool = False
+    listed_scope: tuple[str, ...] = ()
+    listed_limit: int | None = None
 
     @property
     def is_v2(self) -> bool:
-        """``True`` when enrichment is active (any knob set)."""
+        """``True`` when the v2 context or field format is active."""
         return self.embed_context or bool(self.searchable_fields)
 
     def format_token(self) -> str:
@@ -150,11 +166,23 @@ class EmbedTextBuilder:
 
         Returns:
             ``"v1"`` for the default no-op format, else
-            ``"v2;fields=<comma-joined field names>"``.
+            ``"v2;fields=<comma-joined field names>"``. The listed policy
+            appends ``";listed;scope="`` and its folder patterns.
         """
-        if not self.is_v2:
-            return "v1"
-        return "v2;fields=" + ",".join(self.searchable_fields)
+        token = "v2;fields=" + ",".join(self.searchable_fields) if self.is_v2 else "v1"
+        if self.listed:
+            scope = sorted(
+                {
+                    "/".join(
+                        part
+                        for part in (normalize_folder(pattern) or "").split("/")
+                        if part and part != "."
+                    )
+                    for pattern in self.listed_scope
+                }
+            )
+            token += ";listed;scope=" + json.dumps(scope, separators=(",", ":"))
+        return token
 
     def fields_text(self, frontmatter_or_json: Mapping[str, Any] | str | None) -> str:
         """Return the first-chunk preamble for this builder's fields.
@@ -162,6 +190,62 @@ class EmbedTextBuilder:
         See the module-level :func:`fields_text` for the exact contract.
         """
         return fields_text(frontmatter_or_json, self.searchable_fields)
+
+    def is_listed(self, path: str) -> bool:
+        """Return whether *path* is a concept that a designated folder lists."""
+        from markdown_vault_mcp._okf_convention import folder_is_designated
+        from markdown_vault_mcp.okf import is_okf_reserved_file
+
+        return (
+            self.listed
+            and bool(path)
+            and not is_okf_reserved_file(path)
+            and folder_is_designated(path.rpartition("/")[0], self.listed_scope)
+        )
+
+    def listing_pieces(
+        self, title: str, frontmatter_or_json: Mapping[str, Any] | str | None
+    ) -> list[str]:
+        """Split a listed concept's title and description into raw inputs within the cap.
+
+        Each piece is embedded verbatim, with no title or heading head, so it
+        never exceeds the cap, even for one token longer than the cap. The
+        words are only re-wrapped, and none is dropped.
+
+        Args:
+            title: Resolved note title.
+            frontmatter_or_json: Parsed or JSON-encoded frontmatter.
+
+        Returns:
+            The non-empty pieces; empty when the note has neither.
+        """
+        description = fields_text(frontmatter_or_json, ("description",))
+        text = " ".join(part for part in (title, description) if part)
+        width = self.listed_limit or max(len(text), 1)
+        return textwrap.wrap(text, width, break_on_hyphens=False)
+
+    def row_input(self, row: Mapping[str, Any], preamble: str) -> str:
+        """Return the embedding input of a keyword row or of its stored metadata.
+
+        A listing row (``kind == "listing"``) is embedded as its ``listing``
+        text; every other row goes through :meth:`build`.
+
+        Args:
+            row: A keyword row or the metadata stored with its vector.
+            preamble: The first-chunk preamble (empty on other chunks).
+
+        Returns:
+            The text the provider embeds.
+        """
+        if row.get("kind") == "listing" and isinstance(row.get("listing"), str):
+            return str(row["listing"])
+        return self.build(
+            title=row["title"],
+            heading=row.get("heading"),
+            content=row["content"],
+            fields_text=preamble,
+            is_first_chunk=bool(preamble),
+        )
 
     def build(
         self,
@@ -183,7 +267,8 @@ class EmbedTextBuilder:
             is_first_chunk: ``True`` for the document's chunk-0 row.
 
         Returns:
-            v1: *content* unchanged (byte-exact no-op). v2: the title line,
+            v1: *content* unchanged.
+            v2: the title line,
             the heading line (omitted when empty), and — first chunk only —
             the non-empty *fields_text*, followed by a blank line and the
             content.
