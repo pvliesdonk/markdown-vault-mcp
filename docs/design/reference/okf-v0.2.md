@@ -11,7 +11,8 @@ verified:
   - by: process:researching-references-refute
     at: 2026-09-06T22:11:28+02:00
 stale_after: 2027-03-06
-status: stable
+status: deprecated
+superseded_by: okf-v0.3.md
 sources:
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
