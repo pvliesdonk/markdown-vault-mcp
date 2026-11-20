@@ -1206,9 +1206,9 @@ def register(mcp: FastMCP) -> None:
                 archived structures, and commented flow review lists are refused.
                 Trailing comments remain as standalone lines. Read the note and
                 use its etag.
-            producer: Explicit producer actor: <producer>/<version>, process:<id>
-                or human:<id>, such as codex/6.1 or process:importer; omit to
-                leave generation metadata unchanged.
+            producer: Explicit actor as <producer>/<version> or any <scheme>:<id>,
+                without whitespace, such as codex/6.1, team:finance or custom:importer;
+                omit to leave generation metadata unchanged.
 
         Returns:
             The written path and previous revision when available.
