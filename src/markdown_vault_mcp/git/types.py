@@ -121,7 +121,7 @@ class PullResult:
 
             See module-level ``PULL_REASON_*`` constants for the
             string values.
-        conflict_files: Vault-relative paths of Syncthing-style
+        conflict_files: Repository-relative paths of Syncthing-style
             ``.conflict-mcp-*`` siblings written when the pull resolved
             divergent history (see #232 and the
             ``"conflicts_resolved_with_siblings"`` reason above).

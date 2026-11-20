@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import literal_pathspec, run_git_capturing
+from markdown_vault_mcp.git._run import run_git, run_git_capturing
 from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
@@ -106,28 +106,8 @@ def resolve_rebase_conflicts(
             # Accept upstream's version.  During rebase, --ours is the
             # branch being rebased onto (upstream), --theirs is the
             # commit being replayed (our local MCP commit).
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    root,
-                    "checkout",
-                    "--ours",
-                    "--",
-                    literal_pathspec(rel_path),
-                ],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", root, "add", "--", literal_pathspec(rel_path)],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
+            run_git(git_root, "checkout", "--ours", pathspecs=[rel_path], env=env)
+            run_git(git_root, "add", pathspecs=[rel_path], env=env)
 
         # Continue the rebase.  If another commit conflicts, the loop
         # iterates again.  ``--no-edit`` avoids opening an editor for
@@ -354,8 +334,7 @@ def restore_upstream_paths(
             git_root,
             "checkout",
             ref,
-            "--",
-            literal_pathspec(rel_path),
+            pathspecs=[rel_path],
             env=env,
         )
         if checkout_proc.returncode != 0:
@@ -399,7 +378,6 @@ def write_conflict_files(
         implying a successful conflict-resolution commit.  Returns an
         empty list when *saved* is empty (nothing to do).
     """
-    root = str(git_root)
     now = datetime.datetime.now(tz=datetime.UTC)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     conflict_date = now.isoformat(timespec="seconds")
@@ -494,13 +472,7 @@ def write_conflict_files(
     # staged for it (the upstream version), which the pathspec-less commit
     # below still captures.
     paths_to_add = updated_originals + written
-    subprocess.run(
-        ["git", "-C", root, "add", "--", *map(literal_pathspec, paths_to_add)],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
-    )
+    run_git(git_root, "add", pathspecs=paths_to_add, env=env)
 
     n = len(written)
     file_list = ", ".join(written)
@@ -513,22 +485,17 @@ def write_conflict_files(
     # or by the ``checkout <ref>`` (``origin/<branch>``) restore on the
     # rebase-abort path). It
     # relies on the caller holding ``_lock`` so no unrelated change is staged.
-    commit_result = subprocess.run(
-        [
-            "git",
-            "-C",
-            root,
-            "-c",
-            f"user.name={commit_name}",
-            "-c",
-            f"user.email={commit_email}",
-            "commit",
-            "-m",
-            f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
-        ],
-        capture_output=True,
-        text=True,
+    commit_result = run_git_capturing(
+        git_root,
+        "-c",
+        f"user.name={commit_name}",
+        "-c",
+        f"user.email={commit_email}",
+        "commit",
+        "-m",
+        f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
         env=env,
+        whole_repo=True,
     )
     if commit_result.returncode != 0:
         # DEBUG for the reason given at the loop-cap line above (#1287): this
