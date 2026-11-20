@@ -286,22 +286,26 @@ async def test_write_note_invalid_utf8_is_415(
 
 
 async def test_write_note_refused_by_vault_is_422(
-    config: ProjectConfig, source_dir: Path
+    config: ProjectConfig, source_dir: Path, tmp_path: Path
 ) -> None:
-    (source_dir / "index.md").write_text(
-        "---\nokf_version: '0.2'\n---\n# Bundle\n", encoding="utf-8"
-    )
-    config = replace(config, okf_mode="on", okf_write=True)
+    # A folder replaced by a symlink after the link was minted escapes the
+    # vault; the write path re-validates and refuses it.
+    (source_dir / "sub").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
     vault = Vault(
         source_dir=config.source_dir,
         settings=VaultSettings.from_project_config(config),
     )
     try:
         sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("sub/new.md", "upload") == "sub/new.md"
+        (source_dir / "sub").rmdir()
+        (source_dir / "sub").symlink_to(outside, target_is_directory=True)
         with pytest.raises(TransferSinkError) as exc:
-            await sink.write("broken.md", b"---\ntitle: [unclosed\n---\n# x\n")
+            await sink.write("sub/new.md", b"# x\n")
         assert exc.value.status_code == 422
-        assert not (source_dir / "broken.md").exists()
+        assert not (outside / "new.md").exists()
     finally:
         vault.close()
 
@@ -471,3 +475,22 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None:
+    (tmp_path / "guard.md").write_text("original")
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["guard.md"]),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("guard.md", "download") == "guard.md"
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await sink.validate("guard.md", "upload")
+        with pytest.raises(TransferSinkError, match="PROTECTED_PATHS"):
+            await sink.write("guard.md", b"changed")
+        assert (tmp_path / "guard.md").read_text() == "original"
+    finally:
+        vault.close()

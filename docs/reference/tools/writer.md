@@ -8,9 +8,9 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
-Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit, append and OKF verification retain surviving fields in their existing order when serializing a header. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
+Writes preserve the supplied frontmatter field order, including nested mappings and mappings inside lists. Edit and append retain surviving fields in their existing order when serializing a header. Bound OKF verification preserves existing review metadata source text. This preserves mapping order and values; YAML comments, quoting and whitespace may change.
 
-Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
+Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, `okf_verify` needs review enabled, and `okf_author` needs authoring enabled and an active bundle.
 
 A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 New notes and attachments receive the same permissions as a plain file creation in their destination folder. On Linux, a folder's default access control list (ACL) can grant a shared group write access even when the process umask would remove it. Overwriting an existing file preserves its permission bits.
@@ -35,6 +35,7 @@ created as needed.
 | `frontmatter` | `object \| null` | `null` | The note's frontmatter, such as `{"title": "My Note", "tags": ["draft"]}`. |
 | `content_base64` | `string` | `""` | An attachment's bytes, base64-encoded; for paths not ending in .md. |
 | `if_match` | `string \| null` | `null` | Etag from read, to replace an existing file; omit for a new file. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -67,6 +68,7 @@ does not. To check conventions *before* writing, call
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If `content_base64` is missing/invalid for attachments, or the content exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 - `MCPError`: If `if_match` is provided and the file has been modified, or `if_match` is supplied for a file that does not yet exist (ConcurrentModificationError). Also when the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and path already exists while no `if_match` is supplied (DocumentExistsError); use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
 
@@ -95,6 +97,7 @@ whitespace is used and reported as `match_type` `"normalized"`.
 | `if_match` | `string \| null` | `null` | Etag from read. Pass it, one edit per read, when `line_start` and `line_end` are given; omit it for several `old_text`-only edits to one note at once. |
 | `line_start` | `integer \| null` | `null` | First line to replace, counting from 1 over the content read returns, frontmatter included; pass with `line_end`. |
 | `line_end` | `integer \| null` | `null` | Last line to replace, inclusive; pass with `line_start`. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -118,6 +121,7 @@ whitespace is used and reported as `match_type` `"normalized"`.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If parameter combination is invalid, or line numbers are out of range.
 - EditConflictError: If `old_text` is not found or appears more than once; a not-found error may name the closest line and the first differing character.
 - DocumentNotFoundError: If no file exists at the given path.
@@ -145,6 +149,7 @@ a paragraph or section.
 | `content` | `string` | required | Non-empty text to add after everything the note holds. |
 | `if_match` | `string \| null` | `null` | Etag from read; the text is then added only to that version. Omit to append regardless. |
 | `create_if_missing` | `boolean` | `false` | Create the note with content as its body when path does not exist. Default false, so a mistyped path creates nothing. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -168,6 +173,7 @@ a paragraph or section.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ValueError: If content is empty.
 - DocumentNotFoundError: If no file exists at the given path and `create_if_missing` is false.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
@@ -188,6 +194,7 @@ Permanently delete a note or attachment; only git history can bring it back.
 |---|---|---|---|
 | `path` | `string` | required | Path of the note or attachment. |
 | `if_match` | `string \| null` | `null` | Etag from read; the file is then deleted only as that version. Omit to delete it as it is. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -199,6 +206,7 @@ Dict with path (str) of the deleted file.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If no file exists at the given path.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
@@ -223,6 +231,7 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 | `new_path` | `string` | required | New path, such as `"projects/idea.md"`, where nothing exists yet. |
 | `if_match` | `string \| null` | `null` | Etag from read of `old_path`; still accepted when the only changes since are link rewrites the server made. |
 | `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -241,6 +250,7 @@ attachment, saying why nothing was rewritten.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If `old_path` does not exist.
 - DocumentExistsError: If `new_path` already exists.
 - ValueError: If the path fails traversal validation.
@@ -277,6 +287,7 @@ Notes whose links could not be rewritten are listed in `failed_links`.
 |---|---|---|---|
 | `old_dir` | `string` | required | Folder to move, such as `"drafts"`. |
 | `new_dir` | `string` | required | Destination folder, such as `"archive/2026"`; an existing folder is merged into. |
+| `transaction` | `string \| null` | `null` | Handle from `begin_transaction`; omit to commit this call alone. |
 
 **Returns**
 
@@ -285,12 +296,14 @@ Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int) and
 
 - `failed_links` (list[str]): paths of notes whose links could not be
   rewritten; the move itself stands.
+- hint (str, optional): guidance when protected link rewrites are skipped.
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentNotFoundError: If no non-empty folder exists at `old_dir`.
 - DocumentExistsError: If any destination file already exists; nothing is moved.
 - ValueError: If a path fails traversal validation or the two paths are nested.
@@ -344,6 +357,7 @@ Dict with:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - DocumentExistsError: If the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path* already exists while no *`if_match`* is supplied. The save routes through the same guarded `write` / `write_attachment` path as the write tools, so read the existing note first and pass its etag as *`if_match`* to replace it deliberately, or fetch to a fresh path.
 - InvalidRequestError: If the URL scheme is not http/https, the host is not publicly routable (private, loopback, link-local, carrier-grade NAT and reserved ranges are refused) or cannot be resolved, checked on the supplied URL and on every redirect hop, the download exceeds the size limit, or the response cannot be decoded.
 - ToolError: If the remote site answers a non-2xx status (retry later for a 5xx, check the URL otherwise; the message never names the URL) or redirects more times than the client allows.
@@ -394,6 +408,7 @@ left as it is and not counted.
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a path is protected; eligible bulk writes remain.
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 - DocumentUnreadableError: If a note it rewrites cannot be read; notes converted before it keep their changes.
@@ -437,8 +452,8 @@ Dict with:
 - path (str): the index.md written.
 - entries (int): notes and subfolder links listed.
 - `frontmatter_preserved` (bool): true when the file already had
-  frontmatter, which is kept; false when it had none, though the
-  fields the vault requires are still added.
+  a frontmatter block, including an empty block, which is kept;
+  false when it had none. No fields are added.
 - created (list[str]): index.md files written for subfolders that
   had none, outermost first.
 - remote (dict, optional): present only while the vault's git clone
@@ -447,6 +462,7 @@ Dict with:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a path is protected; eligible bulk writes remain.
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 - DocumentUnreadableError: If the folder's index.md exists but cannot be read; it is left untouched.
@@ -489,6 +505,7 @@ distinct days), plus:
 
 **Outcomes and errors**
 
+- InvalidRequestError: If a destination or changed path is protected.
 - ToolError: If log.md already exists in the folder; nothing is written.
 - DocumentUnreadableError: If log.md exists but cannot be read; it is left untouched.
 
@@ -509,29 +526,55 @@ distinct days), plus:
 ```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
 
+## `okf_author`
+
+**OKF: Author Concept.** Changes state, not destructive. Tags: `okf`, `okf-author`, `write`.
+
+Set editorial fields or repair provenance on an existing OKF concept.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Concept path in the vault. |
+| `if_match` | `string` | required | Etag from a recent read of the concept. |
+| `fields` | `object` | required | Editorial changes; an empty mapping is allowed with repair or producer. Type, title and description are non-empty strings; tags as a list of strings; status as draft, stable or deprecated; `stale_after` as an ISO date or offset datetime; sources as a list of mappings with a non-empty resource string. Omitted fields are preserved. |
+| `producer` | `string \| null` | `null` | Explicit actor as <producer>/<version> or any <scheme>:<id>, without whitespace, such as codex/6.1, team:finance or custom:importer; omit to leave generation metadata unchanged. |
+| `repair` | `object \| null` | `null` | Optional repair mapping. `retire_reviews` takes indices (zero-based positions in verified) and a reason; `replace_generated` takes by (the new actor) and a reason. Replacing generated changes the concept snapshot. Do not combine producer with `replace_generated`. Matching binding claims move into `review_history`; receipts stay local. Shared review identities, YAML merge keys, aliased or duplicate-key fields being edited, comments within archived structures, and commented flow review lists are refused. Trailing comments remain as standalone lines. Read the note and use its etag. |
+
+**Returns**
+
+The written path and previous revision when available.
+Read the note again to obtain a fresh etag.
+
+<!-- DOMAIN-EXAMPLE-okf_author-START -->
+Read a concept, then pass its `etag` as `if_match` and the fields to change, such as `fields={"tags": ["guide"]}`. Fields and generation children omitted from the request retain their text; edited lists use flow form and comments inside edited fields move below them. Invalid values, ambiguous frontmatter and edits that cannot preserve the reader’s view are refused. See [authoring a concept](../../use/okf.md#authoring-a-concept).
+<!-- DOMAIN-EXAMPLE-okf_author-END -->
+
 ## `okf_verify`
 
 **OKF: Verify Note.** Changes state, not destructive. Tags: `okf`, `okf-enforce`, `write`.
 
-Record that a person reviewed a note, raising its Open Knowledge Format trust
-tier to human-reviewed; returns the verifier recorded.
+Record a review of a note snapshot; returns the verifier recorded.
 
-The user may be asked to confirm the review. The record means a person looked,
-not that the content is correct.
+Reviews apply to YAML-frontmatter or body-only notes. The snapshot excludes
+verified and x-mvmcp. The user may be asked to confirm the review.
 
 **Parameters**
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `path` | `string` | required | Path of the note the user reviewed. |
+| `reviewed_snapshot` | `object` | required | Snapshot from the whole-note read that was reviewed. |
+| `check` | `string` | `"human-review"` | human-review, schema, links, source-comparison, or an x- prefixed check. |
 
 **Returns**
 
-On the modern protocol's first round, an input request asking the
-client for human confirmation. After confirmation, a dict with:
+For human review with elicitation on the modern protocol, the first
+round returns an input request for confirmation. Otherwise, a dict with:
 
 - `path`: the verified note.
-- `verifier`: the `human:<subject>` actor recorded.
+- `verifier`: the `human:<subject>` or `process:<subject>` actor recorded.
 - `verified_count`: the number of verification entries after the
   append.
 - remote (dict, optional): present only while the vault's git clone
@@ -540,15 +583,11 @@ client for human confirmation. After confirmation, a dict with:
 
 **Outcomes and errors**
 
-- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; call `okf_verify` again to attest the current text. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
+- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; read and review the current text before calling `okf_verify` again. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity. Service principals need machine review enabled and cannot record human-review.
 - DocumentNotFoundError: If the note does not exist.
+- InvalidRequestError: If the path is protected.
 
 <!-- DOMAIN-EXAMPLE-okf_verify-START -->
-After the user confirms, `okf_verify(path="guides/setup.md")` returns `{"path": "guides/setup.md", "verifier": "human:alice", "verified_count": 1}`, and the note's frontmatter gains:
+Read `guides/setup.md` in full and review its content. Pass the returned `okf.snapshot` as `reviewed_snapshot` to `okf_verify(path="guides/setup.md", reviewed_snapshot=<snapshot>)`. After confirmation, the result includes the `verifier` and `verified_count`. The note gains a portable `{by, at}` entry in `verified` and a matching claim under `x-mvmcp.reviews` with the check and snapshot. Bound reviews require YAML frontmatter or a body-only note; convert JSON or TOML frontmatter to YAML first. The snapshot excludes `verified` and `x-mvmcp`. The server keeps a receipt outside the vault, or in memory until restart when no state path is configured. See [observed changes and reviews](../../use/okf.md#observed-changes-and-reviews) for the separate local comparison.
 
-```yaml
-verified:
-- at: '2026-10-03T12:00:00Z'
-  by: human:alice
-```
 <!-- DOMAIN-EXAMPLE-okf_verify-END -->
