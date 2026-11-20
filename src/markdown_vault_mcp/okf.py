@@ -261,7 +261,7 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
     """Derive a note's trust tier from its ``verified`` frontmatter.
 
     This compatibility label describes recorded claims, not certification.
-    Only entries with a recognized actor shape and an offset-aware timestamp
+    Only entries with a recognized actor shape and a date or offset-aware timestamp
     count. A malformed sibling does not discard a usable recorded claim.
     A bare mapping remains one entry (:func:`verified_entries`).
 
