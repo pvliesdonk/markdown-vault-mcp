@@ -1316,3 +1316,143 @@ def test_replan2_selected_extensionless_license_is_included(tmp_path):
         assert archive.read("MIT") == b"custom license"
         assert b"license: MIT" in archive.read("index.md")
     assert not result.report.dependencies
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("mode", ["off", "on", "auto"])
+@pytest.mark.parametrize("kind", ["invalid", "symlink", "inspection"])
+def test_r5_git_admission_preserves_inherited_policy(tmp_path, monkeypatch, mode, kind):
+    from markdown_vault_mcp import okf_bundle
+    from tests.fixtures.git import _run_git
+
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("---\ntitle: Fixture\n---\n")
+    if kind == "symlink":
+        (tmp_path / "index.md").symlink_to("missing")
+    else:
+        (tmp_path / "index.md").write_bytes(
+            b"\xff invalid" if kind == "invalid" else b"---\nokf_version: '0.2'\n---\n"
+        )
+    _run_git(tmp_path, "init", "-q")
+    _run_git(tmp_path, "config", "user.name", "Fixture")
+    _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    _run_git(tmp_path, "add", ".")
+    _run_git(tmp_path, "commit", "-qm", "fixture")
+    original = okf_bundle._inspect_page
+
+    def inspect(vault, folder, snapshot, *args, **kwargs):
+        if kind == "inspection" and snapshot and set(snapshot.entries) == {"index.md"}:
+            raise ValueError("denied root inspection")
+        return original(vault, folder, snapshot, *args, **kwargs)
+
+    monkeypatch.setattr(okf_bundle, "_inspect_page", inspect)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(okf_mode=mode, required_frontmatter=["title"]),
+    )
+    try:
+        if kind == "inspection" and mode == "auto":
+            with pytest.raises(ValueError, match="denied root inspection"):
+                build_okf_bundle(
+                    vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+                )
+        else:
+            assert build_okf_bundle(
+                vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+            ).data.startswith(b"PK")
+    finally:
+        vault.close()
+
+
+@pytest.mark.parametrize(
+    "value", ["../outside.md", "./../outside.md", "a/../../outside.md"]
+)
+def test_r5_parent_path_does_not_scan_inventory(value):
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    def unavailable():
+        raise AssertionError("unneeded inventory")
+
+    paths = ExportPaths("guides", {"guides/a.md"}, None, inventory=unavailable)
+    report = OkfExportReport()
+    paths.relocate_frontmatter(f"---\nresource: {value}\n---\n", "guides/a.md", report)
+    assert report.dependencies
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_r5_source_directory_fallback_refuses_retarget(tmp_path, strict):
+    from markdown_vault_mcp.okf_export_paths import ExportCollisionError
+
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "guides/sub").mkdir(parents=True)
+    (tmp_path / "guides/shared").mkdir()
+    (tmp_path / "guides/shared/b.md").write_text("---\ntype: Note\n---\n")
+    (tmp_path / "guides/sub/a.md").write_text(
+        "---\ntype: Note\nsources: [{resource: shared}]\n---\n"
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        with pytest.raises(ExportCollisionError):
+            build_okf_bundle(
+                vault,
+                ProjectConfig(source_dir=tmp_path),
+                folder="guides",
+                strict=strict,
+            )
+    finally:
+        vault.close()
+
+
+def test_r5_empty_directory_fallback_externalized(tmp_path):
+    (tmp_path / "empty").mkdir()
+    output, report = export_note(
+        tmp_path,
+        b"---\nresource: empty/\n---\n",
+        external_base="https://example.com/vault",
+    )
+    assert b"https://example.com/vault/empty/" in output
+    assert report.dependencies and report.v0_2_root_fallback
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_r5_git_directory_fallback_externalized(tmp_path):
+    from tests.fixtures.git import _run_git
+
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "empty/b.md").write_text("note")
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides/a.md").write_text("---\nresource: empty/\n---\n")
+    _run_git(tmp_path, "init", "-q")
+    _run_git(tmp_path, "config", "user.name", "Fixture")
+    _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    _run_git(tmp_path, "add", "empty/b.md", "guides/a.md")
+    _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings())
+    try:
+        result = build_okf_bundle(
+            vault,
+            ProjectConfig(source_dir=tmp_path),
+            folder="guides",
+            external_base="https://example.com/vault",
+        )
+    finally:
+        vault.close()
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+        assert b"https://example.com/vault/empty/" in archive.read("a.md")
+    assert result.report.dependencies and result.report.v0_2_root_fallback
+
+
+def test_r5_license_alias_used_as_path_keeps_path_role():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    paths = ExportPaths("", {"index.md"}, None)
+    report = OkfExportReport()
+    paths.relocate_frontmatter(
+        "---\nlicense: &value MIT\nresource: *value\n---\n", "index.md", report
+    )
+    assert report.dependencies

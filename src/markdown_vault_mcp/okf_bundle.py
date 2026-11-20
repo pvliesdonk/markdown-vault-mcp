@@ -8,7 +8,7 @@ import logging
 import os
 import stat
 import zipfile
-from contextlib import closing, nullcontext
+from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import PurePosixPath
@@ -272,6 +272,17 @@ def _snapshot_admitted(
     return exempt or not missing_required(metadata, required)
 
 
+def _admission_declaration(vault: Vault, snapshot: GitExportSnapshot) -> str:
+    """Read the committed declaration under the inherited admission policy."""
+    entry = snapshot.entries.get("index.md")
+    if vault.okf.mode == "auto" and entry and entry[0] in {"100644", "100755"}:
+        root = replace(snapshot, entries={"index.md": entry})
+        if _inspect_page(vault, "", root, limit=1).entries:
+            with suppress(UnicodeError):
+                return decode_utf8(snapshot.read("index.md"))
+    return ""
+
+
 def _declaration(raw: bytes) -> str:
     try:
         with io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8-sig") as stream:
@@ -426,9 +437,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
     folder = _scope(folder)
     active = False
     if snapshot and vault._required_frontmatter:
-        raw = _declaration_raw(vault, snapshot, "index.md")
-        declaration = _declaration(raw) if raw is not None else ""
-        active = vault.okf.state(declaration).active
+        active = vault.okf.state(_admission_declaration(vault, snapshot)).active
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
             if mode == "160000" and (folder == path or folder.startswith(path + "/")):
@@ -496,9 +505,9 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 
         def inventory() -> set[str]:
             return {
-                item.path
+                item.path + "/" if item.role == "directory" else item.path
                 for item in root_inventory()
-                if item.role not in {"directory", "unknown"}
+                if item.role != "unknown"
                 and item.state not in {"unavailable", "missing"}
             }
 

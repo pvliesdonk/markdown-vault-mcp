@@ -550,6 +550,8 @@ class ExportPaths:
                 inventory = self.inventory() if self.inventory else self.members
                 self._candidates = {}
                 for path in inventory:
+                    if path.endswith("/"):
+                        continue
                     self._candidates.setdefault(path.rpartition("/")[2], set()).add(
                         path
                     )
@@ -673,19 +675,31 @@ class ExportPaths:
         fallback: list[Dependency] = []
         archive_source = self._archive_path(source)
         root_index = archive_source == "index.md"
-        licenses = _mapping_values(root, "license", {}) if root_index else []
-        descriptors = _source_resources(root, root_index)
-        for node in _frontmatter_paths(root, root_index):
+        nodes, licenses, descriptors = _frontmatter_paths(root, root_index)
+        for node in nodes:
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
             if not value or _is_external_target(value) or _FIELD_URL.match(value):
                 continue
-            if not value.startswith("/") and _field_parts(value)[0] not in {".", ".."}:
+            escapes_root = (
+                not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value)
+                and resolve_okf_path(value, "index.md", set(), None).status
+                == "external"
+            )
+            if (
+                not value.startswith("/")
+                and not escapes_root
+                and _field_parts(value)[0]
+                not in {
+                    ".",
+                    "..",
+                }
+            ):
                 rewritten = self._bare_field(
                     value,
                     source,
                     (dependencies, fallback),
-                    (node in licenses, id(node) in descriptors),
+                    (id(node) in licenses, id(node) in descriptors),
                 )
             else:
                 rewritten = self._field_replacement(value, source, dependencies)
@@ -729,14 +743,7 @@ class ExportPaths:
         if (
             result.status != "resolved"
             and scope_descriptor
-            and (
-                any(char.isspace() for char in value)
-                or (
-                    "/" not in written
-                    and not written.lower().endswith(".md")
-                    and not names_attachment(written, self.extensions)
-                )
-            )
+            and (any(char.isspace() for char in value))
         ):
             return None
         if result.status != "resolved" and license_field and _is_spdx_license(value):
@@ -757,7 +764,15 @@ class ExportPaths:
             return self._resolved_field(
                 value, source, result.path, result.suffix, dependencies
             )
-        return self._unresolved_field(value, source, dependencies)
+        descriptor = (
+            scope_descriptor
+            and "/" not in written
+            and not written.lower().endswith(".md")
+            and not names_attachment(written, self.extensions)
+        )
+        return (
+            None if descriptor else self._unresolved_field(value, source, dependencies)
+        )
 
     def _unresolved_field(
         self, value: str, source: str, dependencies: list[Dependency]
@@ -1030,48 +1045,37 @@ def _mapping_values(
     return []
 
 
-def _source_resources(root: object, root_index: bool) -> set[int]:
-    memo: dict[tuple[int, str], list[object] | None] = {}
-    result: set[int] = set()
-    for sources in _mapping_values(root, "sources", memo):
-        if isinstance(sources, SequenceNode):
-            for item in sources.value:
-                result.update(
-                    id(node) for node in _mapping_values(item, "resource", memo)
-                )
-    keys: tuple[str, ...] = ("resource", "computation", "superseded_by")
-    if root_index:
-        keys += ("license",)
-    for key in keys:
-        result.difference_update(id(node) for node in _mapping_values(root, key, memo))
-    for key in ("executor", "attester"):
-        for parent in _mapping_values(root, key, memo):
-            result.difference_update(
-                id(node) for node in _mapping_values(parent, "resource", memo)
-            )
-    return result
-
-
-def _frontmatter_paths(root: object, root_index: bool = False) -> list[ScalarNode]:
+def _frontmatter_paths(
+    root: object, root_index: bool = False
+) -> tuple[list[ScalarNode], set[int], set[int]]:
     memo: dict[tuple[int, str], list[object] | None] = {}
     nodes = _mapping_values(root, "resource", memo) + _mapping_values(
         root, "computation", memo
     )
     nodes += _mapping_values(root, "superseded_by", memo)
-    if root_index:
-        nodes += _mapping_values(root, "license", memo)
+    licenses = _mapping_values(root, "license", memo) if root_index else []
     for key in ("executor", "attester"):
         for parent in _mapping_values(root, key, memo):
             nodes.extend(_mapping_values(parent, "resource", memo))
+    path_roles = {id(node) for node in nodes}
+    nodes += licenses
+    ordinary = {id(node) for node in nodes}
+    descriptors: set[int] = set()
     for sources in _mapping_values(root, "sources", memo):
         if isinstance(sources, SequenceNode):
             for item in sources.value:
-                nodes.extend(_mapping_values(item, "resource", memo))
+                resources = _mapping_values(item, "resource", memo)
+                nodes.extend(resources)
+                descriptors.update(id(node) for node in resources)
     unique: dict[int, ScalarNode] = {}
     for node in nodes:
         if isinstance(node, ScalarNode) and node.tag == "tag:yaml.org,2002:str":
             unique[id(node)] = node
-    return list(unique.values())
+    return (
+        list(unique.values()),
+        {id(node) for node in licenses} - path_roles,
+        descriptors - ordinary,
+    )
 
 
 def _field_internal_replacement(
