@@ -888,7 +888,7 @@ def register(mcp: FastMCP) -> None:
         # incl. CGNAT, DNS-rebind pinning, trust_env=False, per-redirect-hop
         # revalidation of all of those, streaming size cap, userinfo/query
         # redaction) lives in ``_fetch.fetch_url``: this tool's guard was lifted
-        # into pvl-core (#862; pvl-core #219) and ported back here (#2282).
+        # into pvl-core (#862; fastmcp-pvl-core#219) and ported back here (#2282).
         try:
             fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
         except ValueError as exc:

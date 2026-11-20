@@ -251,7 +251,7 @@ class TestConfiguredModeWithoutProvider:
     meaning "this flavor is not configured, try the next one".  Once
     :func:`resolve_auth_mode` has settled on a mode there is no next one,
     so that signal reaching :func:`build_auth` means the operator asked
-    for auth and would have got a server accepting anyone (#316).
+    for auth and would have got a server accepting anyone (fastmcp-pvl-core#316).
     """
 
     def test_oidc_proxy_override_without_client_credentials_refuses_to_start(self):

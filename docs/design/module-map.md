@@ -103,7 +103,7 @@ src/markdown_vault_mcp/
   tracker.py           -- hash-based change detection
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
-  exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
+  exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
@@ -154,7 +154,7 @@ src/markdown_vault_mcp/
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)
   _subject.py          -- get_subject / get_claims / get/set_current_auth_mode: the request subject across auth modes and the auth-mode context variable build_auth sets (#2350)
   _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
-  _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279)
+  _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279); redact_urls_in_text: redact URLs in free text for get_server_info and the health routes (#2333)
   _instructions.py     -- contribute_instructions: domain snippets added to the instructions builder from server.py's DOMAIN-WIRING (#901)
   _instructions_builder.py -- instructions_for / finalize_instructions / InstructionRole: per-server snippet builder, tool-aware pruning, role ordering, INSTANCE_DESCRIPTION / INSTRUCTIONS_EXTRA / INSTRUCTIONS env contract, UTF-16 budget warnings (#2305)
   _serve.py            -- run_http: uvicorn with log_config=None, lifespan on and the startup-failure exit (#2335)
@@ -183,7 +183,7 @@ src/markdown_vault_mcp/
   _transfer_routes.py  -- make_transfer_handler: the /transfer/{token} GET/POST/PUT handler (claim, size cap, sink status mapping, release on failure, grace-settle) (#2319)
   _transfer_store.py   -- TransferStore: single-use capability tokens in the transfer KV namespace (claim lease, release-on-failure, grace-settle, fencing) (#2320)
   _transfer_links.py   -- register_transfer_routes / build_transfer_links / TransferLinks / add_transfer_workflow: the /transfer route mount, the create_*_link tools and the transfer workflow snippet (#2318)
-  _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
+  _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for the transfer routes in _transfer_routes / _transfer_links (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)
   _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)
   _health.py           -- register_health_routes / HealthCheck: unauthenticated /health liveness and /health/ready readiness (KV write probe + domain checks, HEALTH_DETAIL) (#2334)

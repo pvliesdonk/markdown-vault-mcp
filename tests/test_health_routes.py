@@ -332,7 +332,7 @@ class TestKvCheckDetectsARealFailure:
 
     @pytest.mark.asyncio
     async def test_a_vanished_file_backend_is_not_ready(self, tmp_path):
-        """The exact failure #313 opens with.
+        """The exact failure fastmcp-pvl-core#313 opens with.
 
         ``get`` on a never-written key returns ``None`` from a backend
         whose directory has been deleted, so a read-only probe answers

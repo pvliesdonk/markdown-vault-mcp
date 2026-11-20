@@ -473,7 +473,7 @@ def test_constructor_rejects_non_positive_grace(bad: float) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# from_config — the store pins namespace="transfer" (shape owned by pvl-core)
+# from_config — the store pins namespace="transfer"
 # --------------------------------------------------------------------------- #
 
 

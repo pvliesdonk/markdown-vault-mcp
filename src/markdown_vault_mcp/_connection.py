@@ -1,9 +1,9 @@
 """Which protocol revision and client a request arrived over.
 
 Ported from ``fastmcp_pvl_core._connection`` 10.2.0 (#2333) for
-``get_server_info``. pvl-core's request-logging middleware reads its own copy
-until #2276 moves it here. How the SDK populates the values per protocol era
-is recorded in pvl-core's ``docs/reference/mcp-protocol-era-identity.md``.
+``get_server_info``; ``_request_logging`` reads it too. How the SDK populates
+the values per protocol era is recorded in fastmcp-pvl-core's
+``docs/reference/mcp-protocol-era-identity.md``.
 """
 
 from __future__ import annotations

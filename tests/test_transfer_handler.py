@@ -257,7 +257,7 @@ async def test_release_failure_does_not_mask_the_original_error(
 
 
 # --------------------------------------------------------------------------- #
-# sink-signalled status (issue #233)
+# sink-signalled status (fastmcp-pvl-core#233)
 # --------------------------------------------------------------------------- #
 
 # A representative spread: the two named subclasses, and the base used directly

@@ -67,15 +67,16 @@ GENERATORS_JS_PATH = REPO_ROOT / "docs/javascripts/config-wizard/generators.js"
 # by any config code here.
 GENERATOR_INJECTED = {"FASTMCP_HOME"}
 
-# {PREFIX}_* runtime/logging vars: read by FastMCP (pvl-core) itself, not by
-# any config code we own — no literal ``env(prefix, "LOG_LEVEL")`` call
-# exists for the static extractor to find. The only hand-listed framework
-# tier; kept tiny on purpose.
+# {PREFIX}_* runtime/logging vars: read by ``_logging_setup`` itself, not by
+# any config section. Since the fold (#2276) the package-wide scan also
+# finds ``_logging_setup``'s ``env(env_prefix, "LOG_LEVEL")`` reads, so this
+# hand-listed framework tier overlaps the domain inventory; kept tiny on
+# purpose.
 #
 # pvl-core v8 renamed these from bare FASTMCP_* names to the prefixed
 # {PREFIX}_LOG_LEVEL / {PREFIX}_LOG_FORMAT (FASTMCP_ENABLE_RICH_LOGGING was
 # removed outright, not renamed; the bare FASTMCP_LOG_LEVEL keeps working as
-# a deprecated fallback for one major, read by pvl-core the same way).
+# a deprecated fallback for one major, read by ``_logging_setup`` the same way).
 FRAMEWORK_VARS = {
     f"{PREFIX}_LOG_LEVEL",
     f"{PREFIX}_LOG_FORMAT",
@@ -136,10 +137,11 @@ def _jobs_config_source_file() -> Path:
 
 
 def _health_source_file() -> Path:
-    """Resolve pvl-core's health-route module (server tier).
+    """Resolve the health-route module (server tier).
 
     ``HEALTH_DETAIL`` is read while the routes are registered rather than by
     ``ServerConfig``, so its owning module must participate in the inventory.
+    The module moved out of pvl-core in #2334 and keeps its server tier.
     """
     src = inspect.getsourcefile(register_health_routes)
     assert src is not None, "register_health_routes source file not found"

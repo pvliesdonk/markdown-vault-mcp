@@ -427,7 +427,7 @@ async def test_fetch_url_raises_on_http_error_status() -> None:
 async def test_fetch_url_own_log_is_redacted(caplog) -> None:
     # fetch_url controls only *its own* emit-paths. httpx's internal request
     # logger also emits the URL (with query) — that is the operator's logging
-    # config concern (pvl-core ships SecretMaskFilter), not something a
+    # config concern, not something a
     # primitive should globally reconfigure. So we scope this to the fetch
     # module's own logger records.
     def handler(_request: httpx.Request) -> httpx.Response:

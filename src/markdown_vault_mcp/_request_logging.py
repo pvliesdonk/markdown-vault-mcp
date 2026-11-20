@@ -169,7 +169,7 @@ class RequestLoggingMiddleware(Middleware):
             # arrives as a ToolError (FastMCP converts it), so a tool picks
             # the level of this line; a failure FastMCP raises before the body
             # runs (an unknown tool name, arguments that fail the schema) keeps
-            # its own type and level (pvl-core ADR 0005 §2.4).
+            # its own type and level (fastmcp-pvl-core ADR 0005 §2.4).
             level = exc.log_level if isinstance(exc, FastMCPError) else logging.ERROR
             self._emit(
                 event_base + "_failed",

@@ -1,4 +1,4 @@
-"""Tests for the startup auth-mode announcement (issue #310).
+"""Tests for the startup auth-mode announcement (fastmcp-pvl-core#310).
 
 Ported from fastmcp-pvl-core v10.2.0 ``tests/test_auth_mode_announcement.py`` (#2277).
 
@@ -26,7 +26,7 @@ def _is_mode_announcement(record: logging.LogRecord) -> bool:
     """Whether *record* is ``_auth`` announcing a resolved mode.
 
     Matches on ``auth_mode`` appearing anywhere rather than on the current
-    message prefix. The line #310 removed was shaped
+    message prefix. The line fastmcp-pvl-core#310 removed was shaped
     ``auth_mode=<mode> (explicit via AUTH_MODE)``; a filter tied to today's
     wording would let that exact regression back in unseen.
 
@@ -64,7 +64,7 @@ def _assert_sole_announcement(
 ) -> logging.LogRecord:
     """Assert exactly one announcement was emitted, and return it.
 
-    The ``len(records) == 1`` half is the point of #310 and is asserted on
+    The ``len(records) == 1`` half is the point of fastmcp-pvl-core#310 and is asserted on
     every path rather than only where duplication was observed.
     """
     records = _announcements(caplog)
@@ -117,7 +117,7 @@ class TestAnnouncementOnEveryPath:
         )
 
     def test_explicit_override_is_announced_once_not_twice(self, caplog):
-        """Regression guard for the duplicate emission in issue #310."""
+        """Regression guard for the duplicate emission in fastmcp-pvl-core#310."""
         caplog.set_level(logging.DEBUG)
         with patch("httpx.get", return_value=_mock_discovery()):
             build_auth(_remote_config(auth_mode="remote"))
@@ -180,7 +180,7 @@ class TestUnauthenticatedServersWarn:
         """The predicate PR #317 chose, pinned directly on the announcer.
 
         Every configuration that used to reach ``build_auth`` with a
-        non-``none`` mode and no provider now raises instead (#316), so
+        non-``none`` mode and no provider now raises instead (fastmcp-pvl-core#316), so
         this is the only remaining detector for the provider-vs-mode
         mutation that #317 rejected: keying the level off
         ``mode == "none"`` passes every other test in the suite while
@@ -209,7 +209,7 @@ class TestUnauthenticatedServersWarn:
 class TestFailedBuildStillAnnounces:
     """A builder that raises must still name the mode it was building.
 
-    The line #310 removed fired *before* the discovery call, so an
+    The line fastmcp-pvl-core#310 removed fired *before* the discovery call, so an
     operator whose IdP was unreachable at least learned which mode the
     server was in. Announcing only after a successful dispatch would
     have quietly lost that.
@@ -230,7 +230,7 @@ class TestFailedBuildStillAnnounces:
     def test_configured_mode_without_a_provider_is_a_refusal_not_a_warning(
         self, caplog
     ):
-        """#316: this configuration used to start a server that accepted anyone.
+        """fastmcp-pvl-core#316: this configuration used to start a server that accepted anyone.
 
         ``AUTH_MODE=oidc-proxy`` without client credentials resolves to
         ``oidc-proxy`` and the builder returns ``None``. The invariant in
