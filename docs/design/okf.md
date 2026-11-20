@@ -190,7 +190,9 @@ frontmatter blob; not persisted):
   dates, and the upstream issue behind the amendment is still open.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
-  or `<producer>/<version>`, with nonempty, whitespace-free components)
+  or `<producer>/<version>`; a `human:`/`process:` id is nonempty and may
+  contain internal spaces but no other whitespace (#2393), and producer and
+  version are whitespace-free)
   and an offset-aware `at` instant counts. A usable human record yields
   `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
   otherwise `unverified`. A bare mapping is still one record. Malformed
