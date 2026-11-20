@@ -57,6 +57,7 @@ classifiers = [
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
+    "packaging>=24.2",
     # >=10.1.0 for env(..., required=True) and env_int / env_float's
     # required keyword, and for domain_env_surface reporting such a read as
     # required: config.py's CONFIG-FROM-ENV example, the template-ci

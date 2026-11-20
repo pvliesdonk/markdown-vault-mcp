@@ -706,3 +706,31 @@ def test_root_license_path_uses_same_resolution():
     text = "---\nlicense: LICENSE\n---\n"
     assert paths.relocate_frontmatter(text, "index.md", report) == text
     assert not report.dependencies
+
+
+@pytest.mark.parametrize(
+    "license_value", ["CC-BY-4.0", "MIT OR Apache-2.0", "LicenseRef-custom"]
+)
+def test_root_spdx_license_is_not_a_missing_path(license_value):
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    paths = ExportPaths("", {"index.md"}, None, version="0.3")
+    report = OkfExportReport()
+    text = f"---\nlicense: {license_value}\n---\n"
+    assert paths.relocate_frontmatter(text, "index.md", report) == text
+    assert not report.dependencies
+
+
+@pytest.mark.parametrize("license_value", ["missing.txt", "missing/LICENSE"])
+def test_missing_root_license_path_is_reported(license_value):
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    paths = ExportPaths("", {"index.md"}, None, version="0.3")
+    report = OkfExportReport()
+    text = f"---\nlicense: {license_value}\n---\n"
+    assert paths.relocate_frontmatter(text, "index.md", report) == text
+    assert [(x.path, x.target) for x in report.dependencies] == [
+        ("index.md", license_value)
+    ]

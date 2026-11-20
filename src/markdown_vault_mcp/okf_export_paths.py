@@ -12,6 +12,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 import frontmatter
 import yaml
+from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 from markdown_vault_mcp._okf_paths import resolve_okf_path
@@ -659,70 +660,75 @@ class ExportPaths:
         dependencies: list[Dependency] = []
         ambiguous: list[Dependency] = []
         fallback: list[Dependency] = []
+        licenses = _mapping_values(root, "license", {}) if source == "index.md" else []
         for node in _frontmatter_paths(root, source == "index.md"):
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
             if not value or _is_external_target(value) or _FIELD_URL.match(value):
                 continue
             if not value.startswith("/") and _field_parts(value)[0] not in {".", ".."}:
-                archive_source = source[len(self.scope) + 1 :] if self.scope else source
-                result = resolve_okf_path(
-                    value, source, self._available_fields(), self.version
+                rewritten = self._bare_field(
+                    value, source, (dependencies, fallback), node in licenses
                 )
-                if result.status == "root_fallback":
-                    fallback.append(Dependency(archive_source, _safe_text(value)))
-                if result.status in {"resolved", "root_fallback"} and result.path:
-                    target = result.path.rstrip("/")
-                    if target in self.members or target in self._directories:
-                        bundle_target = (
-                            target[len(self.scope) + 1 :] if self.scope else target
-                        )
-                        apparent, _ = _resolve_link_path(
-                            decode_link_target(_field_parts(value)[0]), archive_source
-                        )
-                        if apparent != bundle_target:
-                            replacement = _field_internal_replacement(
-                                _field_parts(value)[0],
-                                decode_link_target(_field_parts(value)[0]),
-                                bundle_target,
-                                archive_source,
-                            )
-                            if result.path.endswith("/") and not replacement.endswith(
-                                "/"
-                            ):
-                                replacement += "/"
-                            changes.append(
-                                (node, replacement + result.suffix + trailing)
-                            )
-                        continue
-                    dependencies.append(Dependency(archive_source, _safe_text(value)))
-                    apparent, _ = _resolve_link_path(
-                        decode_link_target(_field_parts(value)[0]), archive_source
-                    )
-                    url = self._outside_target(
-                        result.path, source, value, apparent, dirs=True
-                    )
-                    if url is not None:
-                        changes.append((node, url + result.suffix + trailing))
-                    continue
-                if result.status == "external" and value.startswith(("./", "../")):
-                    rewritten = self._field_replacement(value, source, dependencies)
-                    if rewritten is not None and rewritten != value:
-                        changes.append((node, rewritten + trailing))
-                    continue
-                if result.status in {"external", "absent"}:
-                    continue
-                if value.startswith(("./", "../")):
-                    rewritten = self._field_replacement(value, source, dependencies)
-                    if rewritten is not None and rewritten != value:
-                        changes.append((node, rewritten + trailing))
-                    continue
-                dependencies.append(Dependency(archive_source, _safe_text(value)))
-                continue
-            rewritten = self._field_replacement(value, source, dependencies)
+            else:
+                rewritten = self._field_replacement(value, source, dependencies)
             if rewritten is not None and rewritten != value:
                 changes.append((node, rewritten + trailing))
         return changes, dependencies, ambiguous, fallback
+
+    def _bare_field(
+        self,
+        value: str,
+        source: str,
+        observations: tuple[list[Dependency], list[Dependency]],
+        license_field: bool,
+    ) -> str | None:
+        dependencies, fallback = observations
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        result = resolve_okf_path(value, source, self._available_fields(), self.version)
+        if result.status == "root_fallback":
+            fallback.append(Dependency(archive_source, _safe_text(value)))
+        if result.status in {"resolved", "root_fallback"} and result.path:
+            return self._resolved_field(
+                value, source, result.path, result.suffix, dependencies
+            )
+        if result.status in {"external", "absent"} and not value.startswith(
+            ("./", "../")
+        ):
+            return None
+        if license_field and _is_spdx_license(value):
+            return None
+        if value.startswith(("./", "../")):
+            return self._field_replacement(value, source, dependencies)
+        dependencies.append(Dependency(archive_source, _safe_text(value)))
+        return None
+
+    def _resolved_field(
+        self,
+        value: str,
+        source: str,
+        target_path: str,
+        suffix: str,
+        dependencies: list[Dependency],
+    ) -> str | None:
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        written = _field_parts(value)[0]
+        path = decode_link_target(written)
+        apparent, _ = _resolve_link_path(path, archive_source)
+        target = target_path.rstrip("/")
+        if target not in self.members and target not in self._directories:
+            dependencies.append(Dependency(archive_source, _safe_text(value)))
+            url = self._outside_target(target_path, source, value, apparent, dirs=True)
+            return url + suffix if url is not None else None
+        bundle_target = target[len(self.scope) + 1 :] if self.scope else target
+        if apparent == bundle_target:
+            return None
+        replacement = _field_internal_replacement(
+            written, path, bundle_target, archive_source
+        )
+        if target_path.endswith("/") and not replacement.endswith("/"):
+            replacement += "/"
+        return replacement + suffix
 
     def _available_fields(self) -> set[str]:
         if self._field_inventory is None:
@@ -884,6 +890,14 @@ class ArtifactLinks:
             return self._resolve(name, source)
         candidates = self._candidates.get(name.rpartition("/")[2], set())
         return ExportPaths._wiki_match(name, source, candidates) or name
+
+
+def _is_spdx_license(value: str) -> bool:
+    try:
+        canonicalize_license_expression(value)
+    except InvalidLicenseExpression:
+        return False
+    return True
 
 
 def _quote_field_uri(path: str) -> str:
