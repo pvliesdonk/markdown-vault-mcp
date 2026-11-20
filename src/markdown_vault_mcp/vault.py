@@ -892,24 +892,17 @@ class Vault:
             self._git_strategy.set_generated_index_policy(self._is_generated_index)
         from markdown_vault_mcp._okf_log_event import record_group_events
 
+        event_policy = (
+            capabilities.folders,
+            lambda: self.okf_capability_report(active=self._okf.state().active)["log"],
+        )
         self._write_callback.group_write_scope = self._doc_mgr.write_scope
         self._write_callback.group_event_enabled = lambda: bool(
-            self.okf_capability_report(active=self._okf.state().active)["log"][
-                "effective"
-            ]
+            event_policy[1]()["effective"]
         )
         self._write_callback.group_event = lambda group, paths, day: (
             record_group_events(
-                self._doc_mgr,
-                paths,
-                group.description,
-                (
-                    capabilities.folders,
-                    lambda: self.okf_capability_report(active=self._okf.state().active)[
-                        "log"
-                    ],
-                ),
-                day,
+                self._doc_mgr, paths, group.description, event_policy, day
             )
         )
         self._writer_facet = WriterFacet(
@@ -917,12 +910,7 @@ class Vault:
             receipt_store=receipt_store,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
-            event_policy=(
-                capabilities.folders,
-                lambda: self.okf_capability_report(active=self._okf.state().active)[
-                    "log"
-                ],
-            ),
+            event_policy=event_policy,
             # The overwrite breadcrumb (#1137) reads git state, so it is the
             # git-query manager's answer — bound here rather than handing the
             # write facet the store itself.
