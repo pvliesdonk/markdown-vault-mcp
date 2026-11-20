@@ -48,6 +48,7 @@ from markdown_vault_mcp.config_sections import (
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
     normalize_templates_folder,
+    read_okf_verify,
     resolve_attachment_extensions,
     resolve_conventions_file,
     resolve_git_repo_url,
@@ -72,6 +73,7 @@ from markdown_vault_mcp.config_sections._helpers import (
 )
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 from markdown_vault_mcp.config_sections.server import ServerConfig
+from markdown_vault_mcp.okf_capabilities import DEFAULT_VERIFY
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
@@ -432,7 +434,7 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "OKF (Open Knowledge Format) enforced write layer. When true on "
+                "Deprecated alias for the OKF (Open Knowledge Format) enforced write layer. When true on "
                 "an OKF-active vault, the server stamps generated provenance on "
                 "each write and clears any verified attestation when a note's "
                 "content changes. It also keeps each written folder's log.md and "
@@ -445,12 +447,12 @@ class ProjectConfig:
         },
     )
     okf_verify: str = field(
-        default="elicit",
+        default=DEFAULT_VERIFY,
         metadata={
             "help": (
                 "How the okf_verify tool attributes a human review. This "
                 "applies only when OKF_WRITE is on, which gates the tool. With "
-                "elicit (the default), okf_verify asks the human to confirm "
+                "elicit, okf_verify asks the human to confirm "
                 "the review through an MCP elicitation, then records the "
                 "attestation only on an affirmative reply. It fails closed "
                 "when the client cannot elicit or the human declines, so a "
@@ -460,8 +462,11 @@ class ProjectConfig:
                 "client-ID-only identities, and OAuth tokens the issuer marks "
                 "as an application's. This is safe only when the sole "
                 "caller is a human-driven UI. Set off to hide the tool, "
-                "leaving attestation to external tooling. A "
-                "non-default value with OKF_WRITE off is a config error."
+                "leaving attestation to external tooling. "
+                "Unset resolves to off, or elicit with OKF_WRITE enabled. An explicit "
+                "elicit or trust-auth with OKF_MODE=off is a configuration error. "
+                "The independently configured mode is resolved now; runtime gating "
+                "continues to require OKF_WRITE until a later update."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
@@ -1218,6 +1223,10 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
             okf_verify=self.okf_verify,
+            okf_author=self.okf_author,
+            okf_index=self.okf_index,
+            okf_log=self.okf_log,
+            okf_folders=self.okf_folders,
             service_subjects=self.service_subjects,
         )
 
@@ -1290,6 +1299,38 @@ class ProjectConfig:
                 f"between 0 and 2147483.647 (about 24.8 days); got {timeout}."
             )
 
+    okf_author: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Prepare explicit OKF authoring authority; defaults to false. Runtime gates do not yet use this setting.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_index: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Prepare OKF index maintenance authority; defaults to false. Runtime gates do not yet use this setting.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_log: str | None = field(
+        default=None,
+        metadata={
+            "help": "Prepare OKF log authority: off (default), events, or writes. Runtime gates do not yet use this setting.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_folders: Sequence[str] | None = field(
+        default=None,
+        metadata={
+            "help": "Comma-separated designated OKF folder globs; defaults to root (.). Runtime gates do not yet use this setting.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     # CONFIG-FIELDS-END
 
     def __post_init__(self) -> None:
@@ -1330,6 +1371,7 @@ class ProjectConfig:
             "exclude",
             "searchable_fields",
             "attachment_extensions",
+            "okf_folders",
         )
         for name in sequence_fields:
             value = getattr(self, name)
@@ -1354,6 +1396,12 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
+        if self.okf_write:
+            from markdown_vault_mcp.config_sections._assembly import (
+                warn_okf_write_deprecated,
+            )
+
+            warn_okf_write_deprecated()
         # ``transfer`` and ``jobs`` are composed section fields (not
         # section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
@@ -1426,9 +1474,15 @@ class ProjectConfig:
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
-            okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
-            .strip()
-            .lower(),
+            okf_verify=read_okf_verify(_ENV_PREFIX),
+            okf_author=to_bool(raw_author, default=False)
+            if (raw_author := env(_ENV_PREFIX, "OKF_AUTHOR")) is not None
+            else None,
+            okf_index=to_bool(raw_index, default=False)
+            if (raw_index := env(_ENV_PREFIX, "OKF_INDEX")) is not None
+            else None,
+            okf_log=(env(_ENV_PREFIX, "OKF_LOG") or "").strip().lower() or None,
+            okf_folders=opt_list(env(_ENV_PREFIX, "OKF_FOLDERS")),
             service_subjects=opt_list(env(_ENV_PREFIX, "SERVICE_SUBJECTS")),
             attachment_extensions=resolve_attachment_extensions(
                 env(_ENV_PREFIX, "ATTACHMENT_EXTENSIONS")
