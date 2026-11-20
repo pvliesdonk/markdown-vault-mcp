@@ -851,8 +851,8 @@ class Vault:
         self._head_reconciler = self._build_head_reconciler()
         # Summarize facet is present only when a backend was supplied (the
         # summarize tool is otherwise hidden at the server layer). Promotion
-        # of slow calls to pollable background jobs is owned by the pvl-core
-        # jobs subsystem at the server layer, not by the vault (#1033).
+        # of slow calls to pollable background jobs is owned by ``_jobs`` at
+        # the server layer, not by the vault (#1033).
         self._summarize_facet: SummarizeFacet | None = None
         if self._summarizer is not None:
             from markdown_vault_mcp.managers.summarize import SummarizeManager

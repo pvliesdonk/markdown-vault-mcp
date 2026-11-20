@@ -147,7 +147,8 @@ async def test_a_fault_reaches_the_model_without_its_detail(
 ) -> None:
     """A git failure's stderr can name server paths; the model never sees it."""
     from fastmcp.exceptions import ToolError
-    from fastmcp_pvl_core import tool_boundary
+
+    from markdown_vault_mcp._tool_boundary import tool_boundary
 
     @tool_boundary
     @library_outcomes
@@ -161,8 +162,8 @@ async def test_a_fault_reaches_the_model_without_its_detail(
     assert any(r.exc_info for r in caplog.records if r.levelno == logging.ERROR)
 
 
-# Tools pvl-core registers itself, around no library call of this package.
-_PVL_CORE_TOOLS = frozenset(
+# Server-infrastructure tools, around no library call of this package.
+_INFRA_TOOLS = frozenset(
     {"get_server_info", "create_download_link", "create_upload_link", "get_job_result"}
 )
 
@@ -190,7 +191,7 @@ def test_every_tool_maps_library_outcomes_inside_its_boundary(
     missing = sorted(
         tool.name
         for tool in tools
-        if tool.name not in _PVL_CORE_TOOLS
+        if tool.name not in _INFRA_TOOLS
         and not (isinstance(tool, FunctionTool) and maps_library_outcomes(tool.fn))
     )
     assert not missing, (
@@ -200,7 +201,7 @@ def test_every_tool_maps_library_outcomes_inside_its_boundary(
 
 
 def test_mapping_above_the_boundary_does_not_count() -> None:
-    from fastmcp_pvl_core import tool_boundary
+    from markdown_vault_mcp._tool_boundary import tool_boundary
 
     @library_outcomes
     @tool_boundary
