@@ -17,7 +17,7 @@ kind: reference
 markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
 ```
 
-Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values can contain equals signs; duplicate keys fail. Filters use the vault's existing indexed-field and OKF rules.
+Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values are strings and can contain equals signs; duplicate keys fail. For the missing-type selector, use the [MCP tools or library](../use/okf.md).
 
 ```bash
 markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-file 2 --snippet-words 40 --agent
@@ -25,7 +25,7 @@ markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-fil
 
 `--chunks-per-file` requires at least one section; `--snippet-words` accepts zero for full indexed sections. Unset values use the vault's defaults. `--wait-for-pending-writes` asks a remote server to drain its writer within the client deadline. Local reads have no server writer to wait for and do not claim a fresh shared index.
 
-`--json` keeps the grouped-result array, including sections, frontmatter and optional OKF annotations. A stale remote result adds a warning on stderr. `--agent` conflicts with `--json` and emits one `OK search` header followed by one escaped JSON record per note. The header includes count, requested mode, actual modes observed in hits, and `index_stale=true`, `false` or `unknown`. Empty results cannot establish an actual mode; local index freshness is unknown. Printable Unicode remains readable and control characters cannot inject terminal commands or extra records. Human output keeps the existing path, score and title layout.
+`--json` keeps the grouped-result array, including sections, frontmatter, optional OKF annotations and, when supplied by the server, `retrieval_policy`. Terminal search uses the current purpose. A stale remote result adds a warning on stderr. `--agent` conflicts with `--json` and emits one `OK search` header followed by one escaped JSON record per note. The header includes count, requested mode, actual modes observed in hits, and `index_stale=true`, `false` or `unknown`. Empty results cannot establish an actual mode; local index freshness is unknown. Printable Unicode remains readable and control characters cannot inject terminal commands or extra records. Human output keeps the existing path, score and title layout.
 
 Older servers can still accept the original search arguments. Requesting an option their tool schema lacks fails explicitly; the client never drops it or retries locally.
 
@@ -126,6 +126,7 @@ indexed metadata without constructing embedding or summarization providers or
 loading vector sidecars. Follow a returned path with `read`, `read --section`,
 `similar`, `context` or a graph command. Local freshness remains unknown.
 
+The `stats` command reports [OKF capability state](../use/okf.md) in `stats.okf.capabilities`, including when OKF is inactive.
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -322,6 +323,28 @@ Collect note links, neighbors, folder peers and conventions.
 | `--json` |  | False | Return the structured context dossier. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp okf-inventory`
+
+Inspect concept candidates, including notes outside search.
+
+| Argument | Description |
+|---|---|
+| `ROOT` | Vault-relative bundle root; empty for vault root. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--type-state` |  |  | Filter by type presence. |
+| `--parse-state` |  |  | Filter by parsing outcome. |
+| `--search-state` |  |  | Filter by search admission. |
+| `--entry-limit` |  | 100 | Maximum returned rows. |
+| `--cursor` |  |  | Continue from the previous `next_cursor`. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the structured report. |
+| `--agent` |  | False | Return escaped agent records. |
 
 ## `markdown-vault-mcp links`
 

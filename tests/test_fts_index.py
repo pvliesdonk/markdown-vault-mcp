@@ -2362,3 +2362,30 @@ class TestListChunksManyPaths:
         rows = idx.list_chunks(paths=paths)
         assert [r["path"] for r in rows] == ["real.md"]
         idx.close()
+
+
+def test_row_state_reads_live_skipped_and_absent_without_writing() -> None:
+    from markdown_vault_mcp.types import SKIP_CATEGORIES, SkippedFile
+
+    index = FTSIndex(":memory:")
+    try:
+        index.upsert_note(make_note("note.md"))
+        conn = index._conn()
+        assert index.row_state("note.md") == (True, None)
+        assert index.row_state("absent.md") == (False, None)
+        for category in (*sorted(SKIP_CATEGORIES), "live"):
+            index.upsert_tombstone(
+                SkippedFile("note.md", category, "detail"),
+                content_hash="h",
+                modified_at=1.0,
+            )
+            assert index.row_state("note.md") == (True, category)
+        index.upsert_note(make_note("note.md"))
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        assert index.row_state("note.md") == (True, None)
+        conn.set_trace_callback(None)
+        assert len(statements) == 1
+        assert statements[0].lstrip().upper().startswith("SELECT")
+    finally:
+        index.close()
