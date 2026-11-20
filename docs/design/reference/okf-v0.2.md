@@ -14,8 +14,8 @@ stale_after: 2027-03-06
 status: stable
 sources:
   - id: spec-current
-    title: Open Knowledge Format v0.2, current canonical specification, section 5.1
-    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md
+    title: Open Knowledge Format (OKF), Version 0.2, SPEC.md section 5.1 at commit 0b87c52c6e (2026-08-21)
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/0b87c52c6e/SPEC.md
     accessed: 2026-11-15
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
