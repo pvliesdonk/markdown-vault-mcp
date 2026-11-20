@@ -1,7 +1,7 @@
 ---
 name: logging-standard
 description: >-
-  Use before adding or changing any logging call in src/: log levels, exception handling, the event_name key=value message grammar tests/test_logging_standard.py enforces, and what pvl-core's root-logger setup (standard-library logging rendered as Rich or JSON) does with a call that follows it or does not.
+  Use before adding or changing any logging call in src/: log levels, exception handling, the event_name key=value message grammar tests/test_logging_standard.py enforces, and what the root-logger setup (standard-library logging rendered as Rich or JSON) does with a call that follows it or does not.
 ---
 
 # Logging Standard
@@ -14,11 +14,11 @@ This standard governs **first-party code only** — `src/markdown_vault_mcp/`
 and `tests/`. Two categories of log output are explicitly **out of scope**;
 do not try to make them conform, silence them, or reformat them:
 
-- **pvl-core's request-logging middleware**: emits conforming
-  `event key=value` records for every MCP message (`request_started` /
-  `request_completed` / `request_failed` keyed by `method=`, and the
-  `tool_call_*` vocabulary carrying `tool=<name>`). Governed by
-  `fastmcp-pvl-core`; no first-party code needed.
+- **The request-logging middleware** (`_request_logging.py`): emits
+  conforming `event key=value` records for every MCP message
+  (`request_started` / `request_completed` / `request_failed` keyed by
+  `method=`, and the `tool_call_*` vocabulary carrying `tool=<name>`). Its
+  templates are built at runtime, so no tool-level code logs them.
 - **Third-party loggers** — `uvicorn.access`, `uvicorn.error`,
   `mcp.server.lowlevel.server`, `httpx`, `httpcore`, `docket.worker`:
   `configure_logging_from_env` governs them for the whole family, and a
@@ -39,11 +39,11 @@ do not try to make them conform, silence them, or reformat them:
 - Standard library `logging` throughout. Every module:
   `logger = logging.getLogger(__name__)`.
 - No `print()` for operational output. No third-party logging libraries;
-  there is no structlog here, and the JSON output below is pvl-core's
+  there is no structlog here, and the JSON output below is `_log_render`'s
   formatter over ordinary `LogRecord`s.
-- pvl-core's middleware handles tool invocation, timing and error logging
-  automatically.
-- **pvl-core owns the root logger.** `cli._root` calls
+- The request-logging middleware handles tool invocation, timing and error
+  logging automatically.
+- **`_logging_setup.py` owns the root logger.** `cli._root` calls
   `configure_logging_from_env("MARKDOWN_VAULT_MCP", verbose=...)`, and so does
   `make_server()` unless its caller passes `configure_logging=False`, as
   `serve` does to keep `-v`; it installs
@@ -99,9 +99,9 @@ Pseudo-structured: `logger.info("event_name key=%s", value)`. Standard
 library logging keeps the template (`record.msg`) and the values
 (`record.args`) apart on the record, so a consumer that parses the
 *template* recovers typed fields from every call, but only when the
-template follows the grammar below. `fastmcp-pvl-core` owns that grammar
-and ships the check; `tests/test_logging_standard.py` runs it over `src/`
-and fails the build on any call that breaks it.
+template follows the grammar below. `_log_grammar.py` defines that grammar
+and `_log_conformance.py` the check; `tests/test_logging_standard.py` runs it
+over `src/` and fails the build on any call that breaks it.
 
 **Why it is a rule and not a preference.** In JSON mode a conforming record
 renders as `{"ts": …, "level": …, "logger": …, "event": "<name>",
@@ -168,7 +168,7 @@ value; a traceback goes through `exc_info=True`, never into the message.
   `logger.log(level, ...)`, are invisible to it. That is a limit of the
   check, not permission to use those forms to route around it; following
   the mandated receiver is also what keeps your calls checkable.
-- `find_nonconforming_log_calls` is pvl-core's own checker and gates
-  pvl-core's build too (pvliesdonk/fastmcp-pvl-core#328). Run
+- `find_nonconforming_log_calls` (`_log_conformance.py`, ported from
+  pvl-core in #2340) is the checker. Run
   `uv run pytest tests/test_logging_standard.py -q` to list every
   non-conforming call with its file, line and reason.
