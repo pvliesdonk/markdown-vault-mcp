@@ -381,6 +381,8 @@ def _malformed_generated(metadata: dict[str, Any]) -> bool:
         return False
     generated = metadata["generated"]
     return not isinstance(generated, Mapping) or "by" not in generated
+
+
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
     """Describe the supplied expiry without implying knowledge is true."""
     if "stale_after" not in metadata:
