@@ -567,10 +567,8 @@ def reindex(
     quiet_http_loggers()
     built = _build_owning_vault("admin reindex", source_dir, index_path)
     try:
-        # reindex() needs a built index (#525); build_index() is a cheap no-op
-        # when the index is already populated (a SQL row-count check, no
-        # filesystem scan) and the recorded build provenance still matches
-        # this process (#1124).
+        # reindex() needs a built index (#525); a matching warm build reuses
+        # FTS and sweeps the observation ledger before reindexing.
         built.vault.index.build_index(force=force)
         result = built.vault.index.reindex()
         if result.vault_root_empty:
@@ -721,11 +719,18 @@ def _report_import(report: ImportReport) -> None:
 
 
 from markdown_vault_mcp._cli_admin import register_admin_commands  # noqa: E402
+from markdown_vault_mcp._cli_bundle import register as register_bundle_commands  # noqa: E402
 from markdown_vault_mcp._cli_reader import register_read_commands  # noqa: E402
 
 # Read commands first, so the help lists them before the admin group (#2005).
 register_read_commands(app)
+register_bundle_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
+from markdown_vault_mcp._cli_export import export as _export  # noqa: E402
+
+app.command(
+    "export", help="Export an OKF ZIP or print a JSON refusal without writing it."
+)(_export)
 
 # DOMAIN-COMMANDS-END
 

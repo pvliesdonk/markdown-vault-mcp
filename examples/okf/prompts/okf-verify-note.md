@@ -7,9 +7,7 @@ arguments:
 tags: ["write"]
 ---
 
-You are recording a **human review** of an OKF note. This requires the enforced
-write layer (`MARKDOWN_VAULT_MCP_OKF_WRITE=true`); the `okf_verify` tool is
-hidden otherwise.
+You are recording a **human review** of an OKF note. The `okf_verify` tool must be enabled for the vault. Service principals cannot record human reviews; use a human principal or an unauthenticated connection with elicitation.
 
 How the attestation is confirmed depends on `MARKDOWN_VAULT_MCP_OKF_VERIFY`. In
 the default `elicit` mode the tool asks the **human** to confirm the review
@@ -20,7 +18,9 @@ authenticated caller with no prompt (and refuses when the server has no auth).
 ## Step 1: Read the note
 
 Call `read(path=$path)`. Note its `okf` annotation — in particular the current
-`trust_tier` and whether it is `stale` or `deprecated`.
+`trust_tier` and whether it is `stale` or `deprecated`. Save the full read’s
+`okf.snapshot` as `reviewed_snapshot`. Reviews require YAML frontmatter or a body-only note; convert JSON or TOML to YAML before reading and reviewing. The snapshot excludes `verified` and `x-mvmcp`. Reads currently report review applicability
+as `unbound`; they do not evaluate saved binding claims.
 
 ## Step 2: Review the content, do not rubber-stamp
 
@@ -32,9 +32,8 @@ Check the claims against the note's own `sources` and against the vault:
 
 If the note needs changes, call `get_conventions(path=$path)` and keep them
 within the vault owner's rules it returns, then make them first with
-`edit` / `write` and stop —
-a content change invalidates any prior verification, so verify only once the
-bytes are right. For a full-note `write`, preserve unchanged content and
+`edit` / `write` and stop. An earlier review does not cover the changed text,
+so verify only once the bytes are right. For a full-note `write`, preserve unchanged content and
 frontmatter and pass the etag from Step 1's read as `if_match`. If it conflicts,
 report the failure and stop; do not retry without `if_match` or proceed to
 attestation.
@@ -42,13 +41,15 @@ attestation.
 ## Step 3: Attest
 
 When you are satisfied the note is correct as written, call
-`okf_verify(path=$path)`. It appends a `{by: human:<subject>, at}` entry to the
-note's `verified` list and promotes its `trust_tier` to `human-reviewed`. In the
+`okf_verify(path=$path, reviewed_snapshot=<saved okf.snapshot>)`. It appends a `{by: human:<subject>, at}` entry to the
+note's `verified` list, a supplied binding claim to `x-mvmcp.reviews`, and a
+matching receipt to the server’s local state. It promotes the recorded `trust_tier`
+to `human-reviewed`; neither the claim nor the tier proves the content correct. In the
 default `elicit` mode the human must confirm the client's prompt for the entry
 to be written; relay that a confirmation is needed rather than trying to answer
 it yourself.
 
-Report the returned `verifier` and `verified_count`. If the tool refuses —
-because the human declined or the client cannot show the elicitation, or (in
+Report the returned `verifier` and `verified_count` for the saved claim. If the tool refuses —
+because the caller is a service principal, the human declined, the client cannot show the elicitation, or (in
 `trust-auth` mode) because the server has no authentication — say so rather than
 editing `verified` by hand.

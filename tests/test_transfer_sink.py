@@ -199,10 +199,16 @@ async def test_read_note_serves_raw_content(sink: VaultTransferSink) -> None:
     assert result.filename == "note.md"
 
 
-async def test_read_attachment_serves_bytes(sink: VaultTransferSink) -> None:
+async def test_read_attachment_serves_bytes(
+    sink: VaultTransferSink, vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_path: str) -> None:
+        raise AssertionError("encoded read used")
+
+    monkeypatch.setattr(vault.reader, "read_attachment", fail)
     result = await sink.read("pic.png")
     assert result.body == _PNG
-    assert "png" in result.media_type
+    assert result.media_type == "image/png"
     assert result.filename == "pic.png"
 
 
@@ -286,22 +292,26 @@ async def test_write_note_invalid_utf8_is_415(
 
 
 async def test_write_note_refused_by_vault_is_422(
-    config: ProjectConfig, source_dir: Path
+    config: ProjectConfig, source_dir: Path, tmp_path: Path
 ) -> None:
-    (source_dir / "index.md").write_text(
-        "---\nokf_version: '0.2'\n---\n# Bundle\n", encoding="utf-8"
-    )
-    config = replace(config, okf_mode="on", okf_write=True)
+    # A folder replaced by a symlink after the link was minted escapes the
+    # vault; the write path re-validates and refuses it.
+    (source_dir / "sub").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
     vault = Vault(
         source_dir=config.source_dir,
         settings=VaultSettings.from_project_config(config),
     )
     try:
         sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("sub/new.md", "upload") == "sub/new.md"
+        (source_dir / "sub").rmdir()
+        (source_dir / "sub").symlink_to(outside, target_is_directory=True)
         with pytest.raises(TransferSinkError) as exc:
-            await sink.write("broken.md", b"---\ntitle: [unclosed\n---\n# x\n")
+            await sink.write("sub/new.md", b"# x\n")
         assert exc.value.status_code == 422
-        assert not (source_dir / "broken.md").exists()
+        assert not (outside / "new.md").exists()
     finally:
         vault.close()
 
@@ -368,6 +378,155 @@ async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
     assert "note.md" in names
 
 
+async def test_strict_bundle_download_returns_refusal_report(
+    sink: VaultTransferSink,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import json
+
+    ref = "okf-bundle?strict"
+    assert await sink.validate(ref, "download") == ref
+    with caplog.at_level(logging.INFO):
+        result = await sink.read(ref)
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("(root)", "strict")
+        for r in caplog.records
+    )
+    assert result.media_type == "application/json"
+    assert result.filename == "okf-export-refusal.json"
+    payload = json.loads(result.body)
+    assert payload["okf_export"] == "refused"
+    assert payload["report"]["verdict"] == "nonconformant"
+
+
+async def test_review_bundle_refusal_log_matches_document(
+    sink: VaultTransferSink, caplog: pytest.LogCaptureFixture
+) -> None:
+    import json
+
+    ref = "okf-bundle?require_review"
+    assert await sink.validate(ref, "download") == ref
+    with caplog.at_level(logging.INFO):
+        result = await sink.read(ref)
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert any(
+        record.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and record.args == ("(root)", payload["reason"])
+        for record in caplog.records
+    )
+
+
+async def test_complex_metadata_review_download_is_refused(
+    sink: VaultTransferSink, source_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    import markdown_vault_mcp._okf_review as review
+
+    text = (
+        "---\na0: &a0 [x, x]\n"
+        + "".join(f"a{i + 1}: &a{i + 1} [*a{i}, *a{i}]\n" for i in range(8))
+        + "---\nBody\n"
+    )
+    (source_dir / "note.md").write_text(text)
+
+    def unexpected_snapshot(_content: str) -> dict[str, str]:
+        raise AssertionError("complex metadata must not reach canonical snapshot")
+
+    monkeypatch.setattr(review, "concept_snapshot", unexpected_snapshot)
+    result = await sink.read("okf-bundle?require_review")
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert payload["report"]["uninspected"]["note.md"] == "metadata_complexity"
+    assert payload["report"]["review_assurance"]["failures"][0]["path"] == "note.md"
+
+
+async def test_invalid_tagged_timestamp_download_yields_json_refusal(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    import json
+
+    (source_dir / "note.md").write_text("---\ndate: !!timestamp nope\n---\nBody\n")
+    result = await sink.read("okf-bundle?require_review")
+    assert result.media_type == "application/json"
+    assert json.loads(result.body)["reason"] == "review"
+
+
+async def test_bundle_collision_returns_actionable_refusal(
+    sink: VaultTransferSink, source_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import json
+
+    (source_dir / "guides").mkdir()
+    (source_dir / "guides/a.md").write_text("[outside](/b.md)")
+    (source_dir / "guides/b.md").write_text("# B")
+    with caplog.at_level(logging.INFO):
+        result = await sink.read("okf-bundle:guides")
+    assert any(
+        r.msg == "transfer_download_bundle_refused scope=%s reason=%s"
+        and r.args == ("guides", "collision")
+        for r in caplog.records
+    )
+    payload = json.loads(result.body)
+    assert result.media_type == "application/json"
+    assert payload["reason"] == "collision"
+    assert "external_base" in payload["message"]
+    assert payload["report"] is None
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "okf-bundle?unknown",
+        "okf-bundle?include_hidden",
+        "okf-bundle?strict&strict",
+        "okf-bundle?strict=1",
+        "okf-bundle?external_base=broken",
+        "okf-bundle?external_base=https%ZZ",
+        "okf-bundle?external_base=https%3A%2F%2Fexample.org%2F%FF",
+    ],
+)
+async def test_invalid_bundle_options_refused(
+    sink: VaultTransferSink, ref: str
+) -> None:
+    with _rejected("."):
+        await sink.validate(ref, "download")
+
+
+async def test_bundle_options_keep_folder_spelling(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    (source_dir / "guides?strict").mkdir()
+    ref = "okf-bundle:guides?strict"
+    assert await sink.validate(ref, "download") == ref
+    result = await sink.read(ref)
+    assert result.media_type == "application/zip"
+
+
+async def test_bundle_selection_flags_reach_export(
+    source_dir: Path, config: ProjectConfig
+) -> None:
+    import io
+    import zipfile
+
+    (source_dir / "excluded.md").write_text("excluded")
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(exclude_patterns=["excluded.md"])
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        default_result = await sink.read("okf-bundle")
+        with zipfile.ZipFile(io.BytesIO(default_result.body)) as archive:
+            assert "excluded.md" not in archive.namelist()
+        result = await sink.read("okf-bundle?include_index_excluded")
+        with zipfile.ZipFile(io.BytesIO(result.body)) as archive:
+            assert "excluded.md" in archive.namelist()
+    finally:
+        vault.close()
+
+
 async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:
     # A folder scope valid at mint time but deleted before the one-time download
     # yields 410 (matching the single-file path), not an empty zip.
@@ -385,7 +544,7 @@ async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -
     result = await sink.read("okf-bundle:guides")
     assert result.filename == "guides.zip"
     names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
-    assert names == ["guides/g.md"]
+    assert names == ["g.md"]
 
 
 @pytest.mark.parametrize("kind", ["download", "upload"])
@@ -471,3 +630,56 @@ async def test_extension_refusal_logs_the_setting(
         "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_protected_download_allowed_upload_refused(tmp_path: Path) -> None:
+    (tmp_path / "guard.md").write_text("original")
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
+    vault = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, protected_paths=["guard.md"]),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        assert await sink.validate("guard.md", "download") == "guard.md"
+        with pytest.raises(ToolError, match="PROTECTED_PATHS"):
+            await sink.validate("guard.md", "upload")
+        with pytest.raises(TransferSinkError, match="PROTECTED_PATHS"):
+            await sink.write("guard.md", b"changed")
+        assert (tmp_path / "guard.md").read_text() == "original"
+    finally:
+        vault.close()
+
+
+async def test_unquoted_review_timestamp_download_refusal(sink, source_dir):
+    import json
+
+    (source_dir / "note.md").write_text(
+        '---\nverified: {by: "human:alice", at: 2020-01-01T00:00:00Z}\n'
+        'x-mvmcp:\n  reviews:\n  - by: "human:alice"\n'
+        "    at: 2020-01-01T00:00:00Z\n    check: human-review\n"
+        '    snapshot: {algo: mvmcp-concept-v1, digest: "'
+        + "0" * 64
+        + '"}\n---\nBody\n'
+    )
+    result = await sink.read("okf-bundle?require_review")
+    payload = json.loads(result.body)
+    assert payload["reason"] == "review"
+    assert (
+        payload["report"]["review_assurance"]["failures"][0]["assessments"][0][
+            "snapshot"
+        ]
+        == "differs"
+    )
+    assert (
+        payload["report"]["review_assurance"]["failures"][0]["assessments"][0]["at"]
+        == "2020-01-01T00:00:00+00:00"
+    )
+
+
+@pytest.mark.parametrize(
+    "selector", ["require_check=human-review", "review_evidence=binding"]
+)
+async def test_download_selector_requires_review(sink, selector):
+    with pytest.raises(ToolError, match="require_review"):
+        await sink.validate("okf-bundle?" + selector, "download")

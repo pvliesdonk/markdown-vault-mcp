@@ -52,6 +52,7 @@ from markdown_vault_mcp._fts_queries import QueryExecutor, register_functions
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    IndexUnavailableError,
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.types import (
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS documents (
     modified_at REAL NOT NULL,
     chunk_count INTEGER NOT NULL DEFAULT 1,
     content_chars INTEGER NOT NULL DEFAULT 0,
+    citations_derived INTEGER NOT NULL DEFAULT 0,
     skip_category TEXT,
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -194,6 +196,16 @@ CREATE TABLE IF NOT EXISTS document_tags (
 
 CREATE INDEX IF NOT EXISTS idx_tags_kv ON document_tags(tag_key, tag_value);
 CREATE INDEX IF NOT EXISTS idx_tags_docid ON document_tags(document_id);
+
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY,
@@ -255,6 +267,18 @@ _DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
     "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
 )
 
+# Citation rows of one resource: its ``declared`` rows select the notes; each
+# note contributes the labels matched to that resource and its unresolved
+# labels, stored once with resource ``""``.
+_CITATION_ROWS_SQL = """
+SELECT d.path, d.title, c.label, c.status, c.occurrences
+FROM citations x
+JOIN documents d ON d.id = x.document_id AND d.citations_derived = ?
+JOIN citations c ON c.document_id = x.document_id AND c.status != 'declared'
+ AND c.resource IN (x.resource, '')
+WHERE x.status = 'declared' AND x.resource = ?
+ORDER BY d.path, c.label"""
+
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
 # ``documents`` row presence would otherwise treat a partial index (left
@@ -293,6 +317,7 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
 _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+_META_OKF_ADMISSION_KEY = "okf_admission_active"
 # Link-extraction provenance: the attachment allowlist in force at build
 # time (#1333). The link graph is notes-only, so a reference whose target
 # carries an allowlisted extension stores no link row — which makes the
@@ -508,7 +533,10 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1446) fills citation edges from each note snapshot.
+#: Version 13 (#1438) admits OKF reserved files without required concept fields.
+#: Version 12 shipped in v6.1.2, so existing indexes need a rebuild.
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -658,6 +686,56 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     source_dir = source_path.rpartition("/")[0]
     own_folder = [p for p in candidates if p.rpartition("/")[0] == source_dir]
     return min(own_folder or candidates, key=lambda p: (len(p), p))
+
+
+def normalized_aliases(frontmatter: dict[str, Any]) -> list[str]:
+    """Return unique, trimmed scalar aliases from frontmatter.
+
+    Args:
+        frontmatter: Parsed note metadata.
+
+    Returns:
+        Nonempty aliases in their original order and case.
+    """
+    raw = frontmatter.get("aliases") or frontmatter.get("alias")
+    values = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return list(
+        dict.fromkeys(
+            str(item).strip()
+            for item in values
+            if isinstance(item, (str, int, float)) and str(item).strip()
+        )
+    )
+
+
+def resolve_wikilink_target(
+    stem: str,
+    source: str,
+    doc_paths: Iterable[str],
+    doc_set: Collection[str],
+    alias_map: dict[str, list[str]],
+) -> str | None:
+    """Resolve a wikilink against candidate document paths and aliases.
+
+    Args:
+        stem: Link target without its fragment.
+        source: Vault-relative path of the source note.
+        doc_paths: Candidate vault-relative document paths.
+        doc_set: The same paths as a membership collection for exact lookup.
+        alias_map: Lowercase aliases mapped to candidate paths.
+
+    Returns:
+        The selected path, or None if no document matches.
+    """
+    if not stem:
+        return None
+    target = stem if stem.lower().endswith(".md") else stem + ".md"
+    if target in doc_set:
+        return target
+    candidates = [path for path in doc_paths if path.endswith("/" + target)]
+    if not candidates:
+        candidates = alias_map.get(stem.lower(), [])
+    return _pick_wikilink_candidate(candidates, source) if candidates else None
 
 
 class FTSIndex:
@@ -875,7 +953,7 @@ class FTSIndex:
                 if "duplicate column name" not in str(exc).lower():
                     raise
                 logger.debug("fts_index_column_already_added column=content_chars")
-        self._migrate_tombstone_columns(conn, cols)
+        self._migrate_document_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
         )
@@ -908,10 +986,10 @@ class FTSIndex:
         )
         conn.commit()
 
-    def _migrate_tombstone_columns(
+    def _migrate_document_columns(
         self, conn: sqlite3.Connection, cols: set[str]
     ) -> None:
-        """Add the skip-tombstone columns to a pre-#1129 ``documents`` table.
+        """Add derived-citation and skip-tombstone columns to older documents.
 
         Additive migration following the ``chunk_count`` / ``content_chars``
         precedent: ``ALTER TABLE ADD COLUMN`` guarded by the PRAGMA column
@@ -924,6 +1002,10 @@ class FTSIndex:
             cols: The ``PRAGMA table_info(documents)`` column-name set.
         """
         for name, ddl in (
+            (
+                "citations_derived",
+                "ALTER TABLE documents ADD COLUMN citations_derived INTEGER NOT NULL DEFAULT 0",
+            ),
             ("skip_category", "ALTER TABLE documents ADD COLUMN skip_category TEXT"),
             (
                 "skip_detail",
@@ -1188,8 +1270,8 @@ class FTSIndex:
             """
             INSERT INTO documents (path, title, folder, frontmatter_json,
                                    content_hash, modified_at, chunk_count,
-                                   content_chars)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   content_chars, citations_derived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note.path,
@@ -1200,6 +1282,7 @@ class FTSIndex:
                 note.modified_at,
                 len(note.chunks),
                 note.content_chars,
+                INDEX_SEMANTICS_VERSION,
             ),
         )
         if cur.lastrowid is None:
@@ -1379,31 +1462,15 @@ class FTSIndex:
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose aliases are to be indexed.
         """
-        raw = note.frontmatter.get("aliases") or note.frontmatter.get("alias")
-        if raw is None:
-            return
-
-        values: list[str] = []
-        if isinstance(raw, str):
-            values = [raw]
-        elif isinstance(raw, list):
-            values = [str(item) for item in raw if isinstance(item, (str, int, float))]
-        else:
-            return
-
-        seen: set[str] = set()
-        for alias in values:
-            alias = alias.strip()
-            if alias and alias not in seen:
-                seen.add(alias)
-                cur.execute(
-                    """
+        for alias in normalized_aliases(note.frontmatter):
+            cur.execute(
+                """
                     INSERT OR IGNORE INTO document_aliases
                         (document_id, alias)
                     VALUES (?, ?)
                     """,
-                    (document_id, alias),
-                )
+                (document_id, alias),
+            )
 
     def _insert_links(
         self,
@@ -1438,6 +1505,49 @@ class FTSIndex:
                     link.raw_target,
                 ),
             )
+
+    def _insert_citations(
+        self, cur: sqlite3.Cursor, document_id: int, note: ParsedNote
+    ) -> None:
+        cur.executemany(
+            "INSERT INTO citations (document_id, label, status, occurrences, resource) VALUES (?, ?, ?, ?, ?)",
+            [
+                (document_id, edge.label, edge.status, edge.occurrences, edge.resource)
+                for edge in note.citations
+            ],
+        )
+
+    def get_citation_rows(self, resource: str) -> tuple[list[sqlite3.Row], int]:
+        """Return resource-keyed citation rows and unconverted live-note count.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citation rows in path and label order and the unconverted count.
+        """
+        conn = self._conn()
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        citation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(citations)")
+        }
+        if (
+            self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION
+            or "citations_derived" not in columns
+            or not citation_columns
+        ):
+            raise IndexUnavailableError(
+                "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
+                reason="never_built",
+            )
+        rows = conn.execute(
+            _CITATION_ROWS_SQL, (INDEX_SEMANTICS_VERSION, resource)
+        ).fetchall()
+        count = conn.execute(
+            "SELECT count(*) FROM documents_live WHERE citations_derived != ?",
+            (INDEX_SEMANTICS_VERSION,),
+        ).fetchone()[0]
+        return rows, count
 
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
         """Delete a document row (cascade deletes sections, headings, tags,
@@ -1512,6 +1622,7 @@ class FTSIndex:
                 self._insert_tags(cur, doc_id, note)
                 self._insert_aliases(cur, doc_id, note)
                 self._insert_links(cur, doc_id, note)
+                self._insert_citations(cur, doc_id, note)
                 total_chunks += len(note.chunks)
                 logger.debug(
                     "build_from_notes_indexed_note chunk_count=%d path=%s",
@@ -1545,6 +1656,7 @@ class FTSIndex:
             self._insert_tags(cur, doc_id, note)
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
+            self._insert_citations(cur, doc_id, note)
         logger.debug(
             "upsert_note_indexed chunk_count=%d path=%s", len(note.chunks), note.path
         )
@@ -1619,6 +1731,26 @@ class FTSIndex:
         logger.debug(
             "upsert_tombstone_recorded path=%s category=%s", skip.path, skip.category
         )
+
+    @_retry_on_locked
+    def row_state(self, path: str) -> tuple[bool, str | None]:
+        """Read one document's live or skipped state in a single query.
+
+        Args:
+            path: Vault-relative document path.
+
+        Returns:
+            A pair of row existence and skip category. An existing row with
+            no category is live; a missing row has no category.
+        """
+        row = (
+            self._conn()
+            .execute("SELECT skip_category FROM documents WHERE path = ?", (path,))
+            .fetchone()
+        )
+        if row is None:
+            return False, None
+        return True, row["skip_category"]
 
     @_retry_on_locked
     def get_tombstone(self, path: str) -> dict[str, Any] | None:
@@ -1862,6 +1994,37 @@ class FTSIndex:
                     "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
                     (key, value),
                 )
+
+    @_retry_on_locked
+    def set_okf_admission_meta(self, active: bool | None) -> None:
+        """Record the effective OKF admission state, or invalidate it.
+
+        Args:
+            active: State used for a complete build, or None if incomplete.
+        """
+        conn = self._conn()
+        with conn:
+            if active is None:
+                conn.execute(
+                    "DELETE FROM meta WHERE key = ?", (_META_OKF_ADMISSION_KEY,)
+                )
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+                    (_META_OKF_ADMISSION_KEY, "1" if active else "0"),
+                )
+
+    @_retry_on_locked
+    def get_okf_admission_meta(self) -> bool | None:
+        """Return the complete build's admission state, or None if unknown."""
+        row = (
+            self._conn()
+            .execute("SELECT value FROM meta WHERE key = ?", (_META_OKF_ADMISSION_KEY,))
+            .fetchone()
+        )
+        if row is None or row[0] not in ("0", "1"):
+            return None
+        return bool(row[0] == "1")
 
     @_retry_on_locked
     def get_chunking_meta(self) -> ChunkingMeta:
@@ -2652,22 +2815,11 @@ class FTSIndex:
                 stem = stem[: stem.index("#")]
             if not stem:
                 continue
-            # 2. Append .md if not already present.
-            search_target = stem if stem.lower().endswith(".md") else stem + ".md"
-
-            # An exact vault path wins outright (rule 1); the suffix matches
-            # and the alias fallback go through the tie-break (rules 2, 3).
-            if search_target in doc_paths_set:
-                new_path = search_target
-            else:
-                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
-                if not candidates:
-                    # Fallback: check if the stem matches a document alias.
-                    # Use the raw stem (without .md) for alias matching.
-                    candidates = alias_map.get(stem.lower(), [])
-                if not candidates:
-                    continue  # Genuinely broken — no document matches.
-                new_path = _pick_wikilink_candidate(candidates, row["source_path"])
+            new_path = resolve_wikilink_target(
+                stem, row["source_path"], doc_paths, doc_paths_set, alias_map
+            )
+            if new_path is None:
+                continue
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 

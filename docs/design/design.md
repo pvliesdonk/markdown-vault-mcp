@@ -177,12 +177,12 @@ indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
 Content writes serialize supplied frontmatter in caller insertion order,
-including nested mappings and mappings inside lists. Edit, append, OKF
-verification and git conflict marking retain surviving fields in their
-existing order when they serialize a header. This preserves mapping order and
-values, not comments, quoting, whitespace or arbitrary exact formatting. Every
-frontmatter dump (the document writer, the two OKF transforms and the two
-conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+including nested mappings and mappings inside lists. Edits, appends and link
+rewrites match the text `read` shows (no BOM, `\n` line endings) and write the
+body in that form; a frontmatter block they leave unchanged keeps its stored
+bytes, including comments, quoting, BOM and line endings. Verification and git conflict marking serialize headers
+and retain surviving fields in order; their serialization can change formatting.
+The pinned dependency behavior is recorded in
 [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
 **The body the index reads (#2036)**: `scanner.note_body` returns
@@ -208,7 +208,8 @@ Vault(
 - `None` (default): all `.md` files are indexed regardless of frontmatter.
 - `["title", "cluster"]`: documents missing any listed field are excluded from
   the index entirely and will not be searchable. At scan completion, the
-  number of skipped documents is logged at `INFO` level.
+  number of skipped documents is logged at `INFO` level. In an active OKF
+  vault, reserved `index.md` and `log.md` files bypass this field gate.
 
 ### Frontmatter Filtering
 
@@ -236,7 +237,7 @@ The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
 gives O(1) indexed lookup without `json_extract()` performance problems.
 
-**Filter semantics**: `filters` is `dict[str, str]`. Each key-value pair is
+**Filter semantics**: `filters` maps keys to strings. On an active OKF bundle, `type: null` selects indexed non-reserved notes without a non-empty string type, including non-string values; it is evaluated after admission and does not change indexed rows. Each key-value pair is
 ANDed. Example: `filters={"cluster": "fiction", "genre": "horror"}` returns
 documents tagged with both `cluster=fiction` AND `genre=horror`. Multi-valued
 OR queries within a single key are not supported in Phase 1; use multiple
@@ -836,7 +837,7 @@ document's rows are replaced or removed as a unit.
 Two methods manage the index:
 
 - **`build_index(force=False)`**: initial population. Scans `source_dir` and
-  builds the FTS index. Short-circuits as a no-op when the persisted FTS
+  builds the FTS index. Reuses FTS and sweeps observations when the persisted
   database contains documents and carries the completeness sentinel
   written by a prior clean build (warm restart on the same `index_path`).
   A database with rows but no sentinel (residue of a process that
@@ -949,6 +950,12 @@ Two methods manage the index:
   `reindex(force=True)` is the manual counterpart, surfacing the
   already-existing `build_index(force=True)` for an index an operator has
   reason to distrust.
+
+  Version 13 (#1438) rebuilds indexes written with version 12, which shipped
+  in v6.1.2, so reserved OKF files can be admitted without required concept
+  fields. Generators create body-only reserved files and preserve existing headers
+  byte-for-byte without adding or removing keys. See [Generated reserved files and the index gate](okf.md#generated-reserved-files-and-the-index-gate).
+
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
@@ -1066,8 +1073,8 @@ not index unavailability. Embeddings stay on the
 synchronous lifespan path in PR1: on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the
-operator runs CLI `index`. Warm starts continue to use PR #526's
-O(1) sentinel short-circuit and never spawn the background thread.
+operator runs CLI `index`. Warm starts reuse FTS through the sentinel check and
+queue an observation sweep on the writer.
 The library's `_require_built()` is unchanged from PR #525:
 it raises immediately on not-ready, which is what lets the git
 pull loop and lifespan's embeddings path handle "not ready"
@@ -1405,9 +1412,9 @@ soft deadline is promoted to a background job polled via
 **Boot reconciliation (#665).** The server lifespan conditionally submits
 `reindex_async()` immediately after `build_index_async()` (gated by
 `MARKDOWN_VAULT_MCP_BOOT_REINDEX`, default `true`; see #1535). On a warm
-restart the build short-circuits in O(1) via the FTS sentinel and scans
-nothing, so the queued `ReindexAll` job is what picks up files added,
-modified, or deleted while no server was running (the file watcher only
+restart the build reuses FTS and sweeps observations; the queued `ReindexAll`
+job picks up search changes from files added, modified, or deleted while no
+server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
 cold boot the full build has just recorded tracker state (including
 skipped files), so the reindex degenerates to a hash scan with zero
@@ -1965,6 +1972,63 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Reverse citation lookup (#1446)
+
+`find_citing_notes(resource)` reads persisted citation edges derived from one
+normalized note snapshot. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
+each distinct resource declared by that note. The result is unbounded. Reserved
+files are excluded only while OKF is active. Navigation links do not create edges.
+On the first writer startup after upgrading from index semantics version 12,
+the index rebuilds. A lookup reports `unconverted_notes` for retained indexed
+notes not yet re-read with compatible citation rules; they are omitted until
+re-read. If ordinary reindex leaves the count above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild. Incompatible or missing schema is unavailable rather than empty. No resource is fetched and attribution
+does not establish support.
+
+### Exact-note citation inspection (#1446, bounded slice)
+
+`ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
+tool inspect one explicitly selected `.md` note through the existing whole-note
+reader. There is no index-readiness requirement, bundle declaration gate or
+change to OKF annotations. `okf.py`, link scanning and graph navigation are
+unchanged. This is not a vault-wide evidence audit.
+
+`citations.inspect_citation_text` takes only the returned content string. It
+parses its metadata and body together, never using `NoteContent.frontmatter` or
+`etag`: `DocumentManager.read` currently obtains those from a separate disk read.
+The SHA-256 covers LF-normalized returned text encoded as UTF-8, explicitly not
+raw file identity or an optimistic-concurrency token. A newer malformed
+frontmatter snapshot raises `DocumentUnreadableError`, not an empty report.
+
+A direct `markdown-it-py` dependency supplies CommonMark block/inline contexts.
+The narrow extension recognizes literal non-whitespace footnote labels, excludes
+navigation links/images/wikilinks, and omits definition blocks rather than
+interpreting their prose as provenance. Exact IDs join to source-list positions;
+duplicate IDs stay ambiguous even when records are identical. Source metadata
+and extension keys remain literal parsed values; optional absent IDs are listed
+as unkeyed, while malformed shapes are separate observations. Citation IDs remain
+stable under source reordering; response-local list indices do not.
+
+Scope and syntax limits accompany every result. Nothing fetches sources,
+traverses another note, infers evidentiary support or truth, writes metadata,
+or widens access. Source strings are data, not instructions.
+The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
+syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
+records the current source/footnote distinction.
+### Explicit OKF concept authoring
+
+`WriterFacet.okf_author` and the `okf_author` MCP tool apply named editorial fields to an existing concept under a required etag. The caller may supply an OKF producer actor; only that explicit actor sets `generated.by`, with the server supplying the UTC timestamp. Other frontmatter, including verification and omitted sources, and the body survive with their line endings. The authoring splice is parsed and checked against the requested values before writing; it refuses edits to aliases or anchors that the edit would replace. The MCP tool requires an active writable bundle and effective `OKF_AUTHOR`; ordinary writes preserve supplied provenance and reviews. The request principal remains available for commit attribution; enabled index and log maintenance runs after authoring.
+
+Each MCP tool listing checks the live bundle state for authoring visibility, so a declaration added or removed during a session takes effect on the next listing. Invocation checks the state again to cover changes after discovery.
+
+### Concept snapshot identity (#1445)
+
+Live whole-note OKF reads expose `mvmcp-concept-v1`: SHA-256 of compact ASCII JSON `[metadata, body]`. YAML scalars encode as `[tag, text]`, sequences as `[tag, items]`, and mappings as `[tag, pairs]`; mappings keep the last parser-equal key and sort surviving pairs by encoded key. JSON uses `object`, `array`, `number`, and Python scalar type tags with sorted object pairs and last-wins duplicate keys. Root `verified` and `x-mvmcp` are excluded. The body uses LF line endings, retains whitespace before the fence and after it, and excludes the frontmatter block. Resolved YAML scalar text, including boolean and null spellings, and JSON number spellings count. YAML string quoting style does not count. Optional TOML uses its handler's parsed values and thus its numeric and timestamp precision.
+
+The legacy verifier may rewrite the body or other metadata and change the digest; D3 owns snapshot-preserving review recording. The digest is not a review binding.
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
@@ -1988,14 +2052,34 @@ the spec itself says, dated and sourced, in
   `stale` (a bare `stale_after` date: the server-local day has reached it;
   an instant with an offset: `now >= stale_after`; an offset-less datetime
   is ignored — #1357, #1373), and
-  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
-  prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`; a bare `verified` mapping is a one-element list, as the
-  spec's single-verifier shorthand requires, at every site that reads
-  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
-  `sources_count`. Section reads omit the key (no frontmatter to derive
+  `trust_tier` as a recorded-claim label. Only records with a recognized
+  actor shape and an offset-aware `at` contribute; malformed records never
+  promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
+  evidence and its basis; `review` counts usable and malformed records with
+  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  Whole reads assess each review binding against the concept snapshot and
+  distinguish local receipts from supplied claims. Compact results report
+  unknown when a claim exists without the concept bytes.
+  Full reads additionally expose supplied expiry/reviews under `recorded`,
+  preserving parsed values, while compact results omit that projection.
+  The exact contract and supported timestamp subset are in `okf.md` §3.
+  Reads carry the full `sources` list; search hits carry `sources_count`. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
+- **Review presentation (#1413, partial)**: `trust_tier` and the stats
+  `trust` histogram retain their existing metadata-classification semantics
+  and keys. They describe recorded claims, not authenticated review or
+  applicability to the current content. Human-readable CLI search results
+  label that distinction; text reads print the notice to stderr without
+  changing content on stdout. App note and context views show a visible
+  notice for a supplied `verified` field, including empty or malformed
+  values, while preserving access to the raw metadata. These app routes
+  supply frontmatter, not OKF annotations, so the notice describes the field
+  without asserting that the vault is an active OKF bundle. Applicability
+  is explicitly unknown; no timestamp comparison, history inference, byte
+  comparison or metadata rewrite is performed. JSON/agent payloads and
+  filters are unchanged. Structured reads separately assess review bindings
+  and local observations.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -2004,7 +2088,10 @@ the spec itself says, dated and sourced, in
   population `okf_validate` audits). Its `write_configured` reports the
   vault's configured `OKF_WRITE` flag and `write_effective` is true only
   when that flag is enabled, OKF detection is active, and the vault is not
-  read-only. The section remains absent when OKF is inactive.
+  read-only. The section always carries `capabilities`; when OKF is inactive,
+  it contains only that block. `capabilities` reports configured and effective
+  authority, reasons and folder scope, as does `config://vault` under
+  `okf_capabilities` (see `okf.md` §2).
   `config://vault` reports those same values as `okf_write_configured` and
   `okf_write_effective`, including when inactive, and reports `okf_mode` /
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
@@ -2046,8 +2133,8 @@ the spec itself says, dated and sourced, in
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
-  index-independent, per-file reads capped at the probe's read limit
-  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  index-independent, existing checks capped at the probe's read limit
+  (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
@@ -2062,6 +2149,12 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Additional evidence findings distinguish missing expiry (informational),
+  malformed expiry/reviews (format observations), and evidence unavailable
+  due to reading/parsing failures or overflow detected by one-character
+  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
+  non-excluded concepts, not complete traversal or editorial-policy compliance.
+  Existing capped conformance checks and discovery rules are unchanged.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index
@@ -2117,10 +2210,46 @@ the spec itself says, dated and sourced, in
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
   ref on ``create_download_link`` and generates the archive at
-  fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
-  convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
-  non-conformant notes as-is, reproducible bytes, never mutating the vault;
-  gated out when ``OKF_MODE=off``). Residual gaps stay with ``okf_validate``.
+  fetch time via ``okf_bundle.build_okf_bundle`` (Git exports resolve wikilinks from their pinned commit; non-Git
+  searchable wikilinks use the potentially stale index graph; subtree exports also resolve remaining named
+  wikilinks by exact selected filename or a lazily loaded whole-vault inventory,
+  excluding alias-only and case-insensitive matches. Unmatched names stay raw
+  and are reported even with ``external_base``. Wiki-looking text inside
+  Markdown link titles and destinations is part of the enclosing link. Invalid UTF-8 is scanned losslessly; NUL and
+  UTF-16 bodies are copied and reported uninspected,
+  convention/template files excluded, reserved ``index.md`` / ``log.md`` kept
+  unless an omission policy applies,
+  non-conformant notes included, reproducible bytes, never mutating the vault;
+  gated out when ``OKF_MODE=off``). Membership comes from paginated inventory,
+  independent of search admission. Dot-path files and directories never enter the bundle; omitted files count as `not_part_of_bundle`. This reverses #1610's export opt-in while inventory continues to list dot-paths. The library result reports omitted classes,
+  last-observed index admission, artifact v0.2 format findings and uninspected
+  content or metadata (including metadata of files included in the archive).
+  Subtree frontmatter path fields are relocated with the same outside-path rules.
+  Non-slash, non-dot values are reported as ambiguous. Field values are URI
+  references with percent-decoded matching and preserved suffixes. YAML aliases and merges used by changed paths are copied to preserve
+  other values. Directory paths relocate too: the selected root becomes `/`,
+  directory-form paths retain their slash, and `.` and `..` are paths.
+  `uninspected` records inventory observations (including aliases and limits) and
+  `metadata_encoding` when export cannot parse or re-encode a header; unrecognised
+  grammars are copied without an entry. A file may also be `transformed` when
+  its bytes change; neither entry identifies which fields relocated.
+  Incomplete inventory enumeration refuses export, even under omitted
+  dot-paths. Strict publication refuses a nonconformant or incomplete artifact, outside or ambiguous references, broken links, inconsistent snapshots, and failed reference or relocation inspection. Root metadata is inspected without rewriting it. The CLI uses a scratch keyword index, refuses destinations in the vault, including symlink aliases, and atomically replaces external destinations only on success. It warns when a pinned Git snapshot omits uncommitted paths. The CLI and download ref accept selection, strict and review options. Review selectors require the review gate; the effective defaults are `human-review` and `binding`. A scope without concepts satisfies the review policy. A source override uses local receipts only if it resolves to the configured vault. A strict or review refusal carries the completed report; a collision stops before audit and carries no report. The CLI exits nonzero without writing a ZIP. The transfer sink returns a JSON refusal as HTTP 200 because the core error contract sends no body; the filename and media type distinguish it from a ZIP. Subtree links in
+  unindexed notes are handled independently of index admission. The final ZIP
+  is audited for parseable YAML and non-empty type on nonreserved Markdown,
+  index frontmatter and entry structure, and ISO log date headings. The format
+  verdict is `conformant`, `nonconformant`, or `incomplete` when a required
+  check cannot run, even if findings are present. Admission, recommended
+  metadata and broken links are separate observations and do not affect it.
+  Git exports pin one commit for inventory, link resolution and blob bytes,
+  and report policy-visible uncommitted paths. For an LFS pointer, including
+  in a child repository, no-follow working-file bytes must match its SHA-256
+  and size; missing or mismatched content refuses export without fetching.
+  Ordinary committed blobs remain available after working-file deletion.
+  Non-Git exports digest each
+  selected file and recheck it after packing, reporting changed or unreadable
+  paths without claiming an atomic live inventory or graph. Descriptor-relative
+  no-follow raw reads protect notes and attachments (#1448, #2167).
 - **Reserved-file classification**: `okf.is_okf_reserved_file` owns the
   lexical, exact-case basename check for already scoped vault-relative POSIX
   paths. Detection, admission, authorship and maintenance remain separate.
@@ -2292,7 +2421,7 @@ upload, the fully-read (size-capped) body.
 
 - **Download** (`read(handle)`): the handle is a vault path. A `.md` note is
   read via `vault.reader.read()` and served as `text/markdown`; any other path
-  is read via `vault.reader.read_attachment()` and served with its MIME type.
+  is read via `vault.reader.read_attachment_bytes()` and served with its MIME type.
   The whole file is materialised in memory (no HTTP range support).
 - **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
   stripped; a body that does not decode answers 415) and written via `vault.writer.write()`; other extensions are
@@ -2330,8 +2459,7 @@ The rest of an upload the uploader must change answers 4xx too (#1696), so a
 client's mistake never reads as a server fault: a note body that is not UTF-8
 is **415 Unsupported Media Type** (RFC 9110 §15.5.16 covers a format problem
 found "as a result of inspecting the data directly"), and an
-`InvalidRequestError` from the write path, such as a frontmatter block the OKF
-enforced-write layer cannot parse, is **422 Unprocessable Content**. pvl-core's
+`InvalidRequestError` from the write path is **422 Unprocessable Content**. pvl-core's
 route logs only the status and class, so the sink logs the reason itself
 (`transfer_upload_refused`, INFO).
 The route releases the token reservation on these errors without extending its
@@ -2658,6 +2786,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- producer semantics for citation rows
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2706,6 +2835,21 @@ CREATE INDEX IF NOT EXISTS idx_tags_kv
 
 CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
+
+-- Citation attribution rows are separate from navigation links (#1446).
+-- This additive table keeps schema_version at 1. Per note: one status
+-- 'declared' row per valid source resource, one row per matched label under
+-- its resource, and one row per other label under resource '' (diagnostic for
+-- each declared resource of that note), so rows grow linearly with the note.
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 -- Links: inter-document references extracted from markdown content
 CREATE TABLE IF NOT EXISTS links (
@@ -3655,6 +3799,89 @@ The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
 operations to them. No manager holds a back-reference to Vault.
 
+#### Selected bundle directory inventory (#1442)
+
+`ReaderFacet.inspect_bundle(BundleInspectionRequest)` delegates through
+`DocumentManager` to `BundleInspector`. The caller explicitly chooses a
+vault-relative root and one root-relative directory. This library-only surface
+observes disk files independently of index admission: untyped and malformed
+Markdown remain visible. Once the index is queryable, entries report search
+state from a single index row read without refreshing or writing the index. Live rows
+and tombstones take precedence over current exclusions; an absent row falls
+back to the exclusion label. Backends without the optional row-state protocol
+leave the state unevaluated. Unknown and internal-error categories remain
+unevaluated. Any SQLite error from the index read, including after the vault
+closes, leaves all entries unevaluated. Each entry is read separately, so a page
+is not a snapshot.
+Before readiness and without index knowledge, search state is `not_evaluated`.
+These observations can lag disk changes and do not determine format conformance.
+Filename roles (`index.md` navigation, `log.md` history, other Markdown concept
+candidates) confer no bundle conformance, global OKF activation or writer authority.
+
+Effective index excludes label matching entries `index_excluded` without hiding
+or refusing them. Dot components are labelled `hidden_path`; `.git` and the
+legacy `.markdown_vault_mcp` state directory and configured state directories
+inside the vault are never entered. The configured change-tracker file is
+omitted by exact path, and the keyword index file with its `.lock`, `-wal`,
+`-shm` and `-journal` siblings and the vector store's files are omitted;
+neighboring notes and other same-named siblings stay visible. Live filesystem identity checks
+recognize alternate case and Unicode spellings before opening selected components.
+Directory, attachment and budget-exhausted note candidates receive a no-follow
+open probe; permission refusals make enumeration incomplete and do not reveal
+denied child names. The configured conventions filename has the support role unless it is
+`index.md` or `log.md`, which retain their reserved roles. Non-directory
+filenames retain `ArtifactStore.extensions()` allowlist policy, including
+nonregular candidates. No metadata values, bodies or symlink
+targets are returned. The configured
+source resolves once and its absolute components are opened from the filesystem
+root without following symlinks; selected components and child reads remain
+anchored to no-follow directory descriptors. Symlink/nonregular reads fail closed. Missing
+configured sources and unavailable primitives are unavailable; only contained
+ENOENT/ENOTDIR imply missing. Errors retain explicit incomplete observations. A stat failure for an unknown
+file type hides its name but makes enumeration unavailable, because it could be
+a visible directory.
+
+Enumeration visits at most 100 entries by default (maximum 1000), counting
+omitted entries, plus one lookahead. It sorts only the bounded observations.
+`complete` means immediate policy-visible enumeration, never complete content or
+a whole bundle. Reads cap each Markdown file at the smaller of 64 KiB and a
+nonzero configured note-read cap, plus bounded lookahead, within 1 MiB aggregate
+including failed read reservations. Only complete bytes reach the existing UTF-8
+and frontmatter parsers. An inventory-only YAML event preflight uses the existing
+frontmatter delimiter handler: aliases, more than 4096 events or collection
+depth above 32 stop before metadata construction, preventing exponential merge
+expansion. Such files remain `not_inspected` with `metadata_complexity`, not
+malformed. Review-assured export opts in to counting aliases at their expanded
+size (events plus scalar text, 1,024 units in all; unfinished or undefined
+anchors never count as known) under the same event and depth limits. General scanner parsing, Markdown bodies and other frontmatter
+formats retain their existing semantics. Parser recursion/overflow limits also
+remain uninspected. Known tag/value/shape conversion failures become malformed
+metadata; unexpected parser exceptions instead yield unavailable entries with
+`unexpected_parser_error`, without exception details or loss of sibling results.
+This keeps encoding, input, resource-limit and unexpected failures separate,
+analogous to the scanner's categorized boundary without adopting its admission
+or deterministic-skip policy. Oversize or budget-limited content stays uninspected;
+invalid encoding, malformed metadata and absent/invalid/present type fields are
+separate observations. `inspect_bundle_tree` pages a recursive pre-order walk,
+sorting each directory by component name. Its path cursor resumes after the
+last returned row; additions at or before it require a fresh walk. This is a
+live observation, not a snapshot. Pages contain at most 1000 rows and read at
+most 1 MiB. Each selection covers 32 levels below its selected directory; a
+directory at the limit is returned unavailable with `depth_limit` and is not
+entered. Re-select that directory relative to the same root and page again to
+inspect deeper levels; repeat for further boundary rows. Retain unavailable
+outcomes from every page, and treat unresolved boundary rows as incomplete.
+A full page can require an empty final call. Visible and suffixless symlinks are reported unavailable without
+following them. This inventory operation does not synthesize navigation or discover declarations.
+
+Symlinks outside the file allowlist are unavailable `hidden_symlink` rows.
+Their targets and target kinds are not returned, and they are never followed.
+Callers must inspect unavailable rows even when enumeration is complete.
+Resume skips policy checks for earlier siblings but still lists and sorts
+all names in each visited directory on each page. The page limit counts rows,
+not listing work. At the exact cursor, current non-directories are leaves;
+cursor ancestors must still be traversable without following links.
+
 #### Internal Manager Architecture
 
 | Manager | Responsibility | Dependencies |
@@ -4148,12 +4375,13 @@ an intentionally static author identity.
 (#1231, #1463). A usable token `sub` retains `human:<subject>` attribution
 unless the issuer marks the token as an application's (below);
 a subject obtained only from the client-ID fallback is a `service` principal
-that retains its identifier but stamps the tool actor. This covers single,
+that retains its identifier for identity context. This covers single,
 custom and mapped bearer credentials, including their use alongside OIDC.
 Without an attributable token the principal is `local` with no subject.
 A real token `sub` spelled `local` is distinct from the no-auth sentinel.
-`resolve_human_subject()` checks the kind, so `trust-auth` refuses service
-credentials; an affirmative elicitation instead records `human:local`.
+`resolve_human_subject()` checks the kind. `okf_verify` refuses human review
+from service principals in both modes; with `OKF_MACHINE_REVIEW=true`, they
+may record named machine checks while review is enabled.
 The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
 OAuth `sub` can also identify a service. A token with a `sub` is a `service`
 principal when the issuer marks it as an application's in a way the check
@@ -4169,13 +4397,12 @@ to a service account with no marker, and those are recorded as human unless
 listed. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
-with that branch: since #1160 the write tools stamp
-`principal.okf_actor(...)` directly. Registering the claim keys likewise
+with that branch; write identity no longer supplies provenance. Registering the claim keys likewise
 moved out of the git-strategy builder into `to_vault_instances`, so
 configuring identity is not the git builder's job.
 Background paths without an acting person — the pull-loop conflict commits,
 the webhook, the transfer-route uploads — carry no Principal and use the
-static identity / tool actor, as before.
+static commit identity.
 
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
@@ -4249,7 +4476,8 @@ scanner hashes the raw
 on-disk bytes (BOM included) but decodes the text without the BOM, so a
 BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
-loses its BOM the next time it is rewritten. A genuinely non-UTF-8 file still
+loses its BOM the next time it is rewritten, unless an edit, append or link
+rewrite keeps its unchanged frontmatter block (#1443). A genuinely non-UTF-8 file still
 raises `UnicodeDecodeError`. The same `decode_utf8` is applied on **ingress**
 (#681): the `fetch` tool and the transfer-upload route decode externally
 supplied markdown bodies through it, so a fetched/uploaded file is written
@@ -5645,7 +5873,7 @@ already end with one. `create_if_missing` (default `false`) opts into
 creating a missing note instead of raising `DocumentNotFoundError`, so a
 mistyped path fails loudly by default. The operation flows through
 `DocumentManager.append` and is treated as an `edit` `WriteOperation` for
-the OKF enforced-write enricher, folder-convention maintenance, and the git
+folder-convention maintenance and the git
 commit callback; it returns a `WriteResult` (`created` is `true` only when
 `create_if_missing` created the file).
 
@@ -5655,7 +5883,7 @@ to avoid shadowing Python's built-in `list`. The underlying
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: the write tools (`write`, `edit`, `append`,
+**Tag-based visibility**: the write tools (`begin_transaction`, `end_transaction`, `write`, `edit`, `append`,
 `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
 `create_upload_link`) are registered with ``tags={"write"}``. When
 ``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide
@@ -6209,6 +6437,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files; when absent the server starts but every tool fails naming this variable (managed git clones into it) | `/data/vault` |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | Case-insensitive vault-relative globs protecting paths and matching folder contents | empty |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | Add `unresolved_links` to `write` / `edit` / `append` responses: the links the call added that `get_broken_links` reports | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
@@ -6443,7 +6672,13 @@ the duplication this removed.
 
 Attachments are **not indexed or searched**: only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
-The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
+`ArtifactStore.read_bytes()` and `vault.reader.read_attachment_bytes()` return
+validated raw bytes for byte-oriented consumers, including transfer downloads.
+OKF bundle export instead uses its own descriptor-relative no-follow read. The
+metadata-bearing `read_attachment()` retains its base64 content, stat-derived size and modification time, MIME type, and etag. The
+separate stat-only size probe lets MCP reject oversized files before reading.
+
+The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()`, `read_attachment_bytes()`, and `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
 
 A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they return only the requested section, not the whole document.
 
@@ -6694,6 +6929,48 @@ subject of the form `<tool>: N files` — or the single-file `<operation>: <path
 subject when the call staged exactly one path. Folder moves name their source
 and destination instead.
 
+An internal commit group binds a persistent scope to an opaque, server-minted
+handle. The dispatcher provides `open_group`, `bind_group`, and `close_group`
+for this internal API. It buffers writes across calls and closes the group with
+its description as the Git subject. One principal may hold several groups;
+nested binding and closing a group with active writes are refused. A close while
+a timed-out dispatcher shutdown is still running refuses because the result is
+unavailable. The result reports `committed`, `failed`,
+or `no_changes`: a commit was made, a flush failed, or no commit was needed.
+An interrupted group callback records `failed` before the worker exits; other
+queued groups or close markers can remain unresolved after worker death. Failure
+remains sticky across flushes. It reports a SHA when available and the
+number of paths in the commit (a rename counts both paths), or zero when the
+count is unknown. Untracked ignored writes are skipped; tracked updates are
+committed even when they match an ignore rule. A failed flush consumes
+its buffer without rollback or retry; staged work remains for the operator.
+A group closes automatically after 300 seconds idle or 3600 seconds from
+opening, whichever comes first. Both bounds are configurable and positive. The
+maximum age closes the buffered group even if a write is active. Later callbacks
+from that binding use the ordinary commit path under the opener's identity. Git
+stages current on-disk content, which can include a write whose callback is
+still pending. Automatic results remain available to the owner until the
+server process exits. Timers stop when the dispatcher closes.
+
+Ordinary scopes keep their per-call behavior. A drain flushes open groups before
+a pull, so a group spanning a drain can produce multiple commits; F7 owns pull
+deferral. The result carries the last SHA and summed path counts. Writes remain
+immediately readable, and indexing proceeds independently of the commit.
+Callbacks that do not opt into groups flush ordinary batches or individual
+writes and report `no_changes`. MCP clients open a group with `begin_transaction`,
+pass its handle to supported write calls, and close it with `end_transaction`.
+A cancelled request does not stop a write worker already running. While its group
+remains open, end and sync refuse until that worker completes; cancellation does
+not roll back its writes.
+A real `git_sync` closes its caller's open groups and waits for pending closes,
+including manual and automatic ones. A supplied handle is validated, including a
+retained auto-close result; a failed commit stops the sync. Omitted handles do
+not scan completed historical auto-close results. End and sync wait up to 30
+seconds; a timeout leaves the commit running and no sync leg runs. A dry run
+leaves groups open and refuses a supplied handle. Other write tools, including uploads,
+stay outside the group. Group subjects are limited to 4096 UTF-8 bytes so they fit safely
+in a Git command argument.
+
 OKF content-write maintenance, index-listing refreshes, and single-note
 rename backlink notifications mark their secondary writes with
 `auxiliary_commit_writes`. The dispatcher snapshots this context beside each
@@ -6721,8 +6998,17 @@ committing all moved and derived files. Unusual roots are quoted and escaped
 on one line. Other batch callbacks keep their existing contract
 (#2139).
 
-Three properties this depends on:
+Properties this depends on:
 
+- **A writing call waits for its callback attempt (#2128).** The server
+  awaits a per-scope marker without occupying an executor thread or flushing other
+  open scopes. Empty scopes return immediately. The wait is bounded at 30
+  seconds; a timeout is logged and the result returns best
+  effort, with a commit possibly landing later. Callback failure is also logged;
+  completion does not guarantee Git succeeded. Concurrent calls share FIFO
+  latency but are not isolated from each other's filesystem changes. Library
+  scope closing remains nonblocking, and non-batch callbacks retain
+  their asynchronous per-write timing. Push remains deferred.
 - **The scope is captured in `fire`.** `fire` runs on the request's
   `to_thread` worker, whose copied context carries the contextvar. The
   dispatcher thread has no request context; it binds only the captured folder
@@ -7576,3 +7862,110 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+| 39 | Protected paths | Operator globs refuse ordinary mutations and automatic maintenance, with explicit library override. Bulk operations report protected skips after eligible writes. | One shared policy covers requested and resolved paths. |
+
+### OKF capability transition
+
+The configuration resolves independent author, verify, index, log and folder
+capabilities. Unset capabilities grant no semantic writes. The deprecated
+`OKF_WRITE` alias supplies defaults for the resolved capabilities, including authoring; explicit settings take precedence. Ordinary writes preserve provenance and review records.
+
+
+**Protected paths.** `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` defines
+case-insensitive vault-relative globs for ordinary client mutations. A matching
+folder protects its contents, and both requested and resolved paths are checked.
+A folder move checks every entry its cleanup removes before moving files.
+Reads remain available; library callers can opt in with `allow_protected=True`.
+Automatic OKF maintenance respects protection; its isolated failures do not
+undo the primary write. A rename or folder move skips protected
+backlink rewrites and reports them; bulk OKF transforms finish eligible writes
+and report protected paths they skipped.
+
+
+**Designated indexes.** In an active OKF vault, the index capability reserves
+`index.md` in designated folders against ordinary mutations, including resolved
+aliases and secondary writes. Generation and maintenance bypass this designation
+only; explicit protected paths remain enforced. Folder paths and globs are
+normalized to NFC for both maintenance and protection, including on disks that
+keep differently normalized names distinct. Case and index filename variants
+follow the disk's identity. For ambiguous spellings, a hidden scratch directory
+is created in the nearest existing folder and removed immediately; if the probe
+fails, the guard assumes both case and Unicode folding when checking the policy.
+On a case-folding disk `[!a]*` also reserves `a`, because
+`A` matches; `[!aA]*` excludes both spellings. Character classes and `?` match
+the NFC-normalized folder spelling; the guard does not expand a folder into
+decomposed spellings for glob matching. A leaf symlink to an authored note is editable, while an alias
+to a designated index remains protected. Library callers retain the
+explicit `allow_protected` override. Other indexes and logs remain editable.
+
+
+### Local observation ledger
+
+The inventory boundary also supplies a descriptor-relative full sweep of readable
+Markdown to an instance-local, versioned ledger beside the tracker. It stores
+path, role, content and frontmatter digests, first and last change observation
+times, presence, removal time and origin. Builds (including warm builds),
+reindexes and successful pulls reconcile state, including unchanged-HEAD pulls.
+Persistent ledger sweeps for the same resolved path share a process-local lock.
+Shared persistent state has one owning process; independent indexes must not
+share tracker or ledger state.
+The server's pull tick and post-pull reconciliation also sweep on current,
+deferred or failed search state; webhook delivery may sweep twice. A failed
+search reconcile keeps its failed outcome while the fallback sweep observes the
+tree. A failed fallback sweep is logged and reported as failed, allowing the
+pull tick to continue to its independent pending push retry. A tick reads the full
+observation scope, normally every 600 seconds. The watcher is disabled when
+periodic pulls are active. Byte or presence changes advance the change time;
+a role-only refresh leaves it intact. Unchanged rows remain stable;
+inaccessible paths and their subtrees do not establish removal, but do not block
+removal elsewhere. A readable empty root records prior files as removed even
+when search refuses to prune its own rows. Inventory-denied symlinks are never followed, even when search
+admits them; an earlier row hidden by one remains unchanged. The content digest
+covers the full file. The frontmatter digest covers the parser-delimited block
+with surrounding whitespace trimmed; it is absent for missing, unterminated or
+invalid UTF-8 headers. Invalid body bytes do not change a valid header digest.
+Reads use bounded chunks and ordinary notes use bounded memory; a candidate
+header, including an unterminated one, may use memory proportional to its length.
+Version 2 adds `moved_from` and `moved_to` to the version 1 rows; old rows
+load without a move. Server renames and folder moves record both ends, while a
+sweep sees only a removal and an addition. A move relation describes the latest observation of
+each path and clears when that row's content changes; it is not an event history.
+A server move is linked only when the observed destination matches captured
+source bytes or a successful server rewrite; without either, the relation is unknown.
+A path never observed has unknown history. Writes, edits, appends, deletes,
+renames and folder moves submit affected paths. Dirty paths are inspected in
+inventory scope and persisted as a batch. The writer retains the digest of its
+staged bytes until processing;
+only a matching disk digest records `server_write`. A dirty-job ledger I/O or
+schema failure is logged and leaves search usable; once storage is repaired,
+the next sweep reconciles it. Reindex repairs changes missed after a crash,
+without guessing their origin. Version 2 preserves row
+meanings and digest vectors across parser upgrades; a
+change requires a version bump and a migration preserving trustworthy history
+and marking unknowns. A missing or corrupt ledger starts new history, while a
+newer schema is refused. A downgrade to a version 1 reader requires moving the
+version 2 ledger aside and starting new observation history. A ledger refusal or I/O failure fails the build or
+reindex before search is touched; on a build the completion marker remains
+intact until observation succeeds. A repaired restart can reuse it. An unforced
+warm build retains in-process queryability after a sweep failure; a forced build
+may not. `Vault.force_pull()` sweeps after successful Git work without itself
+reconciling search. If the sweep fails, the Git side effect has already happened
+and the error propagates; a webhook returns a retryable failure. Sweep origin is
+unknown; observation does not write author metadata or log entries.
+
+### OKF capability transition
+
+The configuration resolves independent author, verify, index, log and folder
+capabilities. Unset capabilities grant no semantic writes. The deprecated
+`OKF_WRITE` alias retains its shipped behavior and supplies defaults for the
+resolved capabilities; explicit settings take precedence. Review and maintenance use their resolved capabilities; legacy stamping
+remains tied to `OKF_WRITE`.
+
+### Bundle inventory surfaces
+
+The read-only `okf_inventory` tool and CLI expose bounded live bundle tree observations through the reader facet. Each call filters one bounded page of up to 1,000 observations, returning up to the requested number of candidates and a continuation when further observations may remain, including when the filtered page is empty. Unknown type or parse state does not prove a mismatch. Search-state filters match note observations exactly; unavailable directory boundaries remain visible for continuation. Search admission remains an observation and can be unknown without an index. The local CLI uses a usable configured index only when the selected source resolves to the configured vault. An unusable or unsupported optional index leaves search state unknown without modifying the store.
+Local OKF read observations compare the current concept snapshot with every unambiguously matched local receipt for the latest supplied reviews, independently of trust tiers. Missing, ambiguous, malformed or unsupported receipts leave the comparison unavailable. A difference from every matched snapshot reports an observed difference; any matching snapshot remains unavailable because it cannot reveal an intervening edit followed by a revert. Inventory projects policy-visible ledger removals into bounded pages. Its separate removal-history status reports whether the local ledger is usable without overwriting enumeration or asserting complete history.
+
+### Folder navigation
+
+`okf_navigation` inspects one immediate folder using the inventory access policy. It reads an authored `index.md` first, independently of the bounded enumeration, preserving its body after a leading parseable metadata mapping or empty or comment-only YAML metadata. Authored results report `enumeration="not_inspected"` because their body does not use the listing. If absent, it synthesizes a listing from live concept and directory observations, including readable hidden and index-excluded entries, without requiring a search index or writing files. Unreadable or internal indexes are not replaced with synthesized content. Each synthesized page observes up to `entry_limit` immediate entries in name order and never descends. Pass `next_cursor` to continue after the last observed entry; repeated calls reach the policy-visible immediate observations. Complete enumeration does not promise that unavailable symlinks can be navigated. Continuation observes live state rather than a snapshot, and an exact multiple of the limit ends with one empty page. Synthesized links are `./`-prefixed immediate-child destinations that resolve relative to the selected folder, whether it is the vault root or a nested bundle; the prefix keeps a name containing a colon from reading as a URL scheme. A subfolder's destination carries no trailing slash; its description reads `folder`. The caller navigates by the link text, which is the child's name with backslash, `[` and `]` backslash-escaped, so it removes those backslashes and joins the name to the folder. The destination is percent-encoded by the shared link renderer, which cannot tell a literal `%20` in a name from an encoded space; that inherited caveat is why the text, not the destination, is the navigation input. Authored results carry no cursor, and their links stay as written.

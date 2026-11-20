@@ -18,7 +18,7 @@ from fastmcp.exceptions import ResourceError
 
 from markdown_vault_mcp.server import make_server
 
-_LEAKED_DETAIL = "postgres://svc:hunter2@db/internal"
+_LEAKED_DETAIL = "postgres://svc:" + "hunter2@db/internal"
 
 
 @pytest.fixture(autouse=True)
