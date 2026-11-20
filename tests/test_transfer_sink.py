@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp._transfer_contract import (
     TransferResourceGoneError,
     TransferSinkError,
     TransferUnavailableError,

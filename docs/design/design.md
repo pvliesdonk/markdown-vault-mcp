@@ -2245,8 +2245,9 @@ token store, the generic `create_download_link` / `create_upload_link` tools
 clamp, and the per-upload size cap. It was a hand-rolled in-memory subsystem
 in this repo (`transfer/`) until #979 adopted `fastmcp-pvl-core`'s shared
 framework, and #2241 folds that back in: the registration and the link tools
-are `_transfer_links.py` (#2318), while the route handler, token store and
-sink contract still come from pvl-core until #2319 and #2320. The domain part
+are `_transfer_links.py` (#2318), the route handler `_transfer_routes.py` and
+the sink contract `_transfer_contract.py` (#2319), while the token store still
+comes from pvl-core until #2320. The domain part
 is a `VaultTransferSink` (`_transfer_sink.py`) implementing the `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
 vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s

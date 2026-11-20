@@ -13,9 +13,8 @@ Two entry points share one route mount and one token store:
   DOMAIN-WIRING block). ``register_transfer_routes`` is
   ``build_transfer_links`` plus the two tools.
 
-The routes handler, the token store and the sink contract still come from
-pvl-core through the shim, until #2319 and #2320 move them; the instructions
-builder until #2305.
+The token store still comes from pvl-core through the shim, until #2320 moves
+it; the instructions builder until #2305.
 
 How FastMCP builds the tool descriptions, parameter descriptions and
 instructions snippets registered here, and how clients read them, is in
@@ -36,18 +35,21 @@ from markdown_vault_mcp._pvl_core import (
     InstructionRole,
     ServerConfig,
     TransferConfig,
-    TransferKind,
-    TransferSink,
     TransferStore,
-    TransferValidator,
     instructions_for,
-    make_transfer_handler,
 )
 from markdown_vault_mcp._tool_boundary import tool_boundary
+from markdown_vault_mcp._transfer_routes import make_transfer_handler
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
+
+    from markdown_vault_mcp._transfer_contract import (
+        TransferKind,
+        TransferSink,
+        TransferValidator,
+    )
 
 # Lucide icons (MIT): raw SVG markup, base64-encoded once at import time into
 # data URIs, so the tools carry icons with no file-system or network

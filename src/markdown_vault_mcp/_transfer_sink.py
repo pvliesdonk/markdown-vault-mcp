@@ -4,7 +4,7 @@
 ``/transfer/{token}`` route, the generic ``create_download_link`` /
 ``create_upload_link`` tools (with their titles, hints, and icons), and all
 size-cap / TTL mechanics. This module supplies the one domain hook it consumes:
-a :class:`~fastmcp_pvl_core.TransferSink` (where bytes come from / go to) plus a
+a :class:`~markdown_vault_mcp._transfer_contract.TransferSink` (where bytes come from / go to) plus a
 ``TransferValidator`` (which refs are acceptable):
 
 - **download** — ``read`` serves an existing vault note or attachment's bytes.
@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp._transfer_contract import (
     TransferReadResult,
     TransferResourceGoneError,
     TransferSinkError,
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from markdown_vault_mcp._pvl_core import TransferKind
+    from markdown_vault_mcp._transfer_contract import TransferKind
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
 
@@ -318,7 +318,7 @@ class VaultTransferSink:
         cleared when all MCP sessions close, while the ``/transfer/{token}``
         route stays mounted for the server's lifetime. A link followed in that
         window would otherwise raise a bare ``RuntimeError`` and surface as a
-        generic 500; mapping it to :class:`~fastmcp_pvl_core.TransferUnavailableError`
+        generic 500; mapping it to :class:`~markdown_vault_mcp._transfer_contract.TransferUnavailableError`
         gives the caller a clean, retryable **503** instead (the route releases
         the token, so the link survives the retry). See fastmcp-pvl-core#233.
 
@@ -342,7 +342,7 @@ class VaultTransferSink:
             handle: The vault-relative path the link was minted with.
 
         Returns:
-            A :class:`~fastmcp_pvl_core.TransferReadResult` — bytes, media type,
+            A :class:`~markdown_vault_mcp._transfer_contract.TransferReadResult` — bytes, media type,
             and download filename.
 
         Raises:
@@ -388,7 +388,7 @@ class VaultTransferSink:
             scope: ``""`` for the whole vault, else a folder subtree.
 
         Returns:
-            A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the zip.
+            A :class:`~markdown_vault_mcp._transfer_contract.TransferReadResult` carrying the zip.
 
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).
