@@ -24,6 +24,8 @@ okf_version: "0.2"
 # My bundle
 ```
 
+Versions 0.1, 0.2, and 0.3 are recognized; unknown versions are still served best-effort with a warning. Recognition does not imply full v0.3 conformance. The `okf_validate` tool still applies older rules, so its findings do not establish v0.3 nonconformance; alignment is planned under #1425.
+
 This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
 
 | Value | Behaviour |
@@ -49,7 +51,7 @@ You can filter on these dimensions. `search` and `list_documents` accept `status
 
 ## Frontmatter fields
 
-A conformant note needs only a non-empty `type`. Everything else is optional but recommended:
+The current audit expects a non-empty `type` on each note. Under v0.3, untyped Markdown does not cause a bundle to fail conformance. Other fields are optional but recommended:
 
 ```yaml
 ---
@@ -70,17 +72,17 @@ verified:
 
 ## Migrating an existing vault
 
-Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.
+Adoption is incremental. The server tolerates a mix of notes that pass or fail its current audit, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.
 
 ### 1. Audit
 
-Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
+Run the `okf_validate` tool to see where the vault stands. It reports results under its older rules as a degree rather than a pass or fail. The report gives the count that passes those rules out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
-The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+The report also lists `index.md` files that carry frontmatter its current rules flag. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
 
 ### 2. Declare
 
-Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.
+Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early guides new notes toward the server’s current conventions while you work through the backlog.
 
 ### 3. Enrich
 

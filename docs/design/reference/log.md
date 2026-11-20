@@ -1,5 +1,9 @@
 # Reference research log
 
+## 2026-11-20
+
+- Added [OKF v0.3](okf-v0.3.md), pinned to SPEC.md at 527e81af; marked the v0.2 reference superseded.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
