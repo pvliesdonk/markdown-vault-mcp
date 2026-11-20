@@ -464,7 +464,7 @@ class ExportPaths:
         self._artifact_fields = (
             self._archive_members
             | {
-                d[len(self.scope) + 1 :] + "/"
+                (d[len(self.scope) + 1 :] if self.scope else d) + "/"
                 for d in self._directories
                 if d != self.scope
             }
@@ -674,6 +674,7 @@ class ExportPaths:
         archive_source = source[len(self.scope) + 1 :] if self.scope else source
         root_index = archive_source == "index.md"
         licenses = _mapping_values(root, "license", {}) if root_index else []
+        descriptors = _source_resources(root, root_index)
         for node in _frontmatter_paths(root, root_index):
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
@@ -681,7 +682,10 @@ class ExportPaths:
                 continue
             if not value.startswith("/") and _field_parts(value)[0] not in {".", ".."}:
                 rewritten = self._bare_field(
-                    value, source, (dependencies, fallback), node in licenses
+                    value,
+                    source,
+                    (dependencies, fallback),
+                    (node in licenses, id(node) in descriptors),
                 )
             else:
                 rewritten = self._field_replacement(value, source, dependencies)
@@ -694,9 +698,10 @@ class ExportPaths:
         value: str,
         source: str,
         observations: tuple[list[Dependency], list[Dependency]],
-        license_field: bool,
+        field_flags: tuple[bool, bool],
     ) -> str | None:
         dependencies, fallback = observations
+        license_field, scope_descriptor = field_flags
         archive_source = source[len(self.scope) + 1 :] if self.scope else source
         result = resolve_okf_path(value, source, self._selected_fields, self.version)
         if result.status == "external":
@@ -705,7 +710,10 @@ class ExportPaths:
             return self._field_replacement(value, source, dependencies)
         if result.status == "absent":
             return None
-        if result.status == "unresolved" and license_field and _is_spdx_license(value):
+        if result.status == "unresolved" and (
+            (license_field and _is_spdx_license(value))
+            or (scope_descriptor and any(char.isspace() for char in value))
+        ):
             return None
         if result.status != "resolved":
             result = resolve_okf_path(
@@ -989,6 +997,28 @@ def _mapping_values(
                     return found
     memo[cache_key] = []
     return []
+
+
+def _source_resources(root: object, root_index: bool) -> set[int]:
+    memo: dict[tuple[int, str], list[object] | None] = {}
+    result: set[int] = set()
+    for sources in _mapping_values(root, "sources", memo):
+        if isinstance(sources, SequenceNode):
+            for item in sources.value:
+                result.update(
+                    id(node) for node in _mapping_values(item, "resource", memo)
+                )
+    keys: tuple[str, ...] = ("resource", "computation", "superseded_by")
+    if root_index:
+        keys += ("license",)
+    for key in keys:
+        result.difference_update(id(node) for node in _mapping_values(root, key, memo))
+    for key in ("executor", "attester"):
+        for parent in _mapping_values(root, key, memo):
+            result.difference_update(
+                id(node) for node in _mapping_values(parent, "resource", memo)
+            )
+    return result
 
 
 def _frontmatter_paths(root: object, root_index: bool = False) -> list[ScalarNode]:

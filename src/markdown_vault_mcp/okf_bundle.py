@@ -8,7 +8,7 @@ import logging
 import os
 import stat
 import zipfile
-from contextlib import closing, nullcontext, suppress
+from contextlib import closing, nullcontext
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import PurePosixPath
@@ -41,7 +41,7 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.types import OutlinkInfo
 from markdown_vault_mcp.utils.content_kind import effective_attachment_extensions
-from markdown_vault_mcp.utils.fs import open_directory_nofollow
+from markdown_vault_mcp.utils.fs import open_directory_nofollow, read_regular_nofollow
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
@@ -273,8 +273,18 @@ def _declaration(raw: bytes) -> str:
     try:
         with io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8-sig") as stream:
             return stream.read(_MAX_READ_CHARS)
-    except UnicodeError:
-        return ""
+    except UnicodeError as exc:
+        raise ValueError("Cannot decode OKF index declaration") from exc
+
+
+def _declaration_bytes(vault: Vault, path: str) -> bytes | None:
+    """Capture a bounded, no-follow declaration prefix, or an absent index."""
+    parts = path.split("/")
+    try:
+        with open_directory_nofollow(vault.source_dir, parts[:-1]) as parent:
+            return read_regular_nofollow(parent, parts[-1], _MAX_READ_CHARS * 4 + 4)
+    except FileNotFoundError:
+        return None
 
 
 def _root_declaration(
@@ -282,15 +292,17 @@ def _root_declaration(
 ) -> str:
     """Read an index declaration without following links or leaving the snapshot."""
     if snapshot is None:
-        with suppress(OSError):
-            return _declaration(_read_safe(vault.source_dir, path))
-        return ""
+        raw = _declaration_bytes(vault, path)
+        return _declaration(raw) if raw is not None else ""
     entry = snapshot.entries.get(path)
-    if entry and entry[0] in {"100644", "100755"}:
-        root = replace(snapshot, entries={path: entry})
-        if _inspect_page(vault, "", root, limit=1).entries:
-            return _declaration(snapshot.read(path))
-    return ""
+    if entry is None:
+        return ""
+    if entry[0] not in {"100644", "100755"}:
+        raise OSError(f"Cannot read OKF index declaration: {path}")
+    root = replace(snapshot, entries={path: entry})
+    if not _inspect_page(vault, "", root, limit=1).entries:
+        raise OSError(f"Cannot inspect OKF index declaration: {path}")
+    return _declaration(snapshot.read(path))
 
 
 def _review_policy(
@@ -343,7 +355,8 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
         review_evidence: Requires review; binding by default or local_receipt.
 
     Returns:
-        Archive bytes, counts, and an artifact conformance report.
+        Archive bytes, counts, and an artifact conformance report. The report
+        records live source-index changes as snapshot inconsistencies.
 
     Raises:
         PublicationRefused: If strict or review publication fails the report.
@@ -351,8 +364,9 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
             including failures under otherwise omitted hidden paths, or if an
             outside body or frontmatter destination collides with an exported
             file or directory, the external URL prefix is invalid, or the Git
-            snapshot cannot be read.
-        OSError: If a selected file cannot be read.
+            snapshot cannot be read or an index declaration is undecodable.
+        OSError: If a selected file or index declaration cannot be read, or the
+            live root index changes before its bytes are captured.
     """
     policy = _review_policy(require_review, require_check, review_evidence)
     snapshot = git_export_snapshot(vault.source_dir)
@@ -391,7 +405,12 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
-    declaration = _root_declaration(vault, snapshot)
+    root_bytes = _declaration_bytes(vault, "index.md") if snapshot is None else None
+    declaration = (
+        (_declaration(root_bytes) if root_bytes is not None else "")
+        if snapshot is None
+        else _root_declaration(vault, snapshot)
+    )
     version, _ = vault.okf._probe(declaration)
     active = bool(
         snapshot and vault._required_frontmatter and vault.okf.state(declaration).active
@@ -471,10 +490,22 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 
         extensions = effective_attachment_extensions(config.attachment_extensions)
         artifact_index = f"{folder}/index.md" if folder else "index.md"
+        artifact_raw = None
+        if any(item.path == artifact_index for item in selected):
+            artifact_raw = (
+                snapshot.read(artifact_index)
+                if snapshot is not None
+                else _read_safe(vault.source_dir, artifact_index)
+            )
+        if (
+            snapshot is None
+            and artifact_index == "index.md"
+            and artifact_raw is not None
+            and artifact_raw[: _MAX_READ_CHARS * 4 + 4] != root_bytes
+        ):
+            raise OSError("Root index changed during export")
         artifact_declaration = (
-            _root_declaration(vault, snapshot, artifact_index)
-            if any(item.path == artifact_index for item in selected)
-            else ""
+            _declaration(artifact_raw) if artifact_raw is not None else ""
         )
         artifact_version, _ = vault.okf._probe(artifact_declaration)
         paths = ExportPaths(
@@ -545,7 +576,9 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
         digests: dict[str, bytes] = {}
         for item in selected:
             raw = (
-                snapshot.read(item.path)
+                artifact_raw
+                if item.path == artifact_index and artifact_raw is not None
+                else snapshot.read(item.path)
                 if snapshot
                 else _read_safe(vault.source_dir, item.path)
             )
@@ -596,6 +629,14 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
         dirty = replace(snapshot, changed=changed, flagged=flagged)
         page = _inspect_page(vault, folder, dirty, limit=1)
         report.snapshot.uncommitted_paths.extend(page.uncommitted)
+    if snapshot is None and "index.md" not in digests:
+        try:
+            current_root = _declaration_bytes(vault, "index.md")
+        except OSError:
+            report.snapshot.inconsistent_paths.append("index.md")
+        else:
+            if current_root != root_bytes:
+                report.snapshot.inconsistent_paths.append("index.md")
     for path, digest in digests.items():
         try:
             current = hashlib.sha256(_read_safe(vault.source_dir, path)).digest()

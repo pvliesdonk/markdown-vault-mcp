@@ -122,6 +122,7 @@ def test_cli_external_hardlink_is_safely_replaced(tmp_path: Path) -> None:
     ("folder", "body", "observation"),
     [
         ("scope", "[outside](/outside.md)", "dependencies"),
+        ("scope", "---\ntype: Note\nresource: missing.md\n---\n", "dependencies"),
         ("", "[missing](missing.md)", "broken_links"),
     ],
 )
@@ -147,14 +148,20 @@ def test_strict_refuses_scope_observations(
         vault.close()
 
 
-def test_cli_refusal_preserves_existing_destination(tmp_path: Path) -> None:
+@pytest.mark.parametrize("missing_field", [False, True])
+def test_cli_refusal_preserves_existing_destination(
+    tmp_path: Path, missing_field: bool
+) -> None:
     from typer.testing import CliRunner
 
     from markdown_vault_mcp.cli import app
 
     root = tmp_path / "vault"
     root.mkdir()
-    (root / "README.md").write_text("# Read me\n")
+    if missing_field:
+        (root / "note.md").write_text("---\ntype: Note\nresource: missing.md\n---\n")
+    else:
+        (root / "README.md").write_text("# Read me\n")
     destination = tmp_path / "bundle.zip"
     destination.write_bytes(b"existing")
     result = CliRunner().invoke(
@@ -162,7 +169,11 @@ def test_cli_refusal_preserves_existing_destination(tmp_path: Path) -> None:
         ["export", str(destination), "--source-dir", str(root), "--strict"],
     )
     assert result.exit_code != 0
-    assert '"verdict": "nonconformant"' in result.output
+    if missing_field:
+        assert '"dependencies"' in result.output
+        assert "missing.md" in result.output
+    else:
+        assert '"verdict": "nonconformant"' in result.output
     assert destination.read_bytes() == b"existing"
 
 
@@ -265,7 +276,7 @@ def test_cli_options_include_hidden_and_externalize_collision(tmp_path: Path) ->
         assert b"https://example.org/vault/b.md" in archive.read("a.md")
 
 
-@pytest.mark.parametrize("value", ["../outside.md", "ambiguous.md"])
+@pytest.mark.parametrize("value", ["../outside.md", "missing.md"])
 @pytest.mark.parametrize(
     "field",
     [
