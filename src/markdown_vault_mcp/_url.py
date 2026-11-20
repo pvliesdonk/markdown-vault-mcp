@@ -1,7 +1,8 @@
 """Parsing operator-supplied URLs without repeating them back.
 
-Ported from ``fastmcp_pvl_core._url`` 10.2.0 (#2279, #2282); only the parsers
-the key-value store and ``_fetch`` need came along.
+Ported from ``fastmcp_pvl_core._url`` 10.2.0 (#2279, #2282, #2333): the
+parsers the key-value store and ``_fetch`` need, and the free-text redactor
+``get_server_info`` and the health routes use.
 
 Every URL an operator sets may carry credentials (``user:pass@`` in the
 userinfo, a pre-signed token in the query string), so nothing derived from
@@ -30,6 +31,7 @@ Two shapes, because the two contexts have opposite requirements:
 
 from __future__ import annotations
 
+import re
 from urllib.parse import ParseResult, urlparse
 
 from markdown_vault_mcp._pvl_core import ConfigurationError
@@ -113,3 +115,50 @@ def safe_netloc(parsed: ParseResult) -> str | None:
         return None
     bracketed = f"[{host}]" if ":" in host else host
     return f"{bracketed}:{port}" if port is not None else bracketed
+
+
+_URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+")
+_USERINFO_RE = re.compile(r"://[^/\s]*@")
+_QUERY_RE = re.compile(r"[?#]")
+
+
+def redact_urls_in_text(text: str) -> str:
+    """Strip userinfo and query/fragment from any URL inside *text*.
+
+    Backend URLs reach a log line or a response through exception
+    messages, and in this codebase they carry credentials in ``user:pass@``
+    userinfo and tokens in the query string. Used by the health routes'
+    ``full`` detail and by ``get_server_info``'s upstream error.
+
+    The userinfo pattern is greedy up to the last ``@`` before the path,
+    and every occurrence is replaced. A password may itself contain
+    ``@``, and one whitespace-free token may carry more than one URL; a
+    single non-greedy substitution leaked the tail of both.
+
+    Known limit: the pattern stops at ``/``, so a password carrying a raw
+    ``/`` is left unredacted. RFC 3986 requires that character to be
+    percent-encoded in userinfo, and widening the pattern to cross ``/``
+    would swallow everything between two URLs in one message. Stated
+    rather than fixed.
+
+    Deliberately textual rather than parsed. ``urlsplit(...).port`` raises
+    ``ValueError`` on authorities this codebase actually supports — a
+    ``mongodb://`` seed list such as ``h1:27017,h2:27017`` is the case
+    that bit — and a redactor that raises emits the very message it was
+    given to clean (see this module's docstring).
+
+    ``_fetch`` redacts a URL it holds as a URL; this one has to find URLs
+    inside free text, so the two are not the same function.
+
+    Args:
+        text: Free text, typically ``str(exc)``.
+
+    Returns:
+        *text* with every URL's userinfo, query and fragment removed.
+    """
+
+    def _strip(match: re.Match[str]) -> str:
+        url = _USERINFO_RE.sub("://", match.group(0))
+        return _QUERY_RE.split(url, maxsplit=1)[0]
+
+    return _URL_RE.sub(_strip, text)

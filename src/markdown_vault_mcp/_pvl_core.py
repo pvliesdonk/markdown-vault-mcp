@@ -29,10 +29,10 @@ from fastmcp_pvl_core import (
     maybe_start_debugpy,
     normalise_http_path,
     register_health_routes,
-    register_server_info_tool,
     run_http,
     wire_middleware_stack,
 )
+from fastmcp_pvl_core import __version__ as CORE_VERSION
 from fastmcp_pvl_core._logging_middleware import RequestLoggingMiddleware
 
 __all__ = [  # noqa: RUF022 - grouped by area, not sorted
@@ -52,11 +52,12 @@ __all__ = [  # noqa: RUF022 - grouped by area, not sorted
     "get_claims",
     "get_current_auth_mode",
     "get_subject",
-    # HTTP serving (#2335), health routes (#2334) and server info (#2333).
+    # The installed pvl-core version get_server_info reports (#2283).
+    "CORE_VERSION",
+    # HTTP serving (#2335) and health routes (#2334).
     "HealthCheck",
     "maybe_start_debugpy",
     "normalise_http_path",
     "register_health_routes",
-    "register_server_info_tool",
     "run_http",
 ]
