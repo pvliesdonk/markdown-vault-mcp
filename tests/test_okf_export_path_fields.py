@@ -56,7 +56,6 @@ def test_ambiguous_and_outside(tmp_path):
     text = "---\nresource: references/b.md\nsources:\n  - resource: /outside.md\n---\n"
     output, report = export(tmp_path, text)
     assert output == text
-    assert not report.ambiguous_path
     assert [(x.path, x.target) for x in report.dependencies] == [
         ("a.md", "references/b.md"),
         ("a.md", "/outside.md"),
@@ -271,7 +270,6 @@ def test_directory_fields(tmp_path, field, source, written, expected):
     assert output == text.replace(
         field.format(f'"{written}"'), field.format(f'"{expected}"')
     )
-    assert not report.ambiguous_path
     assert [(x.path, x.target) for x in report.dependencies] == [(source, "/guides/")]
     assert (source in report.transformed) == (written != expected)
 
@@ -637,7 +635,6 @@ def test_one_letter_urls_and_drive_paths(tmp_path, field, value):
     text = f"---\n{header}\n---\n"
     output, report = export(tmp_path, text)
     assert output == text
-    assert not report.ambiguous_path
     assert not report.dependencies
     assert not report.transformed
 
@@ -657,7 +654,6 @@ def test_legacy_root_fallback_is_relocated_and_reported(tmp_path, version):
         ("sub/c.md", "guides/target.md")
     ]
     assert not report.dependencies
-    assert not report.ambiguous_path
 
 
 def test_v03_bare_fields_and_unresolved(tmp_path):
@@ -666,7 +662,6 @@ def test_v03_bare_fields_and_unresolved(tmp_path):
     output, report = export(tmp_path, text, include_index_excluded=True)
     assert output == text
     assert [(x.path, x.target) for x in report.dependencies] == [("a.md", "missing.md")]
-    assert not report.ambiguous_path
 
 
 def test_v03_does_not_use_root_fallback(tmp_path):
@@ -742,25 +737,21 @@ def test_missing_root_license_path_is_reported(license_value):
     ]
 
 
+@pytest.mark.usefixtures("isolated_git")
 def test_git_export_uses_committed_version_in_on_mode(tmp_path):
-    import subprocess
+    from tests.fixtures.git import _run_git
 
-    def git(*args):
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
-        )
-
-    git("init", "-q")
-    git("config", "user.name", "Fixture")
-    git("config", "user.email", "fixture@example.invalid")
+    _run_git(tmp_path, "init", "-q")
+    _run_git(tmp_path, "config", "user.name", "Fixture")
+    _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
     (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
     (tmp_path / "guides" / "sub").mkdir(parents=True)
     (tmp_path / "guides" / "b.md").write_text("target\n")
     (tmp_path / "guides" / "sub" / "a.md").write_text(
         "---\nresource: guides/b.md\n---\n"
     )
-    git("add", "index.md", "guides")
-    git("commit", "-qm", "fixture")
+    _run_git(tmp_path, "add", "index.md", "guides")
+    _run_git(tmp_path, "commit", "-qm", "fixture")
     (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
     try:
@@ -778,8 +769,20 @@ def test_git_export_uses_committed_version_in_on_mode(tmp_path):
 @pytest.mark.parametrize("value", ["b.md", "./b.md"])
 def test_unresolved_v03_path_cannot_retarget_in_export(tmp_path, value):
     (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
-    with pytest.raises(ValueError, match="collision"):
+    with pytest.raises(ValueError) as exc:
         export(tmp_path, f"---\nresource: {value}\n---\n", source="sub/c.md")
+    message = str(exc.value)
+    assert all(
+        part in message
+        for part in (
+            "collision",
+            "guides/sub/c.md",
+            value,
+            "b.md",
+            "correct the reference",
+            "index.md declaration",
+        )
+    )
 
 
 def test_encoded_outside_path_is_reported(tmp_path):
@@ -861,20 +864,6 @@ def test_subtree_declared_v03_does_not_invent_collision(tmp_path):
     assert [(x.path, x.target) for x in report.dependencies] == [("sub/c.md", "b.md")]
 
 
-def test_live_index_bounded_read_keeps_valid_utf8_prefix(tmp_path):
-    from markdown_vault_mcp.okf_bundle import _root_declaration
-
-    header = b'---\nokf_version: "0.3"\n---\n'
-    (tmp_path / "index.md").write_bytes(
-        header + b"x" * (262143 - len(header)) + "€".encode()
-    )
-    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
-    try:
-        assert _root_declaration(vault, None).startswith(header.decode())
-    finally:
-        vault.close()
-
-
 def test_live_index_bounded_read_rejects_invalid_utf8(tmp_path):
     from markdown_vault_mcp.okf_bundle import _root_declaration
 
@@ -886,25 +875,21 @@ def test_live_index_bounded_read_rejects_invalid_utf8(tmp_path):
         vault.close()
 
 
+@pytest.mark.usefixtures("isolated_git")
 def test_git_export_uses_committed_subtree_version(tmp_path):
-    import subprocess
+    from tests.fixtures.git import _run_git
 
-    def git(*args):
-        subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
-        )
-
-    git("init", "-q")
-    git("config", "user.name", "Fixture")
-    git("config", "user.email", "fixture@example.invalid")
+    _run_git(tmp_path, "init", "-q")
+    _run_git(tmp_path, "config", "user.name", "Fixture")
+    _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
     (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
     (tmp_path / "guides" / "sub").mkdir(parents=True)
     selected_index = tmp_path / "guides" / "index.md"
     selected_index.write_text('---\nokf_version: "0.3"\n---\n')
     (tmp_path / "guides" / "b.md").write_text("target\n")
     (tmp_path / "guides" / "sub" / "a.md").write_text("---\nresource: b.md\n---\n")
-    git("add", "index.md", "guides")
-    git("commit", "-qm", "fixture")
+    _run_git(tmp_path, "add", "index.md", "guides")
+    _run_git(tmp_path, "commit", "-qm", "fixture")
     selected_index.write_text('---\nokf_version: "0.2"\n---\n')
     vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
     try:
@@ -915,4 +900,87 @@ def test_git_export_uses_committed_subtree_version(tmp_path):
         vault.close()
     assert [(x.path, x.target) for x in result.report.dependencies] == [
         ("sub/a.md", "b.md")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "dependency"),
+    [
+        ("/guides/b.md", "/b.md", False),
+        ("/outside.md", "https://example.org/v/outside.md", True),
+        ("MIT OR Apache-2.0", "MIT OR Apache-2.0", False),
+    ],
+)
+def test_subtree_root_license_relocates_or_preserves(
+    tmp_path, value, expected, dependency
+):
+    import yaml
+
+    text = f"---\nlicense: {value}\n---\n"
+    output, report = export(
+        tmp_path, text, source="index.md", external_base="https://example.org/v"
+    )
+    assert yaml.safe_load(output.split("---")[1])["license"] == expected
+    assert [(x.path, x.target) for x in report.dependencies] == (
+        [("index.md", value)] if dependency else []
+    )
+
+
+@pytest.mark.parametrize("version", [None, "0.1", "0.2"])
+@pytest.mark.parametrize("artifact_version", [None, "0.2", "0.3"])
+def test_outside_legacy_fallback_never_retargets(tmp_path, version, artifact_version):
+    if version:
+        (tmp_path / "index.md").write_text(f'---\nokf_version: "{version}"\n---\n')
+    (tmp_path / "shared.md").write_text("outside")
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "shared.md").write_text("selected")
+    if artifact_version:
+        (tmp_path / "guides" / "index.md").write_text(
+            f'---\nokf_version: "{artifact_version}"\n---\n'
+        )
+    text = "---\nresource: shared.md\n---\n"
+    if artifact_version == "0.3":
+        output, report = export(tmp_path, text, source="sub/c.md")
+        assert output == text
+        assert report.dependencies[0].target == "shared.md"
+    else:
+        with pytest.raises(ValueError, match=r"collision.*correct the reference"):
+            export(tmp_path, text, source="sub/c.md")
+        output, report = export(
+            tmp_path, text, source="sub/c.md", external_base="https://example.org/v"
+        )
+        assert "https://example.org/v/shared.md" in output
+        assert report.dependencies[0].target == "shared.md"
+
+
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("committed", [False, True])
+def test_invalid_bytes_after_version_probe_prefix_do_not_enable_fallback(
+    tmp_path, committed
+):
+    from tests.fixtures.git import _run_git
+
+    header = b'---\nokf_version: "0.3"\n---\n'
+    (tmp_path / "index.md").write_bytes(header + b"x" * 70000 + b"\xff")
+    (tmp_path / "guides" / "sub").mkdir(parents=True)
+    (tmp_path / "guides" / "b.md").write_text("target")
+    (tmp_path / "guides" / "sub" / "a.md").write_text(
+        "---\nresource: guides/b.md\n---\n"
+    )
+    if committed:
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.name", "Fixture")
+        _run_git(tmp_path, "config", "user.email", "fixture@example.invalid")
+        _run_git(tmp_path, "add", "index.md", "guides")
+        _run_git(tmp_path, "commit", "-qm", "fixture")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+    finally:
+        vault.close()
+    assert not result.report.v0_2_root_fallback
+    assert [(x.path, x.target) for x in result.report.dependencies] == [
+        ("sub/a.md", "guides/b.md")
     ]

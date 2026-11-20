@@ -667,16 +667,14 @@ class ExportPaths:
 
     def _field_changes(
         self, root: object, source: str
-    ) -> tuple[
-        list[tuple[ScalarNode, str]],
-        list[Dependency],
-        list[Dependency],
-    ]:
+    ) -> tuple[list[tuple[ScalarNode, str]], list[Dependency], list[Dependency]]:
         changes: list[tuple[ScalarNode, str]] = []
         dependencies: list[Dependency] = []
         fallback: list[Dependency] = []
-        licenses = _mapping_values(root, "license", {}) if source == "index.md" else []
-        for node in _frontmatter_paths(root, source == "index.md"):
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        root_index = archive_source == "index.md"
+        licenses = _mapping_values(root, "license", {}) if root_index else []
+        for node in _frontmatter_paths(root, root_index):
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
             if not value or _is_external_target(value) or _FIELD_URL.match(value):
@@ -724,6 +722,14 @@ class ExportPaths:
     def _unresolved_field(
         self, value: str, source: str, dependencies: list[Dependency]
     ) -> str | None:
+        self._refuse_retarget(value, source)
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        if value.startswith(("./", "../")):
+            return self._field_replacement(value, source, dependencies)
+        dependencies.append(Dependency(archive_source, _safe_text(value)))
+        return None
+
+    def _refuse_retarget(self, value: str, source: str) -> None:
         archive_source = source[len(self.scope) + 1 :] if self.scope else source
         apparent = resolve_okf_path(
             value,
@@ -733,12 +739,8 @@ class ExportPaths:
         )
         if apparent.status in {"resolved", "root_fallback"}:
             raise ExportCollisionError(
-                f"Export collision in {_safe_text(source)}: {_safe_text(value)}; unresolved path would resolve in the artifact"
+                f"Export collision in {_safe_text(source)}: {_safe_text(value)} would resolve to {_safe_text(apparent.path or '')}; correct the reference, or export a folder containing its target and its index.md declaration"
             )
-        if value.startswith(("./", "../")):
-            return self._field_replacement(value, source, dependencies)
-        dependencies.append(Dependency(archive_source, _safe_text(value)))
-        return None
 
     def _resolved_field(
         self,
@@ -756,6 +758,8 @@ class ExportPaths:
         if target not in self.members and target not in self._directories:
             dependencies.append(Dependency(archive_source, _safe_text(value)))
             url = self._outside_target(target_path, source, value, apparent, dirs=True)
+            if url is None:
+                self._refuse_retarget(value, source)
             return url + suffix if url is not None else None
         bundle_target = target[len(self.scope) + 1 :] if self.scope else target
         if apparent == bundle_target:

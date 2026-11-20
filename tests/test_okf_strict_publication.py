@@ -122,7 +122,6 @@ def test_cli_external_hardlink_is_safely_replaced(tmp_path: Path) -> None:
     ("folder", "body", "observation"),
     [
         ("scope", "[outside](/outside.md)", "dependencies"),
-        ("scope", "---\ntype: Note\nresource: ambiguous.md\n---\n", "ambiguous_path"),
         ("", "[missing](missing.md)", "broken_links"),
     ],
 )

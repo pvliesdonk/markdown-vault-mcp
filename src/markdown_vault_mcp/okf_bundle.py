@@ -8,7 +8,6 @@ import logging
 import os
 import stat
 import zipfile
-from codecs import getincrementaldecoder
 from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass, replace
 from functools import cache
@@ -26,6 +25,7 @@ from markdown_vault_mcp.git.query import (
     git_snapshot_changes,
 )
 from markdown_vault_mcp.okf import (
+    _MAX_READ_CHARS,
     convert_wikilinks_to_markdown,
     is_okf_reserved_file,
     review_actor,
@@ -81,7 +81,7 @@ class OkfBundleResult:
     report: OkfExportReport
 
 
-def _read_safe(source: Path, path: str, limit: int = -1) -> bytes:
+def _read_safe(source: Path, path: str) -> bytes:
     """Read one regular file without following any path component."""
     parts = path.split("/")
     with open_directory_nofollow(source, parts[:-1]) as parent:
@@ -91,7 +91,7 @@ def _read_safe(source: Path, path: str, limit: int = -1) -> bytes:
         with os.fdopen(fd, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise OSError("Regular file required")
-            return stream.read(limit)
+            return stream.read()
 
 
 def _omission_reasons(
@@ -269,23 +269,27 @@ def _snapshot_admitted(
     return exempt or not missing_required(metadata, required)
 
 
+def _declaration(raw: bytes) -> str:
+    try:
+        with io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8-sig") as stream:
+            return stream.read(_MAX_READ_CHARS)
+    except UnicodeError:
+        return ""
+
+
 def _root_declaration(
     vault: Vault, snapshot: GitExportSnapshot | None, path: str = "index.md"
 ) -> str:
     """Read an index declaration without following links or leaving the snapshot."""
     if snapshot is None:
-        with suppress(OSError, UnicodeError):
-            raw = _read_safe(vault.source_dir, path, 262144)
-            return getincrementaldecoder("utf-8-sig")().decode(
-                raw, final=len(raw) < 262144
-            )
+        with suppress(OSError):
+            return _declaration(_read_safe(vault.source_dir, path))
         return ""
     entry = snapshot.entries.get(path)
     if entry and entry[0] in {"100644", "100755"}:
         root = replace(snapshot, entries={path: entry})
         if _inspect_page(vault, "", root, limit=1).entries:
-            with suppress(UnicodeError):
-                return decode_utf8(snapshot.read(path))
+            return _declaration(snapshot.read(path))
     return ""
 
 
@@ -366,7 +370,6 @@ def build_okf_bundle(  # noqa: PLR0913, RUF100
     if strict and (
         report.verdict != "conformant"
         or report.dependencies
-        or report.ambiguous_path
         or report.broken_links
         or report.snapshot.inconsistent_paths
         or any(
