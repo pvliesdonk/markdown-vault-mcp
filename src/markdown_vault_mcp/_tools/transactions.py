@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp import _server_commit_scope
 from markdown_vault_mcp._commit_groups import CommitGroupError, GroupCommitResult
 from markdown_vault_mcp._icons import _TOOL_ICONS
 from markdown_vault_mcp._identity import resolve_mcp_principal
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.domain import get_vault
 from markdown_vault_mcp.vault import Vault
