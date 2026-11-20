@@ -81,6 +81,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DescribesStore",
     "EmbeddingStore",
+    "FetchesFrontmatterBatch",
     "GraphStore",
     "IteratesChunks",
     "KeywordGraphIndex",
@@ -399,6 +400,15 @@ class RunsExactQueries(Protocol):
         self, spec: NoteQuery, grouping: NoteGrouping
     ) -> NoteAggregate:
         """Group the exhaustive note population into bounded buckets."""
+        ...
+
+
+@runtime_checkable
+class FetchesFrontmatterBatch(Protocol):
+    """Optional batch projection of live notes' stored frontmatter."""
+
+    def get_frontmatter_batch(self, paths: Iterable[str]) -> dict[str, str | None]:
+        """Return stored JSON keyed by live path, omitting missing notes."""
         ...
 
 

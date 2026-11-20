@@ -2130,6 +2130,36 @@ class FTSIndex:
             return None
         return dict(row)
 
+    def get_frontmatter_batch(self, paths: Iterable[str]) -> dict[str, str | None]:
+        """Return raw frontmatter for the live notes among *paths*.
+
+        Args:
+            paths: Relative document paths, possibly a one-shot iterable.
+
+        Returns:
+            Mapping from each live path to its stored JSON, including nulls.
+        """
+        paths_list = list(paths)
+
+        def _do() -> dict[str, str | None]:
+            conn = self._conn()
+            batch_size = min(
+                _PATHS_PER_QUERY, conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
+            )
+            result: dict[str, str | None] = {}
+            for start in range(0, len(paths_list), batch_size):
+                batch = paths_list[start : start + batch_size]
+                placeholders = ",".join("?" * len(batch))
+                rows = conn.execute(
+                    "SELECT path, frontmatter_json FROM documents_live "
+                    f"WHERE path IN ({placeholders})",
+                    batch,
+                )
+                result.update((row["path"], row["frontmatter_json"]) for row in rows)
+            return result
+
+        return _retry_on_sqlite_locked(_do)
+
     @_retry_on_locked
     def list_note_states(self) -> list[dict[str, Any]]:
         """Read thin live-note state without loading frontmatter or sections.

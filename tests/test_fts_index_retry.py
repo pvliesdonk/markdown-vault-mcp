@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +13,9 @@ from markdown_vault_mcp.fts_index import (
     FTSIndex,
     _retry_on_sqlite_locked,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestRetryOnSqliteLocked:
@@ -331,3 +335,38 @@ class TestFTSIndexMethodRetry:
             assert set(result.keys()) == {"a.md", "b.md"}
         finally:
             fts.close()
+
+
+def test_get_frontmatter_batch_retries_generator(tmp_path: Path) -> None:
+    """A retry must retain generator paths and restart the whole batch."""
+    from markdown_vault_mcp.scanner import parse_note
+
+    for path in ("a.md", "b.md"):
+        (tmp_path / path).write_text(f"---\ntitle: {path}\n---\nBody\n")
+    fts = FTSIndex(db_path=tmp_path / "fts.db")
+    try:
+        for path in ("a.md", "b.md"):
+            fts.upsert_note(parse_note(tmp_path / path, tmp_path))
+        state = {"failed": False, "selects": 0}
+        real_conn = fts._conn
+        real_conn().setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 1)
+
+        class FailSecondBatch(_WrappedConnection):
+            def execute(self, sql: str, *params: object) -> sqlite3.Cursor:
+                if "SELECT path, frontmatter_json" in sql:
+                    state["selects"] += 1
+                    if state["selects"] == 2:
+                        state["failed"] = True
+                        raise sqlite3.OperationalError("database table is locked")
+                return self._real.execute(sql, *params)  # type: ignore[no-any-return]
+
+        def wrapped_conn() -> _WrappedConnection:
+            return FailSecondBatch(real_conn(), state, "never matches")
+
+        with patch.object(fts, "_conn", wrapped_conn):
+            result = fts.get_frontmatter_batch(p for p in ("a.md", "b.md"))
+        assert state["failed"]
+        assert state["selects"] == 4
+        assert set(result) == {"a.md", "b.md"}
+    finally:
+        fts.close()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -1987,3 +1988,95 @@ class TestDefaultModeValidation:
         from markdown_vault_mcp.types import DEFAULT_SEARCH_MODES
 
         assert frozenset(DEFAULT_SEARCH_MODES) == _SEARCH_MODES
+
+
+@pytest.mark.parametrize(
+    ("filters", "okf_filters", "expected"),
+    [
+        ({"tags": "b"}, None, ["beta.md", "alpha.md", "beta.md"]),
+        (None, {"status": "stable"}, ["alpha.md", "notes/delta.md"]),
+        ({"tags": "b"}, {"status": "stable"}, ["alpha.md"]),
+    ],
+    ids=["plain", "okf", "combined"],
+)
+def test_post_filter_batches_distinct_paths_and_preserves_order(
+    search_mgr: SearchManager,
+    filters: dict[str, str] | None,
+    okf_filters: dict[str, str] | None,
+    expected: list[str],
+) -> None:
+    beta = search_mgr._source_dir / "beta.md"
+    beta.write_text(
+        beta.read_text().replace("title: Beta", "title: Beta\nstatus: draft")
+    )
+    for note in scan_directory(search_mgr._source_dir):
+        if note.path == "beta.md":
+            search_mgr._fts.upsert_note(note)
+    rows = [
+        {"path": p}
+        for p in ("beta.md", "missing.md", "alpha.md", "beta.md", "notes/delta.md")
+    ]
+    with patch.object(
+        search_mgr._fts,
+        "get_frontmatter_batch",
+        wraps=search_mgr._fts.get_frontmatter_batch,
+    ) as batch:
+        result = search_mgr._post_filter_semantic_rows(
+            rows, filters=filters, okf_filters=okf_filters
+        )
+    assert [row["path"] for row in result] == expected
+    assert batch.call_count == 1
+    assert list(batch.call_args.args[0]) == [
+        "beta.md",
+        "missing.md",
+        "alpha.md",
+        "notes/delta.md",
+    ]
+
+
+def test_post_filter_custom_index_fallback_memoizes_paths(
+    search_mgr: SearchManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class LegacyIndex:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_note(self, path: str) -> dict[str, object] | None:
+            self.calls.append(path)
+            if path != "a.md":
+                return None
+            return {
+                "path": path,
+                "title": "A",
+                "folder": "",
+                "frontmatter_json": '{"tag": ["yes"], "status": "stable"}',
+                "content_hash": "synthetic-hash",
+                "modified_at": "2026-01-01T00:00:00",
+                "content_chars": 42,
+            }
+
+    legacy = LegacyIndex()
+    monkeypatch.setattr(search_mgr, "_fts", legacy)
+    rows = [{"path": p} for p in ("a.md", "a.md", "missing.md", "missing.md")]
+    assert (
+        search_mgr._post_filter_semantic_rows(
+            rows, filters={"tag": "yes"}, okf_filters={"status": "stable"}
+        )
+        == rows[:2]
+    )
+    assert legacy.calls == ["a.md", "missing.md"]
+
+
+def test_batch_frontmatter_respects_sqlite_variable_limit(
+    search_mgr: SearchManager,
+) -> None:
+    import sqlite3
+
+    index = search_mgr._fts
+    conn = index._conn()
+    old_limit = conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 10)
+    try:
+        paths = (f"missing-{n}.md" for n in range(1010))
+        assert index.get_frontmatter_batch(paths) == {}
+    finally:
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, old_limit)

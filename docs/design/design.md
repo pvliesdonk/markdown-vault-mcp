@@ -550,10 +550,11 @@ which thinned duplicates but did not group them.
 `get_similar` accepts the same `folder` / `filters` scoping as semantic
 `search`. The frontmatter and OKF dimensions are applied post-hoc via the
 shared `_post_filter_semantic_rows` helper (the vector store carries no
-structured metadata, and each dimension needs a per-path lookup); the
-folder scope is not, and lives solely in the store's `folder` argument
-below. The
-post-filter matches against full frontmatter, so — unlike keyword-mode
+structured metadata). Frontmatter for distinct candidate paths is read in
+bounded batches, with a per-path fallback for custom keyword indexes; OKF
+checks are memoized per path. The folder scope lives solely in the store's
+`folder` argument below. The post-filter matches against full frontmatter,
+so — unlike keyword-mode
 `search` filters — it is not limited to `indexed_frontmatter_fields`; the
 candidate pool is widened (×4, floor 200) when either is active so narrow
 scopes do not starve the result list.
@@ -573,9 +574,9 @@ similarity pass is a full dot product over every stored chunk regardless
 of `limit`; a streamed store filters the scope in SQL, and a predicate
 costs it decoding each batch's metadata (Search memory, below). Folder is the
 dimension that rides along, because every backend holds it beside the
-vector; frontmatter and OKF
-dimensions stay post-hoc (per-path lookups are too expensive to run over
-every chunk — see #875) and keep the widening.
+vector; frontmatter and OKF dimensions stay post-hoc because the store does
+not carry their metadata, and keep the widening. Their candidate frontmatter
+is fetched in bounded batches (#875).
 
 `get_similar` still widens ×4 when a folder is given, for a different
 reason than the post-filter one: grouping keeps only `chunks_per_file`
