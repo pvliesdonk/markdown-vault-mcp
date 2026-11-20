@@ -6,19 +6,22 @@ filesystem and spawn subprocesses). All subprocess calls are module-qualified
 still intercepts them.
 
 Path-stream decoding follows ``docs/design/reference/git-history-queries.md``:
-binary capture avoids Python's universal-newline translation of filenames.
+binary capture preserves filenames through the filesystem encoding.
 """
 
 from __future__ import annotations
 
 import contextlib
-import locale
 import logging
 import os
 import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,11 @@ def literal_pathspec(path: str) -> str:
         The path prefixed with git's ``:(literal)`` pathspec magic.
     """
     return f":(literal){path}"
+
+
+def text_field(value: str) -> str:
+    """Decode a Git metadata field as UTF-8, replacing invalid bytes."""
+    return os.fsencode(value).decode("utf-8", errors="replace")
 
 
 def _is_ssh_remote(url: str) -> bool:
@@ -205,11 +213,61 @@ def redact(text: str, token: str | None) -> str:
     return text
 
 
-def run_git(git_root: Path, *args: str, env: dict[str, str] | None = None) -> str:
+def _argv(
+    git_root: Path,
+    args: Sequence[str],
+    pathspecs: Sequence[str] | None,
+    whole_repo: bool,
+) -> list[str]:
+    if pathspecs is not None and (not pathspecs or not all(pathspecs) or "--" in args):
+        raise ValueError("pathspecs must be nonempty and args must not contain --")
+    if "--" in args[:-1]:
+        raise ValueError("paths must be supplied through pathspecs")
+    i = 0
+    while i + 1 < len(args) and args[i] == "-c":
+        i += 2
+    command = args[i:]
+    if command and command[0].startswith("-"):
+        raise ValueError(f"unsupported global option: {command[0]}")
+    if command and pathspecs is None and not whole_repo:
+        verb = command[0]
+        if verb in ("add", "commit") or (
+            verb == "diff"
+            and any(arg in ("--cached", "--staged") for arg in command[1:])
+        ):
+            raise ValueError(f"git {verb} requires pathspecs or whole_repo=True")
+    suffix = (
+        ["--", *(literal_pathspec(path) for path in pathspecs)]
+        if pathspecs is not None
+        else []
+    )
+    config = (
+        ["-c", "core.quotePath=false"]
+        if command and command[0] in ("diff", "show")
+        else []
+    )
+    return ["git", "-C", str(git_root), *args[:i], *config, *command, *suffix]
+
+
+def run_git(
+    git_root: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+    pathspecs: Sequence[str] | None = None,
+    whole_repo: bool = False,
+) -> str:
     """Run ``git -C <git_root> <args>`` and return stdout.
 
     Thin wrapper used by the ``force_*`` helpers — keeps subprocess
     boilerplate (capture, text mode, check=True) in one place.
+
+    Raw paths supplied via ``pathspecs`` are literal and must be nonempty.
+    A bare trailing ``--`` is permitted without ``pathspecs``; embedded paths
+    after ``--`` are rejected. ``diff`` and ``show`` pin
+    ``core.quotePath=false`` for readable paths.
+    Only ``-c`` pairs are supported before the git subcommand.
+    ``add``, ``commit``, and ``diff --cached`` or ``diff --staged`` require
+    paths unless ``whole_repo`` is explicitly set.
 
     Raises:
         subprocess.CalledProcessError: If git exits non-zero.  Callers
@@ -217,7 +275,7 @@ def run_git(git_root: Path, *args: str, env: dict[str, str] | None = None) -> st
             (e.g. ``merge --ff-only``).
     """
     result = subprocess.run(
-        ["git", "-C", str(git_root), *args],
+        _argv(git_root, args, pathspecs, whole_repo),
         capture_output=True,
         text=True,
         check=True,
@@ -284,6 +342,8 @@ def run_git_capturing(
     *args: str,
     env: dict[str, str] | None = None,
     preserve_newlines: bool = False,
+    pathspecs: Sequence[str] | None = None,
+    whole_repo: bool = False,
     input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a git command and return the completed process without raising.
@@ -294,15 +354,22 @@ def run_git_capturing(
     recovery decisions based on whether ``git rebase --abort`` succeeded,
     whether the working tree has an in-progress rebase, etc.
 
+    A bare trailing ``--`` is permitted without ``pathspecs``; embedded paths
+    after ``--`` are rejected. ``diff`` and ``show`` pin
+    ``core.quotePath=false`` for readable paths.
+
     Args:
         git_root: Working-tree root used for ``git -C``.
         *args: Git subcommand and arguments (without the leading ``git``).
         env: Optional environment, typically from :func:`git_env` for
             token-bearing operations.  ``None`` inherits the parent process
             environment.
+        pathspecs: Nonempty raw paths to pass as literal pathspecs; each must
+            also be nonempty.
+        whole_repo: Allow an index command without pathspecs.
         preserve_newlines: Capture stdout without translating CR or CRLF.
-            Use for NUL-framed path streams; ordinary text stays normalized.
-            Both modes use Python's default text encoding and strict errors.
+            NUL-framed output selects this mode automatically. Paths use the
+            filesystem encoding; ordinary text stays normalized.
         input: Optional stdin text, encoded with the same policy as stdout.
             Path streams preserve its newline characters as well as NULs.
 
@@ -311,23 +378,22 @@ def run_git_capturing(
         and ``stderr`` populated.  Stderr will need to be passed through
         :func:`redact` before logging or surfacing to callers.
     """
-    cmd = ["git", "-C", str(git_root), *args]
-    if preserve_newlines:
-        # Match subprocess's default text codec, including Python UTF-8 mode,
-        # without its universal-newline translation of path identities (#1290).
-        encoding = locale.getpreferredencoding(False)
+    cmd = _argv(git_root, args, pathspecs, whole_repo)
+    if preserve_newlines or "-z" in args:
         raw = subprocess.run(
             cmd,
             capture_output=True,
-            input=None if input is None else input.encode(encoding),
+            input=None if input is None else os.fsencode(input),
             env=env,
             check=False,
         )
         return subprocess.CompletedProcess(
             raw.args,
             raw.returncode,
-            raw.stdout.decode(encoding),
-            raw.stderr.decode(encoding).replace("\r\n", "\n").replace("\r", "\n"),
+            os.fsdecode(raw.stdout),
+            raw.stderr.decode(errors="replace")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n"),
         )
     return subprocess.run(
         cmd,
