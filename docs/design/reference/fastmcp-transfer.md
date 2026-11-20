@@ -58,6 +58,11 @@ sources:
   [transfer domain seam](../design.md#domain-seam-vaulttransfersink).
 - Does not cover: transfer authentication, body limits, shared-store
   deployment, or the rest of the core API.
+- Since #2241 (#2318–#2321) this code lives in this repository, ported
+  unchanged from fastmcp-pvl-core 10.2.0: `_transfer_routes.py`,
+  `_transfer_store.py`, `_transfer_contract.py` and `_transfer_links.py`.
+  The claims below describe those modules; the upstream sources are their
+  provenance.
 
 The installed 7.1.0 `sink.py`, `routes.py`, and `store.py` were compared
 byte-for-byte with the pinned upstream commit through GitHub's contents API.

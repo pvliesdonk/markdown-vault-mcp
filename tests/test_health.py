@@ -1,7 +1,7 @@
 """Contract tests for the liveness and readiness routes ``make_server`` wires.
 
-Template-owned. The routes themselves are ``fastmcp_pvl_core``'s and are
-tested there; what this file pins is the *wiring* — that the scaffold
+Template-owned. The routes themselves are ``_health``'s and are tested in
+``tests/test_health_routes.py``; what this file pins is the *wiring* — that the scaffold
 registers them under http alone, at the prefix the mount path implies —
 because that is what ``compose.yml``'s probe and an operator's
 load balancer depend on, and a scaffold that quietly stopped registering
@@ -71,7 +71,7 @@ def _kv_store_in_tmp(
 ) -> None:
     """Pin the readiness probe's backend to a temp directory.
 
-    Unset, pvl-core defaults to ``file:///data/state`` where that directory
+    Unset, ``build_kv_store`` defaults to ``file:///data/state`` where that directory
     is usable and ``memory://`` elsewhere — which would make the readiness
     verdict depend on the host running the tests.  The project's
     ``config_contract_env`` is applied first, so this pin wins.
