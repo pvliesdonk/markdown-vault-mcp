@@ -5,16 +5,14 @@ from __future__ import annotations
 from typing import Literal
 
 import typer
-from fastmcp_pvl_core import (
-    ConfigurationError,
-    build_event_store,
-    configure_logging_from_env,
-    maybe_start_debugpy,
-    normalise_http_path,
-    run_http,
-)
 
+from markdown_vault_mcp._debug import maybe_start_debugpy
+from markdown_vault_mcp._http_path import normalise_http_path
+from markdown_vault_mcp._kv_store import build_event_store
+from markdown_vault_mcp._logging_setup import configure_logging_from_env
+from markdown_vault_mcp._serve import run_http
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 app = typer.Typer(
     name="markdown-vault-mcp",
@@ -34,7 +32,7 @@ def _root(
 ) -> None:
     """Root callback — bootstraps logging for every subcommand.
 
-    pvl-core owns the root logger.  ``configure_logging_from_env`` installs
+    ``_logging_setup`` owns the root logger.  ``configure_logging_from_env`` installs
     the one console handler chain every logger in the process renders
     through — ``markdown_vault_mcp.*``, ``fastmcp.*`` and uvicorn alike —
     picks Rich or JSON from ``MARKDOWN_VAULT_MCP_LOG_FORMAT`` (unset: Rich on
@@ -79,7 +77,7 @@ def serve(
     # unless ``MARKDOWN_VAULT_MCP_DEBUG_PORT`` is set; ``debugpy`` is only
     # present when the image was built with ``--build-arg DEBUG=true``
     # (a missing import logs a WARNING and continues).  ``_root`` has
-    # already installed pvl-core's root handler chain by the time ``serve``
+    # already installed the root handler chain by the time ``serve``
     # runs, so the helper's INFO/WARNING logs render through it rather
     # than Python's lastResort.
     maybe_start_debugpy(_ENV_PREFIX)
@@ -99,15 +97,11 @@ def serve(
             http_path=path,
             configure_logging=False,
         )
-        # Inside the guard: since pvl-core 9 ``build_event_store`` raises
+        # Inside the guard: ``build_event_store`` raises
         # ``ConfigurationError`` for a malformed ``MARKDOWN_VAULT_MCP_KV_STORE_URL``
         # or legacy ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``, which must get the
         # same one-line exit as every other operator value (#647).
-        event_store = (
-            build_event_store(_ENV_PREFIX, config.server)
-            if transport == "http"
-            else None
-        )
+        event_store = build_event_store(config.server) if transport == "http" else None
     except ConfigurationError as exc:
         # A malformed or missing operator value is one actionable line on
         # stderr, not Typer's Rich traceback: the message already names the
@@ -117,7 +111,7 @@ def serve(
         raise typer.Exit(code=1) from exc
 
     if transport == "http":
-        # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
+        # ``_serve.run_http`` runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
         # startup/shutdown hooks run through the ASGI lifespan protocol),
         # ``log_config=None`` (uvicorn must not reinstall its own handlers
         # over the root chain ``_root`` set up) and the SIGTERM drain window

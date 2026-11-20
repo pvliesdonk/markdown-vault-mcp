@@ -1,18 +1,16 @@
 ---
 name: writing-documentation
 description: >-
-  Use before adding, moving or substantially changing a page in docs/ or README.md, or a DOMAIN block in a template docs page: decides whether the knowledge belongs to this project or to the template, which existing page or designated place takes it, and what the change must link to.
+  Use before adding, moving or substantially changing a page in docs/ or README.md, or a DOMAIN block in a general docs page: decides whether the knowledge is domain or general, which existing page or designated place takes it, and what the change must link to.
 ---
-
-<!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
 
 # Writing documentation
 
-`docs/contribute/docs-structure.md` is the contract: the ownership rule, the places documentation may go, one topic per page, and the security-model link. This skill is the order in which you apply it. When the two appear to disagree, the page wins; don't restate it here.
+`docs/contribute/docs-structure.md` is the contract: domain versus general knowledge, the places documentation may go, one topic per page, and the security-model link. This skill is the order in which you apply it. When the two appear to disagree, the page wins; don't restate it here.
 
-## 1. Domain or non-domain?
+## 1. Domain or general?
 
-Decide what the knowledge is before deciding where it goes. The test: would it be true of any server generated from the template? Then it's non-domain, and it belongs to the template. Don't write it in this project, not even as a short copy. File it on the template (the `authoring-issues-prs` skill routes it) and link to the template page if one exists.
+Decide what the knowledge is before deciding where it goes. The test: would it be true of any MCP server deployed the same way? Then it's general, and it goes on the general page for its topic (Docker, reverse proxies, authentication, contributing), not into a page about this server's features.
 
 If you can't decide, say so in the change or the issue with both readings. Don't guess silently.
 
@@ -24,7 +22,7 @@ Search `docs/` and `README.md` for the topic before writing. If a page answers t
 
 For domain knowledge, use the table in the contract page:
 
-- adding to a non-domain topic (a mount, an environment file, a client config for this server): the `DOMAIN-*` block on the template page for that topic;
+- adding to a general topic (a mount, an environment file, a client config for this server): the `DOMAIN-*` block on the general page for that topic;
 - a fact the code already holds (a config field, a default, a tool's parameters or what it returns): its source, so the generator carries it. Never hand-edit a `GENERATED-*` region or a generated page under `docs/reference/`; after changing a tool, resource, prompt or CLI option, run `uv run python scripts/gen_reference.py`;
 - a worked example for one tool or prompt: its `DOMAIN-EXAMPLE-<name>` slot on the generated page;
 - a how-to or explanation of this server's own features: a page in `docs/use/`;
@@ -34,7 +32,7 @@ For domain knowledge, use the table in the contract page:
 
 A new page also needs a nav entry: in the `PROJECT-NAV-<SECTION>` block of the section whose reader it serves (the contract page's Sections table), never outside those blocks. Moving one of this project's pages means a redirects entry from the old path to the new one.
 
-If none fits, stop and file a template issue for the missing place (step 1's route). Don't create a page the template doesn't designate.
+If none fits, say so in the pull request or an issue, as the contract page's "Where documentation goes" says; don't pick a place silently.
 
 ## 4. Front matter and links the change owes
 
