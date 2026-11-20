@@ -38,7 +38,6 @@ from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 from starlette.routing import Route
 
-from markdown_vault_mcp._pvl_core import TransferStore
 from markdown_vault_mcp._transfer_contract import (
     TransferReadResult,
     TransferResourceGoneError,
@@ -46,6 +45,7 @@ from markdown_vault_mcp._transfer_contract import (
     TransferUnavailableError,
 )
 from markdown_vault_mcp._transfer_routes import make_transfer_handler
+from markdown_vault_mcp._transfer_store import TransferStore
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping

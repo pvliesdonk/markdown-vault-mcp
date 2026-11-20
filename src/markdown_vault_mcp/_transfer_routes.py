@@ -18,9 +18,6 @@ A sink may raise :class:`~markdown_vault_mcp._transfer_contract.TransferSinkErro
 from ``read``/``write`` to return a specific 4xx/5xx status instead of the
 default 500; the link is still released. ``_transfer_links`` mounts the handler
 via ``mcp.custom_route`` and wires the operator caps from config.
-
-The token store and its errors still come from pvl-core through the shim, until
-#2320 moves them.
 """
 
 from __future__ import annotations
@@ -34,13 +31,13 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from markdown_vault_mcp._pvl_core import (
+from markdown_vault_mcp._transfer_contract import TransferSink, TransferSinkError
+from markdown_vault_mcp._transfer_store import (
     TokenInFlightError,
     TransferStore,
     TransferToken,
     TransferTokenError,
 )
-from markdown_vault_mcp._transfer_contract import TransferSink, TransferSinkError
 
 logger = logging.getLogger(__name__)
 
