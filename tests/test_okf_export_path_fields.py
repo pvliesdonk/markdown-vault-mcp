@@ -876,3 +876,35 @@ def test_live_index_bounded_read_rejects_invalid_utf8(tmp_path):
         assert _root_declaration(vault, None) == ""
     finally:
         vault.close()
+
+
+def test_git_export_uses_committed_subtree_version(tmp_path):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    (tmp_path / "guides" / "sub").mkdir(parents=True)
+    selected_index = tmp_path / "guides" / "index.md"
+    selected_index.write_text('---\nokf_version: "0.3"\n---\n')
+    (tmp_path / "guides" / "b.md").write_text("target\n")
+    (tmp_path / "guides" / "sub" / "a.md").write_text("---\nresource: b.md\n---\n")
+    git("add", "index.md", "guides")
+    git("commit", "-qm", "fixture")
+    selected_index.write_text('---\nokf_version: "0.2"\n---\n')
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="on"))
+    try:
+        result = build_okf_bundle(
+            vault, ProjectConfig(source_dir=tmp_path), folder="guides"
+        )
+    finally:
+        vault.close()
+    assert [(x.path, x.target) for x in result.report.dependencies] == [
+        ("sub/a.md", "b.md")
+    ]
