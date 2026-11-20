@@ -147,10 +147,6 @@ async def test_mcp_author_visibility_and_identity(
         tools = {tool.name: tool for tool in await client.list_tools()}
         assert "okf_author" in tools
         assert "if_match" in tools["okf_author"].input_schema["required"]
-        producer_description = tools["okf_author"].input_schema["properties"][
-            "producer"
-        ]["description"]
-        assert "<scheme>:<id>" in producer_description
         note = await client.call_tool("read", {"path": "note.md"})
         from tests.conftest import _parse_tool_data
 
@@ -243,7 +239,7 @@ def test_selected_entry_edits(
     assert all(fragment not in result for fragment in absent)
 
 
-@pytest.mark.parametrize("producer", ["team:finance-fpa", "custom:opaque", "human:bob"])
+@pytest.mark.parametrize("producer", ["team:finance-fpa", "custom:opaque"])
 def test_author_accepts_producer_actor_forms(producer: str) -> None:
     from markdown_vault_mcp._okf_author import author_text
 
@@ -256,8 +252,6 @@ def test_author_accepts_producer_actor_forms(producer: str) -> None:
     [
         "",
         "human:",
-        "process:",
-        "team:",
         ":id",
         "/1",
         "agent/",

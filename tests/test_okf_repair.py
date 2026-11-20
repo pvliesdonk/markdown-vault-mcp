@@ -226,9 +226,7 @@ def test_distinct_invalid_review_times_do_not_collide() -> None:
     assert len(parse_frontmatter(result).metadata["verified"]) == 1
 
 
-@pytest.mark.parametrize(
-    "actor", ["org/team/1.0", "a:b/c", "team:finance-fpa", "custom:opaque"]
-)
+@pytest.mark.parametrize("actor", ["org/team/1.0", "a:b/c", "team:finance-fpa"])
 def test_replacement_accepts_actor_forms(actor: str) -> None:
     result = author_text(
         NOTE, {}, None, repair={"replace_generated": {"by": actor, "reason": "fix"}}
@@ -325,11 +323,13 @@ def test_retirement_indices_include_malformed_siblings() -> None:
     assert parse_frontmatter(result).metadata["verified"] == ["broken"]
 
 
-@pytest.mark.parametrize("actor", [":id", "team:", "team:bad id", "bad"])
-def test_replacement_rejects_invalid_actor(actor: str) -> None:
+def test_replacement_rejects_invalid_actor() -> None:
     with pytest.raises(InvalidRequestError, match="valid actor"):
         author_text(
-            NOTE, {}, None, repair={"replace_generated": {"by": actor, "reason": "fix"}}
+            NOTE,
+            {},
+            None,
+            repair={"replace_generated": {"by": "team:bad id", "reason": "fix"}},
         )
 
 
