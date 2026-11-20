@@ -229,3 +229,87 @@ The export reads from the live vault and never changes it. Wikilinks become the 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
+
+## Curate metadata with Decisions
+
+Run `okf decide` explicitly to classify ordinary notes from a vocabulary you own.
+Set `MARKDOWN_VAULT_MCP_OKF_TYPES_PATH` to a vault-relative concept such as
+`knowledge/okf-types.md`. Its frontmatter supplies the choices and descriptions:
+
+```yaml
+---
+types:
+  - {value: Reference, description: Living facts edited in place.}
+  - {value: Runbook, description: An ordered procedure.}
+statuses:
+  - {value: draft, description: Not yet confirmed.}
+  - {value: stable, description: Confirmed.}
+  - {value: deprecated, description: Superseded by later evidence.}
+stale_after_durations:
+  - {value: 30d, description: Review after a month.}
+  - {value: 90d, description: Review after a quarter.}
+---
+```
+
+Each choice list needs 2 to 255 unique values with nonempty descriptions.
+Statuses must be exactly `draft`, `stable` and `deprecated`. Durations are
+optional positive whole days; omitting the list disables expiry decisions.
+Keep the vocabulary in an ordinary note, since reserved indexes are generated.
+
+The dedicated Decisions key falls back to `OPENAI_API_KEY`. Use a Platform API
+key; the command does not use subscription sessions or embedding credentials.
+See the [configuration reference](../reference/configuration.md) for the base
+URL and thresholds. Selected note bodies and frontmatter leave the machine;
+review the [security model](../security-model.md) before enabling this pass.
+
+```bash
+markdown-vault-mcp okf decide --missing-type --json
+markdown-vault-mcp okf decide --since 2026-11-14T00:00:00Z --threshold type=0.85
+```
+
+`--since` uses filesystem modification time and requires an offset-aware ISO
+timestamp. Combining it with `--missing-type` selects their union, once per
+note. Effective exclusions, reserved files, the vocabulary and `SKILL.md` are
+omitted. The command runs locally and requires active OKF and a writable vault.
+No configured types path or inactive OKF reports `disabled: true` with zero
+counts and exit 0. Enabled empty selections report `disabled: false` and need
+no key. Embeddings, summarization and persistent indexes are not opened.
+Native local Git commits remain enabled, while remote synchronization is off.
+
+Type and status choices accept confidence at least 0.8 by default. Replacing an
+explicit value also requires its incorrect-value predicate to be strictly
+above 0.95. Omitted status never gains `stable` merely to fill the key.
+Description fills only a blank value with the exact first prose paragraph,
+up to 280 Unicode characters after collecting the complete paragraph. Headings
+are skipped; an initial code block, list, quote, table or HTML block prevents a
+description candidate. Unicode paragraph separators retain their original
+characters. Sources append only whole body HTTP(S) resources or existing note
+paths inside the vault. Supplied records remain unchanged. Complete image
+spans, including Obsidian attachment embeds, cannot supply resource fragments.
+Code is excluded too. Paired prose quotes and escaped wrappers are omitted
+from bare URLs, as is markup such as `~~text~~`. Table cell separators stay
+outside resources; explicit destinations keep their punctuation. HTTP schemes match regardless
+of case; URL spelling, percent escapes and internal apostrophes retain their
+resource identity. Short wikilinks and aliases use the native vault link resolver. A listed duration fills a
+blank `stale_after` using the server's UTC write-attempt time. Existing nonempty
+descriptions, expiry values and malformed source lists remain untouched.
+
+Each selected note produces one request. The `meaningful` predicate must
+also clear its threshold. A refusal suppresses that question, and refusing
+meaningfulness suppresses the whole patch. Equality and abstention leave bytes,
+modification times, provenance and callbacks untouched. Actual writes use the
+native etag guard, stamp `generated.at` and invalidate prior verification;
+they do not create a machine verification or alter `last_edited`. A concurrent
+edit is reported as a conflict and is not overwritten or retried.
+
+Invalid YAML, frontmatter that is not a mapping and unsupported metadata leave that note
+unchanged. Earlier outcomes remain available and later valid notes continue.
+Invalid vocabulary or invocation options report a safe remedy and exit 2.
+
+JSON output contains counts and per-note outcomes, including actual named
+confidence/probability or refusal. Text output escapes terminal controls.
+Exit 0 means success, disabled, empty or abstained; 1 means a failed note,
+conflict or terminal API failure; 2 means invalid invocation or configuration.
+Authentication/access failures and rate limits stop subsequent requests;
+network, server and malformed-response failures leave that note unchanged and
+allow independent notes to continue. The command never retries automatically.

@@ -165,8 +165,10 @@ class _BuiltVault(NamedTuple):
         The vault closes only what it opened; the git strategy closes last,
         so its push flush follows the drained commits.
         """
-        self.vault.close()
-        self.instances.close()
+        try:
+            self.vault.close()
+        finally:
+            self.instances.close()
 
 
 def _build_vault(
@@ -177,8 +179,9 @@ def _build_vault(
     in_memory_vectors: bool = False,
     shared_files: bool = False,
     scratch_index: bool = False,
+    config: ProjectConfig | None = None,
 ) -> _BuiltVault:
-    """Build a synchronous Vault from env vars + optional CLI overrides.
+    """Build a synchronous Vault from a config snapshot or environment.
 
     Uses the same settings-first ``to_vault_settings`` / ``to_vault_instances``
     assembly as the server path (#1158), but constructs a bare Vault (no
@@ -186,8 +189,8 @@ def _build_vault(
     server's lifespan).
 
     Args:
-        source_dir: Overrides ``{PREFIX}_SOURCE_DIR`` when given (set into the
-            environment before ``ProjectConfig.from_env()`` reads it).
+        source_dir: Overrides the snapshot or environment source when nonempty.
+        config: Prepared snapshot; omitted means read the environment once.
         index_path: Overrides the resolved SQLite index path when given.
         scratch_state: Keep the change-tracking state in memory, ignoring
             ``STATE_PATH``, for a one-shot in-memory index whose state must
@@ -212,7 +215,6 @@ def _build_vault(
         pair when done.
     """
     import dataclasses
-    import os
     from pathlib import Path
 
     from markdown_vault_mcp.config_sections._assembly import (
@@ -222,15 +224,12 @@ def _build_vault(
     )
     from markdown_vault_mcp.vault import Vault
 
-    # --source-dir overrides the env var: set it before from_env() reads it.
-    # Deliberate process-env mutation — safe for a single-shot, single-threaded CLI.
+    if config is None:
+        config = ProjectConfig.from_env()
     if source_dir:
-        os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
-    config = ProjectConfig.from_env()
+        config = dataclasses.replace(config, source_dir=Path(source_dir))
     if shared_files:
-        # Like the other local readers, search uses the checkout as it is.
-        # Managed bootstrap would reject a service-owned checkout when invoked
-        # as root through docker exec (#1999), or attempt to clone an empty one.
+        # Local readers use the existing checkout, without managed bootstrap.
         config = dataclasses.replace(config, git_repo_url=None, git_token=None)
     # A batch command over an absent or inaccessible directory would index
     # nothing and exit 0; refuse with the reason, the way ``serve`` reports a
@@ -244,33 +243,37 @@ def _build_vault(
         # resolved: FastEmbed would load, or download, its model for nothing.
         config = dataclasses.replace(config, embedding_provider=None)
     instances = to_vault_instances(config)
-    settings = to_vault_settings(config, instances=instances)
-    if index_path:
-        settings = dataclasses.replace(settings, index_path=Path(index_path))
-    if scratch_state:
-        settings = dataclasses.replace(settings, state_path=None)
-    if shared_files:
-        settings = dataclasses.replace(settings, owns_index_files=False)
-    if scratch_index:
-        settings = dataclasses.replace(
+    try:
+        settings = to_vault_settings(config, instances=instances)
+        if index_path:
+            settings = dataclasses.replace(settings, index_path=Path(index_path))
+        if scratch_state:
+            settings = dataclasses.replace(settings, state_path=None)
+        if shared_files:
+            settings = dataclasses.replace(settings, owns_index_files=False)
+        if scratch_index:
+            settings = dataclasses.replace(
+                settings,
+                embeddings_path=settings.effective_embeddings_path(),
+                index_path=None,
+                state_path=None,
+                owns_index_files=False,
+            )
+        return _BuiltVault(
+            Vault(
+                source_dir=config.source_dir,
+                settings=settings,
+                embedding_provider=instances.embedding_provider,
+                summarizer=instances.summarizer,
+                git_strategy=instances.git_strategy,
+                on_write=instances.on_write,
+            ),
+            instances,
             settings,
-            embeddings_path=settings.effective_embeddings_path(),
-            index_path=None,
-            state_path=None,
-            owns_index_files=False,
         )
-    return _BuiltVault(
-        Vault(
-            source_dir=config.source_dir,
-            settings=settings,
-            embedding_provider=instances.embedding_provider,
-            summarizer=instances.summarizer,
-            git_strategy=instances.git_strategy,
-            on_write=instances.on_write,
-        ),
-        instances,
-        settings,
-    )
+    except BaseException:
+        instances.close()
+        raise
 
 
 def _vectors_kept(config: ProjectConfig, index_path: str | None) -> bool:
@@ -360,7 +363,7 @@ def _build_owning_vault(
     command: str,
     source_dir: str | None = None,
     index_path: str | None = None,
-    **options: bool,
+    **options: Any,
 ) -> _BuiltVault:
     """Build the vault for a command that writes it, or stop with the refusal.
 
@@ -726,6 +729,12 @@ from markdown_vault_mcp._cli_reader import register_read_commands  # noqa: E402
 # Read commands first, so the help lists them before the admin group (#2005).
 register_read_commands(app)
 register_admin_commands(app, index, reindex, embeddings_import)
+
+from markdown_vault_mcp._cli_okf import register_okf_commands  # noqa: E402
+
+okf = typer.Typer(help="Maintain local OKF metadata.")
+register_okf_commands(okf)
+app.add_typer(okf, name="okf")
 
 # DOMAIN-COMMANDS-END
 

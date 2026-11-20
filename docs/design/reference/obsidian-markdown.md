@@ -125,7 +125,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - A wikilink is `[[Three laws of motion]]` or, with the extension,
   `[[Three laws of motion.md]]`; the help shows no other bracket form and no
   nested or multi-line example. [source: help-links]
-  [pins: tests/test_links.py::TestExtractWikilinks::test_wikilink_basic, tests/test_links.py::TestExtractWikilinks::test_wikilink_md_extension_not_doubled]
+  [pins: tests/test_links.py::TestExtractWikilinks::test_wikilink_basic, tests/test_links.py::TestExtractWikilinks::test_wikilink_md_extension_not_doubled, tests/test_okf_decide.py::test_native_wikilink_resolution_supplies_decision_evidence]
 - Display text follows a vertical bar: "Use a vertical bar (`|`) to change the
   display text. `[[Example|Custom name]]`". [source: help-links]
   [pins: tests/test_links.py::TestExtractWikilinks::test_wikilink_with_alias]

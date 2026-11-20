@@ -428,6 +428,87 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    okf_types_path: str | None = field(
+        default=None,
+        metadata={
+            "help": "Vault-relative ordinary note holding Decisions vocabularies.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_api_key: str | None = field(
+        default=None,
+        repr=False,
+        metadata={
+            "help": "Independent Decisions key; falls back only to OPENAI_API_KEY.",
+            "tags": ("content",),
+            "wizard": {"group": "Content", "secret": True},
+        },
+    )
+    okf_decisions_base_url: str = field(
+        default="https://api.openai.com/v1",
+        metadata={
+            "help": "HTTP(S) API base for the explicit local Decisions pass.",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_type_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Decisions type threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_status_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Decisions status threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_description_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Decisions description threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_sources_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Decisions sources threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_stale_after_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Decisions expiry threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_replace_threshold: float = field(
+        default=0.95,
+        metadata={
+            "help": "Decisions replace threshold, a finite number in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
+    okf_decisions_meaningful_threshold: float = field(
+        default=0.8,
+        metadata={
+            "help": "Minimum probability for a metadata change, in [0,1].",
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     okf_write: bool = field(
         default=False,
         metadata={
@@ -1359,6 +1440,44 @@ class ProjectConfig:
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
         self._check_embedding_store()
+        import math
+
+        from markdown_vault_mcp.config_sections._helpers import validate_http_base_url
+
+        for key in (
+            "type",
+            "status",
+            "description",
+            "sources",
+            "stale_after",
+            "replace",
+            "meaningful",
+        ):
+            value = getattr(self, f"okf_decisions_{key}_threshold")
+            if (
+                type(value) not in (float, int)
+                or not 0 <= value <= 1
+                or not math.isfinite(value)
+            ):
+                raise ConfigurationError(
+                    f"OKF_DECISIONS_{key.upper()}_THRESHOLD must be finite in [0,1]."
+                )
+        if self.okf_decisions_replace_threshold <= max(
+            self.okf_decisions_type_threshold, self.okf_decisions_status_threshold
+        ):
+            raise ConfigurationError(
+                "OKF_DECISIONS_REPLACE_THRESHOLD must exceed type and status thresholds."
+            )
+        try:
+            if not isinstance(self.okf_decisions_base_url, str):
+                raise ConfigurationError(
+                    "OKF_DECISIONS_BASE_URL requires a URL string."
+                )
+            validate_http_base_url(self.okf_decisions_base_url)
+        except ValueError:
+            raise ConfigurationError(
+                "OKF_DECISIONS_BASE_URL requires HTTP(S), a host and no credentials, query or fragment."
+            ) from None
         # CONFIG-VALIDATE-END
 
     @classmethod
@@ -1425,6 +1544,35 @@ class ProjectConfig:
                 env(_ENV_PREFIX, "CONVENTIONS_FILE")
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
+            okf_types_path=env(_ENV_PREFIX, "OKF_TYPES_PATH"),
+            okf_decisions_api_key=resolve_summarize_api_key(
+                env(_ENV_PREFIX, "OKF_DECISIONS_API_KEY")
+            ),
+            okf_decisions_base_url=env(
+                _ENV_PREFIX, "OKF_DECISIONS_BASE_URL", "https://api.openai.com/v1"
+            )
+            or "https://api.openai.com/v1",
+            okf_decisions_type_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_TYPE_THRESHOLD", 0.8
+            ),
+            okf_decisions_status_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_STATUS_THRESHOLD", 0.8
+            ),
+            okf_decisions_description_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_DESCRIPTION_THRESHOLD", 0.8
+            ),
+            okf_decisions_sources_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_SOURCES_THRESHOLD", 0.8
+            ),
+            okf_decisions_stale_after_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_STALE_AFTER_THRESHOLD", 0.8
+            ),
+            okf_decisions_replace_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_REPLACE_THRESHOLD", 0.95
+            ),
+            okf_decisions_meaningful_threshold=env_float(
+                _ENV_PREFIX, "OKF_DECISIONS_MEANINGFUL_THRESHOLD", 0.8
+            ),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
             okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
             .strip()

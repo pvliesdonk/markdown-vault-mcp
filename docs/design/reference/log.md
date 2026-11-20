@@ -31,6 +31,15 @@
 
 ## 2026-11-14
 
+- `commonmark-gfm.md`: inspected the pinned markdown-it-py 3.0.0 live block coordinates, four-column tab projection, inline recursion/code emission and pre-emphasis delimiter pairing. Extended scope to emphasis and complete HTML image spans; recorded raw-candidate/native-reference separation and owning coordinate/persistence controls for #2061.
+
+- Extended [CommonMark and GFM](commonmark-gfm.md#maintained-block-source-spans)
+  with markdown-it-py 3.0.0 public block tokens, source maps and CommonMark/table
+  preset, read directly from installed primary source for #2061. Original raw
+  spans and the conservative pipe-row policy are pinned by owning regressions.
+
+- New: [OpenAI Decisions](openai-decisions.md), pinned SDK commit and official guide/error pages, read and refuted against primary source. No live API request. Next review: 2027-05-14.
+
 - New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
   Tagged observer, inotify and FSEvents sources establish mutation masks and
   the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and

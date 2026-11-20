@@ -45,6 +45,13 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
 The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](reference/cli.md#search-a-hosted-vault).
+The explicit local `okf decide` command sends each selected ordinary note's path,
+raw frontmatter and body to the independently configured Platform Decisions
+endpoint. It uses a dedicated API key or `OPENAI_API_KEY`, never subscription
+sessions or embedding credentials. It accepts closed choices and evidence
+already present in the body; it does not execute model code or fetch resources.
+Its native conditional writes retain local Git commits and disable configured
+remote synchronization. See [OKF maintenance](use/okf.md#curate-metadata-with-decisions).
 
 The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->

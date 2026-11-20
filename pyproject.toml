@@ -83,6 +83,7 @@ dependencies = [
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
     "python-frontmatter>=1.0",
+    "markdown-it-py==3.0.0",
     "requests>=2.33.0",
     # PROJECT-DEPS-END
 ]

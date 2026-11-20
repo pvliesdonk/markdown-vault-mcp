@@ -33,6 +33,34 @@ sources:
     title: commonmark-spec changelog.txt (0.30, 0.31, 0.31.1, 0.31.2 entries)
     resource: https://raw.githubusercontent.com/commonmark/commonmark-spec/master/changelog.txt
     accessed: 2026-09-06
+  - id: mdit-token
+    title: markdown-it-py 3.0.0 Token source map and nesting API
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/token.py
+    accessed: 2026-11-14
+  - id: mdit-block
+    title: markdown-it-py 3.0.0 paragraph block source ranges
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_block/paragraph.py
+    accessed: 2026-11-14
+  - id: mdit-main
+    title: markdown-it-py 3.0.0 parse and CommonMark preset
+    resource: https://github.com/executablebooks/markdown-it-py/tree/v3.0.0/markdown_it
+    accessed: 2026-11-14
+  - id: mdit-state
+    title: markdown-it-py 3.0.0 live block coordinate projection
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_block/state_block.py
+    accessed: 2026-11-14
+  - id: mdit-inline
+    title: markdown-it-py 3.0.0 inline parser and maintained rules
+    resource: https://github.com/executablebooks/markdown-it-py/tree/v3.0.0/markdown_it/rules_inline
+    accessed: 2026-11-14
+  - id: mdit-emphasis
+    title: markdown-it-py 3.0.0 emphasis tokenization and paired delimiter processing
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/rules_inline/emphasis.py
+    accessed: 2026-11-14
+  - id: mdit-html
+    title: markdown-it-py 3.0.0 complete HTML tag recognition
+    resource: https://github.com/executablebooks/markdown-it-py/blob/v3.0.0/markdown_it/common/html_re.py
+    accessed: 2026-11-14
   - id: rfc3986
     title: RFC 3986, Uniform Resource Identifier (URI), section 3.1 Scheme
     resource: https://www.rfc-editor.org/rfc/rfc3986#section-3.1
@@ -57,10 +85,10 @@ Python 3.13.
 
 - Covers: §2.1 lines and line endings; §4.1–4.9 leaf blocks and what
   interrupts a paragraph; §5.1–5.3 containers and laziness; §6.1 code spans;
-  §6.3–6.5 links, images, autolinks; §2.4–2.5 escapes and entities;
+  §6.2 emphasis delimiter pairing; §6.3–6.5 links, images, autolinks; §2.4–2.5 escapes and entities;
   §6.6–6.8 raw HTML and line breaks; GFM tables, task lists, strikethrough,
   extended autolinks; GitHub footnotes.
-- Does not cover: emphasis, rendering, Obsidian wikilinks/embeds/callouts.
+- Does not cover: rendering, Obsidian wikilinks/embeds/callouts.
 - Depended on by: `src/markdown_vault_mcp/scanner.py` (`extract_links`,
   `_extract_inline_links`, `_extract_reference_links`, `_strip_fenced_code`,
   `_scan_headings`, `extract_section`, `HeadingChunker._budget_split`),
@@ -68,6 +96,86 @@ Python 3.13.
   `docs/design/design.md` § Link Extraction, § Chunking Strategy.
 
 ## Claims
+
+### Maintained block source spans
+
+- markdown-it-py 3.0.0 `MarkdownIt.parse` returns block tokens; `Token.map`
+  exposes `[line_begin, line_end]` separately from nesting level and content.
+  [source: mdit-main] [source: mdit-token]
+- The paragraph rule assigns the opening token its original source-line range,
+  while the inline token's content is separately trimmed; slicing the original
+  LF-normalized lines preserves characters that normalized content need not.
+  [source: mdit-block]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+- The CommonMark preset enables HTML block classification, while tables need
+  its shipped `table` rule enabled explicitly. [source: mdit-main]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+- Decisions rejects an incomplete leading pipe row as conservative application
+  policy, even when CommonMark classifies it as a paragraph; this exception
+  does not require another block grammar.
+  [observed: owning paragraph keeper, #2061]
+  [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
+
+
+### Maintained inline and container coordinates
+
+The Decisions adapter pins markdown-it-py **3.0.0** because it observes the
+following implementation contracts, inspected from that version's source on
+2026-11-14. These are dependency contracts, not promises about later versions.
+
+- `StateBlock.getLines` slices live `bMarks`/`eMarks` using `blkIndent`,
+  `tShift` and `bsCount`. A tab advances to the next four-column stop; a
+  partially consumed tab emits synthetic spaces. Container rules temporarily
+  adjust these arrays, so a leaf wrapper captures them before restoration.
+  [source: mdit-state]
+  [pins: tests/test_okf_decisions.py::test_source_coordinate_contract]
+- Successful paragraph and setext rules expose their inline input's line
+  map; ATX headings compute their endpoints with markup length and the
+  state's backward space/marker helpers. The adapter projects those spans
+  to original characters, preserving CR/CRLF and Unicode identity in model
+  and write input. Code and fence blocks emit no eligible leaf.
+  [source: mdit-block] [source: mdit-main]
+  [pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+- The maintained inline rules advance `StateInline.pos` over complete links,
+  images and autolinks. Image alt text recursively starts inline parsing;
+  link labels reuse the active state. A backtick rule can succeed without
+  emitting code when no matching closer exists. Consequently, actual
+  `code_inline` emission defines code exclusions; success alone does not.
+  [source: mdit-inline]
+  [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
+- Emphasis and maintained strikethrough tokenization record each marker's
+  `Delimiter.token`. Pending text flushes before marker tokens; a strikethrough
+  token holds two tildes. After `balance_pairs`, `Delimiter.end` identifies its
+  partner in root or nested lists; postprocessing then changes and merges tokens.
+  Recording raw marker offsets before that postprocessing distinguishes a
+  surrounding matched closer from internal or unmatched URI punctuation.
+  [source: mdit-emphasis] [source: mdit-inline]
+  [pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+- `HTML_TAG_RE` recognizes a complete tag, including multiline attributes
+  and quoted greater-than signs. Decisions anchors that maintained matcher
+  at each raw opening angle bracket to exclude a complete image tag.
+  [source: mdit-html]
+  [pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
+
+The native scanner remains the authority for literal destinations, reference
+availability, attachments and vault links. Its document-wide lower-case,
+last-definition dictionary is passed separately to reference usages. An
+unused definition never becomes candidate text. Recognition-only parser
+reference records cannot supply a persisted URL. Explicit destinations and
+autolinks keep their punctuation; only bare prose URLs receive surrounding
+sentence, paired Unicode quote and matched emphasis/strikethrough trimming.
+The image callback uses maintained balanced label bounds and native wikilink
+bounds with configured attachment classification. The native fallback retains
+complete Obsidian aliases containing an unmatched opening bracket. Maintained
+table recognition identifies cell separators for raw-coordinate exclusion;
+non-table and escaped literal pipes retain their spelling. Bare prose quote
+context preserves internal apostrophes while excluding matched nested wrappers
+and their Markdown escapes.
+Whole schemes are recognized before HTTP(S) filtering; a non-HTTP URI cannot
+supply a different resource by substring.
+[observed: Decisions adapter contract, #2061]
+[pins: tests/test_okf_decisions.py::test_source_candidates_reject_escaped_paths_and_bad_urls]
+[pins: tests/test_okf_decide.py::test_complete_decide_persists_once_with_etag]
 
 ### Lines, line endings, blank lines (§2.1–2.3, §3.1, §4.9)
 
@@ -134,6 +242,9 @@ Python 3.13.
   block "broken at the first empty line, or beginning of another block-level
   structure". [source: gfm] [observed: markdown-it-py 3.0.0 with `table`,
   `para\n| a |\n|---|\n| b |` renders `<p>para</p><table>`]
+
+The Decisions paragraph candidate follows these boundaries before applying its
+280-character limit. [pins: tests/test_okf_decisions.py::test_first_ordinary_paragraph_respects_markdown_blocks]
 
 ### What cannot interrupt a paragraph
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import overload
+from urllib.parse import urlsplit
 
 from markdown_vault_mcp._env import env as _raw_env
 from markdown_vault_mcp._env import env_float as _raw_env_float
@@ -147,3 +148,38 @@ def parse_opt_int(raw: str | None, var: str) -> int | None:
         return int(cleaned)
     except ValueError as exc:
         raise ConfigurationError(f"{var} must be an integer, got {cleaned!r}") from exc
+
+
+def validate_http_base_url(value: str) -> str:
+    """Validate an HTTP base URL while retaining its original spelling.
+
+    Args:
+        value: URL without credentials, query, fragment or control characters.
+
+    Returns:
+        The valid URL unchanged.
+
+    Raises:
+        ValueError: The URL is unsafe or malformed.
+    """
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and "?" not in value
+            and "#" not in value
+            and not any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
+        )
+        _ = parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            "Server URL must be HTTP(S) with a host and no credentials, query or fragment."
+        )
+    return value

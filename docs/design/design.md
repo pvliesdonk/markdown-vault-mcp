@@ -1965,6 +1965,47 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Explicit local OKF Decisions maintenance (#2061)
+
+The local `okf decide` workflow uses an ordinary operator vocabulary note,
+closed string choices and body evidence to curate type, status, description,
+sources and optional expiry. It sends one bounded request per selected note
+using the [pinned Decisions contract](reference/openai-decisions.md).
+The manager compares accepted values before provenance stamping and invokes
+the existing writer exactly once with the original read etag. No-op decisions
+leave bytes, timestamps, verification and convention callbacks untouched.
+Enforcement-off writes reuse the shipped full-note stamp adapter;
+enforcement-on writes delegate stamping and convention maintenance to native
+owners. No stored derivation or index schema changes.
+
+The CLI owns lazy collaborator assembly with models and persistent stores
+disabled, clears both Git URL and token before source validation/assembly,
+and retains native commit-only callbacks. The scratch index admits untyped link
+targets without clearing writer or reserved-file requirements; native FTS
+resolution follows a FIFO drain and current-source refresh. Invalid raw YAML
+shapes refuse only their note and caller-owned reporting retains prior outcomes.
+Descriptions use maintained block classification and original source spans;
+URLs preserve literal spelling without joining across excluded code or images.
+Native readiness defers scratch admission until a graph/convention consumer,
+with premodel rereads and postadmission expiry clocks preserving native etags.
+See [the OKF design](okf.md#explicit-local-decisions-pass)
+and [operator usage](../use/okf.md#curate-metadata-with-decisions).
+
+The source adapter consumes markdown-it-py 3.0.0's maintained leaf and inline
+rules with raw coordinate projection. Complete code/image spans, including
+configured Obsidian attachment embeds, are excluded before either source lane.
+Whole URI schemes precede HTTP(S) filtering. Paired prose quotes and escaped
+wrappers cannot become bare resource characters, including nested combinations.
+Maintained table boundaries exclude cell separators; literal pipes outside tables
+retain their spelling. Matched emphasis and maintained strikethrough are excluded. Explicit
+destinations and autolinks retain their spelling. Native reference
+availability is a separate dictionary, never appended evidence text. The
+same protected scan and effective attachment policy govern candidate assembly
+and lazy graph demand. Native UTF-8 decoding handles vocabulary/discovery BOMs.
+The pure base-URL guard lives in `config_sections/_helpers.py`; config and
+client adapters retain their own safe exception types without a config-to-CLI
+import. See the [pinned parser contract](reference/commonmark-gfm.md#maintained-inline-and-container-coordinates).
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)

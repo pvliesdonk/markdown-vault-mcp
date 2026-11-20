@@ -799,3 +799,81 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+
+## Explicit local Decisions pass
+
+`okf decide` is explicit maintenance independent of the enforced-write flag.
+CLI-only flat configuration supplies an ordinary types-note path, a separate
+Platform base/key and per-field thresholds. The vocabulary closes type options,
+fixes the three OKF statuses and may list positive whole-day expiry durations.
+The manager copies a suitable first paragraph and contained existing link/URL
+evidence; the model never generates prose, resources or dates.
+
+Discovery uses filesystem mtime or missing raw type, with union/dedup and
+native exclusions, containment and submodule boundaries. Reserved files,
+`SKILL.md` and the vocabulary are excluded. The command initializes no model
+clients without enabled selected work and never opens server persistent stores.
+The report explicitly distinguishes disabled from enabled-empty work. One
+caller-owned report retains earlier writes through later note or cleanup errors.
+Assembly clears Git URL and token before validation, so local commits retain
+native callbacks without managed bootstrap or remote synchronization.
+
+Raw frontmatter uses the installed handler to reject nonmapping roots and
+nonstring top-level keys before native serialization. Empty or unclosed headers
+retain native body semantics. Metadata depth/value bounds precede maintained
+Pydantic conversion; malformed notes remain isolated from later work. Authored
+input errors carry safe remedies; arbitrary configuration/path/YAML failures
+use categorical diagnostics.
+
+Description candidates use the maintained markdown-it-py CommonMark block
+classifier with its table rule enabled. Top-level headings are skipped; the
+first other block must be a paragraph. Original LF source spans preserve
+Unicode separators and continuations before the 280-character limit; an
+incomplete leading pipe row remains an explicit conservative refusal.
+See [the parser contract](reference/commonmark-gfm.md#maintained-block-source-spans).
+Evidence uses raw coordinates from maintained block and inline rules, pinned
+to markdown-it-py 3.0.0. Complete code and image spans, including configured
+Obsidian attachment embeds, are excluded without joining neighboring text. Native definitions provide availability separately
+from candidate text; unused definitions cannot become evidence. Explicit
+links and autolinks retain literal destination punctuation; only bare prose
+URLs lose surrounding sentence punctuation and paired prose quotes, including
+nested wrappers and escaped closers. Maintained table classification excludes
+cell separators; non-table literal pipes retain their spelling. Matched emphasis
+and maintained strikethrough delimiters are excluded too. Whole URI schemes are recognized before HTTP(S)
+filtering, so another scheme cannot supply an invented HTTP substring.
+Configured attachment exclusions apply to candidates and graph demand;
+BOM-prefixed vocabulary and discovery notes use the native UTF-8 reader. HTTP schemes match
+without case sensitivity while resources retain their original spelling,
+percent escapes and internal apostrophes; surrounding prose quotes are excluded.
+
+The command-owned scratch index builds only for graph evidence or an accepted
+enforcement-on write. Native queryability remembers successful publication,
+including empty builds; every consumer first checks the native FIFO barrier.
+Only its IndexManager admission requirements are relaxed. Configured vault/writer and
+reserved convention requirements remain intact. Before resolving a reread
+source, drain the native FIFO, parse the current source with the native parser
+settings, upsert it and consume native wikilink destinations. Current body
+occurrences and canonical containment govern eligibility; native FTS owns
+short-name, alias and tie-break resolution. Failed refreshes cannot supply
+evidence. A first graph admission rereads the selected source before binding
+model input, metadata and etag. A later convention admission retains the
+original inference snapshot: a concurrent edit must fail the native etag check.
+The write-attempt clock and accepted duration are refreshed after admission by
+the same policy evaluator, without another model request. The index is discarded
+on close; plain enforcement-off writes and abstentions require no build.
+
+The [endpoint reference](reference/openai-decisions.md) pins ordered answers,
+null-name refusals, request limits and safe terminal errors. All thresholds
+are finite [0,1]; existing type/status replacement requires wrongness strictly
+above the replacement threshold, itself above their acceptance thresholds.
+Meaningfulness gates the full patch. All field outcomes retain their real
+metrics/refusals. Empty patches precede stamps, writers and callbacks.
+
+Persistence strips the native read's frontmatter block, merges accepted keys
+into full raw metadata, and uses exactly one conditional native write with its
+etag. Enforcement off serializes the full note for the shipped stamp helper
+and parses stamped metadata back; enforcement on leaves native enrichment in
+charge. Unknown keys/source records survive. The command creates no machine
+verification, uses no `last_edited` clock and changes no index semantics.
+Native serialization owns delimiter spacing. A concurrent edit reports a
+conflict and is not overwritten or reclassified.
