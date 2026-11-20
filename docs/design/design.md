@@ -1967,7 +1967,7 @@ ones).
 
 ### OKF Read Semantics (phase 1, #960)
 
-The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/open-knowledge-format/open-knowledge-format)
 bundle via an `okf_version` field in the root `index.md` frontmatter. The
 full design (trust model, later phases) lives in `docs/design/okf.md`; what
 the spec itself says, dated and sourced, in
