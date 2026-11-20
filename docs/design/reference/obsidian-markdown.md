@@ -481,7 +481,10 @@ Each entry names the function and the design section that decides it.
   a nested source's vault-path spelling becomes source-relative to avoid a
   local shadow. Explicit `/`, `./`, and
   `../` destinations retain their stated location; no alias or extension is
-  inferred. [pins: tests/test_links_markdown_vault_fallback.py::test_reported_destinations, tests/test_links_markdown_vault_fallback.py::test_local_path_wins_and_refresh_converges, tests/test_links_markdown_vault_fallback.py::test_explicit_prefix_does_not_fallback]
+  inferred. When the source-relative path is missing and several notes
+  match, the lookup applies the wikilink tie-break above (exact vault path,
+  then the source's own folder, then the shortest path string, then the
+  lexicographically first). [pins: tests/test_links_markdown_vault_fallback.py::test_reported_destinations, tests/test_links_markdown_vault_fallback.py::test_local_path_wins_and_refresh_converges, tests/test_links_markdown_vault_fallback.py::test_explicit_prefix_does_not_fallback, tests/test_links_markdown_vault_fallback.py::test_suffix_tie_break_and_no_extension_inference]
 - `_insert_aliases`: honours the scalar `alias` key that Obsidian deprecated
   in 1.4 and dropped in 1.9. Wider than current Obsidian; harmless for
   vaults that predate 1.9. design.md § Link Extraction (Alias resolution).
