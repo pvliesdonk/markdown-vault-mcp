@@ -44,6 +44,37 @@ from markdown_vault_mcp._okf_paths import resolve_okf_path
         ("/next.md", "0.2", {"notes/next.md"}, ("unresolved", None, "")),
         ("a%23b.md", "0.3", {"notes/a#b.md"}, ("resolved", "notes/a#b.md", "")),
         ("../target.md", "0.3", {"target.md"}, ("resolved", "target.md", "")),
+        ("folder", "0.3", {"notes/folder/"}, ("resolved", "notes/folder/", "")),
+        (
+            "folder",
+            "0.3",
+            {"notes/folder", "notes/folder/"},
+            ("resolved", "notes/folder", ""),
+        ),
+        ("folder/", "0.3", set(), ("unresolved", None, "")),
+        (
+            "target.md/",
+            "0.3",
+            {"notes/target.md/"},
+            ("resolved", "notes/target.md/", ""),
+        ),
+        ("/folder/", "0.3", {"folder/"}, ("resolved", "folder/", "")),
+        (".", "0.3", {"notes", "notes/"}, ("resolved", "notes/", "")),
+        ("..", "0.3", {"/"}, ("resolved", "/", "")),
+        ("/", "0.3", {"/"}, ("resolved", "/", "")),
+        (
+            "folder/?q#f",
+            "0.3",
+            {"notes/folder/"},
+            ("resolved", "notes/folder/", "?q#f"),
+        ),
+        ("folder/", "0.2", {"folder/"}, ("root_fallback", "folder/", "")),
+        ("folder", "0.2", {"folder/"}, ("root_fallback", "folder/", "")),
+        ("folder/", "0.3", {"folder/"}, ("unresolved", None, "")),
+        ("folder", "0.3.1", {"folder/"}, ("unresolved", None, "")),
+        ("folder", "v0.2", {"folder/"}, ("unresolved", None, "")),
+        ("a%00b.md", "0.3", {"notes/a%00b.md"}, ("unresolved", None, "")),
+        ("bad%FF.md", "0.3", {"notes/bad%FF.md"}, ("unresolved", None, "")),
     ],
 )
 def test_resolution(
@@ -121,3 +152,23 @@ def test_empty_body_reference_targets_source() -> None:
         "notes/current.md",
         "",
     )
+
+
+def test_directory_target_resolves() -> None:
+    result = resolve_okf_path("folder/", "notes/current.md", {"notes/folder/"}, "0.3")
+    assert (result.status, result.path) == ("resolved", "notes/folder/")
+
+
+def test_body_link_does_not_fallback_to_directory() -> None:
+    result = resolve_okf_path(
+        "folder/", "notes/current.md", {"folder/"}, "0.2", path_field=False
+    )
+    assert result.status == "unresolved"
+
+
+@pytest.mark.parametrize("path_field", [True, False])
+def test_single_letter_scheme_is_external(path_field: bool) -> None:
+    result = resolve_okf_path(
+        "C:/x.md", "notes/current.md", {"C:/x.md"}, "0.3", path_field=path_field
+    )
+    assert result.status == "external"

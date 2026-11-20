@@ -30,6 +30,13 @@ def _within_root(base: tuple[str, ...], path: str) -> str | None:
     return "/".join(parts)
 
 
+def _lookup(candidate: str, directory_only: bool, available: Set[str]) -> str | None:
+    if not directory_only and candidate and candidate in available:
+        return candidate
+    directory = f"{candidate}/" if candidate else "/"
+    return directory if directory in available else None
+
+
 def resolve_okf_path(
     value: str,
     source: str,
@@ -44,7 +51,7 @@ def resolve_okf_path(
         value: URI reference with Markdown syntax removed and percent escapes
             intact. Encode literal ? and #; decoding occurs once.
         source: Bundle-relative path of the file containing the reference.
-        available: Set of case-sensitive bundle-relative file paths for lookup.
+        available: Case-sensitive file identities and directory identities ending in `/`.
         version: Normalized declared OKF version, or None when undeclared.
         path_field: Apply path-field empty-value and legacy fallback rules.
 
@@ -74,14 +81,19 @@ def resolve_okf_path(
     candidate = source if not raw_path else _within_root(base, decoded)
     if candidate is None:
         return OkfPathResult("external", suffix=suffix)
-    if raw_path and decoded.split("/")[-1] in ("", ".", ".."):
-        return OkfPathResult("unresolved", suffix=suffix)
-    if candidate in available:
-        result = OkfPathResult("resolved", candidate, suffix)
+    directory_only = bool(raw_path) and decoded.split("/")[-1] in ("", ".", "..")
+    found = _lookup(candidate, directory_only, available)
+    if found is not None:
+        result = OkfPathResult("resolved", found, suffix)
     elif path_field and raw_path and not rooted and version in (None, "0.1", "0.2"):
         fallback = _within_root((), decoded)
-        if fallback is not None and fallback in available:
-            result = OkfPathResult("root_fallback", fallback, suffix)
+        found = (
+            _lookup(fallback, directory_only, available)
+            if fallback is not None
+            else None
+        )
+        if found is not None:
+            result = OkfPathResult("root_fallback", found, suffix)
         else:
             result = OkfPathResult("unresolved", suffix=suffix)
     else:
