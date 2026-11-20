@@ -88,11 +88,12 @@ async def test_tool_call_failed_line(caplog):
     # an operator actually sees, and it is the only place quoting happens.
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("bad section here"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("bad section here")))
+        await mw.on_message(ctx, call_next)
     failed = caplog.records[-1]
     msg = render_rich(failed)
     assert msg.startswith("tool_call_failed ")
@@ -106,11 +107,12 @@ async def test_tool_call_failed_line(caplog):
 async def test_failed_error_value_unquoted_when_no_whitespace(caplog):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("oneword"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("oneword")))
+        await mw.on_message(ctx, call_next)
     assert "error=oneword" in caplog.records[-1].getMessage()
 
 
@@ -131,11 +133,12 @@ async def test_failed_error_value_unquoted_when_no_whitespace(caplog):
 async def test_failed_line_level_follows_log_level(caplog, exc, level):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(exc)
     with (
         caplog.at_level(logging.DEBUG, logger=_LOGGER_NAME),
         pytest.raises(type(exc)),
     ):
-        await mw.on_message(ctx, _failing_call_next(exc))
+        await mw.on_message(ctx, call_next)
     failed = caplog.records[-1]
     assert failed.getMessage().startswith("tool_call_failed ")
     assert failed.levelno == level
@@ -145,11 +148,12 @@ async def test_failed_line_level_applies_to_non_tool_messages(caplog):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="resources/read")
     exc = ResourceError("gone", log_level=logging.INFO)
+    call_next = _failing_call_next(exc)
     with (
         caplog.at_level(logging.DEBUG, logger=_LOGGER_NAME),
         pytest.raises(ResourceError),
     ):
-        await mw.on_message(ctx, _failing_call_next(exc))
+        await mw.on_message(ctx, call_next)
     failed = caplog.records[-1]
     assert failed.getMessage().startswith("request_failed ")
     assert failed.levelno == logging.INFO
@@ -158,22 +162,24 @@ async def test_failed_line_level_applies_to_non_tool_messages(caplog):
 async def test_include_traceback_attaches_exc_info(caplog):
     mw = RequestLoggingMiddleware(include_traceback=True)
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("boom"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("boom")))
+        await mw.on_message(ctx, call_next)
     assert caplog.records[-1].exc_info is not None
 
 
 async def test_no_traceback_when_include_traceback_false(caplog):
     mw = RequestLoggingMiddleware(include_traceback=False)
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("boom"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("boom")))
+        await mw.on_message(ctx, call_next)
     assert caplog.records[-1].exc_info is None
 
 
@@ -208,11 +214,12 @@ async def test_json_formatter_renders_tool_call_pair(caplog):
 async def test_json_formatter_renders_failed_record(caplog):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("bad section here"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("bad section here")))
+        await mw.on_message(ctx, call_next)
     failed = json.loads(JsonFormatter().format(caplog.records[-1]))
     assert failed["event"] == "tool_call_failed"
     assert failed["error_type"] == "ValueError"
@@ -223,11 +230,12 @@ async def test_exception_is_reraised_unchanged(caplog):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
     sentinel = ValueError("propagate me")
+    call_next = _failing_call_next(sentinel)
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError) as excinfo,
     ):
-        await mw.on_message(ctx, _failing_call_next(sentinel))
+        await mw.on_message(ctx, call_next)
     assert excinfo.value is sentinel
 
 
@@ -315,11 +323,12 @@ async def test_render_value_escapes_embedded_quotes(caplog):
     # record.getMessage(), is where quoting/escaping happens.
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError('say"hi"'))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError('say"hi"')))
+        await mw.on_message(ctx, call_next)
     assert r'error="say\"hi\""' in render_rich(caplog.records[-1])
 
 
@@ -333,11 +342,12 @@ async def test_render_value_escapes_control_chars_to_one_line(caplog, raw, escap
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
     err = ValueError("line one" + raw + "line two")
+    call_next = _failing_call_next(err)
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(err))
+        await mw.on_message(ctx, call_next)
     msg = render_rich(caplog.records[-1])
     assert raw not in msg
     assert 'error="line one' + escaped + 'line two"' in msg
@@ -417,12 +427,13 @@ async def test_json_formatter_carries_trace_ids_as_json_keys(caplog):
 async def test_failed_line_carries_trace_ids(caplog):
     mw = RequestLoggingMiddleware()
     ctx = _context(method="tools/call", message=_ToolParams("read"))
+    call_next = _failing_call_next(ValueError("boom"))
     with (
         caplog.at_level(logging.INFO, logger=_LOGGER_NAME),
         _tracer().start_as_current_span("outer"),
         pytest.raises(ValueError),
     ):
-        await mw.on_message(ctx, _failing_call_next(ValueError("boom")))
+        await mw.on_message(ctx, call_next)
 
     failed = _records(caplog)[-1].getMessage()
     assert failed.startswith("tool_call_failed ")

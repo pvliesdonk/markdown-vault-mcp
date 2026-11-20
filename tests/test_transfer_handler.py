@@ -456,7 +456,8 @@ async def test_filename_with_crlf_cannot_inject_headers() -> None:
         assert resp.status_code == 200
         assert "x-injected" not in {k.lower() for k in resp.headers}
         cd = resp.headers["content-disposition"]
-        assert "\r" not in cd and "\n" not in cd
+        assert "\r" not in cd
+        assert "\n" not in cd
 
 
 # --------------------------------------------------------------------------- #

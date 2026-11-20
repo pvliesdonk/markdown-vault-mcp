@@ -822,7 +822,8 @@ def test_access_lines_redacted_at_debug():
         messages = [r.getMessage() for r in received]
         assert not any("SECRET" in m or "AUTHCODE" in m for m in messages)
         assert "transfer/<redacted>" in messages[0]
-        assert "/authorize" in messages[1] and "?" not in messages[1]
+        assert "/authorize" in messages[1]
+        assert "?" not in messages[1]
     finally:
         logging.getLogger().removeHandler(handler)
 

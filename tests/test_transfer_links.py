@@ -305,7 +305,7 @@ class TestTtlClamp:
         assert res.structured_content["expires_in_s"] == 150.0
 
     @pytest.mark.parametrize("tool", ["create_download_link", "create_upload_link"])
-    @pytest.mark.parametrize("ttl_s", [0, -5])
+    @pytest.mark.parametrize("ttl_s", [0, -5, float("nan")])
     async def test_non_positive_ttl_is_a_request_to_change(
         self, tool: str, ttl_s: float
     ) -> None:
@@ -645,7 +645,8 @@ class TestInstructionsSnippet:
             ServerConfig(base_url="https://x.example.com", kv_store_url="memory://"),
             env_prefix="T",
         )
-        assert "create_upload_link" in text and "create_download_link" in text
+        assert "create_upload_link" in text
+        assert "create_download_link" in text
         assert "single-use" in text
 
     @pytest.mark.parametrize(
@@ -661,4 +662,5 @@ class TestInstructionsSnippet:
         )
         apply_tool_visibility(mcp, cfg)
         text = finalize_instructions(mcp, cfg, env_prefix="T")
-        assert "create_upload_link" not in text and "create_download_link" not in text
+        assert "create_upload_link" not in text
+        assert "create_download_link" not in text

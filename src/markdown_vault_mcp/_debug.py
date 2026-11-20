@@ -124,7 +124,8 @@ def maybe_start_debugpy(env_prefix: str) -> None:
         return
 
     try:
-        debugpy.listen(("0.0.0.0", port))  # noqa: S104, RUF100 - Deliberate debugpy bind, see docstring; S104 is gate-only.
+        # Deliberate debugpy bind, see the docstring; S104 is gate-only.
+        debugpy.listen(("0.0.0.0", port))  # noqa: S104, RUF100
     except Exception as exc:  # broad: listener bring-up must not crash startup
         logger.warning(
             "debugpy_listen_failed port=%d error=%s consequence=%s",

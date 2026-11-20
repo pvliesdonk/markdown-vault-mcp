@@ -117,7 +117,8 @@ def test_client_receives_pruned_finalized_instructions(monkeypatch):
     assert JOB_POLL_TOOL_NAME in text  # job tool exposed → snippet kept
     # transfer snippet dropped: upload hidden
     assert "create_download_link" not in text
-    assert "create_upload_link" not in listed and JOB_POLL_TOOL_NAME in listed
+    assert "create_upload_link" not in listed
+    assert JOB_POLL_TOOL_NAME in listed
     assert text.endswith(
         "Full documentation for this server: https://example.test/llms.txt"
     )

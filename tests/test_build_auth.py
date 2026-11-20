@@ -128,11 +128,12 @@ class TestBuildAuth:
         def _boom(*_args: object, **_kw: object) -> MagicMock:
             raise httpx.ConnectError("boom")
 
+        config = _remote_only_config(bearer_token="x")
         with (
             patch("httpx.get", side_effect=_boom),
             pytest.raises(ConfigurationError, match="discovery"),
         ):
-            build_auth(_remote_only_config(bearer_token="x"))
+            build_auth(config)
 
     def test_multi_hard_fails_when_bearer_builder_returns_none(self):
         """Defense-in-depth: bearer_auth=None in multi mode → ConfigurationError.
