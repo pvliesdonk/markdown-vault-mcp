@@ -6669,6 +6669,16 @@ refuse nothing, since nothing is committed there. `create_upload_link` and
 [`reference/git-submodules.md`](reference/git-submodules.md); the rest of the
 read-only behaviour is epic #1561 and writes are epic #1562.
 
+History, diff and revision-read queries through `GitWriteStrategy` check the
+requested path with `SubmoduleGuard.submodule_of(holding=False)` (#1566). A
+path in a submodule or plain nested repository raises `InvalidRequestError`
+naming the separate repository; it does not imply the note has no history.
+This covers indexed gitlinks even when their working tree is empty. The MCP
+library-outcome boundary reports it at INFO. Whole-vault and containing-folder
+queries, including the submodule directory entry itself, still describe
+superproject history, and a vault rooted in a submodule
+uses that repository normally. No recursive history access is added.
+
 Three git modes:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.

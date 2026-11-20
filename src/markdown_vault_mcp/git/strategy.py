@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     )
 
 from markdown_vault_mcp._commit_scope import current_folder_move
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     cleanup_git_env,
@@ -60,6 +61,7 @@ from markdown_vault_mcp.git.health import (
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
+from markdown_vault_mcp.git.submodules import SubmoduleGuard
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
@@ -1926,6 +1928,27 @@ class GitWriteStrategy:
     # Read-only git history query methods
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _check_history_repository(
+        repo_path: Path, path: Path | None, *, directory_history: bool = False
+    ) -> None:
+        """Explain a nested repository boundary instead of reporting no history."""
+        if path is None:
+            return
+        boundary = SubmoduleGuard(repo_path).submodule_of(path, holding=False)
+        if boundary is None:
+            return
+        repository, _inside = boundary
+        relative_path = path.resolve().relative_to(repo_path.resolve()).as_posix()
+        if directory_history and relative_path == repository:
+            return  # The directory entry itself has superproject gitlink history.
+        raise InvalidRequestError(
+            f"path {relative_path!r} belongs to the git submodule or nested "
+            f"repository {repository!r}; its history is separate from this "
+            "vault repository. Ask the user to inspect that repository, or "
+            "pass a path outside it to get_history or get_diff."
+        )
+
     def get_file_history(
         self,
         repo_path: Path,
@@ -1959,10 +1982,13 @@ class GitWriteStrategy:
             List of :class:`HistoryEntry` ordered from newest to oldest.
 
         Raises:
+            InvalidRequestError: If *path* belongs to a submodule or nested
+                repository with separate history.
             ValueError: If ``git log`` exits non-zero; git accepts any
                 ``since`` / ``until`` text without complaint, so a bad date
                 never causes it.
         """
+        self._check_history_repository(repo_path, path, directory_history=is_dir)
         return query.get_file_history(
             self._ensure_git_root(repo_path),
             repo_path,
@@ -2027,10 +2053,12 @@ class GitWriteStrategy:
             :class:`CommitDiff` when *per_commit* is ``True``.
 
         Raises:
-            InvalidRequestError: If *ref* names no commit in this repository.
+            InvalidRequestError: If *ref* names no commit in this repository,
+                or *path* belongs to a submodule or nested repository.
             ValueError: If a git subprocess exits non-zero for any other
                 reason.
         """
+        self._check_history_repository(repo_path, path)
         return query.get_file_diff(
             self._ensure_git_root(repo_path),
             path,
@@ -2059,11 +2087,13 @@ class GitWriteStrategy:
         Raises:
             InvalidRequestError: If the vault is not git-backed, the revision
                 is not a commit or not an ancestor of HEAD, the note's identity
-                cannot be traced to it, or the content is over the read cap.
+                cannot be traced to it, the content is over the read cap, or
+                the path belongs to a submodule or nested repository.
             DocumentUnreadableError: If the content there is not valid UTF-8,
                 or is a Git LFS pointer.
             ValueError: If git itself fails.
         """
+        self._check_history_repository(query_.repo_path, query_.path)
         return query.get_file_at_ref(
             self._ensure_git_root(query_.repo_path),
             query_,
