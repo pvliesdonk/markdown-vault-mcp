@@ -821,7 +821,7 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
         raise MalformedFrontmatterError(str(exc)) from exc
 
 
-def strip_frontmatter_block(text: str) -> str:
+def strip_frontmatter_block(text: str, *, preserve_body: bool = False) -> str:
     """Return *text* without its leading frontmatter block, body verbatim.
 
     The counterpart of a ``write(body, frontmatter=...)``: a read-modify-write
@@ -843,10 +843,13 @@ def strip_frontmatter_block(text: str) -> str:
 
     Args:
         text: Raw markdown file text (frontmatter included).
+        preserve_body: Keep body whitespace; strip a mapping or empty/comment-only YAML.
 
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
+    if preserve_body:
+        return _frontmatter_body_verbatim(text)
     candidate = text.lstrip()
     handler = frontmatter.detect_format(candidate, frontmatter.handlers)
     if handler is None:
@@ -858,6 +861,33 @@ def strip_frontmatter_block(text: str) -> str:
         # frontmatter, and so does the indexer that calls it.
         return text
     return body.lstrip("\n")
+
+
+def _frontmatter_body_verbatim(text: str) -> str:
+    """Strip a mapping or empty/comment-only YAML, preserving the body suffix."""
+    candidate = text.lstrip()
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None or handler.FM_BOUNDARY is None:
+        return text
+    opening = handler.FM_BOUNDARY.match(candidate)
+    if opening is None:
+        return text
+    closing = handler.FM_BOUNDARY.search(candidate, opening.end())
+    if closing is None:
+        return text
+    try:
+        metadata, _ = handler.split(candidate)
+        parsed = handler.load(metadata)
+        if not isinstance(parsed, dict) and not (
+            isinstance(handler, frontmatter.default_handlers.YAMLHandler)
+            and parsed is None
+            and yaml.compose(metadata) is None
+        ):
+            return text
+    except (ValueError, TypeError, yaml.YAMLError):
+        return text
+    end = candidate.find("\n", closing.start())
+    return candidate[end + 1 :] if end >= 0 else ""
 
 
 def _restore_first_indent(text: str, stripped: str) -> str:
@@ -2256,6 +2286,7 @@ def parse_note_categorized(
     attachment_extensions: frozenset[str] | None = None,
     required_frontmatter: list[str] | None = None,
     log_context: str = "scan",
+    exempt_required_frontmatter: bool = False,
 ) -> ParsedNote | CategorizedSkip | None:
     """Parse one markdown file, classifying failures into the skip taxonomy.
 
@@ -2286,6 +2317,7 @@ def parse_note_categorized(
             :func:`parse_note`.
         required_frontmatter: Frontmatter keys that must be present.
         log_context: Prefix identifying the calling pipeline in logs.
+        exempt_required_frontmatter: Skip the required-field gate for this file.
 
     Returns:
         The parsed note on success, a :class:`CategorizedSkip` for a
@@ -2340,7 +2372,7 @@ def parse_note_categorized(
             SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
         )
 
-    if required_frontmatter:
+    if required_frontmatter and not exempt_required_frontmatter:
         missing = [f for f in required_frontmatter if f not in note.frontmatter]
         if missing:
             return CategorizedSkip(
@@ -2365,6 +2397,7 @@ def scan_directory(
     title_field: str = "title",
     attachment_extensions: frozenset[str] | None = None,
     on_walk_error: Callable[[OSError], None] | None = None,
+    exempt_required_frontmatter: Callable[[str], bool] | None = None,
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
@@ -2400,6 +2433,8 @@ def scan_directory(
             document's title; passed through to :func:`parse_note`.
         attachment_extensions: Effective attachment allowlist; passed
             through to :func:`parse_note` (``None`` = the default set).
+        exempt_required_frontmatter: Optional path predicate for bypassing the
+            required-field gate.
         on_walk_error: Called with each ``OSError`` the directory walk meets,
             such as an unreadable subdirectory, so the caller can tell an
             incomplete scan from a complete one (#1785). ``None`` keeps the
@@ -2453,6 +2488,11 @@ def scan_directory(
             attachment_extensions=attachment_extensions,
             required_frontmatter=required_frontmatter,
             log_context="scan",
+            exempt_required_frontmatter=(
+                exempt_required_frontmatter(rel_posix)
+                if exempt_required_frontmatter
+                else False
+            ),
         )
         if outcome is None:
             # Transient I/O failure (already logged) — retry next scan.
