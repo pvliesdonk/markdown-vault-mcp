@@ -22,7 +22,7 @@ document decides are listed there.
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
 transition. Conflicting policies below, including the exact three switches,
-write stamping, verification deletion and reserved-file admission exceptions,
+write provenance, review retention and reserved-file admission exceptions,
 are historical decisions rather than requirements for new implementation.
 Descriptions of shipped behavior remain evidence, not a claim of north-star
 completion.
@@ -137,20 +137,19 @@ Explicitly rejected alternatives:
 
 ### Config surface
 
-Three settings today and two proposed (§6.0), standard `CONFIG-*` sentinel
+OKF settings use standard `CONFIG-*` sentinel
 placement in `config.py`, wizard metadata via field
 `metadata={"help": ..., "tags": (...)}`:
 
 | Env var | Values | Default | Meaning |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. In the shipped code it also switches on reserved-file maintenance, which §6.0 gives its own switch. |
-| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `elicit` | How `okf_verify` attributes a human review (§6). Only meaningful with `OKF_WRITE` on; a non-default value with it off is a config validation error. |
-| `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | bool | `false` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
-| `MARKDOWN_VAULT_MCP_OKF_RECONCILE` (proposed, #1412) | bool | `false` | The server may repair provenance on notes it did not write (§6.0). Same read-mode requirement. |
-
-The names of the two proposed settings are candidates; the `config-contract`
-skill fixes them at implementation.
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Deprecated alias enabling authoring, review and maintenance defaults; explicit settings take precedence. |
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `off` (or `elicit` with alias) | Independently enables review and selects how a human review is attributed. |
+| `MARKDOWN_VAULT_MCP_OKF_INDEX` | bool | `false` | Enables automatic index maintenance in designated folders. |
+| `MARKDOWN_VAULT_MCP_OKF_LOG` | `off` / `events` / `writes` | `off` | Controls logging; `writes` appends for ordinary server writes. |
+| `MARKDOWN_VAULT_MCP_OKF_FOLDERS` | folder globs | `.` | Designates folders for automatic maintenance; `*` matches one level and `**` spans levels. Leading `./` or `/` and trailing `/` are ignored. |
+| `MARKDOWN_VAULT_MCP_OKF_AUTHOR` | bool | `false` | Enables explicit concept authoring on an active writable bundle; it does not enable stamping. |
 
 ### Detection
 
@@ -158,12 +157,8 @@ skill fixes them at implementation.
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
 the clone happens inside the server lifespan). `config://vault` reports the
-mode, declared version and active state, as well as `okf_write_configured`
-and `okf_write_effective`. Active `stats.okf` reports the configured and
-effective write layer as `write_configured` and `write_effective`; it is
-absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
-OKF is active, and the vault is not read-only. Independent services remain
-the subject of #1412.
+mode, declared version and active state. The `stats.okf` section is absent
+when detection is inactive.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -188,22 +183,51 @@ frontmatter blob; not persisted):
   asks; absent field → not stale. Accepting the bare date is a deliberate
   lenience against the amended text's "ignore" — Obsidian authors write
   dates, and the upstream issue behind the amendment is still open.
-- `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
-  prefix; else `machine-confirmed` if `verified` is non-empty (all
-  verifiers non-human); else `unverified`. A bare `verified` mapping is
-  read as a one-element list (spec shorthand; `okf.verified_entries` is the
-  one reader, #1357). Exact tier algorithm lives in
-  the field-mapping table (§1 spec-stability caveat) with table-driven
-  tests.
+- `trust_tier`: a compatibility label for recorded claims, not server
+  certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
+  or `<producer>/<version>`, with nonempty, whitespace-free components)
+  and an offset-aware `at` instant counts. A usable human record yields
+  `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
+  otherwise `unverified`. A bare mapping is still one record. Malformed
+  siblings do not erase usable records. This deliberately changes the
+  public helper and filter behavior from v6.1.2 (#1444).
+- `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
+  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
+  or `server_local_date`. The compatibility `stale: false` includes missing
+  and malformed expiry and therefore does not mean fresh or true.
+- `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
+  `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
+  Mixed lists retain both counts; `recorded` never means applicability to
+  the current revision has been established. A malformed outer value counts
+  as one malformed entry. No source fetching or reviewer authentication occurs.
+- `review_applicability`: supplied review entries report `snapshot: unbound`
+  and `basis: no_snapshot_binding`; timestamps and extensions do not establish
+  coverage. This includes malformed entries: unbound describes binding absence,
+  while `review` reports entry validity. An absent or empty review reports
+  `review: none` with `basis: no_review_supplied`; a malformed outer value
+  reports `review: unknown` with `basis: malformed_review`. This assessment is
+  separate from freshness.
+
+Expiry strings accept extended calendar dates or calendar datetimes with
+`T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
+numeric `±HH:MM` offset. Week/basic dates, offset-less times, out-of-range
+clock components and offsets are unsupported. This bounded interpretation
+is not full ISO 8601 validation. Parsed Python dates/datetimes are also
+accepted; datetime awareness requires a non-None `utcoffset()`.
+
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
 
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}` — omitted entirely when
    detection is off, and individual members omitted when underivable.
-   `sources` are surfaced on `read` (full) and counted on search hits
+   Whole reads also carry `recorded` with supplied `stale_after` and
+   `verified` values as parsed, including null/malformed values and extensions;
+   missing keys stay absent. Compact results omit these potentially large
+   records. Values use the existing metadata serialization, not original YAML
+   spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
    `type` histogram, status/trust-tier breakdowns, stale count. The
@@ -338,143 +362,33 @@ byte-identical.
 
 ## 6. Layer 4 — the write-side switches
 
-Everything here changes bytes or write outcomes; all of it is operator-gated
-by one of the switches in §6.0, none of it is implied by vault declaration,
-and each behaviour below names the switch that owns it. Until §6.0 lands,
-`OKF_WRITE` is the only switch and owns all of it; the section was headed
-"enforced write layer (`OKF_WRITE=true`)" for that reason.
+The operator controls explicit authoring, review, index and log maintenance independently. A vault declaration supplies read semantics, not permission to alter content. The deprecated `OKF_WRITE` alias enables these capabilities by default; each explicit setting takes precedence. Ordinary writes preserve supplied provenance and review records regardless of these settings.
 
-### 6.0 Ownership: three independent switches (proposed, #1412)
+### 6.0 Ownership and write behavior
 
-**Status:** design, 2026-09-09; not implemented. Supersedes the single
-`OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
-that both earlier ownership drafts (PR #1426, PR #1429) carried. This
-section says what to build; how to get there from the shipped code is
-the epic's plan (#1425), and the constraints an implementer needs are on
-the issues this section names, next to the code they constrain.
-
-The server can write into an OKF bundle in three ways, and they differ in
-what else they can collide with:
-
-| Write | Touches | Can collide with |
-|---|---|---|
-| Stamp the notes it writes itself (`generated`, cleared `verified`) | bytes the server is writing anyway | nothing beyond the write |
-| Maintain `index.md` / `log.md` | two files per folder that another party may also maintain | a second maintainer, on every folder |
-| Repair provenance on notes it did not write | any note in the vault | the note's author |
-
-An operator answers three yes/no questions, one per row, and the answers
-are independent. The ladder assumed they were not (each rung a superset of
-the last) and so forbade combinations that exist: a vault whose provenance
-is stamped by a git hook for every writer, human included, that still wants
-the server to keep `index.md` current (maintain without stamp); a vault
-where another tool owns the listing but the server should stamp what it
-writes (stamp without maintain, the case #1393 asks for). Three switches
-cover all eight combinations; the four rungs of the ladder are four of
-them.
-
-| Question | Switch | Yes | No |
-|---|---|---|---|
-| Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
-| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change to a non-reserved note (#1392; a reserved-file change never triggers its own regeneration, #1414), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
-| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
-
-The switches govern what the server does **on its own**: stamping as a
-side effect of its write, maintenance and repair as reactions to changes.
-An explicit, client-invoked operation on a non-reserved note is not
-theirs to permit or forbid, whatever the switches say: an agent's
-`write`/`edit`/`append` of such a note answers to the vault's general
-write policies (read-only mode, write protection, conditional writes,
-and whatever else `design.md` gives the write path) and to no OKF
-switch; the `okf_*` migration tools additionally answer to `OKF_MODE`
-(their `okf` tag; §7). Two explicit operations are the switches' own: a client
-write to a reserved file is refused while the server maintains it
-(#1419), with the migration tools that generate those files admitted as
-the server's own generators; and `okf_verify` exists only under
-`OKF_WRITE`, as the table says. A "no" above means the server
-initiates nothing, not that an operation is unreachable. Each
-switch defaults to off, and none implies another. What the server then
-actually does additionally requires an active bundle and a writable
-vault, so all three are inert on `auto` with no declaration and on a
-read-only vault, and `OKF_MODE=off` conflicts with a switch only when it
-is true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
-ownership question and never depends on the switches. The switches are per
-instance; how one instance treats another's commits is the ingest
-design's question (#1414).
-
-**Rejected.** The ladder, above. A single set-valued setting
-(`OKF_WRITE=stamp,maintain,reconcile`): the same eight combinations with
-more parsing and a worse wizard entry. `OKF_MAINTAIN` defaulting to
-`OKF_WRITE`'s value: it is what the shipped code does, but it makes one
-answer imply another, which is the ladder's mistake in a smaller form.
-Stamping on by default whenever a bundle is active: it is what a
-conformant producer does, but §2's trust model says a vault-side
-declaration buys advice and annotations, never authority to change
-bytes, and a default-on stamp would make the declaration do exactly that.
-
-**Where the implementation constraints live.** The configured-versus-
-runnable projections and the two reporting surfaces: #1432. The
-instruction snippet's clause: #1431. Read-only with `OKF_WRITE` enabled is
-accepted and logs `okf_write_inert` at INFO on startup: #1434. The
-reserved-file guard's admission of the server's own generators: #1419.
-A reserved-file change never triggering its own regeneration: #1414.
-Tool tags following switches: #1412.
-
-- **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
-  `generated: {by, at}`, `at` the UTC instant of the write in the spec's
-  example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
-  the token's usable `sub` when the principal is human (`human:<subject>`), else
-  `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
-  values are overwritten (it describes the current bytes); `sources` are
-  never touched. Client-ID-only identities, including static and mapped
-  bearer credentials, use the tool actor (#1463). So does an OAuth token the
-  issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`
-  or `gty: client-credentials`; #1480), and so does a token whose `sub` the
-  operator lists in `SERVICE_SUBJECTS`; an unmarked, unlisted service-account
-  token still stamps `human:<subject>`. See
-  [authenticated subjects](reference/authenticated-subjects.md).
-
-  Content writes and verification preserve surviving frontmatter fields in
-  order, including nested mappings and mappings inside lists. Replacing
-  `generated` or `verified` retains its slot; an absent field appends, and
-  content writes still remove `verified`. Order and values survive, while
-  comments, quoting and whitespace may change. The serializer boundary is
-  recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
-
-  A stamp is written *into* the note's frontmatter, so content whose block
-  no parser can read leaves nothing to stamp and the write is **refused**
-  (#1454). Writing it unstamped was the alternative and is worse: the layer's
-  whole claim is that every write it passes carries current provenance, and a
-  silent exception to that is the kind an operator finds months later. The
-  refusal is raised where the path is known (`_finalize_content_write`) as the
-  `ValueError` this layer uses for every other rejected write, so a caller is
-  told which note and why rather than being handed the parser's own exception.
-  With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
-  indexer records the file as a `parse_error` skip (#1408).
-- **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
-  carrying `verified` clears the `verified` list — verification attests to
-  bytes that no longer exist. Frontmatter-only edits that do not touch the
-  body also invalidate (the spec ties verification to the concept, not the
-  body alone); rename does not. This is the highest-value enforcement:
-  it is exactly the invariant an advisory-only setup eventually misses.
-- **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
+- **Provenance preservation**: ordinary writes, edits, appends, uploads and link rewrites preserve supplied `generated` and `verified`. Body-only changes retain the frontmatter bytes. The authenticated principal remains commit context and does not establish authorship. Explicit `okf_author` records a producer only when supplied. `OKF_WRITE` enables `OKF_AUTHOR` unless explicitly overridden; it never stamps or clears metadata.
+- **`okf_verify` tool** (gated by `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
   human reviewed the note. In an agentic session the model wields the human's
   token, so attributing to the auth subject alone lets the model self-promote a
-  note to `human-reviewed` — which would make the tier meaningless. `okf_verify`
-  is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
-  and the write-time `generated` stamp is provenance that does not affect the
-  tier. So the attestation path is operator-configurable via
-  `MARKDOWN_VAULT_MCP_OKF_VERIFY` (meaningful only when `OKF_WRITE` is on):
+  note to `human-reviewed` — which would make the tier meaningless.
+  `derive_trust_tier` reads `verified` exclusively, and supplied `generated`
+  provenance does not affect the tier. `okf_verify` is the server's explicit
+  review operation, but not the only way a `verified` entry arrives: ordinary
+  writes store supplied frontmatter as given (#1443), so any writer, an agent
+  included, can supply a `human:` entry. The attestation path of the explicit
+  operation is operator-configurable via `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
 
   - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
     human to confirm they personally reviewed the note, and writes the
     `verified` entry only on an affirmative reply. **Fails closed** — if the
     client cannot elicit, or the human declines, it raises `ToolError` and
     writes nothing. A model cannot answer an elicitation, so the attestation
-    leaves its control by construction; a headless agent (no human) can never
-    produce a `human-reviewed` entry. The subject stamped is the token's `sub`
+    this tool records leaves its control by construction; a headless agent (no
+    human) cannot produce one through `okf_verify`. The guard covers only this
+    operation, not `verified` supplied on an ordinary write. The subject stamped is the token's `sub`
     when the principal is human, else `local` (including service credentials
     and application-marked tokens) — the elicitation, not the
     token, is the human-presence proof.
@@ -488,12 +402,11 @@ Tool tags following switches: #1412.
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 
-  Trust caveat: even `elicit` makes `human-reviewed` mean *"a human deliberately
-  confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
-  It guarantees a deliberate human act gates the tier, not diligence; downstream
-  OKF consumers should calibrate to that.
-- **Convention maintenance** (gated by `OKF_MAINTAIN` once §6.0 lands;
-  today by `OKF_WRITE`): on successful writes, append a `log.md` entry
+  Trust caveat: `elicit` asks a human to confirm this tool’s entry, but the
+  tier also classifies supplied metadata and establishes neither reviewer
+  identity nor applicability to current content.
+- **Convention maintenance** (gated independently by `OKF_INDEX`, `OKF_LOG`,
+  and `OKF_FOLDERS`): on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
   refresh the affected folder's `index.md` listing. The section heading is
   the server's *local* calendar day, as §9 has it and as a reader of the
@@ -607,59 +520,34 @@ registered per the Tool Registration Checklist, with `destructiveHint` /
 
 ### Generated reserved files and the index gate
 
-The generated `index.md` / `log.md` are subject to the same
-`required_frontmatter` gate as any other note, so a body-only reserved file is
-a deterministic `missing_frontmatter` skip on a vault that configures one — the
-server generating a file its own indexer then rejects (#1174, #1175). Two
-second-order effects follow: the bundle's change history disappears from
-`search` and `list_documents` while staying readable from disk, and a folder
-whose only indexed file would have been its generated `index.md` loses its
-pointer in the parent listing, because `generate_index` synthesises sub-folder
-pointers from index entries.
+In an active OKF vault, `index.md` and `log.md` bypass the
+`required_frontmatter` gate. Concept notes and all notes outside an active
+OKF vault remain subject to it. Full builds, incremental scans and dirty-path
+refreshes use the same admission rule (#1438). A root index change also
+reconciles the other reserved files on the next indexing pass. After a dirty
+refresh changes the scope, the admission marker stays unknown until a reindex
+also reconciles tracker state. Successful dirty refreshes remember the reconciled
+scope in process, so later writes only refresh their own paths until the scope
+changes again. Warm reopen compares the effective state
+recorded with a complete build. An upgrade from older index semantics rebuilds
+the index once. Keyword backends without the optional OKF
+admission provenance capability rebuild conservatively on reopen. An unread
+build candidate is retried on the next reindex; the version 13 rebuild also
+clears old tracker-only skips left by version 12. Reopening before a reindex
+after a dirty scope change triggers one conservative rebuild. If reading the
+root `index.md` fails with an I/O error, admission keeps its last confirmed
+state when available and logs `okf_scope_probe_failed`; without a confirmed
+state the indexing pass fails for retry before changing rows. A missing declaration still deactivates auto mode,
+and forced-on mode is unaffected.
 
-`ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
-carry. Both generators and the `OKF_WRITE` maintainer write through it:
+Generators create `index.md` and `log.md` without frontmatter, regardless of
+required concept fields. Regeneration retains existing headers byte-for-byte,
+including a root `okf_version` and legacy seeded fields, and adds no keys. The
+audit still reports disallowed index frontmatter (#1396). Log maintenance replaces
+the body through `DocumentManager.replace_body`, which retains the stored header bytes
+and avoids stacking frontmatter blocks (#1391).
 
-- **Conditional, not unconditional.** With no required fields configured a
-  reserved file needs no frontmatter to be indexed, and the policy returns
-  `None` so the generators keep emitting the body-only files existing bundles
-  already have on disk. Closing the defect costs an unaffected vault no churn
-  — and, on a git vault, no commits.
-- **Existing keys win.** A hand-authored title and the root `index.md`'s
-  `okf_version` declaration survive regeneration; only genuinely absent
-  required fields are added.
-- **`title_field` gets the derived title** (the same H1 the body builders
-  emit); any other required field is seeded as `null`, since the gate tests
-  presence rather than value and the server has nothing truthful to put there.
-- **`okf_version` is never synthesized.** The audit flags it on any file but
-  the bundle root as `misplaced`, so seeding it into a folder's index would
-  trade one defect for another.
-
-The audit does not exempt these files. A key the policy seeds into an
-`index.md` is an `index_frontmatter` finding like any hand-written one
-(#1396): the finding describes the file against §8, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits. Whether the
-gate should reach generated reserved files at all is open (#1438).
-
-The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
-reason: `_append_log` is a
-read-modify-write, so the log's frontmatter has to be carried across the
-rewrite explicitly. Since the maintainer runs after *every* content write, the
-alternative is not a one-time gap but frontmatter stripped again after each
-save — including frontmatter an operator seeded by hand.
-
-The split is the maintainer's own work, and getting it backwards is #1391.
-`DocumentManager.read` returns the *whole file* in `NoteContent.content`,
-block included, while `DocumentManager.write` puts a `frontmatter=` mapping
-above the body it is handed. Feeding the read text straight back therefore
-serialises a second block above the one still in it, once per write; a live
-folder accumulated eighteen. `scanner.strip_frontmatter_block` takes the
-block off first, delegating detection to `python-frontmatter` so it agrees
-with `parse_note` about where the block ends, and returning the remainder
-unnormalised. Only the block that *opens* the text comes off: an identical
-block further down is body, because separating "stacked by the defect" from
-"quoted on purpose" needs a rule about body content that this layer does not
-have. Repairing files the defective releases already stacked is #1403,
+Repairing files the defective releases already stacked is #1403,
 through the deliberate operation below.
 
 ### Deliberate legacy log repair (#1403)
@@ -776,7 +664,7 @@ so new vaults are conformant from note one.
 | 2 | Query filters (`type`/`status`/`stale`/`trust_tier`), graph `type` field | 1 |
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
-| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
+| 5a | Explicit authoring, review and preservation of supplied provenance | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
@@ -789,9 +677,9 @@ phase owns.
 
 ## 10. Open questions
 
-- Trust-tier edge cases: `verified` entries by `process:` actors only —
-  v0.2 tier language suggests machine-confirmed; confirm against SPEC.md
-  examples before freezing the table.
+- Reads report supplied review entries as unbound (#1413). How observed changes
+  are represented and how reviews bind to snapshots remain follow-ups (#1414,
+  #1445).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
   amendment and #1373: the value carries its own offset; a bare date is the
   server-local day.
