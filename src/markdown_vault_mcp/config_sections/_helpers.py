@@ -1,7 +1,7 @@
 """Shared env-reading helpers for config_sections from_env classmethods.
 
-Imports only fastmcp_pvl_core + stdlib (never config.py) so config.py can
-import these without a cycle.
+Imports only this package's env helpers and stdlib, never config.py, so
+config.py can import these without a cycle.
 """
 
 from __future__ import annotations
@@ -10,15 +10,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import overload
 
-from fastmcp_pvl_core import (
-    env as _core_env,
-)
-from fastmcp_pvl_core import (
-    env_float as _core_env_float,
-)
-from fastmcp_pvl_core import (
-    env_int as _core_env_int,
-)
+from markdown_vault_mcp._env import env as _raw_env
+from markdown_vault_mcp._env import env_float as _raw_env_float
+from markdown_vault_mcp._env import env_int as _raw_env_int
 
 # Type accepted for ProjectConfig's weight-map fields: a mapping (e.g. from
 # parse_weight_map) or an already-frozen tuple of (key, weight) pairs.
@@ -35,7 +29,7 @@ def env(prefix: str, name: str, default: None = None) -> str | None: ...
 
 def env(prefix: str, name: str, default: str | None = None) -> str | None:
     """Read ``{prefix}_{name}`` (whitespace-stripped, empty-as-unset)."""
-    return _core_env(prefix, name, default=default)
+    return _raw_env(prefix, name, default=default)
 
 
 def env_int(prefix: str, name: str, default: int) -> int:
@@ -44,7 +38,7 @@ def env_int(prefix: str, name: str, default: int) -> int:
     Returns *default* when unset. Range validation lives in each sub-config's
     ``__post_init__`` so direct construction is validated too (#638).
     """
-    value = _core_env_int(prefix, name, default, strict=True)
+    value = _raw_env_int(prefix, name, default, strict=True)
     # A non-None default under strict=True never resolves to None (unset →
     # default; set → parsed int or raise); the guard only narrows the type.
     return value if value is not None else default
@@ -56,13 +50,13 @@ def env_float(prefix: str, name: str, default: float) -> float:
     Returns *default* when unset. Range validation lives in each sub-config's
     ``__post_init__`` (#638).
     """
-    value = _core_env_float(prefix, name, default, strict=True)
+    value = _raw_env_float(prefix, name, default, strict=True)
     return value if value is not None else default
 
 
 def opt_int(prefix: str, name: str) -> int | None:
     """Read a strict optional int env var (``None`` when unset); raise on invalid."""
-    return _core_env_int(prefix, name, None, strict=True)
+    return _raw_env_int(prefix, name, None, strict=True)
 
 
 def parse_weight_map(raw: str | None, var: str) -> dict[str, float] | None:
@@ -125,7 +119,7 @@ def opt_list(raw: str | None) -> tuple[str, ...] | None:
     Returns ``None`` when *raw* is ``None``, empty, or parses to no items —
     the shared empty-as-unset convention for list-valued vars.
     """
-    from fastmcp_pvl_core import parse_list
+    from markdown_vault_mcp._env import parse_list
 
     items = parse_list(raw or "")
     return tuple(items) if items else None
