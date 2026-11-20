@@ -214,13 +214,6 @@ Release branches carry shipped releases, so they get the same protection
 as `main`: pull requests plus green CI, applied by the shipped rulesets.
 See [Repository Protection](repository-protection.md).
 
-<!-- TEMPLATE-TRACKING-START -->
-## Template updates
-
-Releases of this project and updates from its template are separate
-events; the weekly template update pull request is covered in
-[Working Through a Template Update](template-updates.md).
-<!-- TEMPLATE-TRACKING-END -->
 
 ## Where to read about a release
 

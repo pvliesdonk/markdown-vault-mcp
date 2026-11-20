@@ -40,9 +40,8 @@ jobs:
       - name: Post coverage/patch status
         # ALWAYS post something. `ci.yml`'s own-branch counterpart holds the
         # same invariant (`always()` plus an `|| 'error'` default), and this
-        # fork-PR fallback has to match it: a project that answers
-        # `extra_required_checks: ["coverage/patch"]` makes this a required
-        # context, and a required check that never reports does not turn a PR
+        # fork-PR fallback has to match it: listing `coverage/patch` in the
+        # rulesets' `required_status_checks` makes this a required context, and a required check that never reports does not turn a PR
         # red — it leaves it waiting forever on a status that is not coming,
         # exitable only by an admin bypass or a ruleset edit.
         #
