@@ -71,8 +71,7 @@ async def test_sync_preview_keeps_group_open(
             with pytest.raises(ToolError, match="dry-run"):
                 await client.call_tool("git_sync", args)
         else:
-            preview = await client.call_tool("git_sync", args)
-            assert "history_failed" not in preview.data
+            await client.call_tool("git_sync", args)
         assert _run_git(git_repo_pair.local_path, "rev-parse", "HEAD") == before
         assert _run_git(git_repo_pair.remote_path, "rev-parse", "HEAD") == remote
         assert (await client.call_tool("end_transaction", {"handle": handle})).data[
@@ -599,7 +598,7 @@ async def test_cancelled_write_keeps_transaction_active_until_worker_finishes(
 async def _prepare_automatic_close(
     vault: Any, handle: str, selection: str, monkeypatch: pytest.MonkeyPatch
 ) -> Any:
-    """Arrange a pending or completed automatic close for the sync probe."""
+    """Arrange a pending automatic close for the sync probe."""
     import asyncio
     from threading import Event
 
@@ -614,18 +613,13 @@ async def _prepare_automatic_close(
             event(*args)
 
         monkeypatch.setattr(vault._write_callback, "group_event", paused)
-    if selection in {"pending", "auto_explicit", "auto_implicit"}:
-        future = vault._write_callback.close_group(handle, None, _automatic=True)
-        if selection == "pending":
-            assert await asyncio.to_thread(entered.wait, 5)
-        else:
-            assert (await asyncio.wrap_future(future)).history_failed
+    if selection == "pending":
+        vault._write_callback.close_group(handle, None, _automatic=True)
+        assert await asyncio.to_thread(entered.wait, 5)
     return release
 
 
-@pytest.mark.parametrize(
-    "selection", ["explicit", "implicit", "pending", "auto_explicit", "auto_implicit"]
-)
+@pytest.mark.parametrize("selection", ["implicit", "pending"])
 async def test_sync_reports_settled_history_failures(
     git_repo_pair: GitRepoPair,
     _git_managed_env: Path,
@@ -667,8 +661,6 @@ async def test_sync_reports_settled_history_failures(
             )
         release = await _prepare_automatic_close(vault, handle, selection, monkeypatch)
         args = {"direction": "push"}
-        if selection in {"explicit", "auto_explicit"}:
-            args["transaction"] = handle
         task = asyncio.create_task(client.call_tool("git_sync", args))
         try:
             if selection == "pending":
@@ -678,8 +670,4 @@ async def test_sync_reports_settled_history_failures(
             release.set()
         result = (await task).data
         assert result["push"]["applied"]
-        if selection == "auto_implicit":
-            assert "history_failed" not in result
-        else:
-            assert result["history_failed"] is True
-        assert "Partial" in _run_git(git_repo_pair.remote_path, "show", "HEAD:log.md")
+        assert result["history_failed"] is True

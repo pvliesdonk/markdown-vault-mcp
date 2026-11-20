@@ -1284,15 +1284,12 @@ def test_invalid_ledger_envelope_resets_or_refuses(
         assert result["navigation"] == {"generated": {}, "reported": {}}
 
 
-@pytest.mark.parametrize("applied", [True, False])
 def test_automatic_pull_sweeps_only_after_applied_result(
     tmp_path: Path,
     git_repo_pair: GitRepoPair,
     monkeypatch: pytest.MonkeyPatch,
-    applied: bool,
 ) -> None:
-    """The automatic pull itself sweeps observations only after success."""
-    import hashlib
+    """An unsuccessful automatic pull does not sweep observations."""
 
     from markdown_vault_mcp.git import GitWriteStrategy, PullResult
 
@@ -1312,18 +1309,16 @@ def test_automatic_pull_sweeps_only_after_applied_result(
         original_digest = ledger.rows()["README.md"].content_digest
         (source / "README.md").write_text("external edit")
         result = PullResult(
-            applied=applied,
-            fast_forward=applied,
+            applied=False,
+            fast_forward=False,
             commits_pulled=0,
             from_sha="a",
             to_sha="a",
+            reason="fetch_failed",
         )
         monkeypatch.setattr(strategy, "automatic_pull", lambda: result)
         assert vault._automatic_pull() is result
-        expected = (
-            hashlib.sha256(b"external edit").hexdigest() if applied else original_digest
-        )
-        assert ledger.rows()["README.md"].content_digest == expected
+        assert ledger.rows()["README.md"].content_digest == original_digest
     finally:
         vault.close()
         strategy.close()

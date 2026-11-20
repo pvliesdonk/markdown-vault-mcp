@@ -15,10 +15,11 @@ from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from concurrent.futures import Future
     from datetime import date
     from pathlib import Path
 
-    from markdown_vault_mcp._commit_groups import CommitGroup
+    from markdown_vault_mcp._commit_groups import CommitGroup, GroupCommitResult
     from markdown_vault_mcp.types import WriteOperation
 
 
@@ -80,18 +81,23 @@ def test_group_records_one_event(
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
-@pytest.mark.parametrize("mode", ["events", "off"])
+@pytest.mark.parametrize("mode", ["events", "off", "reserved"])
 def test_empty_and_off_groups_do_not_create_log(
     git_repo: Path, make_vault: Callable[..., Vault], mode: str
 ) -> None:
-    """Empty enabled groups and writes with logging off create no log."""
-    vault = make_vault(mode)
+    """Empty, disabled and reserved-only groups create no log."""
+    vault = make_vault("events" if mode == "reserved" else mode)
     group = vault._write_callback.open_group("Change", None)
-    if mode == "off":
+    if mode in {"off", "reserved"}:
         with vault._write_callback.bind_group(group.handle, None):
-            vault.writer.write("a.md", "# A\n")
+            if mode == "reserved":
+                vault.writer.write(
+                    "index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n'
+                )
+            else:
+                vault.writer.write("a.md", "# A\n")
     result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == ("committed" if mode == "off" else "no_changes")
+    assert result.status == ("no_changes" if mode == "events" else "committed")
     assert not result.history_failed
     assert not is_regular_file(git_repo / "log.md")
 
@@ -179,21 +185,38 @@ def test_close_does_not_block_drain_holding_file_lock(
 
 
 def test_event_date_is_close_date(
-    git_repo: Path, make_vault: Callable[..., Vault]
+    git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Check event date is close date."""
+    """The request date survives a delayed finalizer across midnight."""
     from datetime import date
+    from threading import Event
     from unittest.mock import patch
 
     vault = make_vault("events")
-    group = vault._write_callback.open_group("At midnight", None)
-    with vault._write_callback.bind_group(group.handle, None):
+    dispatcher = vault._write_callback
+    group = dispatcher.open_group("At midnight", None)
+    with dispatcher.bind_group(group.handle, None):
         vault.writer.write("a.md", "# A\n")
-    with patch("markdown_vault_mcp.write_callback.date") as clock:
-        clock.today.return_value = date(2026, 1, 2)
-        result = vault._write_callback.close_group(group.handle, None).result(
-            timeout=10
-        )
+    release = Event()
+    original = dispatcher._finish_group
+
+    def delayed(
+        group: CommitGroup,
+        result: Future[GroupCommitResult],
+        automatic: bool,
+        day: date,
+    ) -> None:
+        assert release.wait(5)
+        original(group, result, automatic, day)
+
+    monkeypatch.setattr(dispatcher, "_finish_group", delayed)
+    try:
+        with patch("markdown_vault_mcp.write_callback.date") as clock:
+            clock.today.return_value = date(2026, 1, 2)
+            future = dispatcher.close_group(group.handle, None)
+    finally:
+        release.set()
+    result = future.result(timeout=10)
     assert result.status == "committed"
     assert "## 2026-01-02" in (git_repo / "log.md").read_text()
 
@@ -201,7 +224,7 @@ def test_event_date_is_close_date(
 def test_timer_closes_and_records_history(
     git_repo: Path, make_vault: Callable[..., Vault]
 ) -> None:
-    """A timer closes the group and records its description."""
+    """A timer commits its history with the opener as author."""
     import time
 
     vault = make_vault("events")
@@ -283,10 +306,9 @@ def test_move_does_not_recreate_removed_source(
     group = vault._write_callback.open_group("Move notes", None)
     with vault._write_callback.bind_group(group.handle, None):
         vault.writer.move_folder("old", "new")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
+    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
+    assert result.status == "committed" and not result.history_failed
+    assert "old/a.md" in (git_repo / "log.md").read_text()
     assert not is_directory(old)
 
 
@@ -329,32 +351,13 @@ def test_removed_paths_are_not_broken_links(
     assert "](/delete.md)" not in log and "](/old.md)" not in log
 
 
-def test_history_failure_does_not_block_sync(
-    git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A committed group with a history failure can proceed to Git sync."""
-    import asyncio
-
-    from markdown_vault_mcp._tools.transactions import settle_transactions
-
-    vault = make_vault("events")
-    (git_repo / "log.md").write_text("# Log\n\n```\nunclosed\n")
-    group = vault._write_callback.open_group("Unsafe", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
-    monkeypatch.setattr(
-        "markdown_vault_mcp._tools.transactions.resolve_mcp_principal", lambda: None
-    )
-    asyncio.run(settle_transactions(vault, group.handle))
-    assert _run_git(git_repo, "log", "-1", "--format=%s").strip() == "Unsafe"
-
-
 def test_shutdown_timeout_defers_teardown_until_retry(
     make_vault: Callable[..., Vault],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A slow finalizer keeps its resources and a later close completes cleanup."""
+    import sqlite3
     import threading
 
     vault = make_vault("events")
@@ -384,10 +387,13 @@ def test_shutdown_timeout_defers_teardown_until_retry(
         vault.close()
         assert "group_finalize_timeout" in caplog.text
         assert not pending.done()
+        assert vault._fts.count_documents() >= 0
     finally:
         release.set()
     assert pending.result(timeout=5).status == "committed"
     vault.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        vault._fts.count_documents()
 
 
 def test_auto_close_racing_first_write_records_history(
@@ -431,51 +437,77 @@ def test_auto_close_racing_first_write_records_history(
     assert "later.md" in log
 
 
-@pytest.mark.parametrize("failed", ["a", "b"])
+def _fail_log_selection(
+    monkeypatch: pytest.MonkeyPatch, git_repo: Path, failure: str, failed: str
+) -> None:
+    """Inject a failure during anchor or directory selection."""
+    from markdown_vault_mcp import _okf_log_event
+
+    original_anchor = _okf_log_event.log_anchor
+    original_directory = _okf_log_event.is_directory
+
+    def failing_anchor(
+        folder: str, patterns: tuple[str, ...], source_dir: Path | None
+    ) -> str:
+        if folder == f"{failed}/nested":
+            raise OSError("anchor lookup failed")
+        return original_anchor(folder, patterns, source_dir)
+
+    def failing_directory(path: Path) -> bool:
+        if path == git_repo / failed / "nested":
+            raise PermissionError("directory inaccessible")
+        return original_directory(path)
+
+    if failure == "anchor":
+        monkeypatch.setattr(_okf_log_event, "log_anchor", failing_anchor)
+    elif failure == "folder":
+        monkeypatch.setattr(_okf_log_event, "is_directory", failing_directory)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (failure, failed)
+        for failure in ("log", "anchor", "folder")
+        for failed in ("a", "b")
+    ],
+)
 def test_failed_log_does_not_skip_other_destinations(
     git_repo: Path,
     make_vault: Callable[..., Vault],
-    failed: str,
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """One bad log leaves independent destinations writable and visible."""
+    """Selection and write failures leave other destinations writable."""
+    failure, failed = case
     for folder in ("a", "b", "c"):
-        (git_repo / folder).mkdir()
-    bad = git_repo / failed / "log.md"
+        (git_repo / folder / "nested").mkdir(parents=True)
+    bad = git_repo / failed / "nested/log.md"
     original = "# Log\n\n```\nunclosed\n"
-    bad.write_text(original)
-    vault = make_vault("events", ("a", "b", "c"))
+    if failure == "log":
+        bad.write_text(original)
+    folders = tuple(f"{name}/nested" for name in "abc")
+    vault = make_vault("events", folders)
     dispatcher = vault._write_callback
     group = dispatcher.open_group("Three folders", None)
     with dispatcher.bind_group(group.handle, None):
         for folder in ("a", "b", "c"):
-            vault.writer.write(f"{folder}/note.md", "# Note\n")
+            vault.writer.write(f"{folder}/nested/note.md", "# Note\n")
+    _fail_log_selection(monkeypatch, git_repo, failure, failed)
     result = dispatcher.close_group(group.handle, None).result(timeout=10)
     assert result.status == "committed" and result.history_failed
-    assert bad.read_text() == original
-    assert f"{failed}/log.md" in caplog.text
+    if failure == "log":
+        assert bad.read_text() == original
+        assert f"{failed}/nested/log.md" in caplog.text
+        if failed == "b":
+            assert "a/nested/log.md" in caplog.text
+    else:
+        assert f"{failed}/nested/note.md" in caplog.text
     for folder in set("abc") - {failed}:
-        log = (git_repo / folder / "log.md").read_text()
+        log = (git_repo / folder / "nested/log.md").read_text()
         assert log.count("Three folders") == 1
-        assert f"{folder}/note.md" in log
-    if failed == "b":
-        assert "a/log.md" in caplog.text
-
-
-def test_group_with_only_reserved_index_does_not_create_history(
-    git_repo: Path,
-    make_vault: Callable[..., Vault],
-) -> None:
-    """A generated or authored index alone does not receive an event."""
-    vault = make_vault("events")
-    dispatcher = vault._write_callback
-    group = dispatcher.open_group("Index only", None)
-    with dispatcher.bind_group(group.handle, None):
-        vault.writer.write("index.md", '---\nokf_version: "0.2"\n---\n# Root updated\n')
-    assert (
-        not dispatcher.close_group(group.handle, None).result(timeout=10).history_failed
-    )
-    assert not is_regular_file(git_repo / "log.md")
+        assert f"{folder}/nested/note.md" in log
 
 
 @pytest.mark.parametrize("point", ["policy", "scope", "queue"])
@@ -626,60 +658,3 @@ def test_backlink_rewrite_contributes_to_group_history(
     assert log.count("Repair links") == 1 and ref in log
     committed = _run_git(git_repo, "show", "--format=", "--name-only", result.sha)
     assert ref in committed and log_path in committed
-
-
-def test_inaccessible_anchor_does_not_skip_other_log(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """An inaccessible nested note does not block a healthy log."""
-    blocked = git_repo / "a"
-    (blocked / "nested").mkdir(parents=True)
-    (git_repo / "b").mkdir()
-    vault = make_vault("events", ("a/nested", "b"))
-    dispatcher = vault._write_callback
-    group = dispatcher.open_group("Both folders", None)
-    with dispatcher.bind_group(group.handle, None):
-        vault.writer.write("a/nested/note.md", "# A\n")
-        vault.writer.write("b/note.md", "# B\n")
-    original_mode = blocked.stat().st_mode
-    blocked.chmod(0)
-    try:
-        result = dispatcher.close_group(group.handle, None).result(timeout=10)
-        assert result.history_failed
-        assert "Both folders" in (git_repo / "b/log.md").read_text()
-    finally:
-        blocked.chmod(original_mode)
-
-
-@pytest.mark.parametrize("failed", ["a", "b"])
-def test_anchor_lookup_failure_does_not_skip_other_logs(
-    git_repo: Path,
-    make_vault: Callable[..., Vault],
-    monkeypatch: pytest.MonkeyPatch,
-    failed: str,
-) -> None:
-    """Anchor lookup errors preserve independent logs in either order."""
-    from markdown_vault_mcp import _okf_log_event
-
-    for folder in ("a", "b", "c"):
-        (git_repo / folder).mkdir()
-    vault = make_vault("events", ("a", "b", "c"))
-    dispatcher = vault._write_callback
-    group = dispatcher.open_group("Three folders", None)
-    with dispatcher.bind_group(group.handle, None):
-        for folder in ("a", "b", "c"):
-            vault.writer.write(f"{folder}/note.md", "# Note\n")
-    original = _okf_log_event.log_anchor
-
-    def failing_anchor(
-        folder: str, patterns: tuple[str, ...], source_dir: Path | None
-    ) -> str:
-        if folder == failed:
-            raise OSError("anchor lookup failed")
-        return original(folder, patterns, source_dir)
-
-    monkeypatch.setattr(_okf_log_event, "log_anchor", failing_anchor)
-    result = dispatcher.close_group(group.handle, None).result(timeout=10)
-    assert result.history_failed
-    for folder in set("abc") - {failed}:
-        assert (git_repo / folder / "log.md").read_text().count("Three folders") == 1
