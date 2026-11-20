@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from concurrent.futures import Future
 from typing import TYPE_CHECKING, cast
 
 from markdown_vault_mcp._commit_scope import (
@@ -88,13 +89,15 @@ class _ScopeEnd:
     Enqueued by
     :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
     when a tool call returns. FIFO ordering guarantees every write that call
-    fired precedes this marker, so no wait or handshake is needed.
+    fired precedes this marker. ``done`` acknowledges the flush attempt.
     """
 
-    __slots__ = ("token",)
+    __slots__ = ("done", "token")
 
     def __init__(self, token: int) -> None:
         self.token = token
+        self.done: Future[None] = Future()
+        self.done.set_running_or_notify_cancel()
 
 
 class WriteCallbackDispatcher:
@@ -156,6 +159,7 @@ class WriteCallbackDispatcher:
         # ``close`` has queued the sentinel.
         self._worker_lock = threading.Lock()
         self._closed = False
+        self._scopes_with_writes: set[int] = set()
 
     def fire(
         self,
@@ -214,6 +218,8 @@ class WriteCallbackDispatcher:
                 )
                 return
             self._ensure_worker_locked()
+            if scope is not None:
+                self._scopes_with_writes.add(scope.token)
             # Enqueue under the lock so close() cannot slip the sentinel in
             # ahead of this item (which would leave it permanently undrained).
             self._queue.put(
@@ -242,12 +248,29 @@ class WriteCallbackDispatcher:
             scope: The scope to close, as returned by
                 :func:`~markdown_vault_mcp._commit_scope.bound_commit_scope`.
         """
+        self._enqueue_scope_end(scope)
+
+    def _enqueue_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue the scope end and return its completion without blocking.
+
+        Args:
+            scope: The scope to close.
+
+        Returns:
+            A future for the callback attempt, or None when no wait is needed.
+        """
         if self._on_write is None or not self._accepts_batch:
-            return
+            return None
         with self._worker_lock:
+            wrote = scope.token in self._scopes_with_writes
+            self._scopes_with_writes.discard(scope.token)
             if self._closed or self._worker is None:
-                return
-            self._queue.put(_ScopeEnd(scope.token))
+                return None
+            if not wrote:
+                return None
+            marker = _ScopeEnd(scope.token)
+            self._queue.put(marker)
+        return marker.done
 
     def _flush_scope(self, token: int) -> None:
         """Dispatch one buffered scope's writes, then forget it.
@@ -357,7 +380,10 @@ class WriteCallbackDispatcher:
                     item.event.set()
                     continue
                 if isinstance(item, _ScopeEnd):
-                    self._flush_scope(item.token)
+                    try:
+                        self._flush_scope(item.token)
+                    finally:
+                        item.done.set_result(None)
                     continue
                 abs_path, content, operation, old_path, principal, scope, auxiliary = (
                     item
@@ -464,6 +490,7 @@ class WriteCallbackDispatcher:
             if self._closed:
                 return
             self._closed = True
+            self._scopes_with_writes.clear()
             worker = self._worker
         if worker is not None and worker.is_alive():
             self._queue.put(None)  # sentinel

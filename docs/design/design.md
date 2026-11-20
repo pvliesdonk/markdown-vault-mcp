@@ -6736,8 +6736,17 @@ committing all moved and derived files. Unusual roots are quoted and escaped
 on one line. Other batch callbacks keep their existing contract
 (#2139).
 
-Three properties this depends on:
+Properties this depends on:
 
+- **A writing call waits for its callback attempt (#2128).** The server
+  awaits a per-scope marker without occupying an executor thread or flushing other
+  open scopes. Empty scopes return immediately. The wait is bounded at 30
+  seconds; a timeout is logged and the result returns best
+  effort, with a commit possibly landing later. Callback failure is also logged;
+  completion does not guarantee Git succeeded. Concurrent calls share FIFO
+  latency but are not isolated from each other's filesystem changes. Library
+  scope closing remains nonblocking, and non-batch callbacks retain
+  their asynchronous per-write timing. Push remains deferred.
 - **The scope is captured in `fire`.** `fire` runs on the request's
   `to_thread` worker, whose copied context carries the contextvar. The
   dispatcher thread has no request context; it binds only the captured folder

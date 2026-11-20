@@ -1086,15 +1086,33 @@ class Vault:
     def end_commit_scope(self, scope: CommitScope) -> None:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
-        Called by
+        The library's close. Never blocks: the marker is queued behind the
+        writes that call fired, and the dispatcher flushes it in order. The
+        server's
         :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
-        when a tool call returns. Never blocks: the marker is queued behind the writes
-        that call fired, and the dispatcher flushes it in order.
+        uses :meth:`_enqueue_commit_scope_end` instead, so it can wait for the
+        flush attempt.
 
         Args:
             scope: The scope to close.
         """
         self._write_callback.end_scope(scope)
+
+    def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue a scope's end and return its callback-attempt future.
+
+        Called by
+        :class:`~markdown_vault_mcp._server_commit_scope.CommitScopeMiddleware`
+        when a tool call returns.
+
+        Args:
+            scope: The scope to close.
+
+        Returns:
+            A future resolved after the dispatcher's flush attempt, or ``None``
+            when the scope wrote nothing or no batch callback is running.
+        """
+        return self._write_callback._enqueue_scope_end(scope)
 
     def close(self) -> None:
         """Release what the vault opened.
