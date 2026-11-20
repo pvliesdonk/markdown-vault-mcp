@@ -1,40 +1,26 @@
-"""OKF bundle export (#963): build a conformant bundle zip from live vault state.
-
-"Conformant" is the spec's §11, recorded with the link and reserved-file rules
-in ``docs/design/reference/okf-v0.2.md``.
-
-Phase 4 of ``docs/design/okf.md`` §7, and the export half of the migration
-story that :mod:`markdown_vault_mcp.managers.okf_migrate` began. The build
-**never mutates the vault**: it reads the notes and attachments in scope,
-rewrites resolvable wikilinks to OKF's recommended root-absolute markdown links
-(reusing :func:`~markdown_vault_mcp.okf.convert_wikilinks_to_markdown` and the
-resolved outlink graph, so links are preserved edge-for-edge), excludes
-convention and template files, keeps the reserved navigation files
-(``index.md`` / ``log.md``), includes non-conformant notes as-is, and returns a
-deterministic zip.
-
-It is served through ``create_download_link`` (``_transfer_links``) via an
-``okf-bundle`` download ref (:class:`~markdown_vault_mcp._transfer_sink.VaultTransferSink`), not
-a bespoke tool; residual conformance gaps are reported separately by
-``okf_validate``, so the bundle itself carries no gap payload.
-"""
+"""Build an OKF bundle from a policy-visible live inventory."""
 
 from __future__ import annotations
 
-import base64
 import io
 import logging
+import os
+import stat
 import zipfile
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.bundle_inventory import BundleTreeRequest
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
-from markdown_vault_mcp.types import NoteInfo
-from markdown_vault_mcp.utils.text import read_text_utf8
+from markdown_vault_mcp.okf_export_report import FormatFinding, OkfExportReport
+from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.utils.fs import open_directory_nofollow
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.bundle_inventory import BundleEntry, BundleInspection
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
 
@@ -53,94 +39,182 @@ class OkfBundleResult:
         data: The zip archive bytes.
         notes: Number of notes written into the bundle.
         attachments: Number of attachments written into the bundle.
-        excluded: Number of in-scope files skipped (convention/template files).
+        excluded: Number of files omitted by selection policy, counted once.
+        report: Partial v0.2 format, admission and omission observations.
     """
 
     data: bytes
     notes: int
     attachments: int
     excluded: int
+    report: OkfExportReport
 
 
-def _is_excluded(path: str, conventions_file: str | None, templates_root: str) -> bool:
-    """Return whether *path* is a convention or template file (excluded from export).
+def _read_safe(source: Path, path: str) -> bytes:
+    """Read one regular file without following any path component."""
+    parts = path.split("/")
+    with open_directory_nofollow(source, parts[:-1]) as parent:
+        fd = os.open(
+            parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+        )
+        with os.fdopen(fd, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise OSError("Regular file required")
+            return stream.read()
 
-    Convention files (the per-folder ``_conventions.md``) are authoring guidance,
-    and the template folder holds note scaffolds — neither is bundle content. The
-    reserved ``index.md`` / ``log.md`` are navigation and are kept.
-    """
-    name = path.rsplit("/", 1)[-1]
-    if conventions_file is not None and name == conventions_file:
-        return True
-    return bool(
-        templates_root
-        and (path == templates_root or path.startswith(f"{templates_root}/"))
+
+def _omission_reasons(
+    item: BundleEntry,
+    config: ProjectConfig,
+    *,
+    include_index_excluded: bool,
+    include_hidden: bool,
+) -> list[str]:
+    reasons = []
+    if item.visibility == "index_excluded" and not include_index_excluded:
+        reasons.append("index_excluded")
+    if item.hidden_path and not include_hidden:
+        reasons.append("hidden")
+    # Reserved names retain navigation/history roles even when conventions.
+    if config.content.conventions_file == item.path.rsplit("/", 1)[-1]:
+        reasons.append("conventions")
+    root = (config.content.templates_folder or "").rstrip("/")
+    if root and (item.path == root or item.path.startswith(root + "/")):
+        reasons.append("templates")
+    return reasons
+
+
+def _observe_export(item: BundleEntry, report: OkfExportReport) -> None:
+    if item.parse_state == "not_inspected":
+        report.uninspected[item.path] = item.reason or "not_inspected"
+    if item.role != "concept_candidate":
+        return
+    if item.search_state == "non_admitted":
+        report.local_policy.non_admitted.append(item.path)
+    elif item.search_state != "searchable":
+        report.local_policy.unknown.append(item.path)
+    if item.parse_state in {"invalid_encoding", "malformed_metadata"}:
+        report.format_findings.append(FormatFinding(item.path, item.parse_state))
+    elif item.parse_state == "valid" and item.type_state in {"absent", "invalid"}:
+        report.format_findings.append(
+            FormatFinding(item.path, "missing_or_invalid_type")
+        )
+
+
+def _scope(folder: str) -> str:
+    """Normalize redundant POSIX separators and dot components."""
+    scope = PurePosixPath(folder)
+    return str(scope) if scope.parts else ""
+
+
+def _require_complete(page: BundleInspection, folder: str) -> None:
+    """Refuse a page that could omit unobservable descendants."""
+    if page.state != "inspected" or page.enumeration not in {
+        "complete",
+        "entry_limit",
+    }:
+        failed = next(
+            (
+                entry
+                for entry in page.entries
+                if entry.role == "directory" and entry.state == "unavailable"
+            ),
+            None,
+        )
+        path = failed.path if failed else folder or "(root)"
+        reason = (
+            (failed.reason or failed.state)
+            if failed
+            else (page.state if page.state != "inspected" else page.enumeration)
+        )
+        location = f"at {path}" if failed else "(path not reported)"
+        raise ValueError(
+            f"Cannot export scope {folder or '(root)'}: inventory unavailable {location}: {reason}. "
+            "Check permissions, traversal limits and state paths."
+        )
+
+
+def _note_bytes(raw: bytes, item: BundleEntry, vault: Vault) -> bytes:
+    """Convert indexed graph links while preserving every other byte."""
+    if item.search_state != "searchable":
+        return raw
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+    body = strip_frontmatter_block(content.removeprefix("\ufeff"))
+    prefix = content[: len(content) - len(body)]
+    body, _, _ = convert_wikilinks_to_markdown(
+        body, vault.graph.get_outlinks(item.path)
     )
-
-
-def _safe_abs(source_dir: Path, path: str) -> Path:
-    """Resolve a vault-relative path under *source_dir*, rejecting any escape.
-
-    ``list_documents`` already yields safe relative paths; this is defence in
-    depth before a raw filesystem read.
-    """
-    resolved = (source_dir / path).resolve()
-    if not resolved.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path escapes the vault: {path}")
-    return resolved
+    return (prefix + body).encode("utf-8")
 
 
 def build_okf_bundle(
-    vault: Vault, config: ProjectConfig, *, folder: str = ""
+    vault: Vault,
+    config: ProjectConfig,
+    *,
+    folder: str = "",
+    include_index_excluded: bool = False,
+    include_hidden: bool = False,
 ) -> OkfBundleResult:
-    """Build an OKF bundle zip of *folder* (or the whole vault) from live state.
+    """Export the selected inventory with partial OKF v0.2 observations.
 
     Args:
-        vault: The live vault — its reader enumerates and reads notes/attachments
-            and its graph supplies the resolved outlinks for wikilink rewriting.
-        config: The project config — supplies the vault root and the
-            convention-file / template-folder names to exclude.
-        folder: Vault-relative folder to scope the bundle to; ``""`` is the whole
-            vault.
+        vault: Live vault supplying the inventory and link graph.
+        config: Convention and template configuration.
+        folder: Vault-relative scope root, or empty for the entire vault.
+        include_index_excluded: Include paths omitted from the search index.
+        include_hidden: Include dot-paths other than internal state.
 
     Returns:
-        An :class:`OkfBundleResult` with the zip bytes and per-kind counts.
+        Archive bytes, counts, and a partial report; no conformance verdict.
 
-    Notes:
-        Notes are read raw from disk (``read_text_utf8``) rather than through the
-        note-read cap, so a large note exports in full. The build never writes to
-        the vault.
+    Raises:
+        ValueError: If the scope is invalid or inventory cannot enumerate it,
+            including failures under otherwise omitted hidden paths.
+        OSError: If a selected file cannot be read.
     """
-    conventions_file = config.content.conventions_file
-    templates_folder = config.content.templates_folder
-    templates_root = templates_folder.rstrip("/") if templates_folder else ""
-    source_dir = config.source_dir
-
-    items = sorted(
-        vault.reader.list_documents(folder=folder or None, include_attachments=True),
-        key=lambda item: item.path,
-    )
-
+    folder = _scope(folder)
+    report = OkfExportReport()
     buf = io.BytesIO()
     notes = attachments = excluded = 0
+    cursor = None
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for item in items:
-            path = item.path
-            if _is_excluded(path, conventions_file, templates_root):
-                excluded += 1
-                continue
-            if isinstance(item, NoteInfo):
-                content = read_text_utf8(_safe_abs(source_dir, path))
-                new_content, _, _ = convert_wikilinks_to_markdown(
-                    content, vault.graph.get_outlinks(path)
+        while True:
+            page = vault.reader.inspect_bundle_tree(
+                BundleTreeRequest(root=folder, entry_limit=1000, cursor=cursor)
+            )
+            _require_complete(page, folder)
+            for item in page.entries:
+                if item.role == "directory":
+                    continue
+                reasons = _omission_reasons(
+                    item,
+                    config,
+                    include_index_excluded=include_index_excluded,
+                    include_hidden=include_hidden,
                 )
-                _write(zf, path, new_content.encode("utf-8"))
-                notes += 1
-            else:  # AttachmentInfo — list_documents yields only these two kinds
-                att = vault.reader.read_attachment(path)
-                _write(zf, path, base64.b64decode(att.content_base64))
-                attachments += 1
-
+                for reason in reasons:
+                    report.omitted[reason] = report.omitted.get(reason, 0) + 1
+                if reasons:
+                    excluded += 1
+                    continue
+                if item.state in {"unavailable", "missing"}:
+                    raise OSError(
+                        f"Cannot export {item.path}: {item.reason or item.state}"
+                    )
+                raw = _read_safe(vault.source_dir, item.path)
+                if item.role == "supporting":
+                    _write(zf, item.path, raw)
+                    attachments += 1
+                else:
+                    _observe_export(item, report)
+                    _write(zf, item.path, _note_bytes(raw, item, vault))
+                    notes += 1
+            if page.next_cursor is None:
+                break
+            cursor = page.next_cursor
     logger.info(
         "okf_bundle_built folder=%s notes=%d attachments=%d excluded=%d",
         folder or "(root)",
@@ -148,7 +222,7 @@ def build_okf_bundle(
         attachments,
         excluded,
     )
-    return OkfBundleResult(buf.getvalue(), notes, attachments, excluded)
+    return OkfBundleResult(buf.getvalue(), notes, attachments, excluded, report)
 
 
 def _write(zf: zipfile.ZipFile, path: str, data: bytes) -> None:

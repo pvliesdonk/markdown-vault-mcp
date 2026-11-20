@@ -68,6 +68,7 @@ class IndexWriteCoordinator:
         attachment_extensions: str = "",
     ) -> None:
         self._fts = fts
+        self._index_mgr = index_mgr
         self._index_path = index_path
         # file_write_lock remains a constructor compatibility parameter; build
         # scheduling no longer borrows the file-mutation lock.
@@ -316,6 +317,17 @@ class IndexWriteCoordinator:
             the first mismatching key at INFO, so the rebuild an operator
             sees in the log names its own cause.
         """
+        active = self._index_mgr._admission_snapshot()
+        if active is not None:
+            stored_active = self._index_mgr._stored_exempt()
+            if stored_active != active:
+                logger.info(
+                    "index_provenance_changed key=%s stored=%s current=%s action=rebuild",
+                    "okf_reserved_exempt",
+                    stored_active,
+                    active,
+                )
+                return False
         stored = self._fts.get_chunking_meta()
         checks: tuple[tuple[str, object, object], ...] = (
             ("embed_model_name", stored.model, self._embed_model_name),
