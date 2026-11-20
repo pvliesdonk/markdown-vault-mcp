@@ -6881,11 +6881,10 @@ Properties this depends on:
   latency but are not isolated from each other's filesystem changes. Library
   scope closing remains nonblocking, and non-batch callbacks retain
   their asynchronous per-write timing. Push remains deferred.
-- **The scope is read in `fire`, never on the worker.** `fire` runs on the
-  request's `to_thread` worker, whose copied context carries the contextvar;
-  the dispatcher thread has no request context, so reading there would always
-  see `None`. The dispatcher binds the captured folder roots only while invoking
-  the batch callback and resets them afterward (#1218).
+- **The scope is captured in `fire`.** `fire` runs on the request's
+  `to_thread` worker, whose copied context carries the contextvar. The
+  dispatcher thread has no request context; it binds only the captured folder
+  roots while invoking the batch callback and resets them afterward (#1218).
 - **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
   a shared server interleaves concurrent tool calls, and position-based
   grouping would fold two unrelated calls into one commit.
