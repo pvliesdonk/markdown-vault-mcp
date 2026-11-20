@@ -706,8 +706,8 @@ def _index_frontmatter_conforms(rel: str, raw: str, metadata: dict[str, Any]) ->
     Presence is read from the block, not from *metadata*: an empty,
     comment-only, non-mapping or unparseable block parses to no keys yet is
     still a block. The splitter agrees with the parse about where a block
-    is: only at the first line, and never when the opening ``---`` is
-    left unclosed.
+    is: YAML blocks start on the first line, and an opening ``---`` left
+    unclosed is body text.
     """
     from markdown_vault_mcp.scanner import strip_frontmatter_block
 
