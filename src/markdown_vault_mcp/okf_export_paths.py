@@ -14,6 +14,7 @@ import frontmatter
 import yaml
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
+from markdown_vault_mcp._okf_paths import resolve_okf_path
 from markdown_vault_mcp.fts_index import _pick_wikilink_candidate
 from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
 from markdown_vault_mcp.okf_export_report import (
@@ -437,9 +438,11 @@ class ExportPaths:
     extensions: frozenset[str] = field(
         default_factory=lambda: effective_attachment_extensions(None)
     )
+    version: str | None = None
     _candidates: dict[str, set[str]] | None = field(default=None, init=False)
     _archive_members: set[str] = field(default_factory=set, init=False)
     _directories: set[str] = field(default_factory=set, init=False)
+    _field_inventory: set[str] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._archive_members = {path[len(self.scope) + 1 :] for path in self.members}
@@ -646,23 +649,92 @@ class ExportPaths:
 
     def _field_changes(
         self, root: object, source: str
-    ) -> tuple[list[tuple[ScalarNode, str]], list[Dependency], list[Dependency]]:
+    ) -> tuple[
+        list[tuple[ScalarNode, str]],
+        list[Dependency],
+        list[Dependency],
+        list[Dependency],
+    ]:
         changes: list[tuple[ScalarNode, str]] = []
         dependencies: list[Dependency] = []
         ambiguous: list[Dependency] = []
-        for node in _frontmatter_paths(root):
+        fallback: list[Dependency] = []
+        for node in _frontmatter_paths(root, source == "index.md"):
             value = node.value.rstrip("\n") if node.style in ("|", ">") else node.value
             trailing = node.value[len(value) :]
             if not value or _is_external_target(value) or _FIELD_URL.match(value):
                 continue
-            if not _FIELD_PATH.match(value):
+            if not value.startswith("/") and _field_parts(value)[0] not in {".", ".."}:
                 archive_source = source[len(self.scope) + 1 :] if self.scope else source
-                ambiguous.append(Dependency(archive_source, _safe_text(value)))
+                result = resolve_okf_path(
+                    value, source, self._available_fields(), self.version
+                )
+                if result.status == "root_fallback":
+                    fallback.append(Dependency(archive_source, _safe_text(value)))
+                if result.status in {"resolved", "root_fallback"} and result.path:
+                    target = result.path.rstrip("/")
+                    if target in self.members or target in self._directories:
+                        bundle_target = (
+                            target[len(self.scope) + 1 :] if self.scope else target
+                        )
+                        apparent, _ = _resolve_link_path(
+                            decode_link_target(_field_parts(value)[0]), archive_source
+                        )
+                        if apparent != bundle_target:
+                            replacement = _field_internal_replacement(
+                                _field_parts(value)[0],
+                                decode_link_target(_field_parts(value)[0]),
+                                bundle_target,
+                                archive_source,
+                            )
+                            if result.path.endswith("/") and not replacement.endswith(
+                                "/"
+                            ):
+                                replacement += "/"
+                            changes.append(
+                                (node, replacement + result.suffix + trailing)
+                            )
+                        continue
+                    dependencies.append(Dependency(archive_source, _safe_text(value)))
+                    apparent, _ = _resolve_link_path(
+                        decode_link_target(_field_parts(value)[0]), archive_source
+                    )
+                    url = self._outside_target(
+                        result.path, source, value, apparent, dirs=True
+                    )
+                    if url is not None:
+                        changes.append((node, url + result.suffix + trailing))
+                    continue
+                if result.status == "external" and value.startswith(("./", "../")):
+                    rewritten = self._field_replacement(value, source, dependencies)
+                    if rewritten is not None and rewritten != value:
+                        changes.append((node, rewritten + trailing))
+                    continue
+                if result.status in {"external", "absent"}:
+                    continue
+                if value.startswith(("./", "../")):
+                    rewritten = self._field_replacement(value, source, dependencies)
+                    if rewritten is not None and rewritten != value:
+                        changes.append((node, rewritten + trailing))
+                    continue
+                dependencies.append(Dependency(archive_source, _safe_text(value)))
                 continue
-            replacement = self._field_replacement(value, source, dependencies)
-            if replacement is not None and replacement != value:
-                changes.append((node, replacement + trailing))
-        return changes, dependencies, ambiguous
+            rewritten = self._field_replacement(value, source, dependencies)
+            if rewritten is not None and rewritten != value:
+                changes.append((node, rewritten + trailing))
+        return changes, dependencies, ambiguous, fallback
+
+    def _available_fields(self) -> set[str]:
+        if self._field_inventory is None:
+            available = set(self.inventory() if self.inventory else self.members)
+            directories = {"/"}
+            for member in available:
+                parent = member.rpartition("/")[0]
+                while parent:
+                    directories.add(parent + "/")
+                    parent = parent.rpartition("/")[0]
+            self._field_inventory = available | directories
+        return self._field_inventory
 
     def relocate_frontmatter(
         self, prefix: str, source: str, report: OkfExportReport
@@ -691,16 +763,19 @@ class ExportPaths:
             loader = _AliasLoader(header)
             try:
                 root = loader.get_single_node()
-                changes, dependencies, ambiguous = self._field_changes(root, source)
+                changes, dependencies, ambiguous, fallback = self._field_changes(
+                    root, source
+                )
                 report.dependencies.extend(dependencies)
                 report.ambiguous_path.extend(ambiguous)
+                report.v0_2_root_fallback.extend(fallback)
                 if not changes:
                     return prefix
                 if loader.aliases:
                     changed = {id(node) for node, _ in changes}
                     header = _isolate(header, root, loader.aliases, changed)
                     root = yaml.compose(header, Loader=yaml.SafeLoader)
-                    changes, _, _ = self._field_changes(root, source)
+                    changes, _, _, _ = self._field_changes(root, source)
                 header = _splice_fields(header, changes)
             finally:
                 loader.dispose()
@@ -857,11 +932,14 @@ def _mapping_values(
     return []
 
 
-def _frontmatter_paths(root: object) -> list[ScalarNode]:
+def _frontmatter_paths(root: object, root_index: bool = False) -> list[ScalarNode]:
     memo: dict[tuple[int, str], list[object] | None] = {}
     nodes = _mapping_values(root, "resource", memo) + _mapping_values(
         root, "computation", memo
     )
+    nodes += _mapping_values(root, "superseded_by", memo)
+    if root_index:
+        nodes += _mapping_values(root, "license", memo)
     for key in ("executor", "attester"):
         for parent in _mapping_values(root, key, memo):
             nodes.extend(_mapping_values(parent, "resource", memo))

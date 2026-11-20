@@ -54,11 +54,10 @@ def test_ambiguous_and_outside(tmp_path):
     text = "---\nresource: references/b.md\nsources:\n  - resource: /outside.md\n---\n"
     output, report = export(tmp_path, text)
     assert output == text
-    assert [(x.path, x.target) for x in report.ambiguous_path] == [
-        ("a.md", "references/b.md")
-    ]
+    assert not report.ambiguous_path
     assert [(x.path, x.target) for x in report.dependencies] == [
-        ("a.md", "/outside.md")
+        ("a.md", "references/b.md"),
+        ("a.md", "/outside.md"),
     ]
 
 
@@ -306,12 +305,12 @@ def test_outside_directory_collisions(tmp_path, written):
         export(tmp_path, f"---\nresource: &p {written}\nunknown: *p\n---\n")
 
 
-@pytest.mark.parametrize("written", ["...", "..a", ".hidden/x", "a/b", "#x"])
-def test_directory_eligibility_ambiguous(tmp_path, written):
+@pytest.mark.parametrize("written", ["...", "..a", ".hidden/x", "a/b"])
+def test_unresolved_bare_field_is_a_dependency(tmp_path, written):
     text = f'---\nresource: "{written}"\n---\n'
     output, report = export(tmp_path, text)
     assert output == text
-    assert report.ambiguous_path[0].target == written
+    assert report.dependencies[0].target == written
 
 
 def test_directory_form_does_not_match_file(tmp_path):
@@ -615,8 +614,8 @@ def test_external_base_flow_scalars_preserve_yaml_values(tmp_path, base, style, 
     [
         ("x://example.org/a", False),
         ("X://example.org/a?x=1#f", False),
-        ("C:/notes/topic.md", True),
-        (r"C:\notes\topic.md", True),
+        ("C:/notes/topic.md", False),
+        (r"C:\notes\topic.md", False),
     ],
 )
 def test_one_letter_urls_and_drive_paths(tmp_path, field, value, is_ambiguous):
@@ -635,3 +634,75 @@ def test_one_letter_urls_and_drive_paths(tmp_path, field, value, is_ambiguous):
     )
     assert not report.dependencies
     assert not report.transformed
+
+
+@pytest.mark.parametrize("version", [None, "0.1", "0.2"])
+def test_legacy_root_fallback_is_relocated_and_reported(tmp_path, version):
+    if version:
+        (tmp_path / "index.md").write_text(f'---\nokf_version: "{version}"\n---\n')
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "target.md").write_text("target")
+    text = "---\nresource: guides/target.md\n---\n"
+    output, report = export(
+        tmp_path, text, source="sub/c.md", include_index_excluded=True
+    )
+    assert "resource: ../target.md" in output
+    assert [(x.path, x.target) for x in report.v0_2_root_fallback] == [
+        ("sub/c.md", "guides/target.md")
+    ]
+    assert not report.dependencies
+    assert not report.ambiguous_path
+
+
+def test_v03_bare_fields_and_unresolved(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    text = "---\nresource: b.md\nsuperseded_by: b.md\ncomputation: missing.md\nsources: [{resource: {scope: all}}, {resource: https://example.org/x}]\n---\n"
+    output, report = export(tmp_path, text, include_index_excluded=True)
+    assert output == text
+    assert [(x.path, x.target) for x in report.dependencies] == [("a.md", "missing.md")]
+    assert not report.ambiguous_path
+
+
+def test_v03_does_not_use_root_fallback(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    text = "---\nresource: guides/b.md\n---\n"
+    output, report = export(
+        tmp_path, text, source="sub/c.md", include_index_excluded=True
+    )
+    assert output == text
+    assert [(x.path, x.target) for x in report.dependencies] == [
+        ("sub/c.md", "guides/b.md")
+    ]
+
+
+def test_explicit_relative_legacy_fallback(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n')
+    text = "---\nsuperseded_by: ./guides/b.md\n---\n"
+    output, report = export(
+        tmp_path, text, source="sub/c.md", include_index_excluded=True
+    )
+    assert "superseded_by: ../b.md" in output
+    assert [(x.path, x.target) for x in report.v0_2_root_fallback] == [
+        ("sub/c.md", "./guides/b.md")
+    ]
+
+
+def test_unresolved_bare_field_refuses_strict_export(tmp_path):
+    from markdown_vault_mcp.okf_export_report import PublicationRefused
+
+    with pytest.raises(PublicationRefused) as exc:
+        export(tmp_path, "---\nresource: missing.md\n---\n", strict=True)
+    assert [(x.path, x.target) for x in exc.value.report.dependencies] == [
+        ("a.md", "missing.md")
+    ]
+
+
+def test_root_license_path_uses_same_resolution():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    paths = ExportPaths("", {"index.md", "LICENSE"}, None, version="0.3")
+    report = OkfExportReport()
+    text = "---\nlicense: LICENSE\n---\n"
+    assert paths.relocate_frontmatter(text, "index.md", report) == text
+    assert not report.dependencies

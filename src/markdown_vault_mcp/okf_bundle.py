@@ -271,7 +271,7 @@ def _snapshot_admitted(
 def _root_declaration(vault: Vault, snapshot: GitExportSnapshot) -> str:
     """The committed root index text, if inventory access admits that path."""
     entry = snapshot.entries.get("index.md")
-    if vault.okf.mode == "auto" and entry and entry[0] in {"100644", "100755"}:
+    if entry and entry[0] in {"100644", "100755"}:
         root = replace(snapshot, entries={"index.md": entry})
         if _inspect_page(vault, "", root, limit=1).entries:
             with suppress(UnicodeError):
@@ -378,10 +378,10 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
+    declaration = _root_declaration(vault, snapshot) if snapshot else None
+    version, _ = vault.okf._probe(declaration)
     active = bool(
-        snapshot
-        and vault._required_frontmatter
-        and vault.okf.state(_root_declaration(vault, snapshot)).active
+        snapshot and vault._required_frontmatter and vault.okf.state(declaration).active
     )
     if snapshot is not None:
         for path, (mode, _) in snapshot.entries.items():
@@ -463,6 +463,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             external_base,
             inventory,
             extensions,
+            version,
         )
         admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}
