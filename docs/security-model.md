@@ -35,6 +35,8 @@ An authenticated caller has every tool the instance exposes. Each tool runs with
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach -->
 Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
+The library's [selected bundle inspection](reference/api/facets.md#selected-bundle-inspection) reads accessible Markdown even when index excludes or dot components keep it out of search. Directory and subtree inspection do not follow symlinks; visible links and those without a suffix are reported unavailable. A link outside the file allowlist is an unavailable `hidden_symlink` row; its target is not returned. Neither enters `.git` or server state directories, and both omit the change-tracker file, the keyword index with its lock and journal files, and vector store files, but not their same-named neighbors. Filesystem permission refusals omit denied child names.
+
 Some tools send data beyond the vault:
 
 - **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.
@@ -45,6 +47,11 @@ Some tools send data beyond the vault:
 
 Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, the API keys of the embedding provider and the summarize endpoint, and the PostgreSQL role in the connection string.
 The CLI can send search queries to an explicitly selected HTTP(S) MCP endpoint. Its optional bearer credential comes only from the client token environment or the profile-selected environment variable; profiles contain no token value. Remote reads do not open the local vault. See the [CLI reference](reference/cli.md#search-a-hosted-vault).
+
+The [`okf collapse-indexes` command](use/okf.md#collapsing-deep-generated-indexes)
+previews vault changes by default. Applying it removes matching generated
+indexes and refreshes designated parent indexes under the same vault path and
+write protections as other library writes.
 
 The [legacy log repair](use/okf.md#repairing-legacy-log-frontmatter) is the `admin repair-log` CLI command, not a tool, so no caller can reach it. Its apply writes one recovery copy, `log.md.frontmatter-repair.bak`, beside the log and never overwrites an existing one. Where Unix file modes apply, only the account that ran the command can read the copy. In a Git-backed vault it is committed like any other write, and pushed where the vault pushes.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->

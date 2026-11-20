@@ -17,7 +17,7 @@ kind: reference
 markdown-vault-mcp search "release notes" --server https://vault.example/proxy/mcp --json
 ```
 
-Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values can contain equals signs; duplicate keys fail. Filters use the vault's existing indexed-field and OKF rules.
+Use `--mode auto` to let the vault choose its configured search mode; the CLI still defaults to keyword. Explicit semantic or hybrid requests fail when vectors are unavailable. Repeat `--filter KEY=VALUE` for frontmatter predicates that all must match. Values are strings and can contain equals signs; duplicate keys fail. For the missing-type selector, use the [MCP tools or library](../use/okf.md).
 
 ```bash
 markdown-vault-mcp search "release notes" --filter tags=release --chunks-per-file 2 --snippet-words 40 --agent
@@ -126,6 +126,7 @@ indexed metadata without constructing embedding or summarization providers or
 loading vector sidecars. Follow a returned path with `read`, `read --section`,
 `similar`, `context` or a graph command. Local freshness remains unknown.
 
+The `stats` command reports [OKF capability state](../use/okf.md) in `stats.okf.capabilities`, including when OKF is inactive.
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search
@@ -322,6 +323,28 @@ Collect note links, neighbors, folder peers and conventions.
 | `--json` |  | False | Return the structured context dossier. |
 | `--agent` |  | False | Return escaped agent records. |
 | `--wait-for-pending-writes` |  | False | Wait for the remote server's pending writes. |
+
+## `markdown-vault-mcp okf-inventory`
+
+Inspect concept candidates, including notes outside search.
+
+| Argument | Description |
+|---|---|
+| `ROOT` | Vault-relative bundle root; empty for vault root. |
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--type-state` |  |  | Filter by type presence. |
+| `--parse-state` |  |  | Filter by parsing outcome. |
+| `--search-state` |  |  | Filter by search admission. |
+| `--entry-limit` |  | 100 | Maximum returned rows. |
+| `--cursor` |  |  | Continue from the previous `next_cursor`. |
+| `--source-dir` |  |  | Local vault directory. |
+| `--server` |  |  | Complete hosted MCP endpoint URL. |
+| `--local` |  | False | Override a configured remote endpoint. |
+| `--timeout` |  |  | Remote deadline in seconds. |
+| `--json` |  | False | Return the structured report. |
+| `--agent` |  | False | Return escaped agent records. |
 
 ## `markdown-vault-mcp links`
 
@@ -647,3 +670,16 @@ Copy vectors from another store into the configured one, embedding only what it 
 | `--from-schema` |  |  | Schema of a postgres source (default: the configured schema). |
 | `--from-dsn-env` |  |  | Environment variable holding a postgres source's connection string (default: $`MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN`). |
 | `--dry-run` |  | False | Count what would be copied and embedded; write nothing. |
+
+## `markdown-vault-mcp okf`
+
+Migrate OKF vault conventions.
+
+## `markdown-vault-mcp okf collapse-indexes`
+
+Preview or remove obsolete deep generated indexes.
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--source-dir` |  |  | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
+| `--apply` |  | False | Remove generated indexes and refresh their parents. |

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.citations import CitationEdge
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 # The four deterministic, non-excluded skip categories surfaced via
@@ -102,6 +103,7 @@ class ParsedNote:
         content_hash: SHA-256 hash of the raw file content for change detection.
         modified_at: Last-modified time as a Unix timestamp float.
         links: All links extracted from the document body.
+        citations: Literal citation edges extracted from this note snapshot.
         content_chars: Character count of the document body as parsed:
             frontmatter removed and surrounding whitespace normalised by the
             frontmatter parser, except that the first line keeps its
@@ -126,6 +128,7 @@ class ParsedNote:
     links: list[LinkInfo] = field(default_factory=list)
     content_chars: int = 0
     headings: list[TocEntry] = field(default_factory=list)
+    citations: list[CitationEdge] = field(default_factory=list)
 
 
 @dataclass
@@ -462,6 +465,7 @@ class MoveFolderResult:
             successfully rewritten to point into the new prefix.
         failed_links: Relative paths of source documents whose link rewrite
             failed (best-effort; logged and skipped, not aborted).
+        hint: Guidance for protected link sources, if any.
     """
 
     old_dir: str
@@ -469,6 +473,7 @@ class MoveFolderResult:
     files_moved: int
     updated_links: int = 0
     failed_links: list[str] = field(default_factory=list)
+    hint: str | None = None
 
 
 @dataclass
