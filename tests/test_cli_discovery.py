@@ -73,7 +73,9 @@ def test_similar_unavailable_is_an_error(remote: bool) -> None:
         result = CliRunner().invoke(app, ["similar", "alpha.md", *connection, "--json"])
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
-    assert "ERROR" in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["error"]["code"] == (
+        "remote_tool_failed" if remote else "invalid_request"
+    )
 
 
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
@@ -648,7 +650,13 @@ def test_attachment_wrong_size_is_always_refused(size: Any, output: str) -> None
         )
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR: Server returned an invalid read payload." in result.stderr
+    assert "Server returned an invalid read payload." in result.stderr
+    if output == "json":
+        assert json.loads(result.stderr)["error"]["code"] == "invalid_payload"
+    elif output == "agent":
+        assert result.stderr.startswith("ERR read operation code=invalid_payload:")
+    else:
+        assert result.stderr.startswith("ERROR:")
 
 
 @given(st.text())
@@ -799,7 +807,10 @@ def test_local_read_missing_source_is_explicit(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["error"]["code"]
+        == "configuration_error"
+    )
     assert "does not exist" in result.stderr
     assert not missing.exists()
 
@@ -859,7 +870,14 @@ def test_unserializable_yaml_has_safe_read_failure(
         )
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    if output == "json":
+        assert json.loads(result.stderr.splitlines()[-1])["error"]["code"] == (
+            "remote_tool_failed" if remote else "invalid_payload"
+        )
+    elif output == "agent":
+        assert result.stderr.splitlines()[-2].startswith("ERR read ")
+    else:
+        assert result.stderr.splitlines()[-2].startswith("ERROR:")
     assert "Traceback" not in result.stderr
 
 
@@ -879,7 +897,10 @@ def test_unknown_wire_value_is_serialization_failure(
     result = CliRunner().invoke(app, ["read", "alpha.md", "--local", "--json"])
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR: Read payload is not JSON-compatible." in result.stderr
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["error"]["code"] == "invalid_payload"
+    )
+    assert "Read payload is not JSON-compatible." in result.stderr
 
 
 @pytest.mark.usefixtures("discovery_source")
