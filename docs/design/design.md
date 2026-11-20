@@ -1977,7 +1977,8 @@ files are excluded only while OKF is active. Navigation links do not create edge
 On the first writer startup after upgrading from index semantics version 12,
 the index rebuilds. A lookup reports `unconverted_notes` for retained indexed
 notes not yet re-read with compatible citation rules; they are omitted until
-re-read. If ordinary reindex leaves the count above zero, call the MCP tool
+re-read. Change detection is hash-based, so an ordinary reindex re-reads only
+changed or previously unreadable notes. If the count stays above zero, call the MCP tool
 `reindex(force=True)` or the library method `build_index(force=True)` for a full
 rebuild. Incompatible or missing schema is unavailable rather than empty. No resource is fetched and attribution
 does not establish support.

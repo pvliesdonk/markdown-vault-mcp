@@ -38,7 +38,8 @@ class CitationManager:
         """
         if not resource.strip():
             raise InvalidRequestError(
-                "resource must be nonempty. Call find_citing_notes with a source resource."
+                "resource is blank. Call find_citing_notes with the resource "
+                "string of a source record, as inspect_citations reports it."
             )
         rows, unconverted = self._fts.get_citation_rows(resource)
         okf_active = self._okf_active()
@@ -68,7 +69,7 @@ class CitationManager:
             "unconverted_notes": unconverted,
             "syntax": CITATION_SYNTAX,
             "scope": (
-                "Exact resource string; indexed notes only, excluding reserved files when OKF is active. Diagnostics cover only notes declaring the resource. Unconverted indexed notes are omitted until reindex reads them. Results are unbounded. No resources fetched. A label match is attribution, not support. "
+                "Exact resource string; indexed notes only, excluding reserved files when OKF is active. Diagnostics cover only notes declaring the resource. Unconverted indexed notes are omitted; reindex with force=true converts them. Results are unbounded. No resources fetched. A label match is attribution, not support. "
                 + CITATION_MARKER_SCOPE
             ),
         }

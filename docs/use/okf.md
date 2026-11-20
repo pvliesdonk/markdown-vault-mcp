@@ -108,10 +108,12 @@ ambiguous labels, plus labels whose matched source has no valid resource, in not
 declaring the resource. Results are unbounded. When OKF is active, reserved
 `index.md` and `log.md` files are excluded. Body links alone do not count.
 On the first writer startup after upgrading from index semantics version 12, the
-index rebuilds. `unconverted_notes` counts indexed notes that could not be re-read
-with compatible citation rules. If ordinary reindex leaves the count above zero,
-call the MCP tool `reindex(force=True)` or the library method
-`build_index(force=True)` for a full rebuild.
+index rebuilds. `unconverted_notes` counts indexed notes whose citation rows were
+not derived with the current rules, such as a note that could not be re-read
+during that rebuild; they are left out of the result. An ordinary reindex skips
+unchanged notes, so if the count stays above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild.
 The lookup does not fetch resources or assess whether they support a claim.
 
 ### Syntax coverage

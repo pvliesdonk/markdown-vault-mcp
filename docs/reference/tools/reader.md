@@ -220,7 +220,7 @@ Citing notes with their titles, labels and occurrence counts;
 diagnostics for unmatched, ambiguous and invalid-resource labels in
 notes that declare the resource; `unconverted_notes`, the count of
 indexed notes not yet re-read under the current citation rules and so
-left out; and the syntax and scope fields describing coverage. A
+left out until a forced reindex; and the syntax and scope fields describing coverage. A
 matched label is attribution, not evidence that the source supports a
 claim.
 
