@@ -43,6 +43,24 @@ class LogRepairPreview(BaseModel):
     removed_blocks: int = 0
     removal_text: str = ""
 
+    def applied(self, repaired: bytes, recovery_path: str) -> LogRepairResult:
+        """Describe the completed splice of this reviewed proposal.
+
+        Args:
+            repaired: The bytes now at the log path.
+            recovery_path: Vault-relative path of the retained complete original.
+
+        Returns:
+            The completed repair for the previewed log.
+        """
+        return LogRepairResult(
+            path=self.path,
+            etag=compute_etag(repaired),
+            recovery_path=recovery_path,
+            original_etag=self.etag,
+            removed_blocks=self.removed_blocks,
+        )
+
 
 class LogRepairResult(BaseModel):
     """Completed splice and the location of its retained complete original."""
