@@ -201,16 +201,16 @@ class ReservedFrontmatterRepair:
         name = entry.path.rsplit("/", 1)[-1]
         if name not in {"index.md", "log.md"}:
             return None
-        if entry.path == "index.md":
-            return ReservedRepair(
-                entry.path, (), kept_reason="bundle metadata is preserved"
-            )
         if entry.role not in {"navigation", "history"} or (
             entry.state != "inspected"
             and entry.reason not in {"note_limit", "byte_budget"}
         ):
             raise InvalidRequestError(
                 f"Cannot inspect reserved file {entry.path!r}: {entry.reason}"
+            )
+        if entry.path == "index.md":
+            return ReservedRepair(
+                entry.path, (), kept_reason="bundle metadata is preserved"
             )
         return self._one(entry.path)
 

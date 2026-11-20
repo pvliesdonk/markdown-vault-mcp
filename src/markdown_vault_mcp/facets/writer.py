@@ -124,7 +124,7 @@ class WriterFacet:
             allow_protected: Allow a trusted caller to repair protected paths.
 
         Returns:
-            Each reserved path and matching keys, or a reason it was skipped.
+            Each reserved path and matching keys, or a reason it was skipped or kept.
 
         Raises:
             RuntimeError: If the repair was not wired.
