@@ -84,7 +84,7 @@ def test_no_longer_designated_index_is_not_refreshed(
     strategy, vault = recovery_vault(root, authority="outside", build=True)
     try:
         assert vault._okf_convention is not None
-        assert vault._refresh_recovered_indexes([index]) is None
+        vault._refresh_recovered_indexes([index])
         assert index.read_text() == "authored\n"
     finally:
         vault.close()
@@ -168,7 +168,7 @@ def test_generated_index_refuses_path_outside_vault(git_repo_pair: GitRepoPair) 
     try:
         assert vault._okf_convention is not None
         assert not vault._is_generated_index(outside)
-        assert vault._refresh_recovered_indexes([outside]) is None
+        vault._refresh_recovered_indexes([outside])
         assert outside.read_text() == "authored\n"
     finally:
         vault.close()

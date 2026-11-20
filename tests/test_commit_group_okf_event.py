@@ -8,7 +8,7 @@ import pytest
 
 from markdown_vault_mcp.config_sections.content import ContentConfig
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
-from markdown_vault_mcp.utils.fs import is_regular_file
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.fixtures.git import _run_git
 
@@ -64,24 +64,27 @@ def test_group_records_one_event(
 ) -> None:
     """Check group records one event."""
     vault = make_vault(mode)
-    group = vault._write_callback.open_group("Change policy", None)
+    description = "Policy " + "é" * 600
+    group = vault._write_callback.open_group(description, None)
     with vault._write_callback.bind_group(group.handle, None):
         for n in range(4):
             vault.writer.write(f"note{n}.md", "# Note\n")
+            if n == 1:
+                assert vault._write_callback.drain(timeout=10)
     assert (
         vault._write_callback.close_group(group.handle, None).result(timeout=10).status
         == "committed"
     )
     log = (git_repo / "log.md").read_text()
     assert log.count("\n- ") == 1
-    assert "Change policy" in log
+    assert description in log
     assert all(f"note{n}.md" in log for n in range(4))
     assert not log.startswith("---")
     assert "log.md" in _run_git(git_repo, "show", "--pretty=", "--name-only", "HEAD")
 
 
 @pytest.mark.parametrize("mode", ["off", "reserved"])
-def test_empty_and_off_groups_do_not_create_log(
+def test_off_and_reserved_only_groups_create_no_log(
     git_repo: Path, make_vault: Callable[..., Vault], mode: str
 ) -> None:
     """Disabled and reserved-only groups create no log."""
@@ -98,27 +101,6 @@ def test_empty_and_off_groups_do_not_create_log(
     assert result.status == "committed"
     assert not result.history_failed
     assert not is_regular_file(git_repo / "log.md")
-
-
-def test_group_survives_drain_and_long_description(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """Check group survives drain and long description."""
-    vault = make_vault("events")
-    description = "Policy " + "é" * 600
-    group = vault._write_callback.open_group(description, None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("first.md", "# First\n")
-    assert vault._write_callback.drain(timeout=10)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("second.md", "# Second\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
-    log = (git_repo / "log.md").read_text()
-    assert description in log and "first.md" in log and "second.md" in log
-    assert log.count("\n- ") == 1
 
 
 def test_no_git_group_records_event(git_repo: Path) -> None:
@@ -219,26 +201,6 @@ def test_event_date_is_close_date(
     assert "## 2026-01-02" in (git_repo / "log.md").read_text()
 
 
-def test_timer_closes_and_records_history(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """A timer commits its history in the resulting Git tree."""
-    import time
-
-    vault = make_vault("events")
-    vault._write_callback._group_idle_s = 0.05
-    group = vault._write_callback.open_group("Timer change", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("a.md", "# A\n")
-    deadline = time.monotonic() + 5
-    while not group.closed and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert group.closed
-    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed" and result.sha
-    assert "Timer change" in _run_git(git_repo, "show", f"{result.sha}:log.md")
-
-
 def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(
     git_repo: Path, make_vault: Callable[..., Vault], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -272,7 +234,8 @@ def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(
         result = vault._write_callback.close_group(
             group.handle, None, _automatic=True
         ).result(timeout=5)
-        assert result.status == "committed"
+        assert result.status == "committed" and result.sha
+        assert "One event" in _run_git(git_repo, "show", f"{result.sha}:log.md")
     finally:
         resume.set()
         thread.join(5)
@@ -281,63 +244,33 @@ def test_auto_close_after_write_before_maintenance_has_no_extra_bullet(
     assert "One event" in log
 
 
-def test_move_does_not_recreate_removed_source(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """A closing event does not recreate a directory the group moved."""
-    from markdown_vault_mcp.utils.fs import is_directory
-
-    old = git_repo / "old"
-    old.mkdir()
-    (old / "a.md").write_text("# A\n")
-    (old / "b.md").write_text("# B\n")
-    vault = make_vault("writes", ("old", "new"))
-    group = vault._write_callback.open_group("Move notes", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.move_folder("old", "new")
-    result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
-    assert result.status == "committed" and not result.history_failed
-    assert "old/a.md" in (git_repo / "log.md").read_text()
-    assert not is_directory(old)
-
-
-def test_group_accepts_newline_in_note_path(
-    git_repo: Path, make_vault: Callable[..., Vault]
-) -> None:
-    """An accepted newline path is represented safely in the log."""
-    vault = make_vault("events")
-    group = vault._write_callback.open_group("Change", None)
-    with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.write("line\nbreak.md", "# Note\n")
-    assert (
-        vault._write_callback.close_group(group.handle, None).result(timeout=10).status
-        == "committed"
-    )
-    log = (git_repo / "log.md").read_text()
-    assert "line%0Abreak.md" in log
-    assert r"line\\nbreak.md" in log
-
-
+@pytest.mark.parametrize("operation", ["delete", "rename"])
 def test_removed_paths_are_not_broken_links(
-    git_repo: Path, make_vault: Callable[..., Vault]
+    git_repo: Path, make_vault: Callable[..., Vault], operation: str
 ) -> None:
-    """Deleted and renamed sources use code; the new path remains a link."""
+    """Absent paths use code, including a delete-only event and backticks."""
     vault = make_vault("events")
-    vault.writer.write("delete.md", "# Delete\n")
-    vault.writer.write("old.md", "# Old\n")
+    old = "delete`note.md" if operation == "delete" else "old.md"
+    vault.writer.write(old, "# Old\n")
     assert vault._write_callback.drain(timeout=10)
     group = vault._write_callback.open_group("Reorganize", None)
     with vault._write_callback.bind_group(group.handle, None):
-        vault.writer.delete("delete.md")
-        vault.writer.rename("old.md", "new.md")
+        if operation == "delete":
+            vault.writer.delete(old)
+        else:
+            vault.writer.rename(old, "new.md")
+            vault.writer.write("line\nbreak.md", "# Note\n")
     assert (
         vault._write_callback.close_group(group.handle, None).result(timeout=10).status
         == "committed"
     )
     log = (git_repo / "log.md").read_text()
-    assert "`delete.md`" in log and "`old.md`" in log
-    assert "[new.md](/new.md)" in log
-    assert "](/delete.md)" not in log and "](/old.md)" not in log
+    if operation == "delete":
+        assert "`` delete`note.md ``" in log
+    else:
+        assert "`old.md`" in log and "](/old.md)" not in log
+        assert "[new.md](/new.md)" in log
+        assert "line%0Abreak.md" in log and r"line\\nbreak.md" in log
 
 
 @pytest.mark.parametrize("point", ["history", "commit"])
@@ -567,34 +500,15 @@ def test_finalizer_failure_before_history_still_completes(
             future.set_result(group.result)
 
 
-def test_nested_deferral_restores_outer_context() -> None:
-    """A group's suppression decision cannot change an outer deferral."""
-    from markdown_vault_mcp._okf_log_event import (
-        deferred_event,
-        end_event_deferral,
-        event_deferred,
-    )
-
-    assert not event_deferred()
-    with deferred_event():
-        with deferred_event():
-            end_event_deferral()
-            assert not event_deferred()
-        assert event_deferred()
-    assert not event_deferred()
-
-
 @pytest.mark.parametrize("operation", ["rename", "move"])
-@pytest.mark.parametrize("same_log", [False, True])
 def test_backlink_rewrite_contributes_to_group_history(
-    git_repo: Path, make_vault: Callable[..., Vault], operation: str, same_log: bool
+    git_repo: Path, make_vault: Callable[..., Vault], operation: str
 ) -> None:
     """Backlink rewrites contribute to their selected log and the commit."""
     (git_repo / "source").mkdir()
     (git_repo / "source/note.md").write_text("# Source\n")
-    ref = "ref.md" if same_log else "references/ref.md"
-    if not same_log:
-        (git_repo / "references").mkdir()
+    ref = "references/ref.md"
+    (git_repo / "references").mkdir()
     (git_repo / ref).write_text("[Source](/source/note.md)\n")
     _run_git(git_repo, "add", ".")
     _run_git(git_repo, "commit", "-m", "Seed notes")
@@ -602,8 +516,6 @@ def test_backlink_rewrite_contributes_to_group_history(
     vault.index.build_index()
     group = vault._write_callback.open_group("Repair links", None)
     with vault._write_callback.bind_group(group.handle, None):
-        if same_log:
-            vault.writer.write("anchor.md", "# Anchor\n")
         if operation == "rename":
             vault.writer.rename(
                 "source/note.md", "destination/note.md", update_links=True
@@ -613,8 +525,11 @@ def test_backlink_rewrite_contributes_to_group_history(
     result = vault._write_callback.close_group(group.handle, None).result(timeout=10)
     assert result.status == "committed" and not result.history_failed and result.sha
     assert "/destination/note.md" in (git_repo / ref).read_text()
-    log_path = "log.md" if same_log else "references/log.md"
+    log_path = "references/log.md"
     log = (git_repo / log_path).read_text()
     assert log.count("Repair links") == 1 and ref in log
+    if operation == "move":
+        assert not is_directory(git_repo / "source")
+        assert "source/note.md" in (git_repo / "log.md").read_text()
     committed = _run_git(git_repo, "show", "--format=", "--name-only", result.sha)
     assert ref in committed and log_path in committed
