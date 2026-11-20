@@ -249,6 +249,13 @@ the file appears before the bytes arrive. Use a new path, or set
 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
 See [transfer links](../deploy/transfer-links.md#upload-destinations).
 
+`MARKDOWN_VAULT_MCP_PROTECTED_PATHS` protects matching paths, including
+automatic OKF upkeep. An unprotected primary write still succeeds if upkeep is
+blocked. Globs are case-insensitive; `*` crosses `/`, and `**/` requires at
+least one folder. Use `_conventions.md,**/_conventions.md` to cover both the
+root and nested convention files. A matching folder protects its contents.
+The root pattern `.` is rejected; use `*` to protect every path.
+
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade
     from 3.x widens access unless the deployment explicitly sets
@@ -404,6 +411,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true` | No | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites. |
+| `MARKDOWN_VAULT_MCP_PROTECTED_PATHS` | (none) | No | Comma-separated case-insensitive vault-relative globs protecting paths and folder contents (_conventions.md,**/_conventions.md). Empty by default. The * wildcard crosses folders; **/ requires a folder. |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | `false` | No | Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged. |
 
 ### Embeddings
@@ -505,6 +513,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | No | Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_IDLE_S` | `300.0` | No | Seconds of group inactivity before automatic close. |
+| `MARKDOWN_VAULT_MCP_GIT_GROUP_MAX_AGE_S` | `3600.0` | No | Maximum group age in seconds before automatic close. |
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30.0` | No | Seconds of write-idle time before pushing; 0 pushes only on shutdown. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | No | Git committer name for auto-commits, and the author name too unless an OIDC claim supplies one; set this in Docker where git config user.name is empty. |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits, and the author email too unless an OIDC claim supplies one. |

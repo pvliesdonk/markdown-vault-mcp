@@ -658,7 +658,11 @@ class Vault:
         # callback runs on a background worker so write methods return after
         # the disk write and index submission.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
-        self._write_callback = WriteCallbackDispatcher(self._on_write)
+        self._write_callback = WriteCallbackDispatcher(
+            self._on_write,
+            group_idle_s=settings.git_group_idle_s,
+            group_max_age_s=settings.git_group_max_age_s,
+        )
         # #571: let the puller pause new writes and drain pending commits
         # before a merge so it runs on a clean tree. Wired here (not in start())
         # so the interactive force_pull is covered even when the periodic pull
@@ -691,6 +695,7 @@ class Vault:
             read_only=self._read_only,
             write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
+            protected_paths=settings.protected_paths,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
@@ -1095,6 +1100,10 @@ class Vault:
             scope: The scope to close.
         """
         self._write_callback.end_scope(scope)
+
+    def _enqueue_commit_scope_end(self, scope: CommitScope) -> Future[None] | None:
+        """Enqueue a scope's end and return its callback-attempt future."""
+        return self._write_callback._enqueue_scope_end(scope)
 
     def close(self) -> None:
         """Release what the vault opened.
