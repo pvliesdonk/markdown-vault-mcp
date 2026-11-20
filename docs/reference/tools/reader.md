@@ -696,6 +696,10 @@ To find untyped candidates under `knowledge`, call:
 ```
 
 Continue with the returned `next_cursor`, even if this page has no entries.
+Entries label bundle membership with `in_bundle` and observed concepts with
+`is_concept`. See [Inspecting bundle inventory](../../use/okf.md#inspecting-bundle-inventory)
+for their meanings and the [library API](../api/facets.md#selected-bundle-inspection)
+for the entry fields.
 <!-- DOMAIN-EXAMPLE-okf_inventory-END -->
 
 ## `query_documents`
