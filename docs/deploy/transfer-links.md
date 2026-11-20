@@ -37,7 +37,7 @@ Where the file goes on an upload is fixed when the link is minted; whoever uploa
 - **The route.** `/transfer/{token}` is registered beside the MCP endpoint and outside the authentication middleware. No bearer token or sign-in is asked for; the token in the URL is the authorization. It is 256 bits of randomness. A used or expired link answers like one that never existed.
 - **The public URL.** Links are built from `MARKDOWN_VAULT_MCP_BASE_URL`, which the server requires before it registers the route at all; under a path prefix the link carries the prefix, so the [reverse proxy](reverse-proxy.md#a-path-prefix) must route `/transfer/` to the server the same way it routes the MCP path. Stdio has no route: the tools are absent there, not failing.
 - **The store.** Tokens live in the server's key-value store (`MARKDOWN_VAULT_MCP_KV_STORE_URL`), so replicas that share the store share the links.
-- **The variables.** The five settings below are read from the environment under this server's prefix; the [configuration reference](../reference/configuration.md) carries the authoritative list for this server, and the defaults here are fastmcp-pvl-core 10.1's.
+- **The variables.** The five settings below are read from the environment under this server's prefix; the [configuration reference](../reference/configuration.md) carries the authoritative list for this server, and the defaults here are this server's.
 
 | Variable | Default | Meaning |
 |---|---|---|

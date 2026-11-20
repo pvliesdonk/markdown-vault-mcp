@@ -1,6 +1,6 @@
 """Contract tests: the shipped deployments pin no log format.
 
-Neither a container's stderr nor journald is a terminal. pvl-core (>= 8)
+Neither a container's stderr nor journald is a terminal. ``_logging_setup``
 therefore renders one JSON object per record in both places with nothing
 configured: ``MARKDOWN_VAULT_MCP_LOG_FORMAT`` unset means Rich on a terminal
 and JSON everywhere else. Before that, the image and the packaged unit set

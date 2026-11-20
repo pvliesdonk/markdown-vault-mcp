@@ -69,7 +69,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Vault app tools | [`vault_list`](vault_app_tools.md#vault_list) | Vault List | List folders and notes in a vault directory (app-only). |
 | Vault app tools | [`vault_read`](vault_app_tools.md#vault_read) | Vault Read | Read a note's full content for preview rendering (app-only). |
 | Vault app tools | [`vault_search`](vault_app_tools.md#vault_search) | Vault Search | Search the vault (app-only). |
-| Server info | [`get_server_info`](server_info.md#get_server_info) | Server Info | Report the version information of markdown-vault-mcp; returns `server_name`, `server_version`, `core_version`, the MCP protocol revisions supported and the revision and client of this connection, and, when configured, the upstream service's version. |
+| Server info | [`get_server_info`](server_info.md#get_server_info) | Server Info | Report the version information of markdown-vault-mcp; returns `server_name`, `server_version`, the MCP protocol revisions supported and the revision and client of this connection, and, when configured, the upstream service's version. |
 | Transfer | [`create_download_link`](transfer.md#create_download_link) | Create Download Link | Create a download URL for a file; returns url and `expires_in_s`. |
 | Transfer | [`create_upload_link`](transfer.md#create_upload_link) | Create Upload Link | Create an upload URL for a file; returns url and `expires_in_s`. |
 | Summarize | [`summarize`](summarize.md#summarize) | Summarize Notes | Summarize notes or folders with a language model; returns one summary that cites its source notes by path, or one summary per note. |

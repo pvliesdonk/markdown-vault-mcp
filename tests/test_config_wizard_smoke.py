@@ -350,7 +350,7 @@ def test_systemd_uses_raw_host_path_not_container(page: Page) -> None:
     assert "DEMO_DATA_DIR=/host/data" in result
     assert "/data/app" not in result
     # The wizard's unit frame mirrors the packaged one: journald is not a
-    # terminal, pvl-core renders JSON there by itself, and neither unit pins
+    # terminal, ``_logging_setup`` renders JSON there by itself, and neither unit pins
     # a log format (tests/test_container_logging.py holds the packaged one
     # to the same absence).
     assert "FASTMCP_ENABLE_RICH_LOGGING" not in result, result
