@@ -21,7 +21,8 @@ def read_text_utf8(path: Path, *, limit: int | None = None) -> str:
     Uses ``utf-8-sig``: a leading UTF-8 BOM (``\\ufeff``) is stripped, and a
     file without one decodes identically to plain ``utf-8``. The vault
     normalizes to no-BOM (writes are plain ``utf-8``), so a BOM-prefixed file
-    read here parses correctly and loses its BOM on the next rewrite. A
+    read here parses correctly and loses its BOM on the next rewrite, unless
+    that rewrite keeps the file's frontmatter block (#1443). A
     non-UTF-8 file still raises ``UnicodeDecodeError``, exactly as ``utf-8``
     would.
 

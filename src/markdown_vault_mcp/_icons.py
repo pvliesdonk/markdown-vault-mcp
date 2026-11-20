@@ -85,6 +85,7 @@ _TOOL_ICONS["okf_seed_log"] = _TOOL_ICONS["get_history"]
 
 # OKF enforced-write verification tool reuses the audit icon (#964).
 _TOOL_ICONS["okf_verify"] = _TOOL_ICONS["okf_validate"]
+_TOOL_ICONS["okf_author"] = _TOOL_ICONS["okf_validate"]
 
 # App-only tools reuse existing icons rather than introducing new SVG files.
 _TOOL_ICONS["vault_context"] = _TOOL_ICONS["get_context"]
