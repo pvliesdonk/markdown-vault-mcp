@@ -14,12 +14,25 @@ the ``Vault.reader`` accessor.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.utils.content_kind import is_note
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from typing import Any, Literal
 
+    from markdown_vault_mcp.bundle_inventory import (
+        BundleEntry,
+        BundleInspection,
+        BundleInspectionRequest,
+        BundleTreeRequest,
+        ParseState,
+        SearchState,
+        TypeState,
+    )
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -47,6 +60,30 @@ if TYPE_CHECKING:
         SubtreeToc,
         TocEntry,
         VaultStats,
+    )
+
+
+def _selected(
+    entry: BundleEntry,
+    type_state: TypeState | None,
+    parse_state: ParseState | None,
+    search_state: SearchState | None,
+) -> bool:
+    if entry.role == "directory" and entry.state in {"unavailable", "missing"}:
+        return True
+    if entry.path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+        return False
+    if entry.state in {"unavailable", "missing"}:
+        return (
+            entry.role in {"unknown", "concept_candidate"}
+            and is_note(entry.path)
+            and (search_state is None or entry.search_state == search_state)
+        )
+    return (
+        entry.role == "concept_candidate"
+        and (type_state is None or entry.type_state in {type_state, "not_inspected"})
+        and (parse_state is None or entry.parse_state in {parse_state, "not_inspected"})
+        and (search_state is None or entry.search_state == search_state)
     )
 
 
@@ -81,6 +118,70 @@ class ReaderFacet:
         self._require_built = require_built
         self._okf_audit = okf_audit
         self._okf_write_state = okf_write_state
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one explicitly selected bundle directory before or after indexing.
+
+        Args:
+            request: Explicit bundle root, relative directory and bounded entry limit.
+
+        Returns:
+            Live disk observations with available per-entry index state.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
+        """Inspect a page of a selected subtree before or after indexing.
+
+        Args:
+            request: Selection, page limit, and optional path cursor.
+
+        Returns:
+            Live observations and an optional continuation cursor.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def okf_inventory(
+        self,
+        request: BundleTreeRequest,
+        *,
+        type_state: TypeState | None = None,
+        parse_state: ParseState | None = None,
+        search_state: SearchState | None = None,
+    ) -> BundleInspection:
+        """Inspect one page of concept candidates without building an index.
+
+        Unknown type or parse state does not rule out a match. Search-state
+        filters match exactly, except directory boundaries needed to continue.
+
+        Args:
+            request: Explicit root, page limit and optional continuation.
+            type_state: Filter by observed type presence.
+            parse_state: Filter by metadata parsing outcome.
+            search_state: Filter by observed index admission.
+
+        Returns:
+            The bounded page with matching concepts and the original continuation.
+        """
+        page = self.inspect_bundle_tree(replace(request, entry_limit=1000))
+        matching = tuple(
+            entry
+            for entry in page.entries
+            if _selected(entry, type_state, parse_state, search_state)
+        )
+        truncated = len(matching) > request.entry_limit
+        entries = matching[: request.entry_limit]
+        return replace(
+            page,
+            request=request,
+            entries=entries,
+            next_cursor=entries[-1].path if truncated else page.next_cursor,
+            enumeration=(
+                "entry_limit"
+                if truncated and page.enumeration != "unavailable"
+                else page.enumeration
+            ),
+        )
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -157,7 +258,7 @@ class ReaderFacet:
         *,
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
@@ -281,7 +382,7 @@ class ReaderFacet:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
