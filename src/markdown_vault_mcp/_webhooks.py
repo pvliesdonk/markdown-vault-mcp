@@ -469,8 +469,8 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         return JSONResponse({"error": "pull failed"}, status_code=503)
 
     if pull_result is None:
-        # Reachable for a library consumer that constructed Vault with
-        # git_strategy=None; a config-driven server always has one.
+        # A library consumer may omit the strategy. Servers with git disabled
+        # do not register webhook routes.
         logger.info("webhook_no_git_strategy kind=%s delivery_id=%s", name, delivery_id)
         return JSONResponse({"ok": True, "message": "no git strategy"})
 
@@ -601,9 +601,13 @@ def webhook_routes_active(config: Any, transport: str) -> bool:
         transport: The resolved transport name, as passed to ``make_server``.
 
     Returns:
-        ``True`` when credentials are set *and* the transport can serve HTTP.
+        ``True`` when git is enabled, credentials are set and HTTP is available.
     """
-    return bool(config.sync.webhook_configured) and transport != "stdio"
+    return (
+        config.git_enabled
+        and bool(config.sync.webhook_configured)
+        and transport != "stdio"
+    )
 
 
 def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
@@ -614,7 +618,8 @@ def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
     ``server.py``'s wiring block makes one call rather than growing a second
     host's worth of branching.
 
-    Nothing is mounted under stdio: there is no HTTP server to receive a POST,
+    Disabled git mounts no routes and emits no webhook warnings. Nothing is
+    mounted under stdio: there is no HTTP server to receive a POST,
     so the credentials have no effect there and a warning says so.
 
     Args:
@@ -623,6 +628,8 @@ def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
             credentials and ``config.git`` the managed-remote check.
         transport: The resolved transport name.
     """
+    if not config.git_enabled:
+        return
     if not webhook_routes_active(config, transport):
         if config.sync.webhook_configured:
             # Credentials set on a transport with no HTTP server to receive a

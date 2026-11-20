@@ -1046,17 +1046,19 @@ def test_gitlab_wrong_secret_token_is_rejected_through_the_handler() -> None:
 
 
 @pytest.mark.parametrize(
-    ("configured", "transport", "expected"),
+    ("configured", "transport", "enabled", "expected"),
     [
-        (True, "http", True),
-        (True, "sse", True),
-        (True, "stdio", False),
-        (False, "http", False),
-        (False, "stdio", False),
+        (True, "http", True, True),
+        (True, "sse", True, True),
+        (True, "stdio", True, False),
+        (False, "http", True, False),
+        (False, "stdio", True, False),
+        (True, "http", False, False),
+        (True, "sse", False, False),
     ],
 )
 def test_webhook_routes_active(
-    configured: bool, transport: str, expected: bool
+    configured: bool, transport: str, enabled: bool, expected: bool
 ) -> None:
     """A delivery can arrive only where credentials and an HTTP server meet.
 
@@ -1068,5 +1070,29 @@ def test_webhook_routes_active(
 
     from markdown_vault_mcp._webhooks import webhook_routes_active
 
-    config = SimpleNamespace(sync=SimpleNamespace(webhook_configured=configured))
+    config = SimpleNamespace(
+        git_enabled=enabled, sync=SimpleNamespace(webhook_configured=configured)
+    )
     assert webhook_routes_active(config, transport) is expected
+
+
+@pytest.mark.parametrize("transport", ["stdio", "http", "sse"])
+def test_disabled_git_does_not_register_or_warn_about_webhooks(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, transport: str
+) -> None:
+    """Leave retained webhook credentials inert before parsing their secrets."""
+    from fastmcp import FastMCP
+
+    from markdown_vault_mcp._webhooks import register_webhook_routes
+    from markdown_vault_mcp.config import ProjectConfig
+
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        git_enabled=False,
+        github_webhook_secret="retained",
+        gitlab_webhook_signing_token="malformed",
+    )
+    server = FastMCP("disabled-git")
+    register_webhook_routes(server, config, transport)
+    assert server._additional_http_routes == []
+    assert not any("webhook" in r.msg for r in caplog.records)
