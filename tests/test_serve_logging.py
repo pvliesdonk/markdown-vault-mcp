@@ -1,6 +1,6 @@
 """Contract tests: ``serve`` configures logging once, in the root callback.
 
-Template-owned. ``cli._root`` configures pvl-core's logging before any
+Template-owned. ``cli._root`` configures logging (``_logging_setup``) before any
 subcommand and honours ``-v``; ``make_server()`` configures it too, for
 callers with no setup of their own.  Under ``serve`` that second call
 reset ``-v`` to the environment's level and logged the legacy
@@ -55,7 +55,7 @@ def _isolated_root_logger(
 ) -> Iterator[None]:
     """Preset the contract env and restore the root logger afterwards.
 
-    pvl-core installs its handler chain at root on the stream ``CliRunner``
+    ``_logging_setup`` installs its handler chain at root on the stream ``CliRunner``
     substitutes for stderr; left in place, it would outlive the test.
     """
     _preset_contract_env(request, monkeypatch)

@@ -1,11 +1,11 @@
 """Domain-specific server-instructions contributions.
 
-pvl-core 6 composes server instructions from snippets rather than from one
-templated string: every contributor calls
-:func:`fastmcp_pvl_core.instructions_for` and adds its prose with a semantic
-role and the tool names it depends on, and
-:func:`fastmcp_pvl_core.finalize_instructions` renders the collection once,
-after tool visibility is resolved.
+Server instructions are composed from snippets rather than from one templated
+string: every contributor calls
+:func:`~markdown_vault_mcp._instructions_builder.instructions_for` and adds its
+prose with a semantic role and the tool names it depends on, and
+:func:`~markdown_vault_mcp._instructions_builder.finalize_instructions` renders
+the collection once, after tool visibility is resolved.
 
 This module holds the markdown-vault half of that:
 :func:`_domain_snippets` selects the guidance that applies to a
@@ -21,8 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastmcp_pvl_core import InstructionRole, instructions_for
-
+from markdown_vault_mcp._instructions_builder import InstructionRole, instructions_for
 from markdown_vault_mcp._write_tools import gated_tool
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -45,10 +44,11 @@ class Snippet:
 
     Attributes:
         text: Model-facing prose, with no leading or trailing whitespace.
-        role: The semantic pvl-core instruction role for this fragment.
+        role: The semantic instruction role
+            (``_instructions_builder.InstructionRole``) for this fragment.
         requires_tools: Names of the tools the fragment tells the model to
             call. When any of them is unregistered or hidden by the operator's
-            ``TOOLS_ALLOW`` / ``TOOLS_DENY`` lists, pvl-core drops the whole
+            ``TOOLS_ALLOW`` / ``TOOLS_DENY`` lists, the builder drops the whole
             fragment at finalize — so a name belongs here only when its
             absence would make the fragment actively wrong, not when the
             fragment merely mentions it or offers it as an alternative.
@@ -99,7 +99,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     empty string.
 
     Configuration gates stay Python conditionals here rather than becoming
-    ``requires_tools`` declarations: pvl-core's pruning models the operator
+    ``requires_tools`` declarations: the builder's pruning models the operator
     allow/deny rule and registration, and explicitly *not* the
     ``mcp.disable(tags=...)`` transforms this server uses for read-only
     mode, managed-git mode, the summarize backend, the apps UI, and the
@@ -108,7 +108,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     conditionals below can keep its guidance out.
 
     The read-only/read-write announcement is composed here rather than by
-    pvl-core, which dropped it in 4.11.2 (pvl-core #222) because nothing in
+    pvl-core, which dropped it in 4.11.2 (fastmcp-pvl-core#222) because nothing in
     the library enforced it — a server could be told to announce read-only
     while every write tool stayed listable and callable. This server does
     enforce it: write-tagged components are never registered when
@@ -196,7 +196,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
                 "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
                 "deprecated, stale and unverified ones count for less. "
                 # Terse on purpose: the generated instructions stay under
-                # pvl-core's 1,536-unit generated target, and an
+                # the builder's 1,536-unit generated target, and an
                 # agent-authored literal space is exactly the defect #1494
                 # fixed on the server's own output.
                 f"{upkeep} Use root-relative Markdown links, "
@@ -228,9 +228,11 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
 def contribute_instructions(mcp: FastMCP, config: GuidanceConfig) -> None:
     """Add this server's guidance to *mcp*'s instructions builder.
 
-    Call before :func:`fastmcp_pvl_core.finalize_instructions`, which renders
-    the collection once and freezes the builder. Adds no identity snippet:
-    ``server.py`` contributes the single shaped identity pvl-core requires.
+    Call before
+    :func:`~markdown_vault_mcp._instructions_builder.finalize_instructions`,
+    which renders the collection once and freezes the builder. Adds no identity
+    snippet: ``server.py`` contributes the single shaped identity the finalizer
+    requires.
 
     Args:
         mcp: The server whose builder to contribute to.

@@ -103,7 +103,7 @@ src/markdown_vault_mcp/
   tracker.py           -- hash-based change detection
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
-  exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
+  exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   bundle_inventory.py -- Bounded selected-directory and pageable subtree observations with optional index-state projection (#1442)
@@ -131,11 +131,37 @@ src/markdown_vault_mcp/
     embeddings.py        -- EmbeddingsConfig: provider selection + per-provider and shared embedding knobs
     git.py               -- GitConfig: git auth, identity, sync cadence
     indexing.py          -- IndexingConfig: paths, frontmatter, exclusions
+    jobs.py              -- JobsConfig: JOBS_* soft deadline, job-record TTL and per-subject cap (#2308)
     search.py            -- SearchConfig: ranking weights + snippet-truncation knobs
     summarize.py         -- SummarizeConfig: OpenAI-compatible summarization backend settings
+    server.py            -- ServerConfig: transport, host, port, auth (OIDC, bearer), stores, tool visibility, apps domain; from_env and server_config_env_suffixes (#2288)
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
+    transfer.py          -- TransferConfig: TRANSFER_* link TTL default/max, grace window, lease and upload cap (#2321)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
-  _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
+  _auth.py             -- build_auth / build_bearer_auth / OIDC remote and proxy builders / resolve_auth_mode: the six auth modes and their provider dispatch (#2277)
+  _config_surface.py   -- server_config_surface / domain_env_surface / domain_env_suffixes: AST introspection of from_env reads for scripts/gen_config_surface.py (#2289)
+  _connection.py       -- connection_identity: protocol revision and client name/version of the current request (#2333)
+  _debug.py            -- maybe_start_debugpy: DEBUG_PORT / DEBUG_WAIT remote-debugger listener (#2335)
+  _env.py              -- env/env_int/env_float/parse_bool/parse_list: every {PREFIX}_{NAME} read; imports no server stack (#2275, #2016)
+  _kv_store.py         -- build_kv_store (KV_STORE_URL backend dispatch, /data/state default) and build_event_store over it (#2279)
+  _tool_visibility.py  -- apply_tool_visibility / effective_tool_names / registered_tool_names: TOOLS_ALLOW / TOOLS_DENY filtering and the tool-name enumerations the instructions builder prunes against (#2278)
+  _tool_boundary.py    -- tool_boundary / is_tool_boundary: every tool's unexpected exception becomes one logged fault ToolError (#2280)
+  _fetch.py            -- fetch_url / FetchResult: SSRF-hardened URL fetch (non-public-address rejection, DNS-rebind pin, per-hop revalidation, size cap, redaction) (#2282)
+  _log_render.py       -- bind_record / render_rich / JsonFormatter / _NeverRaiseFilter: Rich and JSON rendering of conforming and non-conforming records (#2342)
+  _logging_setup.py    -- configure_logging_from_env: the root handler chain (Rich or JSON), FastMCP neutralised, level resolution, noisy-logger and access-log policy (#2276)
+  _log_grammar.py      -- parse_log_template: the event_name key=%s log-call grammar (#2340)
+  _log_conformance.py  -- find_nonconforming_log_calls: AST check behind tests/test_logging_standard.py (#2340)
+  _request_logging.py  -- RequestLoggingMiddleware / wire_middleware_stack: request_* / tool_call_* lines with timing, connection and trace fields (#2341)
+  _jobs.py             -- Jobs / build_jobs: soft-deadline promotion of long-running calls to pollable jobs, yielding to native tasks (#2307)
+  _job_store.py        -- JobStore and the job records: subject-scoped, TTL-pinned job records over the jobs KV namespace, with the per-subject cap (#2307)
+  _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)
+  _subject.py          -- get_subject / get_claims / get/set_current_auth_mode: the request subject across auth modes and the auth-mode context variable build_auth sets (#2350)
+  _tasks.py            -- configure_task_backend: resolves TASKS_URL / a redis KV_STORE_URL / FASTMCP_DOCKET_* and registers the SEP-2663 TasksExtension (#2292)
+  _url.py              -- parse_operator_url / try_parse_url: parse an operator URL without echoing it into a message or log (#2279); redact_urls_in_text: redact URLs in free text for get_server_info and the health routes (#2333)
+  _instructions.py     -- contribute_instructions: domain snippets added to the instructions builder from server.py's DOMAIN-WIRING (#901)
+  _instructions_builder.py -- instructions_for / finalize_instructions / InstructionRole: per-server snippet builder, tool-aware pruning, role ordering, INSTANCE_DESCRIPTION / INSTRUCTIONS_EXTRA / INSTRUCTIONS env contract, UTF-16 budget warnings (#2305)
+  _serve.py            -- run_http: uvicorn with log_config=None, lifespan on and the startup-failure exit (#2335)
+  _server_info.py      -- register_server_info_tool: the get_server_info tool (versions, protocol revision, client identity, redacted upstream errors) (#2333)
   _server_apps.py      -- template-owned MCP Apps scaffold; its sentinels keep the template's text and call into _vault_apps / _vault_app_tools (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: the app-shell AppConfig (Claude sandbox domain + CDN CSP) + GraphView→SPA wire serializer (#905)
   _vault_app_tools.py  -- the vault's MCP Apps tools (browse_vault, show_context, the SPA's app-only tools), registered from DOMAIN-APP-TOOLS
@@ -156,9 +182,15 @@ src/markdown_vault_mcp/
   resources.py         -- register_resources: MCP resource registrations
   prompts.py           -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
-  _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
+  _transfer_contract.py -- TransferSink / TransferValidator / TransferKind / TransferReadResult and the TransferSinkError family the sink raises (#2319)
+  _transfer_routes.py  -- make_transfer_handler: the /transfer/{token} GET/POST/PUT handler (claim, size cap, sink status mapping, release on failure, grace-settle) (#2319)
+  _transfer_store.py   -- TransferStore: single-use capability tokens in the transfer KV namespace (claim lease, release-on-failure, grace-settle, fencing) (#2320)
+  _transfer_links.py   -- register_transfer_routes / build_transfer_links / TransferLinks / add_transfer_workflow: the /transfer route mount, the create_*_link tools and the transfer workflow snippet (#2318)
+  _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for the transfer routes in _transfer_routes / _transfer_links (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)
   _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)
+  _health.py           -- register_health_routes / HealthCheck: unauthenticated /health liveness and /health/ready readiness (KV write probe + domain checks, HEALTH_DETAIL) (#2334)
+  _http_path.py        -- normalise_http_path: HTTP mount-path normalisation for serve and the health prefix (#2334)
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
