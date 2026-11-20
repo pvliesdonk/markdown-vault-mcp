@@ -43,7 +43,7 @@ class TestRegistryLockstep:
     async def test_write_tagged_registry_matches_constant(self) -> None:
         """``WRITE_TOOL_NAMES`` equals the actual ``tags={"write"}`` tool set.
 
-        Builds the full surface via the ``register_*`` functions plus core's
+        Builds the full surface via the ``register_*`` functions plus the
         transfer routes — bypassing ``make_server``'s tag-based disable
         passes, mirroring ``test_every_registered_tool_has_title`` — so
         conditionally-visible tools (``git_sync``, ``create_upload_link``)
@@ -51,9 +51,9 @@ class TestRegistryLockstep:
         ``_list_tools()``.
         """
         from fastmcp import FastMCP
-        from fastmcp_pvl_core import register_transfer_routes
 
         from markdown_vault_mcp._server_apps import register_apps
+        from markdown_vault_mcp._transfer_links import register_transfer_routes
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.tools import register_tools

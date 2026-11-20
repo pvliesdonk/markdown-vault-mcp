@@ -137,9 +137,11 @@ async def test_mcp_author_visibility_and_identity(
         assert "okf_author" not in [tool.name for tool in await client.list_tools()]
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_AUTHOR", "true")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
-    monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "secret-subject")
     monkeypatch.setattr(
-        "fastmcp_pvl_core.get_claims", lambda: {"sub": "secret-subject"}
+        "markdown_vault_mcp._subject.get_subject", lambda: "secret-subject"
+    )
+    monkeypatch.setattr(
+        "markdown_vault_mcp._subject.get_claims", lambda: {"sub": "secret-subject"}
     )
     async with Client(make_server()) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
