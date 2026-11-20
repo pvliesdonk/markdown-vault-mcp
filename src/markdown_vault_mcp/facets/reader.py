@@ -1,11 +1,12 @@
 """Reader facet: the read-only query surface (#604).
 
 A thin view exposing search, document reads, listing, table-of-contents,
-similarity, recent, context, stats, attachment reads, and git history, diff
+similarity, recent, context, stats, folder navigation, attachment reads, and git history, diff
 and revision reads.
-Methods delegate to :class:`SearchManager`, :class:`DocumentManager`, or
-:class:`GitQueryManager`; OKF stats also include the vault's write-state
-projection. The bucket-3 methods
+Queries delegate to :class:`SearchManager`, :class:`DocumentManager` or
+:class:`GitQueryManager`; citation inspection analyzes one returned note-text
+snapshot with the pure citation reader. OKF stats also include the vault's
+write-state projection. The bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -14,12 +15,52 @@ the ``Vault.reader`` accessor.
 
 from __future__ import annotations
 
+import errno
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+import yaml
+
+from markdown_vault_mcp.bundle_inventory import (
+    BundleChildrenRequest,
+    BundleEntry,
+    BundleInspectionRequest,
+    BundleInspector,
+)
+from markdown_vault_mcp.citations import CitationReport, inspect_citation_text
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    DocumentUnreadableError,
+    InvalidRequestError,
+    StoreUnsupportedSchemaError,
+)
+from markdown_vault_mcp.okf import (
+    OKF_RESERVED_FILENAMES,
+    OKF_ROOT_INDEX_TITLE,
+    build_index_markdown,
+)
+from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.utils.content_kind import is_note
+from markdown_vault_mcp.utils.fs import open_directory_nofollow, read_regular_nofollow
+from markdown_vault_mcp.utils.text import decode_utf8
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
+    from pathlib import Path
     from typing import Any, Literal
 
+    from markdown_vault_mcp._okf_receipts import ReceiptStore
+    from markdown_vault_mcp.bundle_inventory import (
+        BundleInspection,
+        BundleTreeRequest,
+        Enumeration,
+        ParseState,
+        ScopeState,
+        SearchState,
+        TypeState,
+    )
+    from markdown_vault_mcp.indexing.observations import Observation
+    from markdown_vault_mcp.managers.citations import CitationManager
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
@@ -43,10 +84,127 @@ if TYPE_CHECKING:
         NoteContent,
         NoteContext,
         NoteInfo,
+        RankedSearchResult,
         RevisionContent,
         SubtreeToc,
         TocEntry,
         VaultStats,
+    )
+
+
+@dataclass(frozen=True)
+class FolderNavigation:
+    """A folder's navigation body, source and enumeration state."""
+
+    folder: str
+    state: ScopeState
+    source: Literal["authored", "synthesized"] | None
+    body: str | None
+    reason: str | None
+    enumeration: Enumeration
+    next_cursor: str | None = None
+
+
+def read_authored(
+    source: Path, folder: str, note_limit: int
+) -> tuple[str | None, str | None]:
+    """Read a no-follow index, returning text or a stable refusal reason.
+
+    Args:
+        source: Vault root.
+        folder: Validated vault-relative folder.
+        note_limit: Configured byte limit, or zero for unlimited reads.
+
+    Returns:
+        Text and reason; both are None when the index is absent.
+    """
+    try:
+        with open_directory_nofollow(
+            source, folder.split("/") if folder else ()
+        ) as parent:
+            raw = read_regular_nofollow(
+                parent, "index.md", note_limit + 1 if note_limit > 0 else -1
+            )
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            return None, None
+        return None, {
+            errno.ELOOP: "symlink",
+            errno.EINVAL: "nonregular",
+            errno.EISDIR: "nonregular",
+        }.get(exc.errno or 0, "io_error")
+    if note_limit > 0 and len(raw) > note_limit:
+        return None, "note_limit"
+    try:
+        return decode_utf8(raw), None
+    except UnicodeDecodeError:
+        return None, "invalid_encoding"
+
+
+def synthesize(folder: str, inspection: BundleInspection) -> str:
+    """Render visible immediate concepts and directories from live observations.
+
+    Args:
+        folder: Validated vault-relative folder.
+        inspection: Bounded live observations.
+
+    Returns:
+        Markdown listing of immediate concepts and directories.
+    """
+    entries: list[tuple[str, str, str | None]] = [
+        (
+            (name := entry.path.rsplit("/", 1)[-1]),
+            "./" + name,
+            "folder" if entry.role == "directory" else None,
+        )
+        for entry in inspection.entries
+        if entry.role in {"concept_candidate", "directory"}
+    ]
+    return build_index_markdown(
+        folder.rsplit("/", 1)[-1] or OKF_ROOT_INDEX_TITLE, entries
+    )
+
+
+def _selected(
+    entry: BundleEntry,
+    type_state: TypeState | None,
+    parse_state: ParseState | None,
+    search_state: SearchState | None,
+) -> bool:
+    if entry.role == "directory" and entry.state in {"unavailable", "missing"}:
+        return True
+    if entry.path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+        return False
+    if entry.state in {"unavailable", "missing"}:
+        return (
+            entry.role in {"unknown", "concept_candidate"}
+            and is_note(entry.path)
+            and (search_state is None or entry.search_state == search_state)
+        )
+    return (
+        entry.role == "concept_candidate"
+        and (type_state is None or entry.type_state in {type_state, "not_inspected"})
+        and (parse_state is None or entry.parse_state in {parse_state, "not_inspected"})
+        and (search_state is None or entry.search_state == search_state)
+    )
+
+
+def _removed_candidates(
+    request: BundleTreeRequest, rows: dict[str, Observation]
+) -> list[str]:
+    scope = tuple(filter(None, (request.root + "/" + request.directory).split("/")))
+    cursor = tuple(request.cursor.split("/")) if request.cursor else ()
+    return sorted(
+        (
+            path
+            for path, row in rows.items()
+            if row.presence == "removed"
+            and row.role == "concept_candidate"
+            and tuple(path.split("/"))[: len(scope)] == scope
+            and len(path.split("/")) > len(scope)
+            and tuple(path.split("/")) > cursor
+        ),
+        key=lambda path: tuple(path.split("/")),
     )
 
 
@@ -60,6 +218,8 @@ class ReaderFacet:
         doc_mgr: DocumentManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        citation_mgr: CitationManager | None = None,
+        receipt_store: ReceiptStore | None = None,
         okf_audit: Callable[[], OkfAuditReport] | None = None,
         okf_write_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
@@ -71,16 +231,207 @@ class ReaderFacet:
             doc_mgr: Document and attachment reads, table-of-contents.
             git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
+            citation_mgr: Reverse citation lookup manager, when wired.
+            receipt_store: Local review receipts, when wired.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.
             okf_write_state: Configured and effective write-layer projection.
         """
+        self._receipt_store = receipt_store
+        self._citation_mgr = citation_mgr
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
         self._okf_audit = okf_audit
         self._okf_write_state = okf_write_state
+
+    def inspect_bundle(self, request: BundleInspectionRequest) -> BundleInspection:
+        """Inspect one explicitly selected bundle directory before or after indexing.
+
+        Args:
+            request: Explicit bundle root, relative directory and bounded entry limit.
+
+        Returns:
+            Live disk observations with available per-entry index state.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def okf_navigation(
+        self, folder: str, *, entry_limit: int = 100, cursor: str | None = None
+    ) -> FolderNavigation:
+        """Read authored navigation or synthesize a bounded folder listing.
+
+        Args:
+            folder: Vault-relative folder, or empty for the vault root.
+            entry_limit: Maximum immediate entries observed per page, from 1 to 1000.
+            cursor: Previous next_cursor for this folder, or None for the first page.
+
+        Returns:
+            Navigation body, source, scope state and enumeration observations.
+        """
+        manager = self._doc_mgr
+        inspector = BundleInspector(
+            manager._source_dir,
+            manager._exclude_patterns or (),
+            manager._artifacts.extensions(),
+            manager._max_note_read_bytes,
+            manager._inspection_policy,
+        )
+        inspection = inspector.inspect(
+            BundleChildrenRequest(root=folder, entry_limit=entry_limit, cursor=cursor)
+        )
+        index_path = f"{folder}/index.md" if folder else "index.md"
+        result = FolderNavigation(
+            folder,
+            inspection.state,
+            None,
+            None,
+            None,
+            inspection.enumeration,
+        )
+        if inspection.state != "inspected":
+            return result
+        if inspector._internal(index_path):
+            return replace(result, reason="internal")
+        text, reason = read_authored(
+            manager._source_dir, folder, manager._max_note_read_bytes
+        )
+        if reason is not None:
+            return replace(result, reason=reason)
+        if text is not None:
+            return replace(
+                result,
+                source="authored",
+                body=strip_frontmatter_block(text, preserve_body=True),
+                enumeration="not_inspected",
+            )
+        return replace(
+            result,
+            source="synthesized",
+            body=synthesize(folder, inspection),
+            next_cursor=inspection.next_cursor,
+        )
+
+    def inspect_bundle_tree(self, request: BundleTreeRequest) -> BundleInspection:
+        """Inspect a page of a selected subtree before or after indexing.
+
+        Args:
+            request: Selection, page limit, and optional path cursor.
+
+        Returns:
+            Live observations and an optional continuation cursor.
+        """
+        return self._doc_mgr.inspect_bundle(request)
+
+    def okf_inventory(
+        self,
+        request: BundleTreeRequest,
+        *,
+        type_state: TypeState | None = None,
+        parse_state: ParseState | None = None,
+        search_state: SearchState | None = None,
+    ) -> BundleInspection:
+        """Inspect one page of concept candidates without building an index.
+
+        Unknown type or parse state does not rule out a match. Search-state
+        filters match exactly, except directory boundaries needed to continue.
+
+        Args:
+            request: Explicit root, page limit and optional continuation.
+            type_state: Filter by observed type presence.
+            parse_state: Filter by metadata parsing outcome.
+            search_state: Filter by observed index admission.
+
+        Returns:
+            The bounded page with matching concepts and the original continuation.
+        """
+        page = self._inventory_page(request)
+        matching = tuple(
+            entry
+            for entry in page.entries
+            if _selected(entry, type_state, parse_state, search_state)
+        )
+        truncated = len(matching) > request.entry_limit
+        entries = matching[: request.entry_limit]
+        return replace(
+            page,
+            request=request,
+            entries=entries,
+            next_cursor=entries[-1].path if truncated else page.next_cursor,
+            enumeration=(
+                "entry_limit"
+                if truncated and page.enumeration != "unavailable"
+                else page.enumeration
+            ),
+        )
+
+    def _inventory_page(self, request: BundleTreeRequest) -> BundleInspection:
+        ledger = self._doc_mgr._observations
+        usable = ledger is not None
+        rows: dict[str, Observation] = {}
+        if ledger is not None:
+            try:
+                with ledger._lock:
+                    rows, usable = ledger._load()
+            except (OSError, StoreUnsupportedSchemaError):
+                usable = False
+        candidates = _removed_candidates(request, rows)
+        page = self._inventory_with_removals(
+            self.inspect_bundle_tree(
+                replace(request, entry_limit=500 if candidates else 1000)
+            ),
+            candidates,
+        )
+        return replace(page, removal_history="available" if usable else "unavailable")
+
+    def _inventory_with_removals(
+        self, page: BundleInspection, candidates: list[str]
+    ) -> BundleInspection:
+        if not candidates:
+            return page
+        manager = self._doc_mgr
+        inspector = BundleInspector(
+            manager._source_dir,
+            manager._exclude_patterns or (),
+            manager._artifacts.extensions(),
+            manager._max_note_read_bytes,
+            manager._inspection_policy,
+        )
+        boundary = tuple(page.next_cursor.split("/")) if page.next_cursor else None
+        if boundary is not None:
+            candidates = [
+                path for path in candidates if tuple(path.split("/")) <= boundary
+            ]
+        budget = 1000 - len(page.entries)
+        truncated = len(candidates) > budget
+        checked = candidates[:budget]
+        cutoff = checked[-1] if truncated else None
+        entries = [
+            entry
+            for entry in page.entries
+            if cutoff is None
+            or tuple(entry.path.split("/")) <= tuple(cutoff.split("/"))
+        ]
+        for path in checked:
+            if inspector.path_presence(path) == "missing":
+                entry = BundleEntry(
+                    path=path,
+                    role="concept_candidate",
+                    state="missing",
+                    presence="removed",
+                )
+                entries.append(inspector._labelled(entry, path))
+        return replace(
+            page,
+            entries=tuple(
+                sorted(entries, key=lambda entry: tuple(entry.path.split("/")))
+            ),
+            next_cursor=cutoff if cutoff is not None else page.next_cursor,
+            enumeration="entry_limit"
+            if cutoff is not None and page.enumeration != "unavailable"
+            else page.enumeration,
+        )
 
     def okf_validate(self) -> OkfAuditReport:
         """Run the OKF bundle-conformance audit (design §4; #962).
@@ -157,11 +508,12 @@ class ReaderFacet:
         *,
         limit: int = 10,
         mode: Literal["keyword", "semantic", "hybrid"] | None = None,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
-    ) -> list[GroupedResult]:
+        purpose: Literal["current", "historical", "review"] = "current",
+    ) -> list[RankedSearchResult]:
         """Search the vault.
 
         Args:
@@ -177,13 +529,15 @@ class ReaderFacet:
                 ``None`` uses the server default configured at startup.
             snippet_words: Width of the snippet window in words.  ``0`` returns
                 the full chunk.  ``None`` uses the server default.
+            purpose: Select OKF ranking weights for current, historical or review retrieval.
 
         Returns:
-            List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
+            List of :class:`~markdown_vault_mcp.types.RankedSearchResult` ordered
             by descending file score (max of section scores).  Each result
             wraps one document with up to ``chunks_per_file`` sections.
 
         Raises:
+            InvalidRequestError: If the purpose is unknown or a filter is invalid.
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
                 ``"hybrid"`` but no embedding provider is configured.
         """
@@ -195,6 +549,7 @@ class ReaderFacet:
             folder=folder,
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
+            purpose=purpose,
         )
 
     def read(self, path: str, *, section: str | None = None) -> NoteContent | None:
@@ -220,6 +575,79 @@ class ReaderFacet:
                 *section* is empty or names no heading.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def review_evidence(
+        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str]
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Assess reviews and observe changes, reading receipts at most once."""
+        from markdown_vault_mcp._okf_receipts import review_evidence
+
+        return review_evidence(self._receipt_store, path, metadata, snapshot)
+
+    def review_observation(
+        self, path: str, metadata: dict[str, Any], snapshot: dict[str, str] | None
+    ) -> dict[str, Any]:
+        """Compare current concept content with a local review receipt.
+
+        Args:
+            path: Vault-relative path of the returned note.
+            metadata: Supplied note metadata.
+            snapshot: Current concept snapshot, when available.
+
+        Returns:
+            An available comparison or an unavailable observation.
+        """
+        if self._receipt_store is None:
+            return {"state": "unavailable"}
+        return self._receipt_store.review_observation(path, metadata, snapshot)
+
+    def find_citing_notes(self, resource: str) -> dict[str, Any]:
+        """Find indexed notes citing an exact resource.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citing notes and unresolved label diagnostics.
+        """
+        self._require_built()
+        if self._citation_mgr is None:
+            raise RuntimeError("Citation manager is not wired")
+        return self._citation_mgr.find_citing(resource)
+
+    def inspect_citations(self, path: str) -> CitationReport:
+        """Inspect exact source attribution in one whole-note text snapshot.
+
+        Args:
+            path: Exact vault-relative .md note path.
+
+        Returns:
+            Literal sources, label joins and explicit syntax limits. This reads
+            no source resources and makes no claim about evidentiary support.
+
+        Raises:
+            InvalidRequestError: If the path is not a .md note or exceeds the
+                existing whole-note read limit.
+            DocumentNotFoundError: If the existing reader finds no note.
+            DocumentUnreadableError: If the existing reader cannot read it.
+        """
+        if not is_note(path):
+            raise InvalidRequestError(
+                f"path {path!r} is not a .md note. Call inspect_citations with "
+                "a .md path from search or list_documents."
+            )
+        note = self.read(path)
+        if note is None:
+            raise DocumentNotFoundError(
+                f"No note at path {path!r}. Find a path with search or list_documents "
+                "and pass it to inspect_citations."
+            )
+        # read() may carry metadata/hash from an earlier disk read. Only this
+        # one returned content string is allowed to supply the join and digest.
+        try:
+            return inspect_citation_text(path, note.content)
+        except yaml.YAMLError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
     def read_revision(
         self, path: str, revision: str, *, section: str | None = None
@@ -281,7 +709,7 @@ class ReaderFacet:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, str | None] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
@@ -298,7 +726,9 @@ class ReaderFacet:
                 includes ``kind="attachment"`` and ``mime_type``.
             filters: Optional ``{frontmatter_key: value}`` equality filters
                 (AND semantics). On an active OKF bundle, ``status`` /
-                ``stale`` / ``trust_tier`` carry OKF semantics. Any filter
+                ``stale`` / ``trust_tier`` / ``freshness`` / ``review`` carry OKF
+                semantics. The last two select evidence rather than literal fields;
+                ``review=malformed`` means no usable review was recorded. Any filter
                 excludes attachments (they carry no frontmatter).
 
         Returns:
