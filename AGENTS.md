@@ -137,7 +137,7 @@ Read `docs/design/roadmap.md` before planning work, and update its argument when
 
 ## Where fixes go
 
-Every fix lands in this repository, including fixes to files that came from `fastmcp-server-template`: this project no longer tracks the template. A fix to `fastmcp-pvl-core` behaviour still goes upstream until #2241 folds the library in; `CONTRIBUTING.md`'s "Where to send fixes" has the routing, the issue and PR discipline, and the uncertainty rule.
+Every fix lands in this repository, including fixes to files that came from `fastmcp-server-template`: this project no longer tracks the template. The same holds for what came from `fastmcp-pvl-core`, which #2241 folded in; `CONTRIBUTING.md`'s "Where to send fixes" has the routing, the issue and PR discipline, and the uncertainty rule.
 
 
 ## Key Design Decisions

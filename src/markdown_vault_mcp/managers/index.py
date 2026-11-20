@@ -163,8 +163,8 @@ class IndexManager:
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
         vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
-        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         okf_admission_active: Current effective OKF state, if applicable.
+        scratch_dir: Directory for full-build scratch; ``None`` uses the temporary directory.
         skip_embedding: Identifies documents whose vectors should be removed.
     """
 
@@ -187,8 +187,8 @@ class IndexManager:
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         vector_slot: VectorStoreSlot | None = None,
-        scratch_dir: Path | None = None,
         okf_admission_active: Callable[[], bool | None] | None = None,
+        scratch_dir: Path | None = None,
         skip_embedding: Callable[[str], bool] | None = None,
     ) -> None:
         self._fts = fts

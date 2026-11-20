@@ -25,7 +25,10 @@ from tests.fixtures.cli_graph import graph_source  # noqa: F401
 from tests.fixtures.cli_http import cli_client_profile  # noqa: F401
 from tests.fixtures.cli_paths import path_source  # noqa: F401
 from tests.fixtures.git import git_repo, git_repo_pair, isolated_git  # noqa: F401
-from tests.fixtures.logging import isolated_root_logging  # noqa: F401
+from tests.fixtures.logging import (  # noqa: F401
+    isolated_root_logging,
+    restore_logging_topology,
+)
 from tests.fixtures.permissions import (  # noqa: F401
     acl_directory,
     minimal_acl_directory,
@@ -54,6 +57,21 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_mode() -> Iterator[None]:
+    """Reset the auth-mode context variable between tests (#2277).
+
+    ``build_auth`` records the resolved mode as a startup side effect, and the
+    variable's value crosses test boundaries within one run. Ported from
+    fastmcp-pvl-core's ``tests/conftest.py`` at v10.2.0.
+    """
+    from markdown_vault_mcp._subject import set_current_auth_mode
+
+    set_current_auth_mode(None)
+    yield
+    set_current_auth_mode(None)
 
 
 @pytest.fixture(autouse=True)
