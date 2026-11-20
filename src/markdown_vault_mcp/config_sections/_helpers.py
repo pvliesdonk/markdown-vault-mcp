@@ -77,7 +77,8 @@ def parse_weight_map(raw: str | None, var: str) -> dict[str, float] | None:
 
     Raises:
         ConfigurationError: If an entry lacks a ``:``, has an empty key, or
-            carries a non-numeric weight. The message names the env var.
+            carries a non-numeric weight, or repeats a key with a different
+            weight. The message names the env var.
     """
     from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -100,7 +101,12 @@ def parse_weight_map(raw: str | None, var: str) -> dict[str, float] | None:
                 f"{var}: weight {value.strip()!r} for key {key.strip()!r} "
                 "is not a number"
             ) from exc
-        weights[key.strip()] = weight
+        key = key.strip()
+        if key in weights and weights[key] != weight:
+            raise ConfigurationError(
+                f"{var}: key {key!r} appears more than once with different weights"
+            )
+        weights[key] = weight
     return weights or None
 
 

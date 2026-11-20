@@ -222,14 +222,14 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 | `old_path` | `string` | required | Current path, such as `"drafts/idea.md"` or `"assets/old.png"`. |
 | `new_path` | `string` | required | New path, such as `"projects/idea.md"`, where nothing exists yet. |
 | `if_match` | `string \| null` | `null` | Etag from read of `old_path`; still accepted when the only changes since are link rewrites the server made. |
-| `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
+| `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. The moved note's own links may change; read `new_path` for its current etag before a guarded write. |
 
 **Returns**
 
 Dict with `old_path` (str), `new_path` (str), and `updated_links` (int)
 counting the number of source documents whose links were updated.
-Carries hint (str) only when `update_links` was requested for an
-attachment, saying why nothing was rewritten.
+Carries hint (str) when `update_links` was requested for an attachment
+or when the moved note's links could not be rewritten.
 
 - `link_rewrites_since_etag` (int, optional): present only when
   `if_match` was accepted although the server had since rewritten links

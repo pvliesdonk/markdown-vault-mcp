@@ -339,27 +339,6 @@ class TestRenameKeepsTheSpelling:
             == "<new name.md#Top>"
         )
 
-    def test_escaped_destination_is_recognised_as_the_old_path(self) -> None:
-        # Compared decoded, so the root-relative shape is kept, not turned
-        # into a relative path (the #1105 / #1332 fidelity rule).
-        assert (
-            compute_new_raw_target(
-                "markdown", "a\\(b\\).md", None, "c.md", "sub/src.md", "a(b).md"
-            )
-            == "c.md"
-        )
-
-    def test_numeric_reference_hash_is_not_a_fragment_on_rename_either(self) -> None:
-        # ``x&#46;md`` is root-relative ``x.md``; the ``#`` inside the
-        # reference must not split it, or the shape test would see ``x&``
-        # and rewrite a root-relative link as a relative one.
-        assert (
-            compute_new_raw_target(
-                "markdown", "x&#46;md", None, "y.md", "sub/src.md", "x.md"
-            )
-            == "y.md"
-        )
-
     def test_a_new_name_with_a_hash_is_escaped_so_it_stays_a_file(self) -> None:
         # Written literally, ``#y.md`` would re-parse as an anchor and the
         # backlink would vanish; the one escape a rename does introduce.

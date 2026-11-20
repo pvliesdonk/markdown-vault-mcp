@@ -520,10 +520,14 @@ class ReaderFacet:
                 ``assets/x.png``) scopes to that file; an existing directory
                 (e.g. ``"guides"``) scopes to its subtree; ``None`` returns
                 vault-wide history.
-            since: ISO 8601 datetime string or git date expression (e.g.
-                ``"1 week ago"``).  Passed as ``--since`` to ``git log``.
+            since: ISO calendar date/time within 1970-2099, ``now``, ``today``,
+                ``yesterday``, or integer second/minute/hour/day/week/month/year
+                quantities ending in ``ago`` (e.g. ``"1 week ago"``). Quantities
+                use at most eight digits without leading zeros and must stay
+                after 1970. ``today`` means local midnight. Passed as
+                ``--since``.
                 ``None`` disables the filter.
-            until: ISO 8601 datetime string or git date expression, passed as
+            until: A supported date in the same forms as *since*, passed as
                 ``--until`` to ``git log``.  ``None`` disables the filter.
                 Both ``since`` and ``until`` boundaries are **inclusive**: a
                 commit whose committer date equals either endpoint is included
@@ -544,7 +548,7 @@ class ReaderFacet:
 
         Raises:
             InvalidRequestError: If *path* is provided but fails path validation
-                (unsupported extension or path traversal).
+                (unsupported extension or path traversal), or a date is unsupported.
         """
         return self._git_query_mgr.get_history(
             path, since=since, until=until, limit=limit
@@ -569,7 +573,8 @@ class ReaderFacet:
             since_sha: A commit SHA (full or abbreviated, at least 4 hex
                 digits) to diff from.  Mutually exclusive with
                 *since_timestamp*.
-            since_timestamp: ISO 8601 datetime string, resolved via
+            since_timestamp: A supported date in the same forms as ``since`` in
+                :meth:`get_history`, resolved via
                 ``git rev-list --before=<ts> -1 HEAD`` to the most recent
                 commit at or before that instant.  Boundary is
                 **inclusive**: a commit whose committer date equals

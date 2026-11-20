@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -45,7 +46,6 @@ from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -260,11 +260,10 @@ def verified_entries(metadata: dict[str, Any]) -> list[Any]:
 def derive_trust_tier(metadata: dict[str, Any]) -> str:
     """Derive a note's trust tier from its ``verified`` frontmatter.
 
-    Per the design (§3): ``human-reviewed`` when any well-formed
-    ``verified[].by`` carries the ``human:`` prefix; ``machine-confirmed``
-    when ``verified`` is non-empty (all verifiers non-human); ``unverified``
-    otherwise. Entries that are not mappings are ignored (permissive
-    consumer); a bare mapping is one entry (:func:`verified_entries`).
+    This compatibility label describes recorded claims, not certification.
+    Only entries with a recognized actor shape and an offset-aware timestamp
+    count. A malformed sibling does not discard a usable recorded claim.
+    A bare mapping remains one entry (:func:`verified_entries`).
 
     Args:
         metadata: The note's frontmatter dict.
@@ -273,22 +272,37 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
         One of :data:`TRUST_UNVERIFIED`, :data:`TRUST_MACHINE`,
         :data:`TRUST_HUMAN`.
     """
-    entries = [entry for entry in verified_entries(metadata) if isinstance(entry, dict)]
-    if any(
-        str(entry.get("by", "")).startswith(_HUMAN_ACTOR_PREFIX) for entry in entries
-    ):
+    entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
+    if any(entry["by"].strip().startswith(_HUMAN_ACTOR_PREFIX) for entry in entries):
         return TRUST_HUMAN
     if entries:
         return TRUST_MACHINE
     return TRUST_UNVERIFIED
 
 
-_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_ONLY_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_INSTANT_RE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ](?:[01][0-9]|2[0-3]):[0-5][0-9]"
+    r"(?::[0-5][0-9](?:[.,][0-9]+)?)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
+)
+_ACTOR_RE = re.compile(r"(?:(?:human|process):[^\s]+|[^\s/:]+/[^\s/]+)")
+
+
+def _review_recorded(entry: Any) -> bool:
+    """Whether a review has a usable actor and an offset-aware instant."""
+    if not isinstance(entry, dict):
+        return False
+    actor = entry.get("by")
+    return (
+        isinstance(actor, str)
+        and _ACTOR_RE.fullmatch(actor.strip()) is not None
+        and isinstance(_parse_stale_after(entry.get("at")), _dt.datetime)
+    )
 
 
 def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
     """Keep an instant that carries an offset; drop one that does not."""
-    if value.tzinfo is None:
+    if value.utcoffset() is None:
         logger.debug("okf_stale_after_naive value=%r", raw)
         return None
     return value
@@ -309,10 +323,12 @@ def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
     if not isinstance(raw, str):
         return None
     text = raw.strip()
+    if not (_DATE_ONLY_RE.fullmatch(text) or _INSTANT_RE.fullmatch(text)):
+        return None
     try:
         parsed = (
             _dt.date.fromisoformat(text)
-            if _DATE_ONLY_RE.match(text)
+            if _DATE_ONLY_RE.fullmatch(text)
             else _dt.datetime.fromisoformat(text)
         )
     except ValueError:
@@ -333,7 +349,8 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
             ``date`` or ``datetime`` (YAML parses bare timestamps) or their
-            ISO 8601 string spellings; anything else is treated as absent.
+            supported extended-calendar spellings (see ``okf.md`` §3);
+            anything else yields false, not an assurance of freshness.
         now: The current instant, timezone-aware. Its local calendar day is
             what a bare date is compared against.
 
@@ -346,6 +363,73 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     if isinstance(boundary, _dt.datetime):
         return now >= boundary
     return now.date() >= boundary
+
+
+def _malformed_sources(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``sources`` is not a list of mappings."""
+    if "sources" not in metadata:
+        return False
+    sources = metadata["sources"]
+    return not isinstance(sources, list) or any(
+        not isinstance(entry, Mapping) for entry in sources
+    )
+
+
+def _malformed_generated(metadata: dict[str, Any]) -> bool:
+    """Whether a present ``generated`` is not a mapping containing ``by``."""
+    if "generated" not in metadata:
+        return False
+    generated = metadata["generated"]
+    return not isinstance(generated, Mapping) or "by" not in generated
+
+
+def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
+    """Describe the supplied expiry without implying knowledge is true."""
+    if "stale_after" not in metadata:
+        return {"state": "missing", "basis": "no_expiry_supplied"}
+    boundary = _parse_stale_after(metadata["stale_after"])
+    if boundary is None:
+        return {"state": "malformed", "basis": "unsupported_expiry"}
+    instant = isinstance(boundary, _dt.datetime)
+    expired = now >= boundary if instant else now.date() >= boundary
+    return {
+        "state": "expired" if expired else "unexpired",
+        "basis": "offset_instant" if instant else "server_local_date",
+    }
+
+
+def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
+    """Count usable recorded claims separately from malformed input."""
+    recorded = sum(_review_recorded(entry) for entry in entries)
+    malformed = len(entries) - recorded
+    if "verified" not in metadata:
+        state = "missing"
+    elif not isinstance(metadata["verified"], (dict, list)):
+        state, malformed = "malformed", 1
+    elif not entries:
+        state = "empty"
+    else:
+        state = "recorded" if recorded else "malformed"
+    return {
+        "state": state,
+        "recorded_entries": recorded,
+        "malformed_entries": malformed,
+        "basis": "supplied_metadata_only",
+    }
+
+
+def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
+    """Report whether a supplied review applies to the current content.
+
+    No review is bound to a content snapshot, so a supplied review's
+    applicability is always ``unknown``; ``basis`` says why. Only an absent
+    or empty ``verified`` reports ``none``.
+    """
+    if entries:
+        return {"state": "unknown", "basis": "no_snapshot_binding"}
+    if review["state"] == "malformed":
+        return {"state": "unknown", "basis": "malformed_review"}
+    return {"state": "none", "basis": "no_review_supplied"}
 
 
 def derive_annotation(
@@ -367,7 +451,16 @@ def derive_annotation(
     Returns:
         The annotation dict: ``status`` (defaulted to ``"stable"``),
         ``stale``, and ``trust_tier`` always; ``type`` only when present
-        and non-empty; sources per *include_sources*.
+        and non-empty; sources per *include_sources*. ``freshness`` and
+        ``review`` describe the supplied evidence and its parsing basis, not
+        truth or applicability to this revision. ``review_applicability``
+        reports that separately as ``{state, basis}``: ``unknown`` when
+        ``verified`` has entries or is malformed, ``none`` when absent or
+        empty. Full reads additionally carry ``recorded`` with supplied
+        expiry/reviews as parsed, including malformed values; omitted keys remain absent. ``malformed_sources``
+        and ``malformed_generated`` appear only when true: present sources
+        must be a list of mappings, and generated a mapping containing
+        ``by``. These advisory flags leave source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -382,13 +475,26 @@ def derive_annotation(
     )
     annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
+    annotation["freshness"] = _freshness_evidence(metadata, now)
+    entries = verified_entries(metadata)
+    annotation["review"] = _review_evidence(metadata, entries)
+    annotation["review_applicability"] = _review_applicability(
+        entries, annotation["review"]
+    )
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:
+        annotation["recorded"] = {
+            key: metadata[key] for key in ("stale_after", "verified") if key in metadata
+        }
         if source_list:
             annotation["sources"] = source_list
     elif source_list:
         annotation["sources_count"] = len(source_list)
+    if _malformed_sources(metadata):
+        annotation["malformed_sources"] = True
+    if _malformed_generated(metadata):
+        annotation["malformed_generated"] = True
     return annotation
 
 
@@ -494,6 +600,12 @@ class OkfAuditReport:
     fixing; ``informational`` entries are not deviations at all (wikilinks
     only matter at export; recommended fields are optional).
 
+    Missing freshness is informational; malformed freshness/reviews are
+    format observations and do not change ``conformant_notes``. Unavailable
+    evidence means no assessment, not absent metadata. These findings cover
+    only discovered, non-excluded concepts; they certify neither complete
+    traversal nor truth nor review applicability.
+
     Attributes:
         mode: Configured OKF mode at audit time.
         declared_version: Declared ``okf_version``, or ``None``.
@@ -524,8 +636,18 @@ class OkfAuditReport:
             read by the same parser as every other rule, so JSON frontmatter
             is judged by its keys and its syntax is not checked. A folder
             index declaring ``okf_version`` is also
-            ``misplaced_okf_version``. Declared last and defaulted so earlier
+            ``misplaced_okf_version``. Appended and defaulted so earlier
             positional construction still works.
+        malformed_sources: Notes with a present ``sources`` that is not
+            a list of mappings (advisory; an empty list is valid).
+        malformed_generated: Notes with a present ``generated`` that is
+            not a mapping containing ``by`` (advisory; key presence only).
+            Both provenance findings leave ``conformant_notes`` unchanged.
+        missing_freshness: Assessed concepts with no expiry supplied.
+        malformed_freshness: Assessed concepts with an unsupported expiry.
+        malformed_review: Assessed concepts with malformed review input.
+        evidence_unavailable: Discovered concepts not assessed for evidence
+            because reading/parsing failed or the read cap was exceeded.
     """
 
     mode: str
@@ -542,6 +664,12 @@ class OkfAuditReport:
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
     index_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_sources: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_generated: OkfFinding = OkfFinding(count=0, examples=())
+    missing_freshness: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_freshness: OkfFinding = OkfFinding(count=0, examples=())
+    malformed_review: OkfFinding = OkfFinding(count=0, examples=())
+    evidence_unavailable: OkfFinding = OkfFinding(count=0, examples=())
 
 
 class _FindingAccumulator:
@@ -573,6 +701,12 @@ class _AuditCounters:
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.index_frontmatter = _FindingAccumulator(cap)
+        self.malformed_sources = _FindingAccumulator(cap)
+        self.malformed_generated = _FindingAccumulator(cap)
+        self.missing_freshness = _FindingAccumulator(cap)
+        self.malformed_freshness = _FindingAccumulator(cap)
+        self.malformed_review = _FindingAccumulator(cap)
+        self.evidence_unavailable = _FindingAccumulator(cap)
         self.total = 0
         self.conformant = 0
         self.root_index_seen = False
@@ -607,9 +741,9 @@ def _index_frontmatter_conforms(rel: str, raw: str, metadata: dict[str, Any]) ->
 
 
 def _read_capped(file_path: Path, rel: str) -> str | None:
-    """Read up to :data:`_MAX_READ_CHARS` of *file_path*, ``None`` on error."""
+    """Read the audit cap plus one character to detect incomplete evidence."""
     try:
-        return read_text_utf8(file_path, limit=_MAX_READ_CHARS)
+        return read_text_utf8(file_path, limit=_MAX_READ_CHARS + 1)
     except (OSError, UnicodeDecodeError):
         logger.debug("okf_audit_read_failed path=%s", rel, exc_info=True)
         return None
@@ -631,14 +765,30 @@ def _evaluate_note(
         and status.strip() not in OKF_STATUS_VALUES
     ):
         acc.unknown_status.add(rel)
+    if _malformed_sources(metadata):
+        acc.malformed_sources.add(rel)
+    if _malformed_generated(metadata):
+        acc.malformed_generated.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)
     if not metadata.get("title") or not metadata.get("description"):
         acc.missing_recommended.add(rel)
 
 
+def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> None:
+    """Report supplied-field shape findings, not local editorial policy."""
+    if "stale_after" not in metadata:
+        acc.missing_freshness.add(rel)
+    elif _parse_stale_after(metadata["stale_after"]) is None:
+        acc.malformed_freshness.add(rel)
+    if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
+        acc.malformed_review.add(rel)
+
+
 def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     """Classify one markdown file and update the audit counters."""
+    evidence_available = len(raw) <= _MAX_READ_CHARS
+    raw = raw[:_MAX_READ_CHARS]
     try:
         post = parse_frontmatter(raw)
         metadata: dict[str, Any] = dict(post.metadata)
@@ -664,6 +814,10 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
         acc.unparseable.add(rel)
     else:
         _evaluate_note(rel, metadata, body, acc)
+    if parse_ok and evidence_available:
+        _audit_evidence(rel, metadata, acc)
+    else:
+        acc.evidence_unavailable.add(rel)
 
 
 def audit_bundle(
@@ -676,9 +830,12 @@ def audit_bundle(
     """Audit the vault's OKF conformance from disk (design §4; #962).
 
     Pure disk I/O, index-independent (the detection-probe pattern): each
-    file is read up to :data:`_MAX_READ_CHARS` characters — frontmatter
-    always fits; a wikilink beyond the cap in a pathological note goes
-    uncounted. The index's effective exclude patterns double as the audit
+    file's existing conformance checks use at most :data:`_MAX_READ_CHARS`
+    characters; content beyond that cap goes unexamined. One extra character
+    detects overflow: new evidence findings are withheld for such files.
+    Read or parse failures also make their evidence assessment unavailable.
+    These observations cover discovered, non-excluded concept files, not a
+    complete inventory or an editorial-policy assessment. The index's effective exclude patterns double as the audit
     whitelist, so known-nonconforming zones (convention files, configured
     excludes) are skipped via existing config.
 
@@ -721,6 +878,8 @@ def audit_bundle(
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:
             _audit_file(rel, raw, acc)
+        elif rel.rsplit("/", 1)[-1] not in OKF_RESERVED_FILENAMES:
+            acc.evidence_unavailable.add(rel)
 
     return OkfAuditReport(
         mode=state.mode,
@@ -737,6 +896,12 @@ def audit_bundle(
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
         index_frontmatter=acc.index_frontmatter.finding(),
+        malformed_sources=acc.malformed_sources.finding(),
+        malformed_generated=acc.malformed_generated.finding(),
+        missing_freshness=acc.missing_freshness.finding(),
+        malformed_freshness=acc.malformed_freshness.finding(),
+        malformed_review=acc.malformed_review.finding(),
+        evidence_unavailable=acc.evidence_unavailable.finding(),
     )
 
 
@@ -1075,8 +1240,8 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped because a content change invalidates any
-    prior attestation; ``sources`` and every other field are untouched.
+    write; ``verified`` is dropped without assessing whether a prior review
+    applies; ``sources`` and every other field are untouched.
     Surviving fields retain their mapping order, including nested mappings;
     a new ``generated`` field appends, while replacing it retains its slot.
     YAML comments and formatting are not retained on serialization.
