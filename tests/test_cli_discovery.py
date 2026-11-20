@@ -272,6 +272,9 @@ def test_historical_read_retains_revision_shape(
     discovery_source: Path, remote: bool
 ) -> None:
     """--revision returns historical content without a live etag or OKF annotation."""
+    (discovery_source / "index.md").write_text(
+        '---\nokf_version: "0.2"\n---\n# Index\n'
+    )
     _run_git(discovery_source, "init")
     _run_git(discovery_source, "config", "user.name", "Synthetic")
     _run_git(discovery_source, "config", "user.email", "synthetic@example.com")
@@ -321,6 +324,7 @@ def test_okf_read_sources_context_conventions_and_stats(
         context.output,
         stats.output,
     )
+    assert json.loads(note.stdout)["okf"]["snapshot"]["algo"] == "mvmcp-concept-v1"
     assert json.loads(note.stdout)["okf"]["sources"] == [
         {"resource": "https://example.com/source"}
     ]

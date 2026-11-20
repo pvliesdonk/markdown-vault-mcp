@@ -19,7 +19,7 @@ from markdown_vault_mcp.config_sections._assembly import (
 from markdown_vault_mcp.vault import Vault
 
 # The Vault.__init__ keywords that are NOT config-derived and therefore have
-# no VaultSettings field: the root, the five collaborators, and settings.
+# no VaultSettings field: the root, explicit collaborators, and settings.
 _NON_SETTINGS_PARAMS = {
     "self",
     "source_dir",
@@ -30,6 +30,7 @@ _NON_SETTINGS_PARAMS = {
     "chunk_strategy",
     "vector_store",
     "vector_backend",
+    "inspection_policy",
     "settings",
 }
 
@@ -417,6 +418,10 @@ class TestFromProjectConfig:
         assert settings.folder_weights == {"notes": 2.0}
         assert settings.fts_weights == {"title": 3.0}
 
+    def test_protected_paths_mapping(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path, protected_paths=["./a.md"])
+        assert VaultSettings.from_project_config(config).protected_paths == ("a.md",)
+
     def test_chunk_char_cap_derivation(self) -> None:
         config = ProjectConfig(source_dir=Path("/tmp/vault"))
         # No provider context: bounded ceiling fallback (#790).
@@ -639,3 +644,31 @@ class TestEmbeddingStoreSetting:
         )
         assert settings.embedding_search == "streamed"
         assert settings.embedding_search_workspace_bytes == 3 << 20
+
+
+def test_protected_paths_preserves_settings_positional_api() -> None:
+    defaults = VaultSettings()
+    fields = [
+        f
+        for f in dataclasses.fields(VaultSettings)
+        if not f.kw_only and f.name != "protected_paths"
+    ]
+    fields = fields[
+        : next(i for i, f in enumerate(fields) if f.name == "exclude_patterns") + 1
+    ]
+    args = [
+        (["private"] if f.name == "exclude_patterns" else getattr(defaults, f.name))
+        for f in fields
+    ]
+    settings = VaultSettings(*args)
+    assert settings.exclude_patterns == ["private"]
+    assert settings.protected_paths is None
+    assert VaultSettings.__dataclass_fields__["protected_paths"].kw_only
+
+
+@pytest.mark.parametrize("pattern", [".", "./", "././"])
+def test_protected_root_rejected_settings(pattern: str) -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    with pytest.raises(ConfigurationError, match=r"PROTECTED_PATHS.*\*"):
+        VaultSettings(protected_paths=[pattern])
