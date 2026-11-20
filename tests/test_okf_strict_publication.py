@@ -541,6 +541,7 @@ def test_metadata_path_validation(
 
 
 def test_cli_rejects_removed_hidden_option(tmp_path: Path) -> None:
+    from click import unstyle
     from typer.testing import CliRunner
 
     from markdown_vault_mcp.cli import app
@@ -549,4 +550,4 @@ def test_cli_rejects_removed_hidden_option(tmp_path: Path) -> None:
         app, ["export", str(tmp_path / "out.zip"), "--include-hidden"]
     )
     assert result.exit_code == 2
-    assert "No such option: --include-hidden" in result.output
+    assert "No such option: --include-hidden" in unstyle(result.output)
