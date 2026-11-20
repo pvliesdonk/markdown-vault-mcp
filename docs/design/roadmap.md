@@ -645,8 +645,11 @@ decay, tests and docs contributed after packaging, as `022` did (17 November
 2026).
 
 `stated` — **[024 okf-evidence](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/25)**
-follows `023` with the contributed OKF evidence work under [epic #1425][1425]:
-[#1413][1413], [#1444][1444] and [#1446][1446] (16 November 2026).
+follows `023` with the contributed OKF evidence work under [epic #1425][1425]
+(16 November 2026). Since 20 November it holds only the starting points of the
+contributed OKF chain: [#1444][1444], [#2059][2059] and the slices
+[#2378][2378] (of [#1413][1413]) and [#2379][2379] (of [#1446][1446])
+(§ Revisions, 20 November 2026).
 
 `derived` — **Major intent**, because the owner kept the breaking marker on
 the [#1444][1444] fix: malformed review records no longer promote
@@ -681,9 +684,10 @@ put both tracks' first cuts directly after `025`, `027 first-class-library`
 became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 `033`. Each milestone keeps its identity and membership:
 
-- **[026 okf-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
-  (major since 20 November): [#1610][1610], [#1442][1442], [#1606][1606], [#1438][1438],
-  [#1421][1421].
+- **[026 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
+  (major): capability settings, gating and reporting ([#2380][2380],
+  [#1411][1411], [#1432][1432]), then inventory ([#1442][1442], [#1421][1421],
+  [#1610][1610], [#1606][1606]) and [#1419][1419].
 - **[027 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
   (patch; refactor and tests may need `override_version`): [#1308][1308],
   [#1310][1310], [#1569][1569], [#2224][2224].
@@ -691,23 +695,35 @@ became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
   the `027` of the sections above.
 - **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
   the `028` of the sections above.
-- **[031 okf-storage-policy](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
-  (major since 20 November): [#1412][1412],
-  [#1432][1432], [#1411][1411].
+- **[031 okf-provenance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
+  (major): explicit authoring ([#1422][1422]), then preserved provenance
+  ([#1412][1412], [#1443][1443], [#2057][2057]), then reserved files without
+  seeded placeholders ([#1438][1438]).
 - **[032 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
   (minor): [#1309][1309].
 - **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
   the `030` of the sections above.
-- **[034 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)** and
-  **[035 okf-authoring](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)**
-  (major since 20 November, provisional): [#1419][1419] and [#1395][1395]; [#1422][1422].
-- **[036 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
-  (minor, provisional): [#1677][1677].
+- **[034 okf-write-groups](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/39)**
+  (minor): [#1677][1677], the git conflict fixes its pull deferral sits on
+  ([#1395][1395]) and [#1415][1415].
+- **[035 okf-observations](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/40)**
+  (minor): [#1414][1414] and [#2045][2045].
+- **[036 okf-review-binding](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/41)**
+  (major): [#1445][1445] and [#1413][1413].
 - **[037 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
-  (major, provisional): [#1448][1448].
+  (major): [#1448][1448].
+- **[038 okf-repair](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)**
+  (major): [#1420][1420], [#2061][2061] and [#2062][2062].
+- **[039 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**
+  (minor): [#1611][1611], [#1612][1612] and [#1394][1394].
+- **[040 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
+  (major): [#1447][1447], [#2058][2058] and [#1446][1446].
+- **[041 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
+  (minor): [#1416][1416], [#1418][1418] and [#2381][2381].
 
-`derived` — Each package follows the candidate cut of the same name in
-§ Follow-up slices, which carries its ordering argument. An open decision
+`derived` — The OKF packages follow the order in which the contributed pull
+requests are built, not the candidate cuts of § Follow-up slices (§ Revisions,
+20 November 2026). The candidate rows still name the outcomes. An open decision
 inside a package is work for that cut, not a reason to keep its issue out.
 
 `stated` — "The milestone is a collection of issues to resolve for a release.
@@ -718,8 +734,8 @@ supersedes the 17 November rule that a contributor-proposed issue has no
 package until accepted.
 
 `stated` — "If a PR carries ! then it will be a major break" (20 November
-2026). By that rule `024`, `026`, `031`, `034`, `035`,
-`037` and `038` are majors.
+2026). By that rule `024`, `026`, `031`, `036`, `037`, `038` and `040` are
+majors (as re-cut on 20 November 2026).
 
 `derived` — Two packages were added on 20 November 2026:
 
@@ -729,7 +745,8 @@ package until accepted.
   OKF and Git tracks, which they do not depend on.
 - **[038 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
   (major) is the evidence-aware retrieval cut of § Follow-up slices, which had
-  no package. It follows the evidence and inventory cuts it reads from.
+  no package. It follows the evidence and inventory cuts it reads from. It is
+  `040` since the re-cut later that day.
 
 `derived` — **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
 (minor)** follows `028` with the read-only submodule epic [#1561][1561], less the
@@ -1253,6 +1270,44 @@ fix [#2143][2143] was still open; it was reopened. The body of
 close nine unrelated issues on merge; the account holder's agent reworded that
 section, leaving only [#1422][1422].
 
+### 20 November 2026 — cut the OKF packages in the order the pull requests are built
+
+`evidenced` — The placements above put issues in earlier packages than work
+their pull requests are built on. A pull request ships every commit its branch
+contains, so the account holder's agent mapped, for each open contributed pull
+request, which other pull requests' own commits its branch contains. At issue
+level the OKF work formed one dependency cycle: each broad issue has slices at
+different points of the chain. Nine branches contain pull requests their
+"Stacks on" lines do not name, for example D3 [#2270][2270] contains F5 and C1.
+
+`derived` — The slice letters in the branch names (A inventory to H
+publication) name the outcome a slice serves, not when it was built. The
+contributor built capability settings and gating before inventory, explicit
+authoring (D1) before preserved provenance (B7), and write groups before review
+binding (D3). Nearly everything later stands on D4, the review assessment.
+
+`stated` — The owner asked what order the contributions expect and then
+confirmed the re-cut that follows it, taking the undeclared edges as real
+dependencies (20 November 2026): `024` starting points, `026` capabilities and
+inventory, `031` provenance, `034` write groups, `035` observations, `036`
+review binding, `037` publication, then `038` repair, `039` navigation, `040`
+retrieval and `041` editorial history, all built on D4 (§ Packages). This
+supersedes the 18 November order of the OKF packages.
+
+`derived` — Existing milestones were renamed, keeping their identity; `034`,
+`035` and `036` are new. Where a broad issue's slices fall in different cuts,
+the early slice became its own issue: [#2378][2378] and [#2379][2379] in `024`,
+[#2380][2380] in `026` and [#2381][2381] in `041`. [#1414][1414], [#2045][2045]
+and [#1413][1413] leave `024`. Native blocked-by edges now mirror the pull
+request graph between issues in different cuts. Two edges were left out:
+[#1611][1611] and [#1612][1612] depend on each other inside `039`, and
+[#1448][1448] would wait on [#1413][1413] only through a slice that follows its
+own closing pull request.
+
+`derived` — Publication needs only inventory and [#1241][1241] until its
+review-assurance slice, so it could ship directly after `026`. It stays
+after `036` as confirmed.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1451,3 +1506,8 @@ section, leaving only [#1422][1422].
 [2311]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2311
 [1310]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1310
 [2128]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2128
+[2378]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2378
+[2379]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2379
+[2380]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2380
+[2381]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2381
+[2270]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2270
