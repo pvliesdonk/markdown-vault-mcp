@@ -440,19 +440,36 @@ class ExportPaths:
         default_factory=lambda: effective_attachment_extensions(None)
     )
     version: str | None = None
+    artifact_version: str | None = None
     _candidates: dict[str, set[str]] | None = field(default=None, init=False)
     _archive_members: set[str] = field(default_factory=set, init=False)
     _directories: set[str] = field(default_factory=set, init=False)
     _field_inventory: set[str] | None = field(default=None, init=False)
+    _selected_fields: set[str] = field(default_factory=set, init=False)
+    _artifact_fields: set[str] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
-        self._archive_members = {path[len(self.scope) + 1 :] for path in self.members}
+        self._archive_members = {
+            path[len(self.scope) + 1 :] if self.scope else path for path in self.members
+        }
         self._directories = {self.scope}
         for path in self.members:
             parent = path.rpartition("/")[0]
             while parent not in self._directories:
                 self._directories.add(parent)
                 parent = parent.rpartition("/")[0]
+        self._selected_fields = (
+            self.members | {d + "/" for d in self._directories} | {"/"}
+        )
+        self._artifact_fields = (
+            self._archive_members
+            | {
+                d[len(self.scope) + 1 :] + "/"
+                for d in self._directories
+                if d != self.scope
+            }
+            | {"/"}
+        )
         if self.external_base is not None:
             try:
                 parts = urlsplit(self.external_base)
@@ -654,11 +671,9 @@ class ExportPaths:
         list[tuple[ScalarNode, str]],
         list[Dependency],
         list[Dependency],
-        list[Dependency],
     ]:
         changes: list[tuple[ScalarNode, str]] = []
         dependencies: list[Dependency] = []
-        ambiguous: list[Dependency] = []
         fallback: list[Dependency] = []
         licenses = _mapping_values(root, "license", {}) if source == "index.md" else []
         for node in _frontmatter_paths(root, source == "index.md"):
@@ -674,7 +689,7 @@ class ExportPaths:
                 rewritten = self._field_replacement(value, source, dependencies)
             if rewritten is not None and rewritten != value:
                 changes.append((node, rewritten + trailing))
-        return changes, dependencies, ambiguous, fallback
+        return changes, dependencies, fallback
 
     def _bare_field(
         self,
@@ -685,19 +700,41 @@ class ExportPaths:
     ) -> str | None:
         dependencies, fallback = observations
         archive_source = source[len(self.scope) + 1 :] if self.scope else source
-        result = resolve_okf_path(value, source, self._available_fields(), self.version)
+        result = resolve_okf_path(value, source, self._selected_fields, self.version)
+        if result.status == "external":
+            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value):
+                return None
+            return self._field_replacement(value, source, dependencies)
+        if result.status == "absent":
+            return None
+        if result.status == "unresolved" and license_field and _is_spdx_license(value):
+            return None
+        if result.status != "resolved":
+            result = resolve_okf_path(
+                value, source, self._available_fields(), self.version
+            )
         if result.status == "root_fallback":
             fallback.append(Dependency(archive_source, _safe_text(value)))
         if result.status in {"resolved", "root_fallback"} and result.path:
             return self._resolved_field(
                 value, source, result.path, result.suffix, dependencies
             )
-        if result.status in {"external", "absent"} and not value.startswith(
-            ("./", "../")
-        ):
-            return None
-        if license_field and _is_spdx_license(value):
-            return None
+        return self._unresolved_field(value, source, dependencies)
+
+    def _unresolved_field(
+        self, value: str, source: str, dependencies: list[Dependency]
+    ) -> str | None:
+        archive_source = source[len(self.scope) + 1 :] if self.scope else source
+        apparent = resolve_okf_path(
+            value,
+            archive_source,
+            self._artifact_fields,
+            self.artifact_version if self.scope else self.version,
+        )
+        if apparent.status in {"resolved", "root_fallback"}:
+            raise ExportCollisionError(
+                f"Export collision in {_safe_text(source)}: {_safe_text(value)}; unresolved path would resolve in the artifact"
+            )
         if value.startswith(("./", "../")):
             return self._field_replacement(value, source, dependencies)
         dependencies.append(Dependency(archive_source, _safe_text(value)))
@@ -732,7 +769,10 @@ class ExportPaths:
 
     def _available_fields(self) -> set[str]:
         if self._field_inventory is None:
-            available = set(self.inventory() if self.inventory else self.members)
+            try:
+                available = set(self.inventory() if self.inventory else self.members)
+            except ValueError as exc:
+                raise _FieldInventoryError(str(exc)) from exc
             directories = {"/"}
             for member in available:
                 parent = member.rpartition("/")[0]
@@ -769,11 +809,8 @@ class ExportPaths:
             loader = _AliasLoader(header)
             try:
                 root = loader.get_single_node()
-                changes, dependencies, ambiguous, fallback = self._field_changes(
-                    root, source
-                )
+                changes, dependencies, fallback = self._field_changes(root, source)
                 report.dependencies.extend(dependencies)
-                report.ambiguous_path.extend(ambiguous)
                 report.v0_2_root_fallback.extend(fallback)
                 if not changes:
                     return prefix
@@ -781,13 +818,13 @@ class ExportPaths:
                     changed = {id(node) for node, _ in changes}
                     header = _isolate(header, root, loader.aliases, changed)
                     root = yaml.compose(header, Loader=yaml.SafeLoader)
-                    changes, _, _, _ = self._field_changes(root, source)
+                    changes, _, _ = self._field_changes(root, source)
                 header = _splice_fields(header, changes)
             finally:
                 loader.dispose()
         except (_MetadataComplexity, RecursionError):
             report.uninspected[source] = "metadata_complexity"
-        except ExportCollisionError:
+        except (ExportCollisionError, _FieldInventoryError):
             raise
         except (ValueError, yaml.YAMLError):
             report.uninspected[source] = "metadata_encoding"
@@ -912,6 +949,10 @@ def _quote_field_uri(path: str) -> str:
 
 class _MetadataComplexity(Exception):
     """The metadata graph cannot be inspected or copied within the budget."""
+
+
+class _FieldInventoryError(ValueError):
+    """The vault inventory required for field resolution is unavailable."""
 
 
 def _mapping_values(

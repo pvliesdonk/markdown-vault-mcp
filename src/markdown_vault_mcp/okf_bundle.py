@@ -8,6 +8,7 @@ import logging
 import os
 import stat
 import zipfile
+from codecs import getincrementaldecoder
 from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass, replace
 from functools import cache
@@ -80,7 +81,7 @@ class OkfBundleResult:
     report: OkfExportReport
 
 
-def _read_safe(source: Path, path: str) -> bytes:
+def _read_safe(source: Path, path: str, limit: int = -1) -> bytes:
     """Read one regular file without following any path component."""
     parts = path.split("/")
     with open_directory_nofollow(source, parts[:-1]) as parent:
@@ -90,7 +91,7 @@ def _read_safe(source: Path, path: str) -> bytes:
         with os.fdopen(fd, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise OSError("Regular file required")
-            return stream.read()
+            return stream.read(limit)
 
 
 def _omission_reasons(
@@ -268,14 +269,23 @@ def _snapshot_admitted(
     return exempt or not missing_required(metadata, required)
 
 
-def _root_declaration(vault: Vault, snapshot: GitExportSnapshot) -> str:
-    """The committed root index text, if inventory access admits that path."""
-    entry = snapshot.entries.get("index.md")
+def _root_declaration(
+    vault: Vault, snapshot: GitExportSnapshot | None, path: str = "index.md"
+) -> str:
+    """Read an index declaration without following links or leaving the snapshot."""
+    if snapshot is None:
+        with suppress(OSError, UnicodeError):
+            raw = _read_safe(vault.source_dir, path, 262144)
+            return getincrementaldecoder("utf-8-sig")().decode(
+                raw, final=len(raw) < 262144
+            )
+        return ""
+    entry = snapshot.entries.get(path)
     if entry and entry[0] in {"100644", "100755"}:
-        root = replace(snapshot, entries={"index.md": entry})
+        root = replace(snapshot, entries={path: entry})
         if _inspect_page(vault, "", root, limit=1).entries:
             with suppress(UnicodeError):
-                return decode_utf8(snapshot.read("index.md"))
+                return decode_utf8(snapshot.read(path))
     return ""
 
 
@@ -378,7 +388,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
 ) -> OkfBundleResult:
     folder, include_index_excluded, include_hidden, external_base = options
     folder = _scope(folder)
-    declaration = _root_declaration(vault, snapshot) if snapshot else None
+    declaration = _root_declaration(vault, snapshot)
     version, _ = vault.okf._probe(declaration)
     active = bool(
         snapshot and vault._required_frontmatter and vault.okf.state(declaration).active
@@ -457,6 +467,13 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             }
 
         extensions = effective_attachment_extensions(config.attachment_extensions)
+        artifact_index = f"{folder}/index.md" if folder else "index.md"
+        artifact_declaration = (
+            _root_declaration(vault, snapshot, artifact_index)
+            if any(item.path == artifact_index for item in selected)
+            else ""
+        )
+        artifact_version, _ = vault.okf._probe(artifact_declaration)
         paths = ExportPaths(
             folder,
             {item.path for item in selected},
@@ -464,6 +481,7 @@ def _build_okf_bundle(  # noqa: C901, PLR0912, PLR0915, RUF100
             inventory,
             extensions,
             version,
+            artifact_version,
         )
         admitted: dict[str, bool] = {}
         selected_entries = {item.path: item for item in selected}

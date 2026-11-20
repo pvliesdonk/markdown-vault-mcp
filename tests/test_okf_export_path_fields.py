@@ -610,15 +610,15 @@ def test_external_base_flow_scalars_preserve_yaml_values(tmp_path, base, style, 
     "field", ["resource", "computation", "executor", "attester", "sources"]
 )
 @pytest.mark.parametrize(
-    "value,is_ambiguous",
+    "value",
     [
-        ("x://example.org/a", False),
-        ("X://example.org/a?x=1#f", False),
-        ("C:/notes/topic.md", False),
-        (r"C:\notes\topic.md", False),
+        "x://example.org/a",
+        "X://example.org/a?x=1#f",
+        "C:/notes/topic.md",
+        r"C:\notes\topic.md",
     ],
 )
-def test_one_letter_urls_and_drive_paths(tmp_path, field, value, is_ambiguous):
+def test_one_letter_urls_and_drive_paths(tmp_path, field, value):
     scalar = f"'{value}'"
     if field in {"resource", "computation"}:
         header = f"{field}: {scalar}"
@@ -629,9 +629,7 @@ def test_one_letter_urls_and_drive_paths(tmp_path, field, value, is_ambiguous):
     text = f"---\n{header}\n---\n"
     output, report = export(tmp_path, text)
     assert output == text
-    assert [(item.path, item.target) for item in report.ambiguous_path] == (
-        [("a.md", value)] if is_ambiguous else []
-    )
+    assert not report.ambiguous_path
     assert not report.dependencies
     assert not report.transformed
 
@@ -767,3 +765,114 @@ def test_git_export_uses_committed_version_in_on_mode(tmp_path):
         ("sub/a.md", "guides/b.md")
     ]
     assert not result.report.v0_2_root_fallback
+
+
+@pytest.mark.parametrize("value", ["b.md", "./b.md"])
+def test_unresolved_v03_path_cannot_retarget_in_export(tmp_path, value):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    with pytest.raises(ValueError, match="collision"):
+        export(tmp_path, f"---\nresource: {value}\n---\n", source="sub/c.md")
+
+
+def test_encoded_outside_path_is_reported(tmp_path):
+    value = "%2E%2E/%2E%2E/outside.md"
+    _, report = export(tmp_path, f'---\nresource: "{value}"\n---\n')
+    assert [(x.path, x.target) for x in report.dependencies] == [("a.md", value)]
+
+
+def test_field_inventory_failure_refuses_export():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    def unavailable():
+        raise ValueError("inventory unavailable")
+
+    paths = ExportPaths("guides", {"guides/a.md"}, None, inventory=unavailable)
+    with pytest.raises(ValueError, match="inventory unavailable"):
+        paths.relocate_frontmatter(
+            "---\nresource: missing.md\n---\n", "guides/a.md", OkfExportReport()
+        )
+
+
+def test_selected_relative_path_does_not_scan_vault():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    def unavailable():
+        raise AssertionError("unneeded inventory")
+
+    paths = ExportPaths(
+        "guides", {"guides/a.md", "guides/b.md"}, None, inventory=unavailable
+    )
+    text = "---\nresource: b.md\n---\n"
+    assert paths.relocate_frontmatter(text, "guides/a.md", OkfExportReport()) == text
+
+
+def test_live_export_does_not_follow_index_symlink(tmp_path, monkeypatch):
+    from markdown_vault_mcp import okf
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text('---\nokf_version: "0.3"\n---\n')
+    (root / "index.md").symlink_to(outside)
+    (root / "a.md").write_text("note")
+    vault = Vault(source_dir=root, settings=VaultSettings(okf_mode="off"))
+    original = okf.read_text_utf8
+
+    def deny(path, *args, **kwargs):
+        assert path != root / "index.md"
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(okf, "read_text_utf8", deny)
+    try:
+        with pytest.raises(OSError, match="symlink"):
+            build_okf_bundle(vault, ProjectConfig(source_dir=root))
+    finally:
+        vault.close()
+
+
+def test_root_export_does_not_create_false_collision():
+    from markdown_vault_mcp.okf_export_paths import ExportPaths
+    from markdown_vault_mcp.okf_export_report import OkfExportReport
+
+    paths = ExportPaths("", {"index.md", "target.md", "a.md"}, None, version="0.3")
+    report = OkfExportReport()
+    text = "---\nresource: arget.md\n---\n"
+    assert paths.relocate_frontmatter(text, "a.md", report) == text
+    assert [(x.path, x.target) for x in report.dependencies] == [("a.md", "arget.md")]
+
+
+def test_subtree_declared_v03_does_not_invent_collision(tmp_path):
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    text = "---\nresource: b.md\n---\n"
+    output, report = export(tmp_path, text, source="sub/c.md")
+    assert output == text
+    assert [(x.path, x.target) for x in report.dependencies] == [("sub/c.md", "b.md")]
+
+
+def test_live_index_bounded_read_keeps_valid_utf8_prefix(tmp_path):
+    from markdown_vault_mcp.okf_bundle import _root_declaration
+
+    header = b'---\nokf_version: "0.3"\n---\n'
+    (tmp_path / "index.md").write_bytes(
+        header + b"x" * (262143 - len(header)) + "€".encode()
+    )
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        assert _root_declaration(vault, None).startswith(header.decode())
+    finally:
+        vault.close()
+
+
+def test_live_index_bounded_read_rejects_invalid_utf8(tmp_path):
+    from markdown_vault_mcp.okf_bundle import _root_declaration
+
+    (tmp_path / "index.md").write_bytes(b'---\nokf_version: "0.3"\n---\n\xff')
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode="off"))
+    try:
+        assert _root_declaration(vault, None) == ""
+    finally:
+        vault.close()
