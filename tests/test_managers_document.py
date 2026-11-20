@@ -1218,3 +1218,168 @@ def test_write_marks_path_dirty_via_vault(tmp_path: Path) -> None:
         assert "new.md" in col._coordinator.writer.snapshot_dirty_paths()
     finally:
         col.close()
+
+
+# ---------------------------------------------------------------------------
+# Stored frontmatter bytes through edit, append and link rewrites (#1443)
+# ---------------------------------------------------------------------------
+
+_CRLF_HEADER = (
+    b"\xef\xbb\xbf---\r\nunknown: value # comment\r\ngenerated:\r\n"
+    b"  at: 2026-01-01T00:00:00Z\r\nverified:\r\n  - by: human:reviewer\r\n"
+    b"    at: 2026-01-02T00:00:00Z\r\n---\r\n"
+)
+_JSON_HEADER = (
+    b'\xef\xbb\xbf{\r\n  "generated": {"by": "agent/1"},\r\n'
+    b'  "verified": [{"by": "human:reviewer"}]\r\n}\r\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("raw", "change", "expected"),
+    [
+        (
+            _CRLF_HEADER + b"Body.\r\nTail.\r\n",
+            ("Body.", "Changed."),
+            _CRLF_HEADER + b"Changed.\nTail.\n",
+        ),
+        (
+            b"---\rtitle: a\r---\rbody\rmore\r",
+            ("body\nmore", "X"),
+            b"---\rtitle: a\r---\rX\n",
+        ),
+        (
+            b"\xef\xbb\xbf---\rtitle: a\r---\rbody\rmore\r",
+            ("body\nmore", "X"),
+            b"\xef\xbb\xbf---\rtitle: a\r---\rX\n",
+        ),
+        (
+            b"---\r\ntitle: a\r---\nbody\r\nmore",
+            ("body\nmore", "X"),
+            b"---\r\ntitle: a\r---\nX",
+        ),
+        (b"body\r\nmore\r\n", ("body\nmore", "X"), b"X\n"),
+        (b"---\r\nbody\r\nmore\r\n", ("body\nmore", "X"), b"---\nX\n"),
+        (
+            b"---\rk: 1\r---\r\rbody\rmore\r",
+            ("body\nmore", "X"),
+            b"---\rk: 1\r---\r\r\nX\n",
+        ),
+        (
+            b"---\r\nk: 1\r\n---\r\rbody\r\nmore\r\n",
+            ("body\nmore", "X"),
+            b"---\r\nk: 1\r\n---\r\r\nX\n",
+        ),
+        (
+            b"---\rk: 1\r---\r\r\rbody\rmore\r",
+            ("body\nmore", "X"),
+            b"---\rk: 1\r---\r\r\n\nX\n",
+        ),
+        (
+            b"\xef\xbb\xbf---\r\ntitle: a\r\n---\r\nBody\r\n",
+            ("title: a", "title: b"),
+            b"---\ntitle: b\n---\nBody\n",
+        ),
+        (
+            _JSON_HEADER + b"Body.\r\nTail.\r\n",
+            ("Body.", "Changed."),
+            _JSON_HEADER + b"Changed.\nTail.\n",
+        ),
+    ],
+    ids=[
+        "crlf-bom-comments",
+        "cr-only",
+        "bom-cr-only",
+        "mixed",
+        "no-header",
+        "unclosed",
+        "cr-fence-blank",
+        "crlf-cr-fence-blank",
+        "cr-fence-two-blank",
+        "header-changed",
+        "json-bom-crlf",
+    ],
+)
+def test_read_view_edit_keeps_stored_header(
+    doc_mgr: DocumentManager,
+    doc_vault: Path,
+    raw: bytes,
+    change: tuple[str, str],
+    expected: bytes,
+) -> None:
+    """An edit matches the read view; an unchanged header keeps its bytes."""
+    old_text, new_text = change
+    path = doc_vault / "stored.md"
+    path.write_bytes(raw)
+    before = path.read_text(encoding="utf-8-sig")
+    assert old_text in before
+    doc_mgr.edit("stored.md", old_text=old_text, new_text=new_text)
+    assert path.read_bytes() == expected
+    assert path.read_text(encoding="utf-8-sig") == before.replace(old_text, new_text)
+
+
+def test_line_range_edit_on_crlf_note(
+    doc_mgr: DocumentManager, doc_vault: Path
+) -> None:
+    path = doc_vault / "range.md"
+    path.write_bytes(b"---\r\ntitle: a\r\n---\r\na\r\nb\r\nc\r\n")
+    doc_mgr.edit("range.md", line_start=5, line_end=5, new_text="B")
+    assert path.read_bytes() == b"---\r\ntitle: a\r\n---\r\na\nB\nc\n"
+
+
+def test_duplicate_across_mixed_endings_is_refused(
+    doc_mgr: DocumentManager, doc_vault: Path
+) -> None:
+    path = doc_vault / "dup.md"
+    original = b"---\r\ntitle: a\r\n---\r\nsame\r\nx\nsame\nx\n"
+    path.write_bytes(original)
+    with pytest.raises(EditConflictError):
+        doc_mgr.edit("dup.md", old_text="same\nx", new_text="y")
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"---\r\ntitle: a\r\n---", b"---\r\ntitle: a\r\n---\nBody\n"),
+        (b"---\rtitle: a\r---\r\r", b"---\rtitle: a\r---\r\r\nBody\n"),
+        (_CRLF_HEADER + b"Body.\r\n", _CRLF_HEADER + b"Body.\nBody\n"),
+        (_JSON_HEADER + b"Body.\r\n", _JSON_HEADER + b"Body.\nBody\n"),
+    ],
+    ids=["header-at-eof", "cr-fence-blank", "crlf-bom-comments", "json-bom-crlf"],
+)
+def test_append_keeps_stored_header(
+    doc_mgr: DocumentManager, doc_vault: Path, raw: bytes, expected: bytes
+) -> None:
+    path = doc_vault / "stored.md"
+    path.write_bytes(raw)
+    before = path.read_text(encoding="utf-8-sig")
+    doc_mgr.append("stored.md", "Body\n")
+    assert path.read_bytes() == expected
+    after = path.read_text(encoding="utf-8-sig")
+    assert after == before + ("" if before.endswith("\n") else "\n") + "Body\n"
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_header"),
+    [
+        (_CRLF_HEADER, _CRLF_HEADER),
+        (b"---\rk: 1\r---\r\r", b"---\rk: 1\r---\r\r\n"),
+        (_JSON_HEADER, _JSON_HEADER),
+    ],
+    ids=["crlf-bom-comments", "cr-fence-blank", "json-bom-crlf"],
+)
+def test_rename_rewrite_keeps_stored_header(
+    tmp_path: Path, header: bytes, expected_header: bytes
+) -> None:
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "target.md").write_text("# Target\n", encoding="utf-8")
+    (tmp_path / "ref.md").write_bytes(header + b"See [[target]].\r\n")
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        col.index.build_index()
+        col.writer.rename("target.md", "new.md", update_links=True)
+        assert (tmp_path / "ref.md").read_bytes() == expected_header + b"See [[new]].\n"
+    finally:
+        col.close()

@@ -272,16 +272,7 @@ class ArtifactStore:
         abs_path = self.validate_path(path)
         stat = self._stat(path, abs_path)
         mime_type, _ = mimetypes.guess_type(path)
-        try:
-            raw = abs_path.read_bytes()
-        except (FileNotFoundError, NotADirectoryError) as exc:
-            # Removed between the stat and the read: absent, as in
-            # DocumentManager.read (#745).
-            raise DocumentNotFoundError.attachment(path) from exc
-        except OSError as exc:
-            raise ValueError(
-                f"Attachment {path} exists but cannot be read: {exc}"
-            ) from exc
+        raw = self._read_bytes(path, abs_path)
         return AttachmentContent(
             path=path,
             mime_type=mime_type,
@@ -290,6 +281,36 @@ class ArtifactStore:
             modified_at=stat.st_mtime,
             etag=compute_etag(raw),
         )
+
+    def read_bytes(self, path: str) -> bytes:
+        """Read a validated artifact as raw bytes.
+
+        Args:
+            path: Relative artifact path.
+
+        Returns:
+            The artifact's bytes.
+
+        Raises:
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the stat or read.
+        """
+        abs_path = self.validate_path(path)
+        self._stat(path, abs_path)
+        return self._read_bytes(path, abs_path)
+
+    @staticmethod
+    def _read_bytes(path: str, abs_path: Path) -> bytes:
+        """Read a validated file, distinguishing disappearance from refusal."""
+        try:
+            return abs_path.read_bytes()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError.attachment(path) from exc
+        except OSError as exc:
+            raise ValueError(
+                f"Attachment {path} exists but cannot be read: {exc}"
+            ) from exc
 
     def write(
         self, path: str, content: bytes, if_match: str | None = None

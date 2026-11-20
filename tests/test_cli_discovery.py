@@ -214,6 +214,40 @@ def test_looped_local_source_retains_configuration_error(tmp_path: Path) -> None
     assert "does not exist" in result.stderr
 
 
+@pytest.mark.parametrize("loop_is_selected", [True, False])
+def test_local_source_loop_resolve_runtime_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loop_is_selected: bool
+) -> None:
+    """A resolve failure preserves source validation and valid overrides."""
+    loop = tmp_path / "loop"
+    loop.symlink_to("loop", target_is_directory=True)
+    valid = tmp_path / "valid"
+    valid.mkdir()
+    (valid / "note.md").write_text("note")
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_SOURCE_DIR", str(valid if loop_is_selected else loop)
+    )
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_INDEX_PATH", raising=False)
+    original = Path.resolve
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        if path == loop:
+            raise RuntimeError("Symlink loop")
+        return original(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    selected = loop if loop_is_selected else valid
+    result = CliRunner().invoke(
+        app, ["read", "note.md", "--source-dir", str(selected), "--local", "--json"]
+    )
+    if loop_is_selected:
+        assert result.exit_code == 1
+        assert "does not exist" in result.stderr
+    else:
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["path"] == "note.md"
+
+
 @pytest.mark.parametrize("remote", [False, True], ids=["local", "http"])
 @pytest.mark.parametrize("extra_bytes", [0, 1])
 def test_attachment_cap_boundary(
@@ -272,6 +306,9 @@ def test_historical_read_retains_revision_shape(
     discovery_source: Path, remote: bool
 ) -> None:
     """--revision returns historical content without a live etag or OKF annotation."""
+    (discovery_source / "index.md").write_text(
+        '---\nokf_version: "0.2"\n---\n# Index\n'
+    )
     _run_git(discovery_source, "init")
     _run_git(discovery_source, "config", "user.name", "Synthetic")
     _run_git(discovery_source, "config", "user.email", "synthetic@example.com")
@@ -321,6 +358,7 @@ def test_okf_read_sources_context_conventions_and_stats(
         context.output,
         stats.output,
     )
+    assert json.loads(note.stdout)["okf"]["snapshot"]["algo"] == "mvmcp-concept-v1"
     assert json.loads(note.stdout)["okf"]["sources"] == [
         {"resource": "https://example.com/source"}
     ]

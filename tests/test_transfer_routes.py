@@ -115,6 +115,31 @@ async def test_download_description_names_okf_bundle_refs(
     assert ("okf-bundle:projects" in description) is offered
 
 
+async def test_bundle_collision_download_and_external_base(tmp_path: Path) -> None:
+    scope = tmp_path / "guides"
+    scope.mkdir()
+    (scope / "note.md").write_text("[outside](/b.md)\n")
+    (scope / "b.md").write_text("# Fixture\n")
+    server = make_server(
+        transport="http", config=_config(tmp_path, base_url="https://mcp.example.com")
+    )
+    async with (
+        Client(server) as client,
+        AsyncClient(transport=ASGITransport(app=server.http_app())) as http,
+    ):
+        link = await client.call_tool(
+            "create_download_link", {"ref": "okf-bundle:guides"}
+        )
+        response = await http.get(link.data["url"])
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        ref = "okf-bundle?external_base=https%3A%2F%2Fexample.org%2Fvault:guides"
+        link = await client.call_tool("create_download_link", {"ref": ref})
+        response = await http.get(link.data["url"])
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/zip")
+
+
 async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
     """create_upload_link carries the ``write`` tag, so read-only mode
     (``mcp.disable(tags={"write"})``) must hide it while download stays."""
