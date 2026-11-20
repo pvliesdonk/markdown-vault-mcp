@@ -11,6 +11,13 @@ on:
     branches: [main, "release/**", "integration/**"]
   workflow_dispatch:
 
+# A pull request's runs share one group, so a new push cancels the run for
+# the commit it replaced. Every other event is grouped by commit, so a run on
+# main, release/** or integration/** is never cancelled or replaced (#2390).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Lint
