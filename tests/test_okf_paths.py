@@ -8,58 +8,55 @@ from markdown_vault_mcp._okf_paths import resolve_okf_path
 
 
 @pytest.mark.parametrize(
-    ("value", "version", "files", "status", "path", "suffix"),
+    ("value", "version", "files", "expected"),
     [
         (
             "next.md#part",
             "0.3",
             {"notes/next.md"},
-            "resolved",
-            "notes/next.md",
-            "#part",
+            ("resolved", "notes/next.md", "#part"),
         ),
         (
             "/next%20one.md?q=1#part",
             "0.3",
             {"next one.md"},
-            "resolved",
-            "next one.md",
-            "?q=1#part",
+            ("resolved", "next one.md", "?q=1#part"),
         ),
-        ("#part", "0.3", {"notes/current.md"}, "resolved", "notes/current.md", "#part"),
-        ("https://example.org/a", "0.3", set(), "external", None, ""),
-        ("custom:opaque", "0.3", set(), "external", None, ""),
-        ("//example.org/a", "0.3", set(), "external", None, ""),
-        ("../../secret", "0.2", {"secret"}, "external", None, ""),
-        ("/%2e%2e/secret", None, {"secret"}, "external", None, ""),
-        ("next.md", "0.2", {"next.md"}, "root_fallback", "next.md", ""),
-        ("next.md", "0.1", {"next.md"}, "root_fallback", "next.md", ""),
-        ("next.md", None, {"next.md"}, "root_fallback", "next.md", ""),
-        ("next.md", "0.3", {"next.md"}, "unresolved", None, ""),
-        ("next.md", "0.4", {"next.md"}, "unresolved", None, ""),
+        (
+            "#part",
+            "0.3",
+            {"notes/current.md"},
+            ("resolved", "notes/current.md", "#part"),
+        ),
+        ("https://example.org/a", "0.3", set(), ("external", None, "")),
+        ("custom:opaque", "0.3", set(), ("external", None, "")),
+        ("//example.org/a", "0.3", set(), ("external", None, "")),
+        ("../../secret", "0.2", {"secret"}, ("external", None, "")),
+        ("/%2e%2e/secret", None, {"secret"}, ("external", None, "")),
+        ("next.md", "0.2", {"next.md"}, ("root_fallback", "next.md", "")),
+        ("next.md", "0.1", {"next.md"}, ("root_fallback", "next.md", "")),
+        ("next.md", None, {"next.md"}, ("root_fallback", "next.md", "")),
+        ("next.md", "0.3", {"next.md"}, ("unresolved", None, "")),
+        ("next.md", "0.4", {"next.md"}, ("unresolved", None, "")),
         (
             "next.md",
             "0.2",
             {"next.md", "notes/next.md"},
-            "resolved",
-            "notes/next.md",
-            "",
+            ("resolved", "notes/next.md", ""),
         ),
-        ("Next.md", "0.3", {"notes/next.md"}, "unresolved", None, ""),
-        ("/next.md", "0.2", {"notes/next.md"}, "unresolved", None, ""),
-        ("a%23b.md", "0.3", {"notes/a#b.md"}, "resolved", "notes/a#b.md", ""),
+        ("Next.md", "0.3", {"notes/next.md"}, ("unresolved", None, "")),
+        ("/next.md", "0.2", {"notes/next.md"}, ("unresolved", None, "")),
+        ("a%23b.md", "0.3", {"notes/a#b.md"}, ("resolved", "notes/a#b.md", "")),
     ],
 )
 def test_resolution(
     value: str,
     version: str | None,
     files: set[str],
-    status: str,
-    path: str | None,
-    suffix: str,
+    expected: tuple[str, str | None, str],
 ) -> None:
     result = resolve_okf_path(value, "notes/current.md", files, version)
-    assert (result.status, result.path, result.suffix) == (status, path, suffix)
+    assert (result.status, result.path, result.suffix) == expected
 
 
 @given(st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=25))
