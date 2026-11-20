@@ -1,12 +1,10 @@
 """Tests for transfer-route wiring (#979).
 
-``fastmcp_pvl_core.register_transfer_routes`` registers the
+``_transfer_links.register_transfer_routes`` registers the
 ``create_download_link`` / ``create_upload_link`` tools and the
 ``/transfer/{token}`` route, gated on an HTTP transport with ``base_url`` set.
-markdown-vault-mcp supplies only the ``VaultTransferSink`` domain hook; the tool
-names, titles, hints, icons, and the ``write`` tag come from pvl-core (v4.8.0),
-adopted as-is with no downstream mutation. The sink logic itself is covered by
-``test_transfer_sink.py``.
+The ``VaultTransferSink`` supplies the reads and writes. The sink logic itself
+is covered by ``test_transfer_sink.py``.
 """
 
 from __future__ import annotations
@@ -19,10 +17,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from fastmcp_pvl_core import ServerConfig, TransferLinks
 from httpx import ASGITransport, AsyncClient
 
+from markdown_vault_mcp._transfer_links import TransferLinks
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from tests.fixtures.git import make_nested_repository, make_superproject
 from tests.server_factory import make_server
 
@@ -82,7 +81,7 @@ async def test_transfer_absent_on_http_without_base_url(tmp_path: Path) -> None:
 
 
 async def test_transfer_tools_carry_title_hints_and_icons(tmp_path: Path) -> None:
-    """pvl-core (v4.8.0) registers the transfer tools with full metadata; the
+    """``_transfer_links`` registers the transfer tools with full metadata; the
     domain adopts them as-is (no finalizer, no mutation)."""
     server = make_server(
         transport="http",
@@ -142,7 +141,7 @@ async def test_bundle_collision_download_and_external_base(tmp_path: Path) -> No
 
 
 async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
-    """create_upload_link carries pvl-core's ``write`` tag, so read-only mode
+    """create_upload_link carries the ``write`` tag, so read-only mode
     (``mcp.disable(tags={"write"})``) must hide it while download stays."""
     server = make_server(
         transport="http",
