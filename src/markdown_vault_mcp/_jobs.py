@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.exceptions import FastMCPError
 
-from markdown_vault_mcp import _pvl_core
+from markdown_vault_mcp import _subject
 from markdown_vault_mcp._job_store import (
     JOB_POLL_TOOL_NAME,
     JOB_RETRY_AFTER_S,
@@ -53,9 +53,9 @@ def _current_scope() -> str:
     ``get_subject`` unifies subject extraction across every auth mode
     (bearer, OIDC, stdio's ``"local"``). ``None`` (auth configured but no
     token, or no request context) collapses to one anonymous scope. Looked up
-    on the shim at call time, so a test can patch it there.
+    on ``_subject`` at call time, so a test can patch it there.
     """
-    subject = _pvl_core.get_subject()
+    subject = _subject.get_subject()
     return subject if subject else _ANONYMOUS_SCOPE
 
 

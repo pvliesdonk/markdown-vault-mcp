@@ -23,7 +23,6 @@ from markdown_vault_mcp._instructions_builder import (
     instructions_for,
 )
 from markdown_vault_mcp._logging_setup import configure_logging_from_env
-from markdown_vault_mcp._pvl_core import get_current_auth_mode
 from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import (
@@ -31,6 +30,7 @@ from markdown_vault_mcp._server_deps import (
     server_lifespan,
 )
 from markdown_vault_mcp._server_info import register_server_info_tool
+from markdown_vault_mcp._subject import get_current_auth_mode
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp._tool_visibility import apply_tool_visibility
 from markdown_vault_mcp.config import ProjectConfig

@@ -15,7 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from markdown_vault_mcp._auth import _announce_auth_mode, build_auth, resolve_auth_mode
-from markdown_vault_mcp._pvl_core import ServerConfig, get_current_auth_mode
+from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp._subject import get_current_auth_mode
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 _AUTH_LOGGER = "markdown_vault_mcp._auth"

@@ -255,7 +255,7 @@ class TestSubjectScoping:
         jobs = _jobs()
         current = {"subject": "alice"}
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_subject", lambda: current["subject"]
+            "markdown_vault_mcp._subject.get_subject", lambda: current["subject"]
         )
 
         async def work() -> dict[str, Any]:
@@ -275,7 +275,7 @@ class TestSubjectScoping:
         jobs = _jobs()
         current: dict[str, str | None] = {"subject": None}
         monkeypatch.setattr(
-            "markdown_vault_mcp._pvl_core.get_subject", lambda: current["subject"]
+            "markdown_vault_mcp._subject.get_subject", lambda: current["subject"]
         )
 
         async def work() -> dict[str, Any]:
