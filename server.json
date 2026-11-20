@@ -374,6 +374,11 @@
           "default": "4"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_GIT_BACKEND",
+          "description": "Git backend: `cli` (default) or `libgit2`.",
+          "default": "cli"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
           "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
           "isSecret": true
@@ -1029,6 +1034,11 @@
           "description": "Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.",
           "format": "number",
           "default": "4"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_BACKEND",
+          "description": "Git backend: `cli` (default) or `libgit2`.",
+          "default": "cli"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",

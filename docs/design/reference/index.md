@@ -116,6 +116,7 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   since 2026-08-21), reserved files, links, conformance; the timestamp
   departures. Read before `okf.py`, `_okf_write.py`, `_okf_convention.py` or
   `okf_bundle.py`.
+- [Local Git operations through pygit2](git-libgit2.md) — index, blob, filter, history and synchronization behavior used by the native store.
 - [Git history and revision queries](git-history-queries.md) — `log
   -z`/`--name-status` framing, `--follow` and rename detection,
   `--since`/`--until` date semantics, `ls-tree -l`, symlink blobs, LFS

@@ -6949,13 +6949,25 @@ rather than on the concrete class:
 - `VersionedStore` — all of them, which is what `Vault` holds.
 
 Config assembly returns `VersionedStore` through `_build_git_strategy`, the
-single construction point; backend selection is deferred to #1309.
+single construction point; `GIT_BACKEND` selects CLI or the optional native store.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `VaultInstances.close()`
 compares the two by identity to avoid closing one object twice (#1765). Splitting into separate
 *objects* is deliberately not done — the collaborators share one lock, and
 that identity check depends on there being one object.
+
+The native sync store likewise owns one lock and one scheduler. It fetches
+before classifying a pull, replays divergent local commits in memory, then
+performs a safe checkout and a reference transaction. A clean replay reports
+`rebased`. It refuses local-only merge commits before replay, and a local
+delete conflicting with a remote modification; repeated conflicts retain the
+final local version in one reciprocal sibling. If a conflicted path is absent
+from the final local tree after a later rename or deletion, it refuses before
+checkout rather than saving a stale sibling. Checkout invalidates the indexed HEAD before writing; on failure,
+the store restores affected paths. If restoration fails, HEAD remains unchanged,
+the worktree health check reports the state, and search reindexes from disk.
+The [libgit2 reference](reference/git-libgit2.md) records the underlying APIs.
 
 The promotion of `is_managed`, `resolve_force_repo`, `head_sha`, and
 `branch_name` to the public surface replaced private-attribute reads
@@ -7576,3 +7588,16 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows takes no lock (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+
+
+### Local libgit2 versioned store
+
+Library callers may pass one `Libgit2Store` as `git_strategy` and `on_write`
+for local versioning. It creates a tree from HEAD and touched worktree paths,
+then updates only those paths in the real index. CLI remains the default.
+Unsupported formats, partial clones, signing, commit hooks, in-progress Git
+operations and effective external clean filters are refused. Publication holds
+the index and reference locks; if the reference update fails after the index
+is published, the operation remains staged. History and per-commit diff results
+require numeric `core.abbrev`; auto or unset settings refuse those queries. Writes,
+revision reads and aggregate diffs remain available. The supporting [libgit2 reference](reference/git-libgit2.md) records the native behavior.
