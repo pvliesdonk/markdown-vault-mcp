@@ -123,9 +123,10 @@ def test_directory_reference_does_not_select_file(value: str) -> None:
     )
 
 
-@pytest.mark.parametrize("value", ["https://example.org/a?q#f", "//example.org/a?q#f"])
-def test_external_reference_retains_suffix(value: str) -> None:
-    result = resolve_okf_path(value, "notes/current.md", set(), "0.3")
+def test_external_reference_retains_suffix() -> None:
+    result = resolve_okf_path(
+        "https://example.org/a?q#f", "notes/current.md", set(), "0.3"
+    )
     assert (result.status, result.suffix) == ("external", "?q#f")
 
 
@@ -172,3 +173,19 @@ def test_single_letter_scheme_is_external(path_field: bool) -> None:
         "C:/x.md", "notes/current.md", {"C:/x.md"}, "0.3", path_field=path_field
     )
     assert result.status == "external"
+
+
+def test_double_slash_resolves_from_bundle_root() -> None:
+    result = resolve_okf_path(
+        "//folder/target.md?q#f", "notes/current.md", {"folder/target.md"}, "0.3"
+    )
+    assert (result.status, result.path, result.suffix) == (
+        "resolved",
+        "folder/target.md",
+        "?q#f",
+    )
+
+
+def test_missing_double_slash_target_retains_suffix() -> None:
+    result = resolve_okf_path("//example.org/a?q#f", "notes/current.md", set(), "0.3")
+    assert (result.status, result.path, result.suffix) == ("unresolved", None, "?q#f")

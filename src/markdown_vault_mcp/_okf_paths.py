@@ -68,7 +68,7 @@ def resolve_okf_path(
     match = re.search(r"[?#]", value)
     raw_path = value[: match.start()] if match else value
     suffix = value[match.start() :] if match else ""
-    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", raw_path) or raw_path.startswith("//"):
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", raw_path):
         return OkfPathResult("external", suffix=suffix)
     if path_field and not value:
         return OkfPathResult("absent")
