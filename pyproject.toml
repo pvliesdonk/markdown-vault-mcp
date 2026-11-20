@@ -57,110 +57,28 @@ classifiers = [
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
-    # >=10.1.0 for env(..., required=True) and env_int / env_float's
-    # required keyword, and for domain_env_surface reporting such a read as
-    # required: config.py's CONFIG-FROM-ENV example, the template-ci
-    # required-var variant and test_config_contract.py's
-    # every-required-var guard depend on both.
-    #
-    # 10.0.0 was the floor before that, for tool_boundary and
-    # is_tool_boundary (pvl-core ADR 0005):
-    # tools.py wraps every tool in the boundary instead of copying it, and
-    # tests/test_tool_outcomes.py fails a registered tool that is not
-    # wrapped (#678).  The request-logging middleware now logs
-    # tool_call_failed at the ToolError's log_level, so an INFO outcome no
-    # longer produces an ERROR line (pvl-core #363).  The major is for two
-    # contract changes in pvl-core's own tools: a transfer validate hook
-    # rejects only with ToolError, and a register_long_running_tool
-    # coroutine that raises anything else ends as a server fault (pvl-core
-    # #375, #376).
-    #
-    # 9.0.0 was the previous floor, for the operator-input contract and the
-    # reworded config help.  Every config-driven builder (build_kv_store / build_event_store,
-    # build_jobs, register_health_routes, register_transfer_routes /
-    # build_transfer_links) raises ConfigurationError where 8.x raised
-    # ValueError or ImportError, so a malformed
-    # MARKDOWN_VAULT_MCP_KV_STORE_URL reaches cli.py's one-line handler
-    # instead of a traceback (pvl-core #337).  A resolved auth mode that
-    # builds no provider now refuses to start instead of serving
-    # unauthenticated (pvl-core #316), and compute_app_domain strips
-    # userinfo from the value it hands the MCP Apps CSP origin (pvl-core
-    # #343).  The cap matters as much as the floor here: the config-surface
-    # generator resolves this whole constraint, and only 9.0.0's
-    # SHUTDOWN_GRACE_S help text keeps the generated table in
-    # docs/reference/configuration.md clear of ai-tells' MicDrop rule (#639).
-    #
-    # 8.0.0 was the previous floor, for the logging topology and the HTTP
-    # seam: pvl-core owns the root logger, configure_logging_from_env takes
-    # the env prefix as its first argument (7.x's call without one no longer
-    # exists), run_http replaces the uvicorn.run call cli.py used to make,
-    # and the logging variables moved from FASTMCP_* to
-    # MARKDOWN_VAULT_MCP_LOG_LEVEL / _LOG_FORMAT (template #624).
-    #
-    # 7.2.0 was the floor before that, for find_nonconforming_log_calls: the AST
-    # check tests/test_logging_standard.py runs over src/, which turns the
-    # logging-standard skill's ``event_name key=value`` message format from
-    # prose into a build gate (#611).  7.2.0 is additive; nothing about
-    # logging behaviour changed with it.
-    #
-    # 7.1.0 was the previous floor, for register_health_routes: the
-    # unauthenticated /health and /health/ready routes make_server wires
-    # under HTTP, which compose.yml now probes instead of opening a socket.
-    #
-    # 7.0.0 was the previous floor, for the FastMCP 4 adoption:
-    # configure_task_backend takes the
-    # server as its first argument and registers the SEP-2663 tasks extension
-    # on it (the fastmcp.settings.docket global it previously mutated is gone),
-    # and pvl-core itself moves to fastmcp[tasks]>=4,<5 (pvl-core#307).
-    # server.py's call site moves after FastMCP construction with this floor.
-    #
-    # 6.0.0 was the floor before that, for semantic InstructionRole values, shaped
-    # deployment identity, effective FastMCP tool visibility during instruction
-    # finalization, and the split operator contract:
-    # {PREFIX}_INSTANCE_DESCRIPTION supplies routing context while
-    # {PREFIX}_INSTRUCTIONS_EXTRA supplies policy (#553).
-    #
-    # 5.0.0 came earlier, for the InstructionsBuilder
-    # (instructions_for / finalize_instructions). It removed
-    # build_instructions, retained {PREFIX}_INSTRUCTIONS as a deprecated full
-    # replacement, and added {PREFIX}_INSTRUCTIONS_EXTRA as the additive path;
-    # add_transfer_workflow contributes capability-link prose for path-2 tools.
-    #
-    # 4.11.3 was the floor before that, for ServerConfig.oidc_advertised_scopes, which
-    # config-presentation.yml names: the config-surface generator rejects a
-    # presentation entry for a var core does not declare, so generation fails
-    # outright wherever an older core is resolved.  The field is the operator
-    # override for the scopes pvl-core advertises to MCP clients in
-    # protected-resource metadata — `openid offline_access` by default
-    # (pvl-core #280).  Before it, the advertised set was derived from
-    # oidc_required_scopes, which multi mode requires to be empty, so clients
-    # requested no scopes at all, the grant carried no refresh token, and
-    # every session ended at access-token expiry needing a human at a browser.
-    #
-    # 4.11.2 was the previous floor, for build_instructions without the
-    # read_only keyword: 4.11.1 declares that argument required and 4.11.2
-    # rejects it, so the floor and the server.py call site had to move in one
-    # change (#443).  4.11.2 also makes FetchResult.final_url mandatory, so a
-    # consumer constructing one — a project's test fakes included — must pass
-    # it from that floor on.
-    #
-    # 4.11.0 was the floor before that, for configure_task_backend +
-    # ServerConfig.tasks_url (the background-task backend surface, ADR 0002
-    # §4), which server.py wires unconditionally.  4.11.0 also moves
-    # fastmcp[tasks] into pvl-core's BASE dependencies, so pydocket arrives
-    # transitively — no extra to declare here, and no packaging plumbing.
-    # 4.10.1 was the floor for apply_tool_visibility, named in place of the
-    # 4.10.0 that was tagged but never reached PyPI: the generator resolves
-    # this whole constraint rather than the floor alone (#335), but a floor
-    # naming a release nobody can install is still a trap for anyone pinning
-    # to it.
-    "fastmcp-pvl-core>=10.1.0,<11",
+    # fastmcp-pvl-core was folded into this package (#2241, 015 pvl-core-fold);
+    # its version-floor history is in that epic's PRs. What it pulled in that
+    # this project imports directly is declared below.
     "typer>=0.12",
 
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
-    # directly by _server_apps.py, so the floor is declared here even though
-    # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.
-    "fastmcp>=4",
+    # directly by _server_apps.py.  The [tasks] extra brings fastmcp-tasks and
+    # pydocket, which _tasks.py imports to register the SEP-2663 tasks
+    # extension (#2292).
+    "fastmcp[tasks]>=4",
+    # _request_logging reads the ambient OpenTelemetry span to stamp trace_id /
+    # span_id on its log lines (#2341). A guaranteed transitive through the mcp
+    # SDK, declared because this project imports it directly; no floor, mcp
+    # owns the version. The API only: no SDK or exporter ships here.
+    "opentelemetry-api",
+    # _serve.run_http runs the HTTP transport on uvicorn (#2335). >=0.50 for
+    # STARTUP_FAILURE in uvicorn.config, which _run_server exits with.
+    "uvicorn>=0.50",
+    # _auth catches httpx2.HTTPError from fastmcp's OIDC discovery fetch
+    # (#2277). A transitive through fastmcp, declared because this project
+    # imports it directly; no floor, fastmcp owns the version.
+    "httpx2",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
@@ -187,10 +105,8 @@ summarize = ["openai>=1.45"]
 # pgvector's adapter. numpy is unbounded here for the same reason as above.
 postgres = ["psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5", "numpy"]
 all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0.2", "openai>=1.45", "psycopg[binary]>=3.3.1", "psycopg-pool>=3.3", "pgvector>=0.5"]
-# Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
-# version range is inherited from the [project] dependency on
-# fastmcp-pvl-core above; pip resolves a single, consistent version.
-debug = ["fastmcp-pvl-core[debug]"]
+# Remote-debugger support for _debug.maybe_start_debugpy (DEBUG_PORT).
+debug = ["debugpy>=1.8"]
 # Property tests only; CI installs all extras, runtime and all stay unchanged.
 property-tests = ["hypothesis>=6"]
 # PROJECT-EXTRAS-END
@@ -210,9 +126,8 @@ dev = [
     "jsonschema>=4.18",
     # scripts/gen_config_surface.py imports yaml. It arrived transitively via
     # mkdocs-material in the `docs` group, so a plain `uv sync` left it out
-    # and the generator fell back to its network bootstrap — slower, offline-
-    # hostile, and liable to resolve a different fastmcp-pvl-core than this
-    # project pins (#262). Declared here so the requirement is stated.
+    # (#262); the generator now runs only in the project environment (#2355).
+    # Declared here so the requirement is stated.
     "pyyaml>=6",
     # PyYAML ships no inline types, so `import yaml` in tests/test_compose.py
     # is an untyped import that fails `mypy src/ tests/` without these stubs.
@@ -220,6 +135,8 @@ dev = [
     # PROJECT-DEV-DEPS-START — this project's test and tooling dependencies
     # (respx, hypothesis, ...); kept across copier update.  Never published,
     # unlike an extra in PROJECT-EXTRAS.
+    # The request-logging trace tests need a real tracer provider (#2341).
+    "opentelemetry-sdk",
     # PROJECT-DEV-DEPS-END
 ]
 docs = [
@@ -345,12 +262,6 @@ ignore = ["E501"]
 # (which excludes S). If your project needs its own tests/** ignores, EXTEND
 # this list in place — do not add a second "tests/**" key (duplicate TOML key).
 "tests/**" = ["S101", "S603", "S607"]
-# The config-surface generator's bootstrap re-execs itself under `uv run`
-# (os.execvpe with a `shutil.which`-resolved absolute path — see
-# ensure_core_available). S606 flags any no-shell process start for review;
-# here the no-shell form is the safer one, and a `# noqa` instead of this
-# entry would trip RUF100 on the whole-repo pass, where `S` isn't selected.
-"scripts/gen_config_surface.py" = ["S606"]
 # The release stamper stages its rewrites with a fixed-argv `git add`
 # (subprocess with a list, never a shell). S607 flags the bare `git` name
 # (a partial executable path) and S603 the subprocess call itself; both are
@@ -377,6 +288,11 @@ ignore = ["E501"]
 # matching the implementation. Gate-only rule, so a `# noqa` would be
 # stripped (RUF100).
 "src/markdown_vault_mcp/git/interfaces.py" = ["PLR0913"]
+# PLR0913: the env readers' signatures (moved from pvl-core, #2275) carry
+# keyword-only bounds and strictness options every config section passes;
+# their argument counts are the readers' public shape. Gate-only rule, so a
+# `# noqa` would be stripped (RUF100).
+"src/markdown_vault_mcp/_env.py" = ["PLR0913"]
 # S105: GITLAB_SIGNING_TOKEN_PREFIX is the published `whsec_` format marker
 # GitLab puts in front of a signing token, not a credential — the secret is
 # the base64 that follows it. Gate-only rule, so a `# noqa` would be
