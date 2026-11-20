@@ -468,7 +468,7 @@ configuring structured filters activates it too:
    at init, so every `f.rank` read — including the snippet re-query — ranks
    consistently. All-`1.0`/unset writes the default `bm25()` back
    (idempotent reset). SearchConfig rejects a map in which all six effective column weights
-   are 0; omitted columns retain a weight of 1. Repeated weight keys that normalise to the same key
+   are 0. Omitted columns keep a weight of 1. Repeated weight keys that normalise to the same key
    must have equal weights. The weights live in the index, not the process: a
    connection already open ranks with a new value as soon as it is
    committed, so only the index's owner writes them, and a read-only open

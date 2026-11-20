@@ -304,8 +304,8 @@ Ranking-only settings such as `CHUNKS_PER_FILE`, `SNIPPET_WORDS`, folder weights
 and FTS weights take effect without reindexing. Chunk-size and overlap settings
 change the stored index and require `reindex`. Changing the embedding model or
 an explicit character cap rejects the warm-start shortcut and rebuilds
-automatically. SearchConfig rejects a map in which all six effective FTS column weights are 0;
-omitted columns retain a weight of 1. Repeated folder or FTS weight keys that normalise to
+automatically. SearchConfig rejects a map in which all six effective FTS column weights are 0.
+Omitted columns keep a weight of 1. Repeated folder or FTS weight keys that normalise to
 the same key must have equal weights.
 
 #### Git sync {#synchronization}
