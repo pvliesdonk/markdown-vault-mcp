@@ -3,8 +3,8 @@
 The ``logging-standard`` skill writes every first-party message as
 ``event_name key=%s``: a snake_case event name, then ``name=value`` fields,
 so a log consumer recovers typed fields from ``record.msg`` and
-``record.args`` instead of an opaque sentence.  ``fastmcp-pvl-core`` owns
-that grammar and ships the check; this test runs it over ``src/`` so a
+``record.args`` instead of an opaque sentence.  ``_log_grammar`` holds
+that grammar and ``_log_conformance`` ships the check; this test runs it over ``src/`` so a
 non-conforming call fails the build rather than reaching a release
 (template #611).
 
@@ -15,7 +15,7 @@ logger reached as ``self.logger`` or imported from another module, and
 ``logger.log(level, ...)``, are outside what it can see. That is a limit of
 the check, not permission to write those forms.
 
-The path is anchored to this file, never to the working directory: pvl-core
+The path is anchored to this file, never to the working directory: the check
 raises ``NotADirectoryError`` for a missing root, so a wrong path fails
 loudly instead of passing having scanned nothing.
 """
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastmcp_pvl_core import find_nonconforming_log_calls
+from markdown_vault_mcp._log_conformance import find_nonconforming_log_calls
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"

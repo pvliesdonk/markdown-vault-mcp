@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastmcp_pvl_core import TransferConfig
 
 from markdown_vault_mcp.config import (
     ProjectConfig,
@@ -19,6 +18,7 @@ from markdown_vault_mcp.config_sections import (
     GitConfig,
     IndexingConfig,
     SearchConfig,
+    TransferConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
@@ -1034,9 +1034,9 @@ class TestLoadConfigServerIdentityFields:
     def test_instructions_env_never_reaches_project_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``INSTRUCTIONS`` is pvl-core's to read, not this config's.
+        """``INSTRUCTIONS`` is the instructions builder's to read, not this config's.
 
-        pvl-core 5 composes instructions from builder snippets and reads both
+        ``_instructions_builder`` composes instructions from snippets and reads both
         ``INSTRUCTIONS`` (legacy full replacement) and ``INSTRUCTIONS_EXTRA``
         inside ``finalize_instructions``. A ``ProjectConfig.instructions``
         field would be a second, silently-diverging reader of the same var,
@@ -1306,7 +1306,7 @@ class TestServerConfigComposition:
     """The composed ServerConfig field on ProjectConfig."""
 
     def test_server_field_default_is_empty_serverconfig(self) -> None:
-        from fastmcp_pvl_core import ServerConfig
+        from markdown_vault_mcp.config_sections.server import ServerConfig
 
         config = ProjectConfig(source_dir=Path("/tmp/v"))
         assert isinstance(config.server, ServerConfig)
@@ -1376,7 +1376,7 @@ class TestServerConfigComposition:
 
 
 def test_domain_env_suffixes_sees_decomposed_reads() -> None:
-    """pvl-core's drift-gate scanner sees MVM's decomposed config surface.
+    """The drift-gate scanner (``_config_surface``) sees MVM's decomposed config surface.
 
     Guards the #767 convergence: a top-level scalar read (now via un-aliased
     ``env()``) plus reads sampled from four representative ``config_sections/``
@@ -1384,7 +1384,7 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
     ``env`` in ``config.py`` or breaking the sub-config recursion would silently
     drop these from the config-wizard drift gate's coverage check.
     """
-    from fastmcp_pvl_core import domain_env_suffixes
+    from markdown_vault_mcp._config_surface import domain_env_suffixes
 
     suffixes = domain_env_suffixes(ProjectConfig)
     assert {

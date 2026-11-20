@@ -6,10 +6,10 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._cli_read import read_payload
 from markdown_vault_mcp._server_deps import get_config
+from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.references import (
