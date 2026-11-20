@@ -1,30 +1,52 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard", "group:allNonMajor"],
-  "labels": ["dependencies"],
-  "enabledManagers": ["pep621"],
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "group:allNonMajor",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "enabledManagers": [
+    "pep621",
+    "github-actions"
+  ],
   "semanticCommits": "enabled",
   "rangeStrategy": "update-lockfile",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["* * * * 1"],
+    "schedule": [
+      "* * * * 1"
+    ],
     "automerge": true
   },
   "packageRules": [
     {
       "description": "Routine bumps ride one grouped PR (group:allNonMajor) that self-merges once CI is green, so a merge rebases at most the lockfile and major PRs instead of one branch per dependency; majors wait for a human.",
-      "matchUpdateTypes": ["patch", "minor"],
+      "matchUpdateTypes": [
+        "patch",
+        "minor"
+      ],
       "automerge": true
     },
     {
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": false
     },
     {
-      "description": "The [build-system] hatchling pin is template-owned: it moves only with a template release paired with a publisher check (see the comment above the pin in pyproject.toml), so a bump here is drift from the template (#839).",
-      "matchManagers": ["pep621"],
-      "matchDepTypes": ["build-system.requires"],
-      "enabled": false
+      "description": "The [build-system] hatchling pin is bounded at the minor (see the comment above it in pyproject.toml). Its bumps never automerge: the Lint job's publisher check proves the pinned publisher's twine accepts the new metadata version, and packaging/mcpb/pyproject.toml.in, which Renovate does not read, must follow by hand (tests/test_release_flow_contract.py fails until it does) (#2259).",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "build-system.requires"
+      ],
+      "rangeStrategy": "replace",
+      "automerge": false
     }
   ]
 }
