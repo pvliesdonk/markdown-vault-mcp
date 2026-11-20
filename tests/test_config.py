@@ -1299,7 +1299,7 @@ class TestServerConfigComposition:
     """The composed ServerConfig field on ProjectConfig."""
 
     def test_server_field_default_is_empty_serverconfig(self) -> None:
-        from markdown_vault_mcp._pvl_core import ServerConfig
+        from markdown_vault_mcp.config_sections.server import ServerConfig
 
         config = ProjectConfig(source_dir=Path("/tmp/v"))
         assert isinstance(config.server, ServerConfig)

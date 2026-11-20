@@ -427,3 +427,19 @@ def parse_list(value: str) -> list[str]:
         blank.
     """
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def parse_scopes(value: str | None) -> list[str] | None:
+    """Parse an OIDC/OAuth scopes string (space- or comma-separated).
+
+    Args:
+        value: Raw scopes string, or ``None``.
+
+    Returns:
+        List of scope tokens.  ``None`` when *value* is ``None``; ``[]``
+        when *value* is a blank string.
+    """
+    if value is None:
+        return None
+    normalized = value.replace(",", " ")
+    return [s for s in normalized.split() if s]

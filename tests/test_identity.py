@@ -353,8 +353,8 @@ class TestServicePrincipals:
         from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
         from markdown_vault_mcp._auth import build_bearer_auth
-        from markdown_vault_mcp._pvl_core import ServerConfig
         from markdown_vault_mcp._subject import get_claims, get_subject
+        from markdown_vault_mcp.config_sections.server import ServerConfig
 
         verifier = build_bearer_auth(
             ServerConfig(bearer_token="test-only-1463", bearer_default_subject=subject)

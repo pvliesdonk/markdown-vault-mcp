@@ -27,7 +27,6 @@ import asyncio
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._transfer_store import (
     _TOKEN_COLLECTION,
     TokenAlreadyConsumedError,
@@ -38,6 +37,7 @@ from markdown_vault_mcp._transfer_store import (
     TransferStore,
     TransferToken,
 )
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 
 class _Clock:

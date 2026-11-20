@@ -955,7 +955,7 @@ async def service_token(
     from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
     from markdown_vault_mcp._auth import build_bearer_auth
-    from markdown_vault_mcp._pvl_core import ServerConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
     tokens_file = enforced_env.parent / "tokens.toml"
     tokens_file.write_text(

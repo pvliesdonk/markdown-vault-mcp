@@ -25,9 +25,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 import markdown_vault_mcp.server as server_module
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:

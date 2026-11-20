@@ -68,7 +68,7 @@ if TYPE_CHECKING:
 
     from key_value.aio.protocols.key_value import AsyncKeyValue
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _TOKEN_COLLECTION = "tokens"  # noqa: S105, RUF100 - A collection name; S105 is gate-only.
 """KV collection holding token records, under the ``transfer`` namespace."""

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from markdown_vault_mcp._auth import build_bearer_auth
-from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 

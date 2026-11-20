@@ -26,8 +26,8 @@ from markdown_vault_mcp._health import (
     _resolve_detail,
     register_health_routes,
 )
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._url import redact_urls_in_text
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping

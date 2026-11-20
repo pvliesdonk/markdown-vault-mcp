@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from markdown_vault_mcp._auth import resolve_auth_mode
-from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 
 def _cfg(**kwargs) -> ServerConfig:

@@ -12,8 +12,8 @@ from unittest.mock import patch
 import pytest
 
 from markdown_vault_mcp._auth import build_auth
-from markdown_vault_mcp._pvl_core import ServerConfig
 from markdown_vault_mcp._subject import get_claims, get_subject
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable

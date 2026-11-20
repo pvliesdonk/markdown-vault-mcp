@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     )
     from fastmcp.server.auth.oidc_proxy import OIDCProxy
 
-    from markdown_vault_mcp._pvl_core import ServerConfig
+    from markdown_vault_mcp.config_sections.server import ServerConfig
 
 logger = logging.getLogger(__name__)
 

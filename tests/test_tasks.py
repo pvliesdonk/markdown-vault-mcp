@@ -7,8 +7,9 @@ import logging
 import pytest
 from fastmcp import FastMCP
 
-from markdown_vault_mcp._pvl_core import ConfigurationError, ServerConfig
+from markdown_vault_mcp._pvl_core import ConfigurationError
 from markdown_vault_mcp._tasks import _resolve_url_override, configure_task_backend
+from markdown_vault_mcp.config_sections.server import ServerConfig
 
 _AVAILABLE = "fastmcp.server.dependencies.is_docket_available"
 
