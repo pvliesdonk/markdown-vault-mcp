@@ -21,7 +21,7 @@ def make_server(
 ) -> FastMCP:
     """Construct a server outside any active event loop.
 
-    pvl-core finalizes instructions synchronously. Most integration tests are
+    ``finalize_instructions`` runs synchronously. Most integration tests are
     async and configure their server immediately before opening a client, so
     construction moves to a short-lived worker only when the test loop is
     already running.
