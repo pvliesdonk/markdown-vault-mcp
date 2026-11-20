@@ -626,3 +626,60 @@ def test_backlink_rewrite_contributes_to_group_history(
     assert log.count("Repair links") == 1 and ref in log
     committed = _run_git(git_repo, "show", "--format=", "--name-only", result.sha)
     assert ref in committed and log_path in committed
+
+
+def test_inaccessible_anchor_does_not_skip_other_log(
+    git_repo: Path, make_vault: Callable[..., Vault]
+) -> None:
+    """An inaccessible nested note does not block a healthy log."""
+    blocked = git_repo / "a"
+    (blocked / "nested").mkdir(parents=True)
+    (git_repo / "b").mkdir()
+    vault = make_vault("events", ("a/nested", "b"))
+    dispatcher = vault._write_callback
+    group = dispatcher.open_group("Both folders", None)
+    with dispatcher.bind_group(group.handle, None):
+        vault.writer.write("a/nested/note.md", "# A\n")
+        vault.writer.write("b/note.md", "# B\n")
+    original_mode = blocked.stat().st_mode
+    blocked.chmod(0)
+    try:
+        result = dispatcher.close_group(group.handle, None).result(timeout=10)
+        assert result.history_failed
+        assert "Both folders" in (git_repo / "b/log.md").read_text()
+    finally:
+        blocked.chmod(original_mode)
+
+
+@pytest.mark.parametrize("failed", ["a", "b"])
+def test_anchor_lookup_failure_does_not_skip_other_logs(
+    git_repo: Path,
+    make_vault: Callable[..., Vault],
+    monkeypatch: pytest.MonkeyPatch,
+    failed: str,
+) -> None:
+    """Anchor lookup errors preserve independent logs in either order."""
+    from markdown_vault_mcp import _okf_log_event
+
+    for folder in ("a", "b", "c"):
+        (git_repo / folder).mkdir()
+    vault = make_vault("events", ("a", "b", "c"))
+    dispatcher = vault._write_callback
+    group = dispatcher.open_group("Three folders", None)
+    with dispatcher.bind_group(group.handle, None):
+        for folder in ("a", "b", "c"):
+            vault.writer.write(f"{folder}/note.md", "# Note\n")
+    original = _okf_log_event.log_anchor
+
+    def failing_anchor(
+        folder: str, patterns: tuple[str, ...], source_dir: Path | None
+    ) -> str:
+        if folder == failed:
+            raise OSError("anchor lookup failed")
+        return original(folder, patterns, source_dir)
+
+    monkeypatch.setattr(_okf_log_event, "log_anchor", failing_anchor)
+    result = dispatcher.close_group(group.handle, None).result(timeout=10)
+    assert result.history_failed
+    for folder in set("abc") - {failed}:
+        assert (git_repo / folder / "log.md").read_text().count("Three folders") == 1

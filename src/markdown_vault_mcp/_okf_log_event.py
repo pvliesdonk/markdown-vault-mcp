@@ -23,6 +23,7 @@ from markdown_vault_mcp.managers.document import stored_body
 from markdown_vault_mcp.okf import append_okf_log_entry, is_okf_reserved_file
 from markdown_vault_mcp.scanner import _unfenced_lines
 from markdown_vault_mcp.utils import folder_of
+from markdown_vault_mcp.utils.content_kind import is_note
 from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 
@@ -323,6 +324,35 @@ def record_event(  # noqa: PLR0913, RUF100 - deterministic date override for eve
         return log_path
 
 
+def _group_by_log(
+    doc_mgr: DocumentManager,
+    paths: set[Path],
+    folders: tuple[str, ...],
+    failures: list[Exception],
+) -> dict[str, list[str]]:
+    """Group touched notes by selected log, isolating resolution failures."""
+    root = doc_mgr._source_dir.resolve()
+    grouped: dict[str, list[str]] = {}
+    for path in sorted(paths):
+        relative = path.relative_to(root).as_posix()
+        if not is_note(relative) or is_okf_reserved_file(relative):
+            continue
+        try:
+            parent = _existing_folder(root, folder_of(relative))
+            folder = log_anchor(parent, folders, doc_mgr._source_dir)
+        except Exception as exc:
+            logger.error(
+                "okf_group_event_failed path=%s completed=%s",
+                relative,
+                [],
+                exc_info=True,
+            )
+            failures.append(exc)
+            continue
+        grouped.setdefault(folder, []).append(relative)
+    return grouped
+
+
 def record_group_events(
     doc_mgr: DocumentManager,
     paths: set[Path],
@@ -340,18 +370,10 @@ def record_group_events(
         today: Date captured when the group closed.
 
     """
-    folders, _ = policy
     root = doc_mgr._source_dir.resolve()
-    grouped: dict[str, list[str]] = {}
-    for path in sorted(paths):
-        relative = path.relative_to(root).as_posix()
-        if not relative.endswith(".md") or is_okf_reserved_file(relative):
-            continue
-        parent = _existing_folder(root, folder_of(relative))
-        folder = log_anchor(parent, folders, doc_mgr._source_dir)
-        grouped.setdefault(folder, []).append(relative)
     logs: list[Path] = []
     failures: list[Exception] = []
+    grouped = _group_by_log(doc_mgr, paths, policy[0], failures)
     for folder, paths_for_log in grouped.items():
         try:
             log = record_event(
