@@ -42,7 +42,8 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 - **Type**: the free-text `type` field, such as `Playbook`, `Metric`, or `Reference`.
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
-- **Recorded-review trust tier**: `trust_tier` classifies supplied `verified` metadata (a single entry may be a bare mapping). A mapping with a `by: human:...` prefix yields `human-reviewed`; any other mapping yields `machine-confirmed`; no mappings yields `unverified`. These legacy labels do not authenticate the reviewer, validate every entry, or establish that a review applies to the current content. The `stats` trust breakdown counts these same classifications.
+- **Recorded review tier**: `trust_tier` describes supplied review claims (a single entry may be a bare mapping). A record with a usable `human:<id>` actor and an offset-aware `at` gives `human-reviewed`; otherwise, usable records give `machine-confirmed`, and no usable record gives `unverified`. Malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision. The `stats` trust breakdown counts these same classifications.
+- **Evidence**: `freshness.state` distinguishes `missing`, `malformed`, `unexpired`, and `expired`. `review` separates recorded and malformed entry counts. Whole reads include the parsed values under `recorded`; compact results keep the summary. `stale: false` includes absent or malformed expiry, so it does not establish freshness.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 - **Provenance shape**: `malformed_sources: true` flags a present `sources` unless it is a list of mappings; an empty list is valid. `malformed_generated: true` flags a present `generated` unless it is a mapping containing `by`. This checks key presence only: a null, empty, or numeric `by` passes, and `at` is optional for this check. Absent fields produce no flag; explicit null values do. Mixed source lists remain intact on reads and keep their full count on hits.
 
@@ -78,6 +79,8 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 ### 1. Audit
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
+
+The evidence findings report missing expiry, malformed expiry or review records, and unavailable assessments. An assessment is unavailable when a discovered concept cannot be read or parsed, or exceeds the read cap. Missing expiry is informational; malformed fields are format observations, not failures of a team's editorial policy. These findings leave the existing conformance ratio unchanged. The report covers discovered, non-excluded paths and does not certify complete traversal or current-review applicability.
 
 The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
 

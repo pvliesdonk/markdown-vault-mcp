@@ -192,17 +192,37 @@ class TestVaultIntegration:
         ({"verified": []}, TRUST_UNVERIFIED),
         ({"verified": "yes"}, TRUST_UNVERIFIED),
         ({"verified": ["human:alice"]}, TRUST_UNVERIFIED),  # malformed entries
-        ({"verified": [{"by": "process:ci"}]}, TRUST_MACHINE),
-        ({"verified": [{"at": "2026-01-01"}]}, TRUST_MACHINE),
-        ({"verified": [{"by": "human:alice"}]}, TRUST_HUMAN),
         (
-            {"verified": [{"by": "process:ci"}, {"by": "human:alice"}]},
+            {"verified": [{"by": "process:ci", "at": "2026-01-01T00:00:00Z"}]},
+            TRUST_MACHINE,
+        ),
+        ({"verified": [{"at": "2026-01-01"}]}, TRUST_UNVERIFIED),
+        (
+            {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,
         ),
-        ({"generated": {"by": "human:alice"}}, TRUST_UNVERIFIED),
+        (
+            {
+                "verified": [
+                    {"by": "process:ci", "at": "2026-01-01T00:00:00Z"},
+                    {"by": "human:alice", "at": "2026-01-01T00:00:00Z"},
+                ]
+            },
+            TRUST_HUMAN,
+        ),
+        (
+            {"generated": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_UNVERIFIED,
+        ),
         # A bare mapping is a one-element list (field reference, #1357).
-        ({"verified": {"by": "human:alice", "at": "2026-01-01"}}, TRUST_HUMAN),
-        ({"verified": {"by": "process:ci"}}, TRUST_MACHINE),
+        (
+            {"verified": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_HUMAN,
+        ),
+        (
+            {"verified": {"by": "process:ci", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_MACHINE,
+        ),
     ],
 )
 def test_derive_trust_tier(metadata: dict, expected: str) -> None:
@@ -262,6 +282,13 @@ class TestDeriveAnnotation:
             "status": OKF_STATUS_DEFAULT,
             "stale": False,
             "trust_tier": TRUST_UNVERIFIED,
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
         }
 
     def test_full_metadata(self) -> None:
@@ -270,7 +297,7 @@ class TestDeriveAnnotation:
                 "type": " Playbook ",
                 "status": "deprecated",
                 "stale_after": "2020-01-01",
-                "verified": [{"by": "human:peter"}],
+                "verified": [{"by": "human:peter", "at": "2026-01-01T00:00:00Z"}],
             },
             now=NOW,
         )
@@ -279,6 +306,13 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
+            "freshness": {"state": "expired", "basis": "server_local_date"},
+            "review": {
+                "state": "recorded",
+                "recorded_entries": 1,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
         }
 
     def test_unknown_status_passes_through(self) -> None:
@@ -491,7 +525,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
         ({}, {"trust_tier": "unverified"}, True),
         (
-            {"verified": [{"by": "human:a"}]},
+            {"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},
             {"trust_tier": "human-reviewed"},
             True,
         ),
@@ -522,6 +556,7 @@ status: deprecated
 stale_after: 2000-01-01
 verified:
   - by: human:peter
+    at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 

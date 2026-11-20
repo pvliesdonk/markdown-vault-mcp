@@ -50,8 +50,9 @@ List of result dicts ranked by file relevance. Each contains:
   declared), `status` (defaults to `"stable"`), `stale`
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
   `"machine-confirmed"` / `"human-reviewed"`, classifying recorded
-  metadata rather than applicability to current content), and
-  `sources_count` (when the note cites sources). Optional
+  metadata rather than applicability to current content),
+  `freshness`, `review`, and `sources_count` (when the note
+  cites sources). Optional
   `malformed_sources` and `malformed_generated` flags appear
   only when true, identifying malformed provenance shapes.
 - sections (list[dict]): Up to `chunks_per_file` best-matching
@@ -115,7 +116,7 @@ section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
 an 'okf' dict (type, status, stale, `trust_tier` for recorded review
-metadata, and the note's
+metadata, freshness, review, recorded, and the note's
 'sources' list when present). Optional `malformed_sources` and
 `malformed_generated` flags appear only when true; section reads
 omit the annotation because they carry no frontmatter to derive it from.
@@ -534,7 +535,7 @@ Dict with the note context. Fields:
   some folders are self-contained by design.
 - okf (dict, optional): OKF read annotation for this note
   (type, status, stale, `trust_tier` for recorded review metadata,
-  `sources_count`). Present
+  freshness, review, `sources_count`). Present
   only when the vault is an active OKF bundle. Optional
   `malformed_sources` and `malformed_generated` flags appear
   only when true.
@@ -657,6 +658,17 @@ Informational rules, not deviations:
   exporting.
 - `missing_recommended`: notes without the recommended `title` or
   `description`.
+- `missing_freshness`: assessed notes with no expiry supplied.
+
+Evidence observations leave `conformant_notes` unchanged:
+
+- `malformed_freshness`, `malformed_review`: assessed notes with
+  unsupported expiry or malformed review records.
+- `evidence_unavailable`: discovered notes not assessed for evidence
+  because reading/parsing failed or the read cap was exceeded.
+
+Evidence findings cover discovered, non-excluded concepts, not
+complete traversal, truth, or editorial-policy compliance.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

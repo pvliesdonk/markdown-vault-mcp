@@ -188,13 +188,31 @@ frontmatter blob; not persisted):
   asks; absent field → not stale. Accepting the bare date is a deliberate
   lenience against the amended text's "ignore" — Obsidian authors write
   dates, and the upstream issue behind the amendment is still open.
-- `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
-  prefix; else `machine-confirmed` if `verified` is non-empty (all
-  verifiers non-human); else `unverified`. A bare `verified` mapping is
-  read as a one-element list (spec shorthand; `okf.verified_entries` is the
-  one reader, #1357). Exact tier algorithm lives in
-  the field-mapping table (§1 spec-stability caveat) with table-driven
-  tests.
+- `trust_tier`: a compatibility label for recorded claims, not server
+  certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
+  or `<producer>/<version>`, with nonempty, whitespace-free components)
+  and an offset-aware `at` instant counts. A usable human record yields
+  `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
+  otherwise `unverified`. A bare mapping is still one record. Malformed
+  siblings do not erase usable records. This deliberately changes the
+  public helper and filter behavior from v6.1.4 (#1444).
+- `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
+  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
+  or `server_local_date`. The compatibility `stale: false` includes missing
+  and malformed expiry and therefore does not mean fresh or true.
+- `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
+  `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
+  Mixed lists retain both counts; `recorded` never means applicability to
+  the current revision has been established. A malformed outer value counts
+  as one malformed entry. No source fetching or reviewer authentication occurs.
+
+Expiry strings accept extended calendar dates or calendar datetimes with
+`T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
+numeric `±HH:MM` offset. Week/basic dates, offset-less times, out-of-range
+clock components and offsets are unsupported. This bounded interpretation
+is not full ISO 8601 validation. Parsed Python dates/datetimes are also
+accepted; datetime awareness requires a non-None `utcoffset()`.
+
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
 - `malformed_sources` and `malformed_generated`: true-only advisory flags,
@@ -212,9 +230,14 @@ frontmatter blob; not persisted):
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review}`, plus the
+   true-only `malformed_sources`/`malformed_generated` flags — omitted entirely when
    detection is off, and individual members omitted when underivable.
-   `sources` are surfaced on `read` (full) and counted on search hits
+   Whole reads also carry `recorded` with supplied `stale_after` and
+   `verified` values as parsed, including null/malformed values and extensions;
+   missing keys stay absent. Compact results omit these potentially large
+   records. Values use the existing metadata serialization, not original YAML
+   spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
    `type` histogram, status/trust-tier breakdowns, stale count. The
@@ -307,9 +330,17 @@ during migration it is a progress meter:
   annotation shape checks, counting each parsed non-reserved note once per
   field with sorted, capped examples. They leave `conformant_notes`
   unchanged; exclusions and parse failures keep their existing paths.
-  Reading and auditing never rewrite malformed fields. Both defaulted
-  report fields are appended after existing fields to preserve positional
-  library construction, including the `index_frontmatter` slot.
+  Reading and auditing never rewrite malformed fields.
+- Evidence findings (#1444): `missing_freshness` (informational),
+  `malformed_freshness` and `malformed_review` (format observations, using
+  the annotation's `freshness` and `review` rules), and
+  `evidence_unavailable` for discovered concepts whose read or parse failed
+  or whose content exceeds the read cap (detected by reading one character
+  past it). They leave `conformant_notes` unchanged and cover discovered,
+  non-excluded concepts, not complete traversal or editorial policy.
+- Every report field added after `index_frontmatter` is defaulted and
+  appended, provenance fields first and then evidence fields, so positional
+  library construction keeps working.
 - Summary ratio ("N of M notes conformant") + the same exclude patterns as
   the index (convention files, configured excludes) so known-nonconforming
   zones can be whitelisted via existing config.
@@ -805,9 +836,8 @@ phase owns.
 
 ## 10. Open questions
 
-- Trust-tier edge cases: `verified` entries by `process:` actors only —
-  v0.2 tier language suggests machine-confirmed; confirm against SPEC.md
-  examples before freezing the table.
+- Review applicability after observed changes remains separate from recorded
+  claim interpretation (#1413).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
   amendment and #1373: the value carries its own offset; a bare date is the
   server-local day.

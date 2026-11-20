@@ -1990,11 +1990,15 @@ the spec itself says, dated and sourced, in
   `stale` (a bare `stale_after` date: the server-local day has reached it;
   an instant with an offset: `now >= stale_after`; an offset-less datetime
   is ignored — #1357, #1373), and
-  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
-  prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`; a bare `verified` mapping is a one-element list, as the
-  spec's single-verifier shorthand requires, at every site that reads
-  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
+  `trust_tier` as a recorded-claim label. Only records with a recognized
+  actor shape and an offset-aware `at` contribute; malformed records never
+  promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
+  evidence and its basis; `review` counts usable and malformed records with
+  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  Full reads additionally expose supplied expiry/reviews under `recorded`,
+  preserving parsed values, while compact results omit that projection.
+  The exact contract and supported timestamp subset are in `okf.md` §3.
+  Reads carry the full `sources` list; search hits carry
   `sources_count`. Both modes add true-only `malformed_sources` and
   `malformed_generated` flags for present values of the wrong shape:
   sources must be a list of mappings (empty allowed), generated a mapping
@@ -2006,9 +2010,10 @@ the spec itself says, dated and sourced, in
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
 - **Review presentation (#1413, partial)**: `trust_tier` and the stats
-  `trust` histogram retain their existing metadata-classification semantics
-  and keys. They describe recorded claims, not authenticated review or
-  applicability to the current content. Human-readable CLI search results
+  `trust` histogram keep their keys and labels and classify the usable
+  recorded claims described above (#1444), so an empty or malformed
+  `verified` yields `unverified`. They describe recorded claims, not
+  authenticated review or applicability to the current content. Human-readable CLI search results
   label that distinction; text reads print the notice to stderr without
   changing content on stdout. App note and context views show a visible
   notice for a supplied `verified` field, including empty or malformed
@@ -2017,9 +2022,8 @@ the spec itself says, dated and sourced, in
   without asserting that the vault is an active OKF bundle. Applicability
   is explicitly unknown; no timestamp comparison, history inference, byte
   comparison or metadata rewrite is performed. JSON/agent payloads and
-  filters are unchanged. Structured applicability and observation integration
-  remain separate work, coordinated with #1444; this slice does not complete
-  #1413.
+  filters are unchanged by the presentation slice. Structured applicability
+  remains separate work; this slice does not complete #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -2070,8 +2074,8 @@ the spec itself says, dated and sourced, in
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
-  index-independent, per-file reads capped at the probe's read limit
-  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  index-independent, existing checks capped at the probe's read limit
+  (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
@@ -2087,9 +2091,17 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Additional evidence findings distinguish missing expiry (informational),
+  malformed expiry/reviews (format observations), and evidence unavailable
+  due to reading/parsing failures or overflow detected by one-character
+  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
+  non-excluded concepts, not complete traversal or editorial-policy compliance.
+  Existing capped conformance checks and discovery rules are unchanged.
   The provenance findings count parsed non-reserved notes once per field,
-  leaving ``conformant_notes`` unchanged. They are defaulted fields appended
-  after ``index_frontmatter`` to preserve existing positional construction.
+  leaving ``conformant_notes`` unchanged. The report's new fields are all
+  defaulted and appended after ``index_frontmatter``: the provenance fields
+  first, then the evidence fields, preserving existing positional
+  construction.
   Neither reading nor auditing repairs the files.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
