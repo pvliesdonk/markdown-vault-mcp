@@ -8,8 +8,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import env
-
+from markdown_vault_mcp._env import env
 from markdown_vault_mcp.config_sections._helpers import validate_http_base_url
 
 _PREFIX = "MARKDOWN_VAULT_MCP"
