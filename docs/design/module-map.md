@@ -144,6 +144,7 @@ src/markdown_vault_mcp/
   _fetch.py            -- fetch_url / FetchResult: SSRF-hardened URL fetch (non-public-address rejection, DNS-rebind pin, per-hop revalidation, size cap, redaction) (#2282)
   _log_grammar.py      -- parse_log_template: the event_name key=%s log-call grammar (#2340)
   _log_conformance.py  -- find_nonconforming_log_calls: AST check behind tests/test_logging_standard.py (#2340)
+  _request_logging.py  -- RequestLoggingMiddleware / wire_middleware_stack: request_* / tool_call_* lines with timing, connection and trace fields (#2341)
   _jobs.py             -- Jobs / build_jobs: soft-deadline promotion of long-running calls to pollable jobs, yielding to native tasks (#2307)
   _job_store.py        -- JobStore and the job records: subject-scoped, TTL-pinned job records over the jobs KV namespace, with the per-subject cap (#2307)
   _job_tools.py        -- register_long_running_tool / register_job_tools: dual-mode long-running tools and the get_job_result poller (#2281)

@@ -32,7 +32,8 @@ from markdown_vault_mcp._job_tools import (
     register_long_running_tool,
 )
 from markdown_vault_mcp._jobs import Jobs, build_jobs
-from markdown_vault_mcp._pvl_core import ServerConfig, wire_middleware_stack
+from markdown_vault_mcp._pvl_core import ServerConfig
+from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp._tool_boundary import FAULT_MESSAGE, is_tool_boundary
 from markdown_vault_mcp._tool_visibility import apply_tool_visibility

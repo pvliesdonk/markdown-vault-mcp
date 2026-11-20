@@ -14,11 +14,11 @@ This standard governs **first-party code only** — `src/markdown_vault_mcp/`
 and `tests/`. Two categories of log output are explicitly **out of scope**;
 do not try to make them conform, silence them, or reformat them:
 
-- **pvl-core's request-logging middleware**: emits conforming
-  `event key=value` records for every MCP message (`request_started` /
-  `request_completed` / `request_failed` keyed by `method=`, and the
-  `tool_call_*` vocabulary carrying `tool=<name>`). Governed by
-  `fastmcp-pvl-core`; no first-party code needed.
+- **The request-logging middleware** (`_request_logging.py`): emits
+  conforming `event key=value` records for every MCP message
+  (`request_started` / `request_completed` / `request_failed` keyed by
+  `method=`, and the `tool_call_*` vocabulary carrying `tool=<name>`). Its
+  templates are built at runtime, so no tool-level code logs them.
 - **Third-party loggers** — `uvicorn.access`, `uvicorn.error`,
   `mcp.server.lowlevel.server`, `httpx`, `httpcore`, `docket.worker`:
   `configure_logging_from_env` governs them for the whole family, and a
@@ -41,8 +41,8 @@ do not try to make them conform, silence them, or reformat them:
 - No `print()` for operational output. No third-party logging libraries;
   there is no structlog here, and the JSON output below is pvl-core's
   formatter over ordinary `LogRecord`s.
-- pvl-core's middleware handles tool invocation, timing and error logging
-  automatically.
+- The request-logging middleware handles tool invocation, timing and error
+  logging automatically.
 - **pvl-core owns the root logger.** `cli._root` calls
   `configure_logging_from_env("MARKDOWN_VAULT_MCP", verbose=...)`, and so does
   `make_server()` unless its caller passes `configure_logging=False`, as

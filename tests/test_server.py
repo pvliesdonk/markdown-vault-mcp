@@ -4013,7 +4013,7 @@ class TestMiddlewareStack:
         exercised at the process level in test_container_logging.py.
         """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from markdown_vault_mcp._pvl_core import RequestLoggingMiddleware
+        from markdown_vault_mcp._request_logging import RequestLoggingMiddleware
 
         server = make_server()
         mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
@@ -4032,7 +4032,7 @@ class TestMiddlewareStack:
         before ``make_server`` wires the middleware.
         """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
-        from markdown_vault_mcp._pvl_core import RequestLoggingMiddleware
+        from markdown_vault_mcp._request_logging import RequestLoggingMiddleware
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", "DEBUG")
         root = logging.getLogger()

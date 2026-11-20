@@ -25,8 +25,8 @@ from markdown_vault_mcp._pvl_core import (
     build_auth,
     configure_logging_from_env,
     get_current_auth_mode,
-    wire_middleware_stack,
 )
+from markdown_vault_mcp._request_logging import wire_middleware_stack
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import (
     bind_config,
