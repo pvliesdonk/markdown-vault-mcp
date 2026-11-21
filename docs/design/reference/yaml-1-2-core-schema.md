@@ -151,7 +151,10 @@ is #2415's (option B, account holder, 2026-11-21).
   [pins: tests/test_yaml12.py::test_a_tagged_timestamp_round_trips_as_the_string_it_reads_back_as]
 - "A producer that modifies an existing file SHOULD NOT re-serialize values
   that it did not change." `frontmatter.dumps` re-serializes the whole
-  block; that is a departure, tracked as #2419. [source: okf-spec] (§4)
+  block, so the server's own OKF stamp and `okf_verify` splice only the
+  keys they change instead (#2419); a caller's own `write` with a
+  frontmatter mapping still writes the block whole. [source: okf-spec] (§4)
+  [pins: tests/test_frontmatter_splice.py::test_a_stamp_keeps_every_other_byte]
 
 ## Where this project departs from the subject
 

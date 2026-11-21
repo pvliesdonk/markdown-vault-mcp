@@ -310,7 +310,7 @@ are named where they exist; a fix rewrites them.
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | fixed: `50%25%20done/a%23b%20(c).md` (was `50%%20done/a\#b%20(c).md`) | MUST | #2417 (fixed) |
 | 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |
 | 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | every `write`/`edit` restamps | producer rule | none |
-| 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | stamps and `okf_verify` re-dump the whole block, dropping comments | SHOULD NOT | none |
+| 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | fixed: the stamp and `okf_verify` splice only `generated`/`verified`, keeping every other byte; a block the splice cannot read is still written whole (was: the whole block re-dumped, dropping comments) | SHOULD NOT | #2419 (fixed) |
 | 19 | Unknown `status` (§5.4) | silent | silent | not stable | fixed: any value outside the exact tokens, a non-string one included, is shown as its raw text (`3` → `"3"`) and is not `stable` | stated | #2420 |
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |

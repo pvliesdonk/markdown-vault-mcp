@@ -190,7 +190,9 @@ Content writes serialize supplied frontmatter in caller insertion order,
 including nested mappings and mappings inside lists. Edit, append, OKF
 verification and git conflict marking retain surviving fields in their
 existing order when they serialize a header. This preserves mapping order and
-values, not comments, quoting, whitespace or arbitrary exact formatting. Every
+values, not comments, quoting, whitespace or arbitrary exact formatting. The
+OKF stamp and `okf_verify` are the exception: they splice only the keys they
+change and keep every other byte (#2419, `okf.md` §6). Every
 frontmatter dump (the document writer, the two OKF transforms and the two
 conflict-file writes in `git/conflict.py`) passes `sort_keys=False` and the
 YAML 1.2 handler; the pinned dependency behavior is recorded in

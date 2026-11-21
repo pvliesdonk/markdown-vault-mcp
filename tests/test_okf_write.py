@@ -42,6 +42,7 @@ from markdown_vault_mcp.okf import (
     append_okf_verification,
     apply_okf_write_stamp,
 )
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
     _parse_tool_data,
@@ -134,7 +135,9 @@ class TestApplyOkfWriteStamp:
             "# T\n"
         )
         out = apply_okf_write_stamp(text, actor="human:x", now=_NOW, stored=text)
-        meta = fm.loads(out).metadata
+        # The verified lines are kept byte for byte (#2419), so read them the
+        # way the server does (YAML 1.2: the date stays a string).
+        meta = parse_frontmatter(out).metadata
         assert meta["verified"] == _KEPT_VERIFIED
         assert meta["generated"] == {"by": "human:x", "at": _ISO}
         # Unrelated fields survive.

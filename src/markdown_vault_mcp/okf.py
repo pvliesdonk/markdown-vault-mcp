@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp._frontmatter_splice import REMOVE, splice_keys
 from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
@@ -1554,9 +1555,11 @@ def apply_okf_write_stamp(
     *text*, so a write neither erases recorded reviews nor adds one of its
     own; ``okf_verify`` is the only path that records a review. ``sources``
     and every other field are untouched.
-    Surviving fields retain their mapping order, including nested mappings;
-    a new ``generated`` field appends, while replacing it retains its slot.
-    YAML comments and formatting are not retained on serialization.
+    Only ``generated`` and ``verified`` are rewritten: every other line of
+    the block, comments and quoting included, and the body keep their bytes
+    (OKF 0.3 §4, #2419). A new ``generated`` field appends, while replacing
+    it retains its slot. A block the splice cannot handle with certainty is
+    re-serialized whole, which keeps values and order but not comments.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1577,17 +1580,20 @@ def apply_okf_write_stamp(
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
+    updates: dict[str, Any] = {"generated": {"by": actor, "at": okf_timestamp(now)}}
+    new_meta["generated"] = updates["generated"]
     kept = _stored_verified(stored)
     if kept is _NO_STORED_VERIFIED:
+        if "verified" in meta:
+            updates["verified"] = REMOVE
         new_meta.pop("verified", None)
     else:
+        if meta.get("verified", _NO_STORED_VERIFIED) != kept:
+            updates["verified"] = kept
         new_meta["verified"] = kept
     if new_meta == meta:
         return text
-    return fm.dumps(
-        fm.Post(post.content, **new_meta), handler=YAML12_HANDLER, sort_keys=False
-    )
+    return _write_keys(text, post, updates, new_meta)
 
 
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
@@ -1597,10 +1603,11 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     human attestation, promoting the note's trust tier to ``human-reviewed``
     when the entry is current (OKF 0.3 §5.3; not when ``generated`` is
     present without a usable ``at``, see :func:`derive_trust_tier`).
-    Preserves other frontmatter values and mapping order, including nested
-    mappings. A new ``verified`` field appends; an existing field retains its
-    slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.
-    YAML comments, quoting and surrounding whitespace may be normalized.
+    Only ``verified`` is rewritten; every other line of the block and the
+    body keep their bytes (OKF 0.3 §4, #2419). A new ``verified`` field
+    appends; an existing field retains its slot. The entry keeps the
+    ``{by, at}`` shape :func:`derive_trust_tier` reads. A block the splice
+    cannot handle is re-serialized whole.
 
     Args:
         text: The full note file text (frontmatter and body).
@@ -1617,6 +1624,22 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
     meta["verified"] = verified
+    return _write_keys(text, post, {"verified": verified}, meta)
+
+
+def _write_keys(
+    text: str, post: fm.Post, updates: dict[str, Any], new_meta: dict[str, Any]
+) -> str:
+    """Write *updates* into *text*, keeping every other byte when possible.
+
+    OKF 0.3 §4: "A producer that modifies an existing file SHOULD NOT
+    re-serialize values that it did not change" (#2419). The changed keys
+    are spliced into the existing block; a block the splice cannot handle
+    with certainty, or a note with no block yet, is written whole.
+    """
+    spliced = splice_keys(text, updates, expected=new_meta)
+    if spliced is not None:
+        return spliced
     return fm.dumps(
-        fm.Post(post.content, **meta), handler=YAML12_HANDLER, sort_keys=False
+        fm.Post(post.content, **new_meta), handler=YAML12_HANDLER, sort_keys=False
     )
