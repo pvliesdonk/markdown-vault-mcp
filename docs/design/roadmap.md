@@ -686,43 +686,49 @@ became `028`, `028 submodules-read` became `029`, and `030 mcp-app` became
 
 `derived` — The list shows the packages as re-cut on 20 November 2026, after
 that statement (§ Revisions); the OKF entries no longer have their 18 November
-membership.
+membership. Since 21 November 2026 every ordinal from `025` to `041`
+is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
 
-- **[026 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
+- **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
+  (major): epic [#2401][2401]: research [#2403][2403] first, then one bug per
+  departure from the spec.
+- **[026 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**:
+  the `025` of the sections above.
+- **[027 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
   (major): capability settings, gating and reporting ([#2380][2380],
   [#1411][1411], [#1432][1432]), then inventory ([#1442][1442], [#1421][1421],
   [#1610][1610], [#1606][1606]) and [#1419][1419].
-- **[027 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
+- **[028 git-contracts](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/28)**
   (patch; refactor and tests may need `override_version`): [#1308][1308],
   [#1310][1310], [#1569][1569], [#2224][2224].
-- **[028 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**:
+- **[029 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**:
   the `027` of the sections above.
-- **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
+- **[030 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**:
   the `028` of the sections above.
-- **[031 okf-provenance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
+- **[032 okf-provenance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/29)**
   (major): explicit authoring ([#1422][1422]), then preserved provenance
   ([#1412][1412], [#1443][1443], [#2057][2057]), then reserved files without
   seeded placeholders ([#1438][1438]).
-- **[032 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
+- **[033 git-optional-backend](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/30)**
   (minor): [#1309][1309].
-- **[033 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
+- **[034 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**:
   the `030` of the sections above.
-- **[034 okf-write-groups](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/39)**
+- **[035 okf-write-groups](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/39)**
   (minor): [#1677][1677], the git conflict fixes its pull deferral sits on
   ([#1395][1395]) and [#1415][1415].
-- **[035 okf-observations](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/40)**
+- **[036 okf-observations](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/40)**
   (minor): [#1414][1414] and [#2045][2045].
-- **[036 okf-review-binding](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/41)**
+- **[037 okf-review-binding](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/41)**
   (major): [#1445][1445] and [#1413][1413].
-- **[037 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
+- **[038 okf-publication](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/34)**
   (major): [#1448][1448].
-- **[038 okf-repair](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)**
+- **[039 okf-repair](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/32)**
   (major): [#1420][1420], [#2061][2061] and [#2062][2062].
-- **[039 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**
+- **[040 okf-navigation](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/31)**
   (minor): [#1611][1611], [#1612][1612] and [#1394][1394].
-- **[040 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
+- **[041 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
   (major): [#1447][1447], [#2058][2058] and [#1446][1446].
-- **[041 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
+- **[042 okf-editorial-history](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/33)**
   (minor): [#1416][1416], [#1418][1418] and [#2381][2381].
 
 `derived` — The OKF packages follow the order in which the contributed pull
@@ -738,19 +744,20 @@ supersedes the 17 November rule that a contributor-proposed issue has no
 package until accepted.
 
 `stated` — "If a PR carries ! then it will be a major break" (20 November
-2026). By that rule `024`, `026`, `031`, `036`, `037`, `038` and `040` are
-majors (as re-cut on 20 November 2026).
+2026). By that rule `024`, `025`, `027`, `032`, `037`, `038`, `039` and
+`041` are majors (as renumbered on 21 November 2026).
 
 `derived` — Two packages were added on 20 November 2026:
 
 - **[030 terminal-followups](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/37)**
   (minor) holds the contributed follow-ups to the shipped hosted terminal epic
   [#1829][1829]. The free ordinal before `031` keeps them from waiting on the
-  OKF and Git tracks, which they do not depend on.
+  OKF and Git tracks, which they do not depend on. It is `031` since 21
+  November.
 - **[038 okf-retrieval](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/38)**
   (major) is the evidence-aware retrieval cut of § Follow-up slices, which had
   no package. It follows the evidence and inventory cuts it reads from. It is
-  `040` since the re-cut later that day.
+  `040` since the re-cut later that day, and `041` since 21 November.
 
 `derived` — **[029 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
 (minor)** follows `028` with the read-only submodule epic [#1561][1561], less the
@@ -1316,6 +1323,40 @@ stays in `027` rather than `034`. It fixes [#2224][2224], which is already in
 review-assurance slice, so it could ship directly after `026`. It stays
 after `036` as confirmed.
 
+### 21 November 2026 — put OKF v0.3 conformance at `025`
+
+`stated` — The owner ruled that the server matches the OKF specification
+exactly: "Spec needs to match *exactly*, that is what it's a spec/standard
+for", and "I consider deviation from the standard a bug". The owner placed the
+conformance work at `025` "because it allows us to strictly verify any pr
+afterwards", and chose to shift every later package up by one to make room.
+
+`stated` — "Contributions are unasked for. They are convenient where they
+exist, but we owe nothing more." The contributed v0.3 pull requests cite a
+slice plan and a gap audit that this repository does not hold; they are input
+where they fit an issue epic [#2401][2401] produces, judged against the
+primary spec text.
+
+`derived` — `025 okf-v03-conformance` holds epic [#2401][2401]: research
+[#2403][2403] reads OKF v0.3 from its primary text, records the 0.2 to 0.3
+differences and every departure, and supersedes #2388. The departures already
+known from the OKF v0.2 reference page are filed as bugs blocked on it:
+[#2404][2404] (bare-date `stale_after`), [#2405][2405] (`verified` cleared on
+writes), [#2406][2406] (reserved files exempt from the `type` rule),
+[#2407][2407] (actor-id grammar) and [#2400][2400] (this repository's own
+reference bundle). Generated reserved-file frontmatter stays [#1438][1438] in
+`032`.
+
+`derived` — `025 contributed-features` became `026`, and `026` to `041` became
+`027` to `042`. Each milestone keeps its identity and membership; three
+descriptions that named stale ordinals now name the current ones.
+
+`evidenced` — While aligning `generated` with `verified` for [#2386][2386], the
+recommendation omitted that OKF 0.2 §5.2 requires only `by` within
+`generated`. The owner rejected the resulting stricter rule. The open pull
+request for #2386 now follows §5.2 and §5.1 exactly: `generated.at` is
+optional, and each `sources` entry needs `resource`.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1520,3 +1561,11 @@ after `036` as confirmed.
 [2381]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2381
 [2270]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2270
 [2211]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2211
+[2386]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2386
+[2400]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2400
+[2401]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2401
+[2403]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2403
+[2404]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2404
+[2405]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2405
+[2406]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2406
+[2407]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2407
