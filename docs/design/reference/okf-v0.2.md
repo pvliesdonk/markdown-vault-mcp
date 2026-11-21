@@ -11,7 +11,8 @@ verified:
   - by: process:researching-references-refute
     at: 2026-09-06T22:11:28+02:00
 stale_after: 2027-03-06
-status: stable
+status: deprecated
+superseded_by: okf-v0.3.md
 sources:
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
@@ -129,11 +130,11 @@ months, not twelve.
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
   [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
-- The spec says nothing about a tier for a `verified` entry that carries no
-  `by`, or an empty list; "non-`human:` actors only" reads naturally as
-  machine-confirmed for `[{}]`, which is what the server does.
-  [unverified] A spec-maintainer answer or a reference-agent fixture would
-  settle it.
+- The spec says nothing about a tier for a malformed `verified` entry.
+  The server formerly promoted any mapping, including `{}`; #1444 follows
+  the adopted north star instead, counting only usable actor/timestamp
+  records as recorded claims. This is a local interpretation, not a claim
+  that upstream mandates the server's exact supported timestamp subset.
 
 ### Lifecycle: `status` and `stale_after` (§5.4, §5.5)
 
@@ -223,16 +224,12 @@ months, not twelve.
 Behaviour lines are [observed: `okf.py`, `_okf_write.py` on the working
 tree, 2026-09-07].
 
-- **Both texts' `stale_after` forms are honoured, and the bare date is
-  kept.** `derive_stale` compares an instant with an offset as an instant
-  (`now >= stale_after`, the August rule) and a bare date against the
-  server-local calendar day (the July rule, #1357). Against the August
-  text this is lenient on purpose: the amendment says to ignore an
-  offset-less value, but a bare date is what the July text prescribed and
-  what an Obsidian author writes, and upstream #242 is still open. A
-  datetime *without* an offset — allowed by neither text — is ignored.
-  Decided in `docs/design/okf.md` § 3 (#1373).
-  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
+- **Historical expiry interpretation.** The server formerly compared a bare
+  date with its local calendar day (#1357, #1373). OKF v0.3 §5 instead fixes
+  the date at midnight UTC; the server now follows that rule. Offset
+  datetimes remain instants, and datetimes without offsets remain invalid.
+  See [the v0.3 reference](okf-v0.3.md).
+  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf_evidence.py::test_date_expiry_uses_utc_midnight]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
   re-confirmation"; the server's enforced write layer clears it so an

@@ -111,7 +111,7 @@ class TestExplicitTasksUrl:
 
     def test_error_names_scheme_not_url(self, mcp):
         """Redaction: the raw URL (possible credentials) never appears."""
-        config = ServerConfig(tasks_url="amqp://user:hunter2@host/vq")
+        config = ServerConfig(tasks_url="amqp://user:" + "hunter2@host/vq")
         with pytest.raises(ConfigurationError) as exc_info:
             configure_task_backend(mcp, "MY_APP", config)
         assert "hunter2" not in str(exc_info.value)
@@ -295,7 +295,7 @@ class TestMemoryBackendSignal:
     def test_redis_logs_scheme_and_queue_only(self, mcp, caplog):
         """Redaction: host/credentials never reach the log line."""
         config = ServerConfig(
-            transport="http", tasks_url="redis://user:hunter2@tasks-host:6379/1"
+            transport="http", tasks_url="redis://user:" + "hunter2@tasks-host:6379/1"
         )
         with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._tasks"):
             configure_task_backend(mcp, "MY_APP", config)

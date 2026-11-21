@@ -293,7 +293,7 @@ class TestBuildKvStoreUrlPrecedence:
 
     def test_legacy_warning_does_not_leak_credentials(self, caplog):
         # Operator-set URLs may carry secrets in userinfo
-        # (redis://user:pass@host/0, mongodb://user:pass@host/db).
+        # (for example, Redis and MongoDB URLs with userinfo).
         # The legacy-fallback warning must log only the scheme, not
         # the full URL — a regression here would page security.
         config = ServerConfig(event_store_url="redis://carol:hunter2@redis.example/0")

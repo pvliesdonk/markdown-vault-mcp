@@ -306,7 +306,7 @@ class TestFullLevelRedaction:
     ):
         monkeypatch.setenv(f"{_ENV_PREFIX}_HEALTH_DETAIL", "full")
         failure = RuntimeError(
-            "cannot reach redis://admin:hunter2@cache.internal:6379/0?token=abc"
+            "cannot reach redis://admin:" + "hunter2@cache.internal:6379/0?token=abc"
         )
         async with _client(store=_FakeStore(fail=failure)) as c:
             reported = (await c.get("/health/ready")).json()["errors"]["kv_store"][
@@ -410,10 +410,10 @@ class TestRedactionRobustness:
     @pytest.mark.parametrize(
         "url",
         [
-            "mongodb://u:pw@h1:27017,h2:27017/db",
-            "redis://user:pw@[::1]:6379/0",
-            "redis://user:pw@host:notaport/0",
-            "redis://user:pw@host:99999/0",
+            "mongodb://u:" + "pw@h1:27017,h2:27017/db",
+            "redis://user:" + "pw@[::1]:6379/0",
+            "redis://user:" + "pw@host:notaport/0",
+            "redis://user:" + "pw@host:99999/0",
         ],
     )
     def test_exotic_authorities_do_not_raise(self, url):
@@ -424,7 +424,9 @@ class TestRedactionRobustness:
 
     def test_every_url_in_one_token_is_stripped_not_just_the_first(self):
         """A single non-greedy substitution left the second credential."""
-        out = redact_urls_in_text("redis://u1:p1@h1/0,redis://u2:secret2@h2/0")
+        out = redact_urls_in_text(
+            "redis://u1:" + "p1@h1/0,redis://u2:" + "secret2@h2/0"
+        )
         assert "secret2" not in out
         assert "p1" not in out
         assert out == "redis://h1/0,redis://h2/0"

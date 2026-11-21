@@ -68,11 +68,16 @@ class TestOkfDetector:
         assert state.declared_version is None
         assert state.mode == "auto"
 
-    def test_declared_auto_active(self, tmp_path: Path) -> None:
-        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
-        state = OkfDetector(tmp_path, mode="auto").state()
+    @pytest.mark.parametrize("version", ["0.1", "0.2", "0.3"])
+    def test_declared_auto_active(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, version: str
+    ) -> None:
+        _write_root_index(tmp_path, f'---\nokf_version: "{version}"\n---\n')
+        with caplog.at_level(logging.WARNING):
+            state = OkfDetector(tmp_path, mode="auto").state()
         assert state.active is True
-        assert state.declared_version == "0.2"
+        assert state.declared_version == version
+        assert not [r for r in caplog.records if "okf_unknown_version" in r.message]
 
     def test_malformed_json_root_index_reports_undeclared(self, tmp_path: Path) -> None:
         # The probe guards yaml.YAMLError only, so a `{` block the JSON
@@ -189,17 +194,37 @@ class TestVaultIntegration:
         ({"verified": []}, TRUST_UNVERIFIED),
         ({"verified": "yes"}, TRUST_UNVERIFIED),
         ({"verified": ["human:alice"]}, TRUST_UNVERIFIED),  # malformed entries
-        ({"verified": [{"by": "process:ci"}]}, TRUST_MACHINE),
-        ({"verified": [{"at": "2026-01-01"}]}, TRUST_MACHINE),
-        ({"verified": [{"by": "human:alice"}]}, TRUST_HUMAN),
         (
-            {"verified": [{"by": "process:ci"}, {"by": "human:alice"}]},
+            {"verified": [{"by": "process:ci", "at": "2026-01-01T00:00:00Z"}]},
+            TRUST_MACHINE,
+        ),
+        ({"verified": [{"at": "2026-01-01"}]}, TRUST_UNVERIFIED),
+        (
+            {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,
         ),
-        ({"generated": {"by": "human:alice"}}, TRUST_UNVERIFIED),
+        (
+            {
+                "verified": [
+                    {"by": "process:ci", "at": "2026-01-01T00:00:00Z"},
+                    {"by": "human:alice", "at": "2026-01-01T00:00:00Z"},
+                ]
+            },
+            TRUST_HUMAN,
+        ),
+        (
+            {"generated": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_UNVERIFIED,
+        ),
         # A bare mapping is a one-element list (field reference, #1357).
-        ({"verified": {"by": "human:alice", "at": "2026-01-01"}}, TRUST_HUMAN),
-        ({"verified": {"by": "process:ci"}}, TRUST_MACHINE),
+        (
+            {"verified": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_HUMAN,
+        ),
+        (
+            {"verified": {"by": "process:ci", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_MACHINE,
+        ),
     ],
 )
 def test_derive_trust_tier(metadata: dict, expected: str) -> None:
@@ -211,8 +236,8 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
     [
         ({}, False),
         ({"stale_after": dt.date(2026, 8, 6)}, True),
-        # Stale when today >= stale_after (field reference, #1357): the
-        # date itself is the first stale day.
+        # Date parsing, including whitespace and past/future dates; the
+        # zone rule is covered by test_date_expiry_uses_utc_midnight.
         ({"stale_after": dt.date(2026, 8, 7)}, True),
         ({"stale_after": dt.date(2026, 8, 8)}, False),
         ({"stale_after": "2026-08-07"}, True),
@@ -243,15 +268,6 @@ def test_derive_stale(metadata: dict, expected: bool) -> None:
     assert derive_stale(metadata, now=NOW) is expected
 
 
-def test_derive_stale_bare_date_uses_the_server_local_day() -> None:
-    """A bare date is judged against now's local calendar day, not UTC's."""
-    # 2026-08-08T00:30 at +02:00 is still 2026-08-07 in UTC; the bare date
-    # 2026-08-08 is stale there because the server's day has turned.
-    now = dt.datetime(2026, 8, 8, 0, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is True
-    assert derive_stale({"stale_after": dt.date(2026, 8, 9)}, now=now) is False
-
-
 class TestDeriveAnnotation:
     def test_empty_metadata_defaults(self) -> None:
         annotation = derive_annotation({}, now=NOW)
@@ -259,6 +275,13 @@ class TestDeriveAnnotation:
             "status": OKF_STATUS_DEFAULT,
             "stale": False,
             "trust_tier": TRUST_UNVERIFIED,
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
         }
 
     def test_full_metadata(self) -> None:
@@ -267,7 +290,7 @@ class TestDeriveAnnotation:
                 "type": " Playbook ",
                 "status": "deprecated",
                 "stale_after": "2020-01-01",
-                "verified": [{"by": "human:peter"}],
+                "verified": [{"by": "human:peter", "at": "2026-01-01T00:00:00Z"}],
             },
             now=NOW,
         )
@@ -276,6 +299,13 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
+            "freshness": {"state": "expired", "basis": "utc_date"},
+            "review": {
+                "state": "recorded",
+                "recorded_entries": 1,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
         }
 
     def test_unknown_status_passes_through(self) -> None:
@@ -432,7 +462,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
         ({}, {"trust_tier": "unverified"}, True),
         (
-            {"verified": [{"by": "human:a"}]},
+            {"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},
             {"trust_tier": "human-reviewed"},
             True,
         ),
@@ -463,6 +493,7 @@ status: deprecated
 stale_after: 2000-01-01
 verified:
   - by: human:peter
+    at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 

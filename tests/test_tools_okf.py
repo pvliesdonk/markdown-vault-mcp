@@ -38,7 +38,7 @@ status: deprecated
 stale_after: 2020-01-01
 verified:
   - by: human:peter
-    at: 2026-01-01
+    at: "2026-01-01T00:00:00Z"
 sources:
   - resource: https://example.com/a
     id: a
@@ -207,6 +207,13 @@ class TestDeclaredBundle:
             "status": "stable",
             "stale": False,
             "trust_tier": "unverified",
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
         }
 
     async def test_read_includes_full_sources(self) -> None:

@@ -9,7 +9,7 @@ ref) implemented; their design has
 graduated into `design.md` ("OKF Read Semantics"). Later phases remain
 proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
-**Spec targeted:** OKF v0.2
+**Historical spec for this design:** OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
 Apache 2.0; announced 2026-06-12 on the
 [Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)).
@@ -17,7 +17,11 @@ What the spec actually says, with sources, dates and the in-place amendment
 of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 `stale_after` an instant), is the reference page
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
-document decides are listed there.
+document decides are listed there. The current pinned specification is
+[OKF v0.3](reference/okf-v0.3.md); server alignment with v0.3 remains
+incomplete. The superseded v0.2 reference remains a historical account.
+Date-only expiry and review timestamps now follow v0.3 UTC rules, and null
+or empty expiry is absent; other v0.3 slices remain pending.
 
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
@@ -57,7 +61,7 @@ What is missing is *semantics*: the server indexes OKF frontmatter as opaque
 metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
 `generated`/`verified`, or the reserved files `index.md`/`log.md`.
 
-### OKF v0.2 in brief (normative source: SPEC.md)
+### Historical OKF v0.2 summary (source: SPEC.md)
 
 - **Conformance:** every non-reserved `.md` has parseable YAML frontmatter
   with a non-empty `type` (free vocabulary). Nothing else is required.
@@ -95,7 +99,7 @@ OKF is pre-1.0 and has one breaking change behind it already
 (v0.1→v0.2: `timestamp` → `generated.at`, body `# Citations` → `sources`).
 Consequence for this design: **the OKF field mapping is data, not code** — a
 single module-level table (field name → indexing/annotation behavior) so a
-v0.3 rename is a table edit plus tests, not a refactor.
+future rename is a table edit plus tests, not a refactor.
 
 ---
 
@@ -165,7 +169,7 @@ absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
 OKF is active, and the vault is not read-only. Independent services remain
 the subject of #1412.
 
-Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
+Unknown `okf_version` values (e.g. `"9.9"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
 itself.
 
@@ -180,30 +184,48 @@ server's ranking math — layer 1 surfaces signal and lets the agent judge.
 **Computed per-note properties** (derived at annotation time from the stored
 frontmatter blob; not persisted):
 
-- `staleness`: both texts of v0.2 honoured (#1357, #1373). A bare date is
-  stale from that server-local day on (the named date is the first stale
-  day); an instant with an offset is stale when `now >= stale_after`,
-  compared as instants; a datetime *without* an offset is allowed by neither
-  text and is ignored (treated as absent), as the 2026-08-21 amendment
-  asks; absent field → not stale. Accepting the bare date is a deliberate
-  lenience against the amended text's "ignore" — Obsidian authors write
-  dates, and the upstream issue behind the amendment is still open.
-- `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
-  prefix; else `machine-confirmed` if `verified` is non-empty (all
-  verifiers non-human); else `unverified`. A bare `verified` mapping is
-  read as a one-element list (spec shorthand; `okf.verified_entries` is the
-  one reader, #1357). Exact tier algorithm lives in
-  the field-mapping table (§1 spec-stability caveat) with table-driven
-  tests.
+- `staleness`: a date expires at the start of that day in UTC, per OKF
+  v0.3 §5. This reverses the server-local day rule from #1357 and #1373.
+  An offset datetime expires at its represented instant; a datetime without
+  an offset is invalid. Absent, null, empty string, or empty list expiry is not stale.
+- `trust_tier`: a compatibility label for recorded claims, not server
+  certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
+  or `<producer>/<version>`, with nonempty, whitespace-free components)
+  and a date or offset-aware `at` instant counts. A usable human record yields
+  `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
+  otherwise `unverified`. A bare mapping is still one record. Malformed
+  siblings do not erase usable records. This deliberately changes the
+  public helper and filter behavior from v6.1.2 (#1444).
+- `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
+  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
+  or `utc_date`. Null, empty-string, and empty-list expiry report `missing`. The compatibility `stale: false` includes missing
+  and malformed expiry and therefore does not mean fresh or true.
+- `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
+  `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
+  Mixed lists retain both counts; `recorded` never means applicability to
+  the current revision has been established. A malformed outer value counts
+  as one malformed entry. No source fetching or reviewer authentication occurs.
+
+Expiry strings accept extended calendar dates or calendar datetimes with
+`T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
+numeric `±HH:MM` offset. Week/basic dates, offset-less times, out-of-range
+clock components and offsets are unsupported. This bounded interpretation
+is not full ISO 8601 validation. Parsed Python dates/datetimes are also
+accepted; datetime awareness requires a non-None `utcoffset()`.
+
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
 
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier}` — omitted entirely when
+   carrying `{type, status, stale, trust_tier, freshness, review}` — omitted entirely when
    detection is off, and individual members omitted when underivable.
-   `sources` are surfaced on `read` (full) and counted on search hits
+   Whole reads also carry `recorded` with supplied `stale_after` and
+   `verified` values as parsed, including null/malformed values and extensions;
+   missing keys stay absent. Compact results omit these potentially large
+   records. Values use the existing metadata serialization, not original YAML
+   spelling. `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
    `type` histogram, status/trust-tier breakdowns, stale count. The
@@ -789,12 +811,10 @@ phase owns.
 
 ## 10. Open questions
 
-- Trust-tier edge cases: `verified` entries by `process:` actors only —
-  v0.2 tier language suggests machine-confirmed; confirm against SPEC.md
-  examples before freezing the table.
+- Review applicability after observed changes remains separate from recorded
+  claim interpretation (#1413).
 - ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
-  amendment and #1373: the value carries its own offset; a bare date is the
-  server-local day.
+  amendment, then revised by v0.3 §5: a bare date starts at midnight UTC.
 - Whether `okf_export` should optionally include a generated bundle-root
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
