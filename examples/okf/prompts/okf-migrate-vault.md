@@ -15,9 +15,10 @@ any write.
 ## Step 1: Audit
 
 Call `okf_validate`. Report the conformance ratio (`conformant_notes` of
-`total_notes`) and the per-rule findings — notes missing a `type`, unparseable
-frontmatter, unknown `status` values, misplaced `okf_version`, `index.md`
-frontmatter. This reads from disk and works before anything is declared, so use
+`total_notes`) and the per-rule findings — unparseable frontmatter, misplaced
+`okf_version`, `index.md` and `log.md` frontmatter, log heading shape, unknown
+`status` values, and files without a `type`, which are not concepts and only
+need one if they should be. This reads from disk and works before anything is declared, so use
 it to decide where to start. Never propose removing an `index.md` field the
 vault requires (`required_fields` in `config://vault`): the server writes those
 into the indexes it generates, and an index without them drops out of search.

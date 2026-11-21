@@ -2139,15 +2139,17 @@ the spec itself says, dated and sourced, in
   (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
-  to 20 example paths and come in three severities — conformance
-  (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
-  bundle root, ``index.md`` frontmatter beyond the root's ``okf_version``
-  — generated indexes included, #1396), advisory (unknown ``status``
-  vocabulary, malformed ``sources`` and ``generated`` shapes using the
-  annotation predicates, ``log.md`` heading shape, missing root ``index.md``),
-  informational (wikilink
-  usage, missing recommended fields). Reserved files are exempt from the
-  ``type`` rule. The tool is registered with an ``okf`` tag and hidden
+  to 20 example paths and come in three severities — conformance, by
+  OKF 0.3 §11.1 (frontmatter in any ``.md`` file, reserved ones included,
+  that does not parse as a mapping; a block on a folder ``index.md`` or on
+  any ``log.md``; a ``log.md`` heading that is not ``YYYY-MM-DD``;
+  ``okf_version`` outside the bundle root — generated reserved files
+  included, #1396, #2413, #2414; the root ``index.md`` may carry any keys),
+  advisory (``missing_type``, the §3.2 warning for a file that is not a
+  concept, #2406; unknown ``status`` vocabulary, malformed ``sources`` and
+  ``generated`` shapes using the annotation predicates, missing root
+  ``index.md``), informational (wikilink usage, missing recommended
+  fields). The ratio counts concepts only. The tool is registered with an ``okf`` tag and hidden
   via ``mcp.disable(tags={"okf"})`` when ``OKF_MODE=off`` (the
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration

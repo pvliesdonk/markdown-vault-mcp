@@ -389,8 +389,11 @@ class TestDeclaredBundle:
             report = _structured(await client.call_tool("okf_validate", {}))
         okf = stats["okf"]
         typed = sum(okf["types"].values())
-        assert typed + okf["untyped_count"] == report["total_notes"]
-        assert typed == report["conformant_notes"]
+        # Non-concepts (§3.2) are a warning, not part of the note population.
+        assert typed + okf["untyped_count"] == (
+            report["total_notes"] + report["missing_type"]["count"]
+        )
+        assert typed == report["conformant_notes"] == report["total_notes"]
         assert (
             typed + okf["untyped_count"] + okf["reserved_count"]
             == stats["document_count"]
@@ -563,7 +566,8 @@ class TestOkfValidateTool:
             report = _structured(await client.call_tool("okf_validate", {}))
         assert report["active"] is True
         assert report["declared_version"] == "0.2"
-        assert report["total_notes"] == 2  # playbook + plain (index.md reserved)
+        # plain.md has no type: not a concept, so a warning, not a note.
+        assert report["total_notes"] == 1
         assert report["conformant_notes"] == 1
         assert report["missing_type"]["examples"] == ["guides/plain.md"]
         assert report["root_index_missing"] is False
@@ -595,11 +599,10 @@ class TestReservedOnlyBundle:
         assert okf["reserved_count"] == stats["document_count"]
         assert report["total_notes"] == 0
         assert report["missing_type"]["count"] == 0
-        # Both indexes carry a title; the log's block is not an index finding.
-        assert report["index_frontmatter"]["examples"] == [
-            "guides/index.md",
-            "index.md",
-        ]
+        # Both indexes carry a title, which only the root may (§8.1).
+        assert report["index_frontmatter"]["examples"] == ["guides/index.md"]
+        # log.md has no frontmatter (§9), so its block is a finding of its own.
+        assert report["log_frontmatter"]["examples"] == ["log.md"]
 
 
 @pytest.mark.usefixtures("_plain_env")
@@ -614,7 +617,8 @@ class TestOkfValidatePreDeclaration:
         assert report["active"] is False
         assert report["declared_version"] is None
         assert report["root_index_missing"] is True
-        assert report["total_notes"] == 2
+        assert report["total_notes"] == 1
+        assert report["missing_type"]["examples"] == ["guides/plain.md"]
 
 
 @pytest.fixture
