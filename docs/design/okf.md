@@ -228,20 +228,30 @@ frontmatter blob; not persisted):
   00:00 UTC). The compatibility `stale: false` includes missing
   expiry and therefore does not mean fresh or true; unparseable expiry is
   `stale: true` (#2410).
-- `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
+- `review`: `state` is `missing`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
   Mixed lists retain both counts; `recorded` never means applicability to
-  the current revision has been established. A malformed outer value counts
-  as one malformed entry. No source fetching or reviewer authentication occurs.
+  the current revision has been established. No source fetching or reviewer
+  authentication occurs.
+- Absent and single values (#2411, #2412) follow OKF 0.3 §11.2: "A null
+  value, an empty string, and an empty list are the same as an absent key",
+  so a null or empty `stale_after`, `generated`, `generated.at`, `verified`
+  or `sources` (or `sources[].resource`) reads as absent, and `review` and
+  `attribution` report it `missing` (there is no separate `empty` state).
+  For the list fields `verified` and `sources`, "consumers MUST accept one
+  item as a list with one item": a bare mapping, or any other single value,
+  is one entry, judged like an entry of a list. An entry without its
+  REQUIRED key (`resource`; `by` and `at`) is ignored, and its
+  `malformed_entries` count is the warning rule 3 asks for. The server
+  reads no OKF-specific `tags`; the generic `tags` indexing is unchanged.
 - `review_applicability`: `{state, basis}` stating whether a supplied review
   applies to the current content. No review is bound to a content snapshot,
-  so a `verified` value with entries, or one that is malformed, reports
-  `state: unknown`: entries, malformed ones included, with
-  `basis: no_snapshot_binding`, and a malformed outer value with
-  `basis: malformed_review`. `review` reports entry validity;
-  timestamps and extensions never establish coverage. An absent or empty
-  `verified` reports `state: none` with `basis: no_review_supplied`. This
-  assessment is separate from freshness.
+  so a `verified` value with entries, malformed ones included, reports
+  `state: unknown` with `basis: no_snapshot_binding`. `review` reports
+  entry validity; timestamps and extensions never establish coverage. A
+  `verified` with no entries (absent, null, `""` or `[]`) reports
+  `state: none` with `basis: no_review_supplied`. This assessment is
+  separate from freshness.
 
 Expiry strings accept extended calendar dates or calendar datetimes with
 `T`, `t`, or a space, hours/minutes, optional seconds/fraction, and `Z` or a
@@ -256,10 +266,10 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
   `malformed_sources`/`malformed_generated` flags before release): the
   provenance fields reported in the evidence objects' vocabulary, shared by
   full-read and compact annotations. `attribution` reports `sources` in
-  `review`'s shape: `state` `missing`, `empty`, `malformed` or `recorded`,
-  `recorded_entries` (entries that are mappings carrying `resource`, which
-  §5.1 makes "REQUIRED within an entry"), `malformed_entries` (any other
-  entry, or 1 for a present value that is not a list) and
+  `review`'s shape: `state` `missing`, `malformed` or `recorded`,
+  `recorded_entries` (entries that are mappings whose `resource` has a
+  value, which §5.1 makes "REQUIRED in an entry"), `malformed_entries`
+  (any other entry; a single non-list value is one entry) and
   `basis: supplied_metadata_only`; a mixed list is `recorded` with both
   counts. `generation` is `{state, basis}` with `state` `missing`,
   `malformed` or `recorded` and `basis: supplied_metadata_only`, judged as

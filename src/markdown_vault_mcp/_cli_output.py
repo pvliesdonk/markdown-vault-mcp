@@ -181,7 +181,7 @@ def _recorded_review_text(data: dict[str, Any]) -> str:
     """Label the existing metadata classification without certifying content.
 
     A note whose ``review_applicability.state`` is ``none`` (no ``verified``
-    field, or an empty one) has no review to label. Malformed and recorded
+    field, or a null or empty one) has no review to label. Malformed and recorded
     reviews report ``unknown`` and keep the notice; so does a payload that
     omits the field, since it cannot rule a review out.
     """
