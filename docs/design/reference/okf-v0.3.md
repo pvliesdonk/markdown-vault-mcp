@@ -309,7 +309,7 @@ are named where they exist; a fix rewrites them.
 | 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | fixed: external and reported broken (account holder, 2026-11-21); stored as `../x.md`, never resolved or read. It was clamped, so `../../x.md` from `a/n.md` resolved to `x.md` | MUST NOT | #2416 (fixed) |
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | fixed: `50%25%20done/a%23b%20(c).md` (was `50%%20done/a\#b%20(c).md`) | MUST | #2417 (fixed) |
 | 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |
-| 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | every `write`/`edit` restamps | producer rule | none |
+| 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | fixed: a write whose frontmatter is equal apart from `generated`/`verified` and whose body parses to the same CommonMark tokens keeps the stored `generated` (was: every `write`/`edit` restamped) | producer rule | #2418 (fixed) |
 | 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | fixed: the stamp and `okf_verify` splice only `generated`/`verified`, keeping every other byte; a block the splice cannot read is still written whole (was: the whole block re-dumped, dropping comments) | SHOULD NOT | #2419 (fixed) |
 | 19 | Unknown `status` (§5.4) | silent | silent | not stable | fixed: any value outside the exact tokens, a non-string one included, is shown as its raw text (`3` → `"3"`) and is not `stable` | stated | #2420 |
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
@@ -344,9 +344,10 @@ Notes on the table:
   absent `generated`). #2409 reads it as "no event is current" and records
   that as an interpretation in `okf.md`, pending the account holder's
   confirmation.
-- **#17 is a producer judgement.** The server cannot tell a trivial edit
-  from a meaningful one without a caller signal. Recorded as a departure
-  because the rule is stated; whether a write flag is in scope is open.
+- **#17 is decided conservatively.** The spec gives examples, not a test.
+  The account holder chose (21 November 2026) that an edit is trivial only
+  when a reader provably cannot see it, with no caller flag; see
+  `docs/design/okf.md` § 6, "Provenance stamping".
 - **#21 keeps 0.1 and 0.2 known.** §12 asks best-effort consumption, not
   refusal, of a version the consumer "does not know"; the server's
   `okf_unknown_version` warning is its own signal for that case. The 0.3

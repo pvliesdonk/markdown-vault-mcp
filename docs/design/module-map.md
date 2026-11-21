@@ -111,6 +111,7 @@ src/markdown_vault_mcp/
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)
   _frontmatter_splice.py -- rewrite single top-level frontmatter keys in place, verified by re-reading, for the OKF stamp and okf_verify (#2419)
+  _trivial_edit.py     -- whether a write is a trivial edit that keeps generated.at: equal frontmatter apart from server keys and an equal CommonMark token stream (#2418)
   _yaml12.py           -- YAML 1.2 core-schema frontmatter loader, 1.1/1.2-safe dumper and the python-frontmatter handler every read and write uses (#2415)
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp (#964)
   _okf_log_repair.py   -- exact-byte legacy log repair proposals, reviewed-etag binding and exclusive original retention (#1403); DocumentManager owns gated application, `admin repair-log` the operator entry

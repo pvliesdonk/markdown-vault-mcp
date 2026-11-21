@@ -2,6 +2,9 @@
 
 ## 2026-11-21
 
+- [Open Knowledge Format v0.3](okf-v0.3.md): departure 17 fixed by #2418
+  with the account holder's definition of a trivial edit. No spec claim
+  changed.
 - [Open Knowledge Format v0.3](okf-v0.3.md): departure 18 fixed by #2419;
   [YAML 1.2 core schema](yaml-1-2-core-schema.md): the re-serialization
   claim now names the splice. No spec claim changed.
