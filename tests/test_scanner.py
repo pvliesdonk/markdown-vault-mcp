@@ -1032,10 +1032,11 @@ class TestParseFrontmatter:
         with pytest.raises(yaml.YAMLError):
             parse_frontmatter("---\ntitle: [unclosed\n---\n# body\n")
 
-    def test_well_formed_json_frontmatter_parses(self) -> None:
+    @pytest.mark.parametrize("prefix", ["", "\n"])
+    def test_well_formed_json_frontmatter_parses(self, prefix: str) -> None:
         from markdown_vault_mcp.scanner import parse_frontmatter
 
-        post = parse_frontmatter('{\n"title": "T"\n}\n# body\n')
+        post = parse_frontmatter(prefix + '{\n"title": "T"\n}\n# body\n')
         assert post.metadata == {"title": "T"}
 
 
@@ -1137,11 +1138,6 @@ class TestStripFrontmatterBlock:
         # de-indents a leading code block; this returns the raw remainder.
         body = "    indented code\n\nprose\n\n\n"
         assert strip_frontmatter_block(f"---\ntitle: T\n---\n\n{body}") == body
-
-    def test_blank_lines_before_the_block_do_not_hide_it(self) -> None:
-        # ``frontmatter.parse`` strips before detecting, so the indexer reads
-        # this as frontmatter; leaving the block in the body would stack it.
-        assert strip_frontmatter_block("\n\n---\ntitle: T\n---\n\n# T\n") == "# T\n"
 
 
 def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> None:

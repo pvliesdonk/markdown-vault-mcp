@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
+from frontmatter.default_handlers import YAMLHandler
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import (
@@ -794,14 +795,32 @@ class MalformedFrontmatterError(yaml.YAMLError):
     """
 
 
+_YAML_BOUNDARY = re.compile(r"^---\r?$", re.MULTILINE)
+_YAML = YAMLHandler(fm_boundary=_YAML_BOUNDARY)
+
+
+def _split_yaml(text: str) -> tuple[str, str] | None:
+    """Find a complete exact YAML block and retain its unstripped body."""
+    if not _YAML_BOUNDARY.match(text):
+        return None
+    try:
+        return _YAML.split(text)
+    except ValueError:
+        return None
+
+
+def _yaml_like(text: str) -> bool:
+    return YAMLHandler().detect(text.strip())
+
+
 def parse_frontmatter(text: str) -> frontmatter.Post:
     """Parse *text* as markdown-with-frontmatter, one error for one failure.
 
-    The package's single entry point to ``frontmatter.loads``, so no caller
-    has to know which handler will run or which error it raises (#1408). A
-    YAML failure propagates as the ``yaml.YAMLError`` it already was; every
-    other handler's failure — all of them ``ValueError`` subclasses — is
-    re-raised as :class:`MalformedFrontmatterError`, which is one.
+    The package's shared frontmatter entry point, so no caller has to know
+    which handler will run or which error it raises (#1408). A
+    YAML failures already raised as ``yaml.YAMLError`` propagate unchanged;
+    handler failures raised as ``ValueError`` are re-raised as
+    :class:`MalformedFrontmatterError`, which is a ``yaml.YAMLError``.
 
     Args:
         text: Raw markdown text, frontmatter block included.
@@ -814,10 +833,19 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
         MalformedFrontmatterError: The block is present but unreadable.
     """
     try:
+        block = _split_yaml(text)
+        if block is not None:
+            header, body = block
+            metadata = _YAML.load(header.replace("\r\n", "\n"))
+            return frontmatter.Post(
+                body.replace("\r\n", "\n").strip(),
+                _YAML,
+                **(metadata if isinstance(metadata, dict) else {}),
+            )
+        if _yaml_like(text):
+            return frontmatter.Post(text.replace("\r\n", "\n").strip())
         return frontmatter.loads(text)
     except ValueError as exc:
-        # yaml.YAMLError is not a ValueError, so it is never caught here and
-        # reaches the caller unchanged.
         raise MalformedFrontmatterError(str(exc)) from exc
 
 
@@ -830,12 +858,10 @@ def strip_frontmatter_block(text: str) -> str:
     ``NoteContent.content`` — and every other raw file text in this package —
     includes the block, so it has to come off first.
 
-    Detection is delegated to ``python-frontmatter`` and so agrees with
-    :func:`parse_note` about *where* the block ends: the same handlers, the
-    same offset-zero anchoring (an identical block later in the body is body
-    text), and the same reading of an unterminated block as no frontmatter at
-    all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
-    line that is an indented code block keeps its indentation.
+    Detection is shared with :func:`parse_frontmatter`: YAML delimiters must
+    be exact lines, beginning at the first line of decoded text. An
+    unterminated block is body text. Unlike :func:`frontmatter.parse`, the body
+    is not stripped, so an indented code block keeps its indentation.
 
     The newlines separating the block from the body are dropped — they are the
     delimiter's, not the body's, and ``frontmatter.dumps`` re-inserts them on
@@ -847,6 +873,11 @@ def strip_frontmatter_block(text: str) -> str:
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
+    block = _split_yaml(text)
+    if block is not None:
+        return block[1].lstrip("\r\n")
+    if _yaml_like(text):
+        return text
     candidate = text.lstrip()
     handler = frontmatter.detect_format(candidate, frontmatter.handlers)
     if handler is None:
@@ -854,8 +885,6 @@ def strip_frontmatter_block(text: str) -> str:
     try:
         _, body = handler.split(candidate)
     except ValueError:
-        # Never closed — frontmatter.parse reads that as a file with no
-        # frontmatter, and so does the indexer that calls it.
         return text
     return body.lstrip("\n")
 
@@ -2256,6 +2285,7 @@ def parse_note_categorized(
     attachment_extensions: frozenset[str] | None = None,
     required_frontmatter: list[str] | None = None,
     log_context: str = "scan",
+    exempt_required_frontmatter: bool = False,
 ) -> ParsedNote | CategorizedSkip | None:
     """Parse one markdown file, classifying failures into the skip taxonomy.
 
@@ -2286,6 +2316,7 @@ def parse_note_categorized(
             :func:`parse_note`.
         required_frontmatter: Frontmatter keys that must be present.
         log_context: Prefix identifying the calling pipeline in logs.
+        exempt_required_frontmatter: Skip the required-field gate for this file.
 
     Returns:
         The parsed note on success, a :class:`CategorizedSkip` for a
@@ -2340,7 +2371,7 @@ def parse_note_categorized(
             SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
         )
 
-    if required_frontmatter:
+    if required_frontmatter and not exempt_required_frontmatter:
         missing = [f for f in required_frontmatter if f not in note.frontmatter]
         if missing:
             return CategorizedSkip(
@@ -2365,6 +2396,7 @@ def scan_directory(
     title_field: str = "title",
     attachment_extensions: frozenset[str] | None = None,
     on_walk_error: Callable[[OSError], None] | None = None,
+    exempt_required_frontmatter: Callable[[str], bool] | None = None,
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
@@ -2400,6 +2432,8 @@ def scan_directory(
             document's title; passed through to :func:`parse_note`.
         attachment_extensions: Effective attachment allowlist; passed
             through to :func:`parse_note` (``None`` = the default set).
+        exempt_required_frontmatter: Optional path predicate for bypassing the
+            required-field gate.
         on_walk_error: Called with each ``OSError`` the directory walk meets,
             such as an unreadable subdirectory, so the caller can tell an
             incomplete scan from a complete one (#1785). ``None`` keeps the
@@ -2453,6 +2487,11 @@ def scan_directory(
             attachment_extensions=attachment_extensions,
             required_frontmatter=required_frontmatter,
             log_context="scan",
+            exempt_required_frontmatter=(
+                exempt_required_frontmatter(rel_posix)
+                if exempt_required_frontmatter
+                else False
+            ),
         )
         if outcome is None:
             # Transient I/O failure (already logged) — retry next scan.

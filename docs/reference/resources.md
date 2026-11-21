@@ -17,7 +17,7 @@ Most JSON resources here serve the same data as a tool, whose reference describe
 - `similar://vault/{path}` as [`get_similar`](tools/reader.md#get_similar), which needs [embeddings](../use/embeddings.md);
 - `recent://vault` as [`get_recent`](tools/reader.md#get_recent), with an ISO 8601 `modified_at_iso` added to each note.
 
-`config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](../use/vault-explorer.md)'s page, for clients that render MCP Apps.
+`config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode, detection and [capability state](../use/okf.md), search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](../use/vault-explorer.md)'s page, for clients that render MCP Apps.
 
 Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 <!-- DOMAIN-INTRO-END -->

@@ -270,3 +270,10 @@ class TestVaultDerivedExclusion:
             assert col.conventions.enabled is False
         finally:
             col.close()
+
+
+def test_leading_blank_conventions_frontmatter_remains_content(tmp_path: Path) -> None:
+    text = "\n---\ndescription: Rules\n---\nUse sentence case."
+    (tmp_path / "_conventions.md").write_text(text)
+    resolver = ConventionsResolver(tmp_path, "_conventions.md")
+    assert resolver.for_path("note.md")[0].content == text.strip()

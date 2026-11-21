@@ -189,17 +189,37 @@ class TestVaultIntegration:
         ({"verified": []}, TRUST_UNVERIFIED),
         ({"verified": "yes"}, TRUST_UNVERIFIED),
         ({"verified": ["human:alice"]}, TRUST_UNVERIFIED),  # malformed entries
-        ({"verified": [{"by": "process:ci"}]}, TRUST_MACHINE),
-        ({"verified": [{"at": "2026-01-01"}]}, TRUST_MACHINE),
-        ({"verified": [{"by": "human:alice"}]}, TRUST_HUMAN),
         (
-            {"verified": [{"by": "process:ci"}, {"by": "human:alice"}]},
+            {"verified": [{"by": "process:ci", "at": "2026-01-01T00:00:00Z"}]},
+            TRUST_MACHINE,
+        ),
+        ({"verified": [{"at": "2026-01-01"}]}, TRUST_UNVERIFIED),
+        (
+            {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,
         ),
-        ({"generated": {"by": "human:alice"}}, TRUST_UNVERIFIED),
+        (
+            {
+                "verified": [
+                    {"by": "process:ci", "at": "2026-01-01T00:00:00Z"},
+                    {"by": "human:alice", "at": "2026-01-01T00:00:00Z"},
+                ]
+            },
+            TRUST_HUMAN,
+        ),
+        (
+            {"generated": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_UNVERIFIED,
+        ),
         # A bare mapping is a one-element list (field reference, #1357).
-        ({"verified": {"by": "human:alice", "at": "2026-01-01"}}, TRUST_HUMAN),
-        ({"verified": {"by": "process:ci"}}, TRUST_MACHINE),
+        (
+            {"verified": {"by": "human:alice", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_HUMAN,
+        ),
+        (
+            {"verified": {"by": "process:ci", "at": "2026-01-01T00:00:00Z"}},
+            TRUST_MACHINE,
+        ),
     ],
 )
 def test_derive_trust_tier(metadata: dict, expected: str) -> None:
@@ -259,6 +279,14 @@ class TestDeriveAnnotation:
             "status": OKF_STATUS_DEFAULT,
             "stale": False,
             "trust_tier": TRUST_UNVERIFIED,
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {"review": "none", "basis": "no_review_supplied"},
         }
 
     def test_full_metadata(self) -> None:
@@ -267,7 +295,7 @@ class TestDeriveAnnotation:
                 "type": " Playbook ",
                 "status": "deprecated",
                 "stale_after": "2020-01-01",
-                "verified": [{"by": "human:peter"}],
+                "verified": [{"by": "human:peter", "at": "2026-01-01T00:00:00Z"}],
             },
             now=NOW,
         )
@@ -276,6 +304,17 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
+            "freshness": {"state": "expired", "basis": "server_local_date"},
+            "review": {
+                "state": "recorded",
+                "recorded_entries": 1,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {
+                "snapshot": "unbound",
+                "basis": "no_snapshot_binding",
+            },
         }
 
     def test_unknown_status_passes_through(self) -> None:
@@ -423,6 +462,12 @@ def test_parse_stale_filter_rejects_garbage() -> None:
 @pytest.mark.parametrize(
     ("metadata", "okf_filters", "expected"),
     [
+        ({}, {"type": None}, True),
+        ({"type": None}, {"type": None}, True),
+        ({"type": ""}, {"type": None}, True),
+        ({"type": "  "}, {"type": None}, True),
+        ({"type": 42}, {"type": None}, True),
+        ({"type": "Playbook"}, {"type": None}, False),
         ({}, {"status": "stable"}, True),  # absent status means stable
         ({"status": "draft"}, {"status": "stable"}, False),
         ({"status": "deprecated"}, {"status": "deprecated"}, True),
@@ -432,7 +477,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
         ({}, {"trust_tier": "unverified"}, True),
         (
-            {"verified": [{"by": "human:a"}]},
+            {"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},
             {"trust_tier": "human-reviewed"},
             True,
         ),
@@ -450,7 +495,7 @@ def test_parse_stale_filter_rejects_garbage() -> None:
     ],
 )
 def test_matches_okf_filters(
-    metadata: dict, okf_filters: dict[str, str], expected: bool
+    metadata: dict, okf_filters: dict[str, str | None], expected: bool
 ) -> None:
     from markdown_vault_mcp.okf import matches_okf_filters
 
@@ -463,6 +508,7 @@ status: deprecated
 stale_after: 2000-01-01
 verified:
   - by: human:peter
+    at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 
@@ -865,8 +911,16 @@ class TestIndexFrontmatterAudit:
             "---\nokf_version:\n---\n# Bundle\n",
             '{\n"okf_version": "0.2"\n}\n# Bundle\n',
             "---\ntitle: Bundle\n# Bundle\n",
+            '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
         ],
-        ids=["body-only", "declaration", "null-version", "json", "unclosed"],
+        ids=[
+            "body-only",
+            "declaration",
+            "null-version",
+            "json",
+            "unclosed",
+            "leading-blank-line",
+        ],
     )
     def test_root_index_without_a_finding(self, tmp_path: Path, text: str) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -883,7 +937,6 @@ class TestIndexFrontmatterAudit:
             "---\n# only a comment\n---\n# Bundle\n",
             "---\n- a\n- b\n---\n# Bundle\n",
             "---\n: [broken\n---\n# Bundle\n",
-            '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
         ],
         ids=[
             "extra-key",
@@ -892,7 +945,6 @@ class TestIndexFrontmatterAudit:
             "comment-only",
             "sequence",
             "malformed",
-            "leading-blank-line",
         ],
     )
     def test_root_index_finding(self, tmp_path: Path, text: str) -> None:
@@ -1216,3 +1268,25 @@ class TestReservedFrontmatterPolicy:
             title_field="heading", required_fields=("heading",)
         )
         assert policy.build(None, title="Log") == {"heading": "Log"}
+
+
+@pytest.mark.parametrize("operation", ["audit", "root_probe"])
+def test_invalid_yaml_date_is_reported_by_audit_and_root_probe(
+    tmp_path: Path, operation: str
+) -> None:
+    from markdown_vault_mcp.okf import audit_bundle
+    from markdown_vault_mcp.vault import Vault
+
+    text = "---\ndate: 2026-13-45\n---\nBody\n"
+    (tmp_path / "index.md").write_text(text)
+    if operation == "audit":
+        (tmp_path / "bad.md").write_text(text)
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("bad.md",)
+    else:
+        vault = Vault(source_dir=tmp_path)
+        try:
+            vault.index.build_index()
+            assert vault.reader.list_documents() == []
+        finally:
+            vault.close()

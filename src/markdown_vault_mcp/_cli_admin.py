@@ -161,7 +161,9 @@ def _apply(path: str, source_dir: str | None, etag: str) -> None:
 
     built = _build_owning_vault("admin repair-log", source_dir)
     try:
-        result = built.vault.writer.okf_apply_log_repair(path, etag=etag)
+        result = built.vault.writer.okf_apply_log_repair(
+            path, etag=etag, allow_protected=True
+        )
     except ConcurrentModificationError as exc:
         typer.echo(
             f"ERROR: {path} changed since the preview, so nothing was changed. "

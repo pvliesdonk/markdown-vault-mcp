@@ -104,3 +104,39 @@ def test_search_name_survives_populated_value(page: Page) -> None:
         search.fill(query)
         assert search.input_value() == query
         assert 'textbox "Search vault"' in search.aria_snapshot()
+
+
+@pytest.mark.parametrize(
+    ("content", "is_metadata"),
+    [
+        ("---\ntype: Metric\n---\nBody", True),
+        # File decoding has already removed the first BOM.
+        ("\ufeff---\ntype: Metric\n---\nBody", False),
+        ("---\r\ntype: Metric\r\n---\r\nBody", True),
+        ("---\ntype: Metric\n---\r", True),
+        ("\n---\ntype: Metric\n---\nBody", False),
+        ("----\ntype: Metric\n----\nBody", False),
+        ("--- \ntype: Metric\n---\nBody", False),
+        ("---\ntype: Metric\n--- \nBody", False),
+    ],
+)
+def test_note_preview_uses_yaml_boundaries(
+    page: Page, content: str, is_metadata: bool
+) -> None:
+    """The rendered preview hides exactly the server-recognized YAML block."""
+    frame = _open_vault(page)
+    frame.evaluate("void window.loadPreview('metric.md')")
+    page.wait_for_function("window.pending.length === 1")
+    note = {
+        "path": "metric.md",
+        "title": "Metric",
+        "content": content,
+        "frontmatter": {},
+    }
+    payload = {"content": [{"type": "text", "text": json.dumps(note)}]}
+    page.evaluate("result => window.respond(result)", payload)
+    preview = frame.locator(".preview-content")
+    preview.wait_for(state="attached")
+    assert ("type: Metric" not in preview.inner_text()) is is_metadata
+    if "Body" in content:
+        assert "Body" in preview.inner_text()
