@@ -79,7 +79,8 @@ def test_vault_wide_lookup_does_not_climb_out() -> None:
     """``b/../../x.md`` stays in the vault from ``a/``, but not from the root.
 
     The vault-wide fallback re-resolves a missing destination from the root;
-    there it climbs out, so the link keeps its source-relative target.
+    there it climbs out, so the link keeps its source-relative target rather
+    than suffix-matching the decoy ``c/x.md``.
     """
     idx = FTSIndex(":memory:")
     try:
@@ -87,7 +88,8 @@ def test_vault_wide_lookup_does_not_climb_out() -> None:
             [
                 make_note(
                     path="a/n.md", links=extract_links("[x](b/../../x.md)", "a/n.md")
-                )
+                ),
+                make_note(path="c/x.md"),
             ]
         )
         idx.resolve_vault_wikilinks()

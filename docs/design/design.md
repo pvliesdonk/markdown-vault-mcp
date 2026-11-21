@@ -3529,7 +3529,9 @@ scheme (`[A-Za-z][A-Za-z0-9+.-]+:`, so `https:`, `mailto:`, `file:`,
 no scheme to detect. Two or more characters are required before the colon so a
 Windows drive (`C:/notes/x.md`) stays a path; the known cost is that a file
 name shaped like `draft:v2.md` reads as a scheme. The test applies at all three
-extraction sites, wikilinks included. "Pure anchor" covers every spelling of a same-document reference:
+extraction sites, wikilinks included. A relative or root-relative target whose
+`..` climbs above the vault root is external too (#2416; Path resolution,
+below). "Pure anchor" covers every spelling of a same-document reference:
 a markdown destination whose *written* path part — brackets off, fragment
 split before any decoding — is empty (`#heading`, `<#heading>`, in an inline
 link or a reference definition), and the wikilink form `[[#heading]]` (issue

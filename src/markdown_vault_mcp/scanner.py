@@ -1312,8 +1312,9 @@ def extract_links(
     Links inside fenced code blocks and inline code spans are ignored.
     External destinations are skipped: any URI scheme (``https:``,
     ``mailto:``, ``file:``, ``obsidian:``, and so on, by shape rather than
-    by allowlist, #1335) and protocol-relative ``//host`` targets. So are
-    same-document anchors in every spelling — ``[text](#heading)``,
+    by allowlist, #1335), protocol-relative ``//host`` targets, and a
+    relative target whose ``..`` climbs above the vault root (OKF 0.3 §6,
+    #2416). So are same-document anchors in every spelling — ``[text](#heading)``,
     ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``.
 
     The link graph is notes-only (#1333): a target whose extension is on the
@@ -1370,9 +1371,9 @@ def _extract_inline_links(
     is :func:`~markdown_vault_mcp.utils.links.iter_inline_links`, shared
     with the rewrite side so the two cannot disagree about which links
     exist (#1521). This function decides only which of those links the
-    index holds: external URLs, pure anchor links (``#section`` within the
-    same document) and destinations naming an attachment (#1333) are not
-    vault links and are skipped here.
+    index holds: external URLs, targets above the vault root (#2416), pure
+    anchor links (``#section`` within the same document) and destinations
+    naming an attachment (#1333) are not vault links and are skipped here.
     """
     links: list[LinkInfo] = []
     for link in _iter_inline_links(region):
@@ -1734,7 +1735,8 @@ def _extract_reference_links(
     reference. That half is still a live check below.
 
     What is decided here is only which resolved targets the index holds:
-    external URLs, pure anchors and attachments (#1333) are skipped.
+    external URLs, targets above the vault root (#2416), pure anchors and
+    attachments (#1333) are skipped.
     """
     links: list[LinkInfo] = []
     usable = _blank_wikilinks(_blank_reference_definitions(region))
