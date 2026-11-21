@@ -301,7 +301,7 @@ are named where they exist; a fix rewrites them.
 | 13 | YAML 1.2 core schema (§4) | silent | silent | MUST | PyYAML 1.1: `yes`/`on` → `True`, `1_000` → 1000, `0o17` → string | MUST | none |
 | 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | `..` above the root is clamped: `../../x.md` from `a/n.md` resolves to `x.md` | MUST NOT | none |
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | `%` is left literal and `#` is backslash-escaped: `50%%20done/a\#b%20(c).md` | MUST | none |
-| 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | cleared on the server's own `write`/`edit` | stated (no keyword) | #2405 |
+| 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |
 | 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | every `write`/`edit` restamps | producer rule | none |
 | 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | stamps and `okf_verify` re-dump the whole block, dropping comments | SHOULD NOT | none |
 | 19 | Unknown `status` (§5.4) | silent | silent | not stable | a non-string `status` (e.g. `3`) reads as `stable` | stated | none |
@@ -310,11 +310,11 @@ are named where they exist; a fix rewrites them.
 
 Notes on the table:
 
-- **#1 and #16 are coupled.** Clearing `verified` on write currently hides
-  #1 for the server's own writes. Stopping the clear (#2405) without the
-  currency rule would leave a rewritten note human-reviewed, the outcome
-  §5.3 exists to prevent. The currency rule is safe alone; the clear's
-  removal is not.
+- **#1 and #16 are coupled.** Clearing `verified` on write hid #1 for the
+  server's own writes. Stopping the clear (#2405) without the currency rule
+  would leave a rewritten note human-reviewed, the outcome §5.3 exists to
+  prevent. The currency rule is safe alone; the clear's removal is not, so
+  #2405 lands after it.
 - **#4 and #5 invert their issues.** #2404 asks the server to ignore a bare
   date (the August 0.2 text); 0.3 makes it valid at 00:00 UTC. #2400 asks
   for this bundle's bare dates to be treated as malformed; under 0.3 they
@@ -345,7 +345,6 @@ Notes on the table:
   values (§12.1, §13), so a 0.2 declaration is known, read by 0.3's rules,
   and logs nothing. Only a value outside `0.1`–`0.3` logs the warning.
 - Pins of current behaviour a fix will rewrite:
-  `tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps` (#16),
   `tests/test_okf.py::TestIndexFrontmatterAudit::test_log_frontmatter_is_not_an_index_finding` (#11).
 - **Not departures:** the ranking weights (§5 of `okf.md`; the spec is
   silent on ranking), wikilinks reported rather than rejected (the spec

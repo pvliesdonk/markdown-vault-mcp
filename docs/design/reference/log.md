@@ -15,6 +15,9 @@
   in UTC; the §5 timestamp claims gain their pins. No spec claim changed.
   The v0.2 page's bare-date pin, which named the removed server-local-day
   test, now points at `test_derive_stale` only.
+- [Open Knowledge Format v0.3](okf-v0.3.md) and [v0.2](okf-v0.2.md): marked
+  the `verified`-kept-as-history departure (row 16) fixed by #2405 and
+  repointed its pins. No spec claim changed. Review dates unchanged.
 
 ## 2026-11-20
 

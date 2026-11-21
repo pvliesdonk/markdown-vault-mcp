@@ -244,13 +244,12 @@ tree, 2026-09-07].
   Decided in `docs/design/okf.md` § 3 (#1373). Since #2404 a bare date is
   read as the start of that day in UTC, as OKF 0.3 §5 defines it.
   [pins: tests/test_okf.py::test_derive_stale]
-- **`verified` is cleared on a content-changing write.** The spec keeps
+- **`verified` was cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
-  re-confirmation"; the server's enforced write layer clears it on its own
-  content-changing writes. Clearing does not establish that the earlier
-  review was invalid or whether it applies to the new content (#1413).
-  Deliberate; decided in `docs/design/okf.md` § 6.
-  [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
+  re-confirmation"; the server's enforced write layer cleared it on its own
+  content-changing writes. Fixed by #2405 under OKF 0.3 §5.3: the layer now
+  keeps the events as history (row 16 of the [v0.3 page](okf-v0.3.md)).
+  [pins: tests/test_okf_write.py::TestContentWriteMatrix::test_body_write_keeps_verified_and_stamps, tests/test_okf_write.py::TestContentWriteMatrix::test_rename_preserves_verified]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
   frontmatter block". §8 allows an index file none beyond the root's

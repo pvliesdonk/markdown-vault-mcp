@@ -118,6 +118,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+    from markdown_vault_mcp._okf_write import OkfWriteEnrich
     from markdown_vault_mcp.git.submodules import SubmoduleGuard
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
@@ -210,7 +211,7 @@ class DocumentManager:
         on_write_callback: OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
-        okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
+        okf_write_enrich: OkfWriteEnrich | None = None,
         sync_index: Callable[[], None] | None = None,
         submodule_guard: SubmoduleGuard | None = None,
     ) -> None:
@@ -240,7 +241,7 @@ class DocumentManager:
         self._submodule_guard = submodule_guard
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
-        # (stamp `generated`, clear `verified`) before it lands. None when
+        # (stamp `generated`; `verified` is kept) before it lands. None when
         # OKF_WRITE is off — zero overhead on the write path.
         self._okf_write_enrich = okf_write_enrich
         # The link rewrites this manager made, so a rename can accept an
@@ -923,10 +924,36 @@ class DocumentManager:
             else:
                 file_content = content
 
-            self._finalize_content_write(abs_path, path, file_content, "write")
+            stored = None if created else self._stored_for_enrich(abs_path, path)
+            self._finalize_content_write(
+                abs_path, path, file_content, "write", stored=stored
+            )
             result = WriteResult(path=path, created=created)
 
         return result
+
+    def _stored_for_enrich(self, abs_path: Path, path: str) -> str | None:
+        """Read the note a ``write`` replaces, for the enforced-write layer.
+
+        The layer carries the stored ``verified`` across (design §6), so it
+        needs the bytes being replaced. Called with ``_file_write_lock`` held,
+        so no server write lands between this read and the replacement.
+
+        Args:
+            abs_path: Absolute path of the existing file.
+            path: Vault-relative path, for the log line.
+
+        Returns:
+            The stored text; ``None`` when the layer is off (nothing reads it)
+            or the file is not UTF-8 text, which has no ``verified`` to keep.
+        """
+        if self._okf_write_enrich is None:
+            return None
+        try:
+            return _read_text_utf8(abs_path)
+        except UnicodeDecodeError:
+            logger.warning("okf_write_stored_not_utf8 path=%s", path)
+            return None
 
     def _finalize_content_write(
         self,
@@ -934,6 +961,8 @@ class DocumentManager:
         path: str,
         content: str,
         operation: WriteOperation,
+        *,
+        stored: str | None,
     ) -> None:
         """Run the shared tail of every content write.
 
@@ -948,6 +977,9 @@ class DocumentManager:
             content: Full file content to persist.
             operation: The write operation reported to the enricher and the
                 write callback.
+            stored: The file's text before this write, read under the same
+                lock, or ``None`` for a new file. The enricher keeps its
+                ``verified`` (design §6).
 
         Raises:
             InvalidRequestError: The enforced-write layer is on and a *write*'s
@@ -957,7 +989,7 @@ class DocumentManager:
         """
         if self._okf_write_enrich is not None:
             try:
-                content = self._okf_write_enrich(content, operation)
+                content = self._okf_write_enrich(content, operation, stored=stored)
             except yaml.YAMLError as exc:
                 # The stamp is written *into* the note's frontmatter, so a
                 # block the parser cannot read leaves the enforced-write layer
@@ -1045,7 +1077,13 @@ class DocumentManager:
 
             # An append is a content edit for the enforced-write layer and
             # the git commit callback alike.
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            self._finalize_content_write(
+                abs_path,
+                path,
+                new_content,
+                "edit",
+                stored=file_content if existed else None,
+            )
             result = WriteResult(path=path, created=not existed)
 
         return result
@@ -1189,7 +1227,9 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            self._finalize_content_write(abs_path, path, new_content, "edit")
+            self._finalize_content_write(
+                abs_path, path, new_content, "edit", stored=file_content
+            )
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 

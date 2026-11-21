@@ -45,5 +45,5 @@ On confirmation, apply each with `edit` / `write` (or `delete`). For a full-note
 `write`, preserve unchanged content and frontmatter and pass that note's read
 etag as `if_match`. If it conflicts, skip the note and report the conflict;
 do not retry a blind overwrite or delete it to bypass protection. Do not verify
-a refreshed note in the same pass — a content change clears prior verification;
+a refreshed note in the same pass — a content change makes prior verification no longer current;
 re-review it separately (see `okf-verify-note.md`).
