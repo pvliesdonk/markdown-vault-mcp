@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -292,7 +292,10 @@ _ACTOR_RE = re.compile(r"(?:(?:human|process):\S(?:[ \S]*\S)?|[^\s/:]+/[^\s/]+)"
 
 
 def _review_recorded(entry: Any) -> bool:
-    """Whether a review has a usable actor and an offset-aware instant."""
+    """Whether a ``{by, at}`` record has a usable actor and an offset-aware instant.
+
+    The one rule for a ``verified`` entry and for ``generated`` (#2386).
+    """
     if not isinstance(entry, dict):
         return False
     actor = entry.get("by")
@@ -368,22 +371,24 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     return now.date() >= boundary
 
 
-def _malformed_sources(metadata: dict[str, Any]) -> bool:
-    """Whether a present ``sources`` is not a list of mappings."""
-    if "sources" not in metadata:
-        return False
-    sources = metadata["sources"]
-    return not isinstance(sources, list) or any(
-        not isinstance(entry, Mapping) for entry in sources
+def _attribution_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Count usable ``sources`` entries (mappings) apart from malformed ones."""
+    sources = metadata.get("sources")
+    entries = sources if isinstance(sources, list) else []
+    return _entry_evidence(
+        metadata, "sources", entries, lambda entry: isinstance(entry, Mapping)
     )
 
 
-def _malformed_generated(metadata: dict[str, Any]) -> bool:
-    """Whether a present ``generated`` is not a mapping containing ``by``."""
+def _generation_evidence(metadata: dict[str, Any]) -> dict[str, str]:
+    """Judge ``generated`` by the rule a ``verified`` entry is judged by."""
     if "generated" not in metadata:
-        return False
-    generated = metadata["generated"]
-    return not isinstance(generated, Mapping) or "by" not in generated
+        state = "missing"
+    elif _review_recorded(metadata["generated"]):
+        state = "recorded"
+    else:
+        state = "malformed"
+    return {"state": state, "basis": "supplied_metadata_only"}
 
 
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
@@ -403,11 +408,26 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
 
 def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
     """Count usable recorded claims separately from malformed input."""
-    recorded = sum(_review_recorded(entry) for entry in entries)
+    return _entry_evidence(metadata, "verified", entries, _review_recorded)
+
+
+def _entry_evidence(
+    metadata: dict[str, Any],
+    key: str,
+    entries: list[Any],
+    usable: Callable[[Any], bool],
+) -> dict[str, Any]:
+    """Report a list-valued field's entries as recorded or malformed.
+
+    *entries* is the field read as a list (empty when it has no list
+    reading); a present value with no list reading counts as one malformed
+    entry.
+    """
+    recorded = sum(1 for entry in entries if usable(entry))
     malformed = len(entries) - recorded
-    if "verified" not in metadata:
+    if key not in metadata:
         state = "missing"
-    elif not isinstance(metadata["verified"], (dict, list)):
+    elif not entries and not isinstance(metadata[key], list):
         state, malformed = "malformed", 1
     elif not entries:
         state = "empty"
@@ -460,10 +480,12 @@ def derive_annotation(
         reports that separately as ``{state, basis}``: ``unknown`` when
         ``verified`` has entries or is malformed, ``none`` when absent or
         empty. Full reads additionally carry ``recorded`` with supplied
-        expiry/reviews as parsed, including malformed values; omitted keys remain absent. ``malformed_sources``
-        and ``malformed_generated`` appear only when true: present sources
-        must be a list of mappings, and generated a mapping containing
-        ``by``. These advisory flags leave source projections unchanged.
+        expiry/reviews as parsed, including malformed values; omitted keys
+        remain absent. ``attribution`` reports ``sources`` in ``review``'s
+        shape, counting mapping entries as recorded; ``generation`` reports
+        ``generated`` as ``{state, basis}`` by the rule a ``verified`` entry
+        is judged by (a recognized actor and an offset-aware ``at``). Both
+        leave the source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -484,6 +506,8 @@ def derive_annotation(
     annotation["review_applicability"] = _review_applicability(
         entries, annotation["review"]
     )
+    annotation["attribution"] = _attribution_evidence(metadata)
+    annotation["generation"] = _generation_evidence(metadata)
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
     if include_sources:
@@ -494,10 +518,6 @@ def derive_annotation(
             annotation["sources"] = source_list
     elif source_list:
         annotation["sources_count"] = len(source_list)
-    if _malformed_sources(metadata):
-        annotation["malformed_sources"] = True
-    if _malformed_generated(metadata):
-        annotation["malformed_generated"] = True
     return annotation
 
 
@@ -603,8 +623,9 @@ class OkfAuditReport:
     fixing; ``informational`` entries are not deviations at all (wikilinks
     only matter at export; recommended fields are optional).
 
-    Missing freshness is informational; malformed freshness/reviews are
-    format observations and do not change ``conformant_notes``. Unavailable
+    Missing freshness is informational; malformed freshness, reviews,
+    sources and generated records are format observations and do not change
+    ``conformant_notes``. Unavailable
     evidence means no assessment, not absent metadata. These findings cover
     only discovered, non-excluded concepts; they certify neither complete
     traversal nor truth nor review applicability.
@@ -641,11 +662,12 @@ class OkfAuditReport:
             index declaring ``okf_version`` is also
             ``misplaced_okf_version``. Appended and defaulted so earlier
             positional construction still works.
-        malformed_sources: Notes with a present ``sources`` that is not
-            a list of mappings (advisory; an empty list is valid).
-        malformed_generated: Notes with a present ``generated`` that is
-            not a mapping containing ``by`` (advisory; key presence only).
-            Both provenance findings leave ``conformant_notes`` unchanged.
+        malformed_sources: Assessed concepts whose ``sources`` has a
+            malformed entry or is not a list (an empty list is valid; the
+            annotation's ``attribution`` rule).
+        malformed_generated: Assessed concepts whose ``generated`` lacks a
+            recognized actor or an offset-aware ``at`` (the annotation's
+            ``generation`` rule, shared with ``verified`` entries).
         missing_freshness: Assessed concepts with no expiry supplied.
         malformed_freshness: Assessed concepts with an unsupported expiry.
         malformed_review: Assessed concepts with malformed review input.
@@ -768,10 +790,6 @@ def _evaluate_note(
         and status.strip() not in OKF_STATUS_VALUES
     ):
         acc.unknown_status.add(rel)
-    if _malformed_sources(metadata):
-        acc.malformed_sources.add(rel)
-    if _malformed_generated(metadata):
-        acc.malformed_generated.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)
     if not metadata.get("title") or not metadata.get("description"):
@@ -786,6 +804,10 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
         acc.malformed_freshness.add(rel)
     if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)
+    if _attribution_evidence(metadata)["malformed_entries"]:
+        acc.malformed_sources.add(rel)
+    if _generation_evidence(metadata)["state"] == "malformed":
+        acc.malformed_generated.add(rel)
 
 
 def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
@@ -835,8 +857,10 @@ def audit_bundle(
     Pure disk I/O, index-independent (the detection-probe pattern): each
     file's existing conformance checks use at most :data:`_MAX_READ_CHARS`
     characters; content beyond that cap goes unexamined. One extra character
-    detects overflow: new evidence findings are withheld for such files.
-    Read or parse failures also make their evidence assessment unavailable.
+    detects overflow: evidence findings (freshness, review, sources and
+    generated) are withheld for such files, which count as
+    ``evidence_unavailable`` instead. Read or parse failures also make their
+    evidence assessment unavailable.
     These observations cover discovered, non-excluded concept files, not a
     complete inventory or an editorial-policy assessment. The index's effective exclude patterns double as the audit
     whitelist, so known-nonconforming zones (convention files, configured

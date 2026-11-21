@@ -2049,14 +2049,15 @@ the spec itself says, dated and sourced, in
   preserving parsed values, while compact results omit that projection.
   The exact contract and supported timestamp subset are in `okf.md` §3.
   Reads carry the full `sources` list; search hits carry
-  `sources_count`. Both modes add true-only `malformed_sources` and
-  `malformed_generated` flags for present values of the wrong shape:
-  sources must be a list of mappings (empty allowed), generated a mapping
-  containing `by` (key presence only, no required `at`). Absent fields
-  produce no flag; explicit null values do. Mixed source lists remain
-  intact and keep their full count; non-list sources gain no invented
-  list/count. These computed diagnostics change no stored metadata or
-  index semantics. Section reads omit the key (no frontmatter to derive
+  `sources_count`. Both modes add `attribution` (`sources` in `review`'s
+  shape, mapping entries recorded) and `generation` (`generated` as
+  `{state, basis}`, judged by the `verified`-entry rule: recognized actor,
+  offset-aware `at`), replacing the unreleased true-only flags (#2386).
+  Mixed source lists remain intact and keep their full count; non-list
+  sources gain no invented list/count. The audit's `malformed_sources` and
+  `malformed_generated` use the same rules and, like the other evidence
+  findings, are withheld for `evidence_unavailable` files. These computed
+  diagnostics change no stored metadata or index semantics. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
 - **Review presentation (#1413, partial)**: `trust_tier` and the stats

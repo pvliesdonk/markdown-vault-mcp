@@ -226,24 +226,35 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
 
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
-- `malformed_sources` and `malformed_generated`: true-only advisory flags,
-  shared by full-read and compact annotations. A present `sources` must be
-  a list of mappings (including an empty list); a present `generated` must
-  be a mapping containing `by`. Only key presence is checked: null, blank,
-  or numeric `by` values pass, with no required `at`. Absent outer keys
-  produce no flag, while explicit null values do. Source lists pass through
-  intact and retain their full count even when mixed with non-mappings;
-  non-list sources gain no invented list/count, and empty lists remain
-  omitted. No raw `generated` projection is added. These computed checks
-  use the [existing format reference](reference/okf-v0.2.md) and change no
-  stored rows, trust, filters, ranking, admission, or write policy.
+- `attribution` and `generation` (#2386, replacing #2069's true-only
+  `malformed_sources`/`malformed_generated` flags before release): the
+  provenance fields reported in the evidence objects' vocabulary, shared by
+  full-read and compact annotations. `attribution` reports `sources` in
+  `review`'s shape: `state` `missing`, `empty`, `malformed` or `recorded`,
+  `recorded_entries` (mapping entries), `malformed_entries` (any other
+  entry, or 1 for a present value that is not a list) and
+  `basis: supplied_metadata_only`; a mixed list is `recorded` with both
+  counts. `generation` is `{state, basis}` with `state` `missing`,
+  `malformed` or `recorded` and `basis: supplied_metadata_only`, judged by
+  the same predicate as a `verified` entry: a recognized actor (including
+  internal-space `human:`/`process:` ids, #2394) and an offset-aware `at`.
+  A `generated` with `by` but no `at`, or a date-only `at`, is therefore
+  malformed, although the [format reference](reference/okf-v0.2.md)
+  requires only `by` within `generated`; one rule for both `{by, at}`
+  records is the recorded decision. The server's own stamps
+  (`human:<subject>`, `markdown-vault-mcp/<version>`, UTC `Z` instants)
+  read back as `recorded`. Source lists pass through intact and retain
+  their full count even when mixed with non-mappings; non-list sources
+  gain no invented list/count, and empty lists remain omitted. No raw
+  `generated` projection is added. These computed checks change no stored
+  rows, trust, filters, ranking, admission, or write policy.
 
 **Delivery channels** (mirroring the Folder Conventions channel list):
 
 1. `search` results, `read`, and `get_context` payloads gain an `okf` key
-   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability}`, plus the
-   true-only `malformed_sources`/`malformed_generated` flags — omitted entirely when
-   detection is off, and individual members omitted when underivable.
+   carrying `{type, status, stale, trust_tier, freshness, review, review_applicability, attribution, generation}`
+   — omitted entirely when detection is off, and individual members omitted
+   when underivable.
    Whole reads also carry `recorded` with supplied `stale_after` and
    `verified` values as parsed, including null/malformed values and extensions;
    missing keys stay absent. Compact results omit these potentially large
@@ -337,11 +348,14 @@ during migration it is a progress meter:
   and advisory, since the spec tolerates their absence.
 - Informational (non-conformance) counts: wikilink usage (matters at export
   only), notes lacking recommended fields.
-- Advisory `malformed_sources` and `malformed_generated` findings reuse the
-  annotation shape checks, counting each parsed non-reserved note once per
-  field with sorted, capped examples. They leave `conformant_notes`
-  unchanged; exclusions and parse failures keep their existing paths.
-  Reading and auditing never rewrite malformed fields.
+- `malformed_sources` and `malformed_generated` are evidence findings
+  (#2386): they reuse the annotation's `attribution` (any malformed entry)
+  and `generation` (`state: malformed`) rules, counting each assessed
+  non-reserved note once per field with sorted, capped examples. Like the
+  other evidence findings they are withheld for a file counted under
+  `evidence_unavailable` (unreadable, unparseable, or over the read cap),
+  rather than judged from truncated content. They leave `conformant_notes`
+  unchanged, and reading and auditing never rewrite malformed fields.
 - Evidence findings (#1444): `missing_freshness` (informational),
   `malformed_freshness` and `malformed_review` (format observations, using
   the annotation's `freshness` and `review` rules), and
