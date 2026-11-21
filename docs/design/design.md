@@ -2065,7 +2065,9 @@ the spec itself says, dated and sourced, in
   `verified` yields `unverified`. They describe recorded claims, not
   authenticated review or applicability to the current content. Human-readable CLI search results
   label that distinction; text reads print the notice to stderr without
-  changing content on stdout. App note and context views show a visible
+  changing content on stdout. The CLI keys the notice on
+  `review_applicability`: `none` prints nothing, while `unknown` (recorded
+  or malformed) and a payload without the field keep it (#2385). App note and context views show a visible
   notice for a supplied `verified` field, including empty or malformed
   values, while preserving access to the raw metadata. These app routes
   supply frontmatter, not OKF annotations, so the notice describes the field

@@ -21,6 +21,11 @@ _APP_NOTICE = (
 )
 
 
+_NO_REVIEW = {"state": "none", "basis": "no_review_supplied"}
+_MALFORMED = {"state": "unknown", "basis": "malformed_review"}
+_RECORDED = {"state": "unknown", "basis": "no_snapshot_binding"}
+
+
 @pytest.mark.parametrize("tier", ["human-reviewed", "machine-confirmed", "unverified"])
 def test_read_text_labels_recorded_review_without_changing_content(
     capsys: pytest.CaptureFixture[str], tier: str
@@ -28,7 +33,7 @@ def test_read_text_labels_recorded_review_without_changing_content(
     data = {
         "path": "note.md",
         "content": "# Changed content\nUnreviewed replacement.",
-        "okf": {"trust_tier": tier},
+        "okf": {"trust_tier": tier, "review_applicability": _RECORDED},
     }
     render_reply("read", RemoteReply(data), "text")
     output = capsys.readouterr()
@@ -40,7 +45,8 @@ def test_read_text_labels_recorded_review_without_changing_content(
 def test_search_text_labels_recorded_review(
     capsys: pytest.CaptureFixture[str], tier: str
 ) -> None:
-    data = [{"path": "note.md", "score": 1.0, "okf": {"trust_tier": tier}}]
+    okf = {"trust_tier": tier, "review_applicability": _RECORDED}
+    data = [{"path": "note.md", "score": 1.0, "okf": okf}]
     render_reply("search", RemoteReply(data), "text")
     output = capsys.readouterr()
     assert output.out == (
@@ -49,23 +55,24 @@ def test_search_text_labels_recorded_review(
     assert not output.err
 
 
-_NO_REVIEW = {"state": "none", "basis": "no_review_supplied"}
-_MALFORMED = {"state": "unknown", "basis": "malformed_review"}
-_RECORDED = {"state": "unknown", "basis": "no_snapshot_binding"}
-
-
 @pytest.mark.parametrize(
     ("tier", "applicability"),
     [
         ("unverified", _MALFORMED),
         ("human-reviewed", _RECORDED),
         ("unverified", _RECORDED),
+        # A payload that cannot rule a review out keeps the notice.
+        ("unverified", None),
+        ("unverified", {}),
+        ("unverified", {"state": "other"}),
     ],
 )
 def test_supplied_review_keeps_notice(
-    capsys: pytest.CaptureFixture[str], tier: str, applicability: dict[str, str]
+    capsys: pytest.CaptureFixture[str], tier: str, applicability: Any
 ) -> None:
-    okf = {"trust_tier": tier, "review_applicability": applicability}
+    okf: dict[str, Any] = {"trust_tier": tier}
+    if applicability is not None:
+        okf["review_applicability"] = applicability
     data = {"path": "note.md", "content": "body", "score": 1.0, "okf": okf}
     notice = f"Recorded review metadata: {tier}. {_NOTICE}"
     render_reply("read", RemoteReply(data), "text")
