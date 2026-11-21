@@ -2067,17 +2067,18 @@ the spec itself says, dated and sourced, in
   label that distinction; text reads print the notice to stderr without
   changing content on stdout. The CLI keys the notice on
   `review_applicability`: `none` prints nothing, while `unknown` (recorded
-  or malformed) and a payload without the field keep it (#2385). App note and context views show a visible
-  notice for a supplied `verified` field, including empty or malformed
-  values, while preserving access to the raw metadata. These app routes
-  supply frontmatter, not OKF annotations, so the notice describes the field
-  without asserting that the vault is an active OKF bundle. Applicability
+  or malformed) and a payload without the field keep it (#2385). App note
+  and context views follow the same rule: their app-only routes
+  (`vault_read`, `vault_context`) carry the same `okf` annotation as `read`
+  and `get_context`, present only on an active bundle, and the views show a
+  visible notice for a supplied `verified` field only when that annotation
+  is present and its `review_applicability` is not `none` (#2384). A vault
+  without OKF keeps its previous app output, and the raw metadata stays
+  visible either way. Applicability
   is explicitly unknown; no timestamp comparison, history inference, byte
   comparison or metadata rewrite is performed. JSON/agent payloads and
   filters are unchanged by the presentation slice; the structured
-  `review_applicability` field above carries the same `unknown` to them,
-  except for an empty `verified` list, which the app labels unknown and the
-  field reports as `none`.
+  `review_applicability` field above carries the same `unknown` to them.
   Assessment after observed changes remains #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
@@ -6613,11 +6614,11 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 | Tool | Description |
 |-|-|
-| `_vault_context` | Returns full NoteContext JSON for the Context Card view |
+| `_vault_context` | Returns full NoteContext JSON for the Context Card view, plus the `okf` annotation on an active bundle |
 | `_vault_graph_neighborhood` | Returns `{nodes, edges}` for a note's link neighborhood |
 | `_vault_graph_hubs` | Returns `{nodes, edges}` for the most-linked hub notes |
 | `_vault_list` | Returns `{folders, notes}` for a vault directory |
-| `_vault_read` | Returns note content, frontmatter, and metadata |
+| `_vault_read` | Returns note content, frontmatter, and metadata, plus the `okf` annotation on an active bundle |
 | `_vault_search` | Returns search results with snippets (default mode `hybrid`) |
 
 **View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.

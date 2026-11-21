@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 from fastmcp import Client
 
+from markdown_vault_mcp._server_apps import _hashed
 from tests.fixtures.okf import malformed_okf_note as malformed_okf_note
 from tests.server_factory import make_server
 
@@ -143,6 +144,37 @@ def _structured(result: Any) -> dict[str, Any]:
     return data
 
 
+_APP_READ_KEYS = {"path", "title", "frontmatter", "content", "modified_at"}
+_APP_CONTEXT_KEYS = {
+    "path",
+    "title",
+    "folder",
+    "frontmatter",
+    "modified_at",
+    "backlinks",
+    "outlinks",
+    "similar",
+    "folder_notes",
+    "tags",
+}
+
+
+async def _app_payloads(
+    client: Client[Any], path: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the SPA's ``vault_read`` and ``vault_context`` payloads for *path*."""
+    await wait_for_mcp_writer_drain(client)
+    read = _parse_tool_data(
+        await client.call_tool(_hashed("vault_read"), {"path": path})
+    )
+    context = _parse_tool_data(
+        await client.call_tool(_hashed("vault_context"), {"path": path})
+    )
+    assert isinstance(read, dict)
+    assert isinstance(context, dict)
+    return read, context
+
+
 async def _search(client: Client[Any], **kwargs: Any) -> list[dict[str, Any]]:
     await wait_for_mcp_writer_drain(client)
     result = await client.call_tool("search", {"query": "zebra", **kwargs})
@@ -172,6 +204,12 @@ class TestNonOkfBaseline:
                 )
             )
             assert "okf" not in context
+
+    async def test_app_payloads_keep_their_keys(self) -> None:
+        async with Client(make_server()) as client:
+            read, context = await _app_payloads(client, "guides/playbook.md")
+        assert set(read) == _APP_READ_KEYS
+        assert set(context) == _APP_CONTEXT_KEYS
 
     async def test_indexed_fields_not_extended(self) -> None:
         async with Client(make_server()) as client:
@@ -289,6 +327,23 @@ class TestDeclaredBundle:
             "basis": "no_snapshot_binding",
         }
 
+    async def test_app_payloads_carry_annotation(self) -> None:
+        async with Client(make_server()) as client:
+            read, context = await _app_payloads(client, "guides/playbook.md")
+            plain_read, plain_context = await _app_payloads(client, "guides/plain.md")
+        assert set(read) == _APP_READ_KEYS | {"okf"}
+        assert set(context) == _APP_CONTEXT_KEYS | {"okf"}
+        for payload in (read, context):
+            assert payload["okf"]["review_applicability"] == {
+                "state": "unknown",
+                "basis": "no_snapshot_binding",
+            }
+        for payload in (plain_read, plain_context):
+            assert payload["okf"]["review_applicability"] == {
+                "state": "none",
+                "basis": "no_review_supplied",
+            }
+
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -363,7 +418,8 @@ class TestModeOff:
                     "get_context", {"path": path, "similar_limit": 0}
                 )
             )
-            for payload in (hit, read, context):
+            app_read, app_context = await _app_payloads(client, path)
+            for payload in (hit, read, context, app_read, app_context):
                 assert "okf" not in payload
             assert read["frontmatter"]["sources"] == "https://example.com"
             assert read["frontmatter"]["generated"] == "codex at a date"
