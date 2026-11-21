@@ -2,6 +2,9 @@
 
 ## 2026-11-21
 
+- [Open Knowledge Format v0.3](okf-v0.3.md): departure 18 fixed by #2419;
+  [YAML 1.2 core schema](yaml-1-2-core-schema.md): the re-serialization
+  claim now names the splice. No spec claim changed.
 - New: [YAML 1.2 core schema](yaml-1-2-core-schema.md), for #2415. Read
   YAML 1.2.2 §3.2.1.1, §6.8.1 and §10.2–10.4 and the YAML 1.1 bool and
   timestamp types; observed PyYAML 6.0.4 resolution and dumping, and

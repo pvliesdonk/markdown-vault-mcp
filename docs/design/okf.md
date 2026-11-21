@@ -622,8 +622,15 @@ Tool tags following switches: #1412.
   Content writes and verification preserve surviving frontmatter fields in
   order, including nested mappings and mappings inside lists. Replacing
   `generated` or `verified` retains its slot, and an absent field appends.
-  Order and values survive, while
-  comments, quoting and whitespace may change. The serializer boundary is
+  The stamp and `okf_verify` rewrite only those keys' lines; every other
+  line of the block, comments and quoting included, and the body keep their
+  bytes (OKF 0.3 §4: "A producer that modifies an existing file SHOULD NOT
+  re-serialize values that it did not change", #2419). The splice is kept
+  only when the result reads back as the intended frontmatter with the same
+  body; otherwise, and for a CRLF block, a key written twice or a
+  flow-style top-level mapping, the block is serialized whole, keeping
+  order and values but not comments (`_frontmatter_splice.py`). The
+  serializer boundary is
   recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
