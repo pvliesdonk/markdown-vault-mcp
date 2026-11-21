@@ -153,6 +153,7 @@ where the account holder ruled that a departure from the standard is a bug.
   concept. Consumers SHOULD show the raw value." *New in 0.3.*
   [source: spec] (§5.4)
   [pins: tests/test_okf.py::TestDeriveAnnotation::test_unknown_status_passes_through]
+  [pins: tests/test_okf.py::TestDeriveAnnotation::test_status_outside_vocabulary_is_raw_and_not_stable]
 - `superseded_by` is one path to the replacement, meaningful only with
   `status: deprecated`; "Consumers that filter results to current
   knowledge SHOULD follow it". *New in 0.3.* [source: spec] (§5.4)
@@ -304,7 +305,7 @@ are named where they exist; a fix rewrites them.
 | 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |
 | 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | every `write`/`edit` restamps | producer rule | none |
 | 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | stamps and `okf_verify` re-dump the whole block, dropping comments | SHOULD NOT | none |
-| 19 | Unknown `status` (§5.4) | silent | silent | not stable | a non-string `status` (e.g. `3`) reads as `stable` | stated | none |
+| 19 | Unknown `status` (§5.4) | silent | silent | not stable | fixed: any value outside the exact tokens, a non-string one included, is shown as its raw text (`3` → `"3"`) and is not `stable` | stated | #2420 |
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
 

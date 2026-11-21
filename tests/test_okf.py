@@ -543,9 +543,35 @@ class TestDeriveAnnotation:
         annotation = derive_annotation({"type": 5}, now=NOW)
         assert "type" not in annotation
 
-    def test_blank_status_defaults(self) -> None:
-        annotation = derive_annotation({"status": "  "}, now=NOW)
+    @pytest.mark.parametrize("raw", [None, "", []])
+    def test_absent_status_defaults(self, raw: object) -> None:
+        # OKF 0.3 §11.2 rule 1: null, "" and [] are the same as absent.
+        annotation = derive_annotation({"status": raw}, now=NOW)
         assert annotation["status"] == OKF_STATUS_DEFAULT
+
+    @pytest.mark.parametrize(
+        ("raw", "shown"),
+        [
+            (3, "3"),
+            (1.5, "1.5"),
+            (True, "true"),
+            (False, "false"),
+            (["stable"], '["stable"]'),
+            ({"a": 1}, '{"a": 1}'),
+            (dt.date(2026, 1, 2), "2026-01-02"),
+            ("Stable", "Stable"),
+            (" stable ", " stable "),
+            ("  ", "  "),
+        ],
+    )
+    def test_status_outside_vocabulary_is_raw_and_not_stable(
+        self, raw: object, shown: str
+    ) -> None:
+        # OKF 0.3 §5.4: "A value that is not in this list is not `stable`.
+        # ... Consumers SHOULD show the raw value." The tokens are exact.
+        annotation = derive_annotation({"status": raw}, now=NOW)
+        assert annotation["status"] == shown
+        assert annotation["status"] != OKF_STATUS_DEFAULT
 
 
 _ABSENT = object()
@@ -748,6 +774,11 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({"status": "draft"}, {"status": "stable"}, False),
         ({"status": "deprecated"}, {"status": "deprecated"}, True),
         ({"status": "archived"}, {"status": "archived"}, True),  # unknown passes
+        ({"status": 3}, {"status": "stable"}, False),  # OKF 0.3 §5.4
+        ({"status": 3}, {"status": "3"}, True),  # raw value shown as text
+        ({"status": True}, {"status": "stable"}, False),
+        ({"status": "Stable"}, {"status": "stable"}, False),  # exact token
+        ({"status": None}, {"status": "stable"}, True),  # §11.2 rule 1
         ({}, {"stale": "false"}, True),
         ({"stale_after": "2000-01-01"}, {"stale": "true"}, True),
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
@@ -1104,6 +1135,35 @@ class TestOkfAudit:
         assert report.root_index_missing is False
         assert report.wikilink_files.examples == ("guides/untyped.md",)
         assert report.missing_recommended.count >= 3
+
+    def test_unknown_status_counts_every_value_outside_vocabulary(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        statuses = {
+            "int.md": "3",
+            "bool.md": "true",
+            "list.md": "[stable]",
+            "case.md": "Stable",
+            "padded.md": '" stable "',
+            "null.md": "null",
+            "empty.md": '""',
+            "ok.md": "draft",
+        }
+        for name, value in statuses.items():
+            (tmp_path / name).write_text(
+                f"---\ntype: Note\nstatus: {value}\n---\n# N\n", encoding="utf-8"
+            )
+        report = audit_bundle(tmp_path)
+        assert report.unknown_status.count == 5
+        assert set(report.unknown_status.examples) == {
+            "int.md",
+            "bool.md",
+            "list.md",
+            "case.md",
+            "padded.md",
+        }
 
     def test_exclude_patterns_whitelist(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
