@@ -705,8 +705,6 @@ Conformance rules, which the format requires:
 
 - `unparseable_frontmatter`: files, index.md and log.md included,
   whose frontmatter does not parse as a mapping.
-- `misplaced_okf_version`: `okf_version` declared anywhere but the
-  root index.md.
 - `index_frontmatter`: folder index.md files carrying frontmatter,
   server-generated indexes included; the root index.md may carry
   any keys.

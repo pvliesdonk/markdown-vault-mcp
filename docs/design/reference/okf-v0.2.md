@@ -84,7 +84,7 @@ months, not twelve.
   `okf_version` key". The body is sections of `* [Title](url) - description`
   entries; producers MAY generate one, consumers MAY synthesise one when
   none is present. [source: spec] (§8, §12)
-  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_declaring_okf_version_is_both_findings]
+  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_declaring_okf_version_is_one_finding]
 - A `log.md` MAY appear at any level; it is "a flat list of date-grouped
   entries, newest first"; "Date headings MUST use ISO 8601 `YYYY-MM-DD`
   form"; the leading bold word of an entry is a convention, not a

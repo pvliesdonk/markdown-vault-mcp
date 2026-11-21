@@ -311,6 +311,7 @@ are named where they exist; a fix rewrites them.
 | 19 | Unknown `status` (§5.4) | silent | silent | not stable | fixed: any value outside the exact tokens, a non-string one included, is shown as its raw text (`3` → `"3"`) and is not `stable` | stated | #2420 |
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
+| 22 | `okf_version` on a concept (§4.1, §8.1) | silent | silent | an extension key; MUST NOT reject unknown keys | fixed: no finding (was `misplaced_okf_version`, a conformance finding); on a folder `index.md` it is `index_frontmatter` | MUST NOT | #2427 (fixed) |
 
 Notes on the table:
 

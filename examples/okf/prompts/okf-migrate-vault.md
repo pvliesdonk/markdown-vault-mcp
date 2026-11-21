@@ -15,8 +15,8 @@ any write.
 ## Step 1: Audit
 
 Call `okf_validate`. Report the conformance ratio (`conformant_notes` of
-`total_notes`) and the per-rule findings — unparseable frontmatter, misplaced
-`okf_version`, `index.md` and `log.md` frontmatter, log heading shape, unknown
+`total_notes`) and the per-rule findings — unparseable frontmatter,
+`index.md` and `log.md` frontmatter, log heading shape, unknown
 `status` values, and files without a `type`, which are not concepts and only
 need one if they should be. This reads from disk and works before anything is declared, so use
 it to decide where to start. Never propose removing an `index.md` field the
