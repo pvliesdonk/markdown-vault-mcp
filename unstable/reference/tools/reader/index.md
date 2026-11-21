@@ -31,7 +31,7 @@ List of result dicts ranked by file relevance. Each contains:
 - score (float): File-level score = max(section.score). Higher is a better match. BM25 (keyword) or cosine (semantic/ hybrid); not comparable across modes.
 - `search_type` (str): `"keyword"`, `"semantic"`, or `"hybrid"`.
 - frontmatter (dict): Parsed YAML frontmatter of the document.
-- okf (dict, optional): OKF read annotation: present only when the vault is an active OKF bundle. Carries `type` (when declared), `status` (defaults to `"stable"`), `stale` (bool, `stale_after` reached), `trust_tier` (`"unverified"` / `"machine-confirmed"` / `"human-reviewed"`, classifying recorded metadata rather than applicability to current content), `freshness`, `review`, `review_applicability`, `attribution` (`sources` in the shape of `review`), `generation` (`generated` as `{state, basis}`), and `sources_count` (when the note cites sources).
+- okf (dict, optional): OKF read annotation: present only when the vault is an active OKF bundle. Carries `type` (when declared), `status` (defaults to `"stable"`), `stale` (bool, `stale_after` reached or unparseable), `trust_tier` (`"unverified"` / `"machine-confirmed"` / `"human-reviewed"`, classifying recorded metadata rather than applicability to current content), `freshness`, `review`, `review_applicability`, `attribution` (`sources` in the shape of `review`), `generation` (`generated` as `{state, basis}`), and `sources_count` (when the note cites sources).
 - sections (list[dict]): Up to `chunks_per_file` best-matching sections, each with:
 - heading (str | None): Section heading or null for intro.
 - content (str): Matched snippet (or full chunk if `snippet_words`=0). Call read(path, section=heading) for the full section text.
@@ -74,7 +74,7 @@ Look paths up with search or `list_documents` first rather than guessing them.
 
 **Returns**
 
-For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, and the note's 'sources' list when present). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor, offset-aware `at`). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
+For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, and the note's 'sources' list when present). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent, null, empty or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor; `at` a date or an offset date-time). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
 
 **Outcomes and errors**
 
@@ -479,19 +479,20 @@ None.
 Report dict. The audit reads the vault from disk, so it works before the index is built, and it skips the vault's excluded paths. Every rule except `root_index_missing` is a finding with `count` (int) and up to 20 `examples` (list[str] of paths).
 
 - mode (str), `declared_version` (str | None), active (bool): the detection state.
-- `total_notes` (int), `conformant_notes` (int): the progress ratio; the reserved index.md and log.md are not counted as notes.
+- `total_notes` (int), `conformant_notes` (int): the progress ratio. `conformant_notes` counts concepts, the files with a non-empty `type`; `total_notes` adds the files whose frontmatter does not parse. Reserved files and non-concepts are not counted.
 
 Conformance rules, which the format requires:
 
-- `missing_type`: notes without a non-empty `type`; the reserved index.md and log.md are exempt.
-- `unparseable_frontmatter`: notes whose frontmatter does not parse.
+- `unparseable_frontmatter`: files, index.md and log.md included, whose frontmatter does not parse as a mapping.
 - `misplaced_okf_version`: `okf_version` declared anywhere but the root index.md.
-- `index_frontmatter`: index.md files carrying frontmatter, any on a folder index and anything but `okf_version` on the root, server-generated indexes included.
+- `index_frontmatter`: folder index.md files carrying frontmatter, server-generated indexes included; the root index.md may carry any keys.
+- `log_frontmatter`: log.md files carrying frontmatter.
+- `log_heading_shape`: log.md files whose `##` headings are not YYYY-MM-DD dates.
 
 Advisory rules, tolerated but worth fixing:
 
+- `missing_type`: files with no frontmatter or no non-empty `type`. They are not concepts, so the audit skips them and they do not affect conformance.
 - `unknown_status`: a `status` outside draft, stable and deprecated.
-- `log_heading_shape`: log.md files whose `##` headings are not YYYY-MM-DD dates.
 - `root_index_missing` (bool): true when the root index.md is absent.
 
 Informational rules, not deviations:
@@ -503,8 +504,8 @@ Informational rules, not deviations:
 Evidence observations leave `conformant_notes` unchanged:
 
 - `malformed_freshness`, `malformed_review`: assessed notes with unsupported expiry or malformed review records.
-- `malformed_sources`: assessed notes whose `sources` is not a list or has an entry that is not a mapping. An empty list is valid.
-- `malformed_generated`: assessed notes whose `generated` lacks a recognized actor or an offset-aware `at`, the rule `verified` entries follow.
+- `malformed_sources`: assessed notes whose `sources` has an entry without a `resource`; one entry may be written without a list.
+- `malformed_generated`: assessed notes whose `generated` lacks a recognized actor or an `at` that is a date or an offset date-time, the rule `verified` entries follow.
 - `evidence_unavailable`: discovered notes not assessed for evidence because reading/parsing failed or the read cap was exceeded.
 
 Evidence findings cover discovered, non-excluded concepts, not complete traversal, truth, or editorial-policy compliance.

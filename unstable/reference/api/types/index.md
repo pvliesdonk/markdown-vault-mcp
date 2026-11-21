@@ -190,15 +190,15 @@ A link whose target does not exist, returned by :meth:`~markdown_vault_mcp.facet
 
 Attributes:
 
-| Name           | Type                                           | Description                                               |
-| -------------- | ---------------------------------------------- | --------------------------------------------------------- |
-| `source_path`  | `str`                                          | Relative path of the document containing the broken link. |
-| `source_title` | `str`                                          | Title of the linking document.                            |
-| `target_path`  | `str`                                          | Resolved path the link points to (does not exist).        |
-| `link_text`    | `str`                                          | Display text of the link.                                 |
-| `link_type`    | `Literal['markdown', 'wikilink', 'reference']` | Link syntax: "markdown", "wikilink", or "reference".      |
-| `fragment`     | \`str                                          | None\`                                                    |
-| `raw_target`   | `str`                                          | The unresolved link target exactly as written.            |
+| Name           | Type                                           | Description                                                                                                      |
+| -------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `source_path`  | `str`                                          | Relative path of the document containing the broken link.                                                        |
+| `source_title` | `str`                                          | Title of the linking document.                                                                                   |
+| `target_path`  | `str`                                          | Resolved path the link points to (does not exist); led by .. when it lies above the vault root (../x.md, #2416). |
+| `link_text`    | `str`                                          | Display text of the link.                                                                                        |
+| `link_type`    | `Literal['markdown', 'wikilink', 'reference']` | Link syntax: "markdown", "wikilink", or "reference".                                                             |
+| `fragment`     | \`str                                          | None\`                                                                                                           |
+| `raw_target`   | `str`                                          | The unresolved link target exactly as written.                                                                   |
 
 ## `LinkInfo(target_path, link_text, link_type, fragment=None, raw_target='')`
 

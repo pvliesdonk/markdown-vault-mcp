@@ -3213,8 +3213,9 @@ its best-matching sections as snippets.</p>
 <li>okf (dict, optional): OKF read annotation: present only when
   the vault is an active OKF bundle. Carries <code>type</code> (when
   declared), <code>status</code> (defaults to <code>"stable"</code>), <code>stale</code>
-  (bool, <code>stale_after</code> reached), <code>trust_tier</code> (<code>"unverified"</code> /
-  <code>"machine-confirmed"</code> / <code>"human-reviewed"</code>, classifying recorded
+  (bool, <code>stale_after</code> reached or unparseable), <code>trust_tier</code>
+  (<code>"unverified"</code> / <code>"machine-confirmed"</code> / <code>"human-reviewed"</code>,
+  classifying recorded
   metadata rather than applicability to current content),
   <code>freshness</code>, <code>review</code>, <code>review_applicability</code>, <code>attribution</code>
   (<code>sources</code> in the shape of <code>review</code>), <code>generation</code>
@@ -3299,11 +3300,12 @@ an 'okf' dict (type, status, stale, <code>trust_tier</code> for recorded review
 metadata, freshness, review, <code>review_applicability</code>, recorded, and the
 note's 'sources' list when present). <code>review_applicability</code>.state is
 "unknown" when verified has entries or is malformed (no snapshot
-binding) and "none" when it is absent or an empty list.
+binding) and "none" when it is absent, null, empty or an empty list.
 attribution reports <code>sources</code> in the shape of review, and
 generation reports <code>generated</code> as {state, basis}, judged like a
-verified entry (recorded actor, offset-aware <code>at</code>). Section reads
-omit the annotation because they carry no frontmatter to derive it from.
+verified entry (recorded actor; <code>at</code> a date or an offset
+date-time). Section reads omit the annotation because they carry
+no frontmatter to derive it from.
 For attachments: dict with path, <code>mime_type</code> (str or null),
 <code>size_bytes</code> (int), <code>content_base64</code> (str), <code>modified_at</code> (Unix timestamp),
 etag (SHA-256 hex str or null).
@@ -4032,25 +4034,30 @@ up to 20 <code>examples</code> (list[str] of paths).</p>
 <ul>
 <li>mode (str), <code>declared_version</code> (str | None), active (bool): the
   detection state.</li>
-<li><code>total_notes</code> (int), <code>conformant_notes</code> (int): the progress ratio;
-  the reserved index.md and log.md are not counted as notes.</li>
+<li><code>total_notes</code> (int), <code>conformant_notes</code> (int): the progress ratio.
+  <code>conformant_notes</code> counts concepts, the files with a non-empty
+  <code>type</code>; <code>total_notes</code> adds the files whose frontmatter does not
+  parse. Reserved files and non-concepts are not counted.</li>
 </ul>
 <p>Conformance rules, which the format requires:</p>
 <ul>
-<li><code>missing_type</code>: notes without a non-empty <code>type</code>; the reserved
-  index.md and log.md are exempt.</li>
-<li><code>unparseable_frontmatter</code>: notes whose frontmatter does not parse.</li>
+<li><code>unparseable_frontmatter</code>: files, index.md and log.md included,
+  whose frontmatter does not parse as a mapping.</li>
 <li><code>misplaced_okf_version</code>: <code>okf_version</code> declared anywhere but the
   root index.md.</li>
-<li><code>index_frontmatter</code>: index.md files carrying frontmatter, any on a
-  folder index and anything but <code>okf_version</code> on the root,
-  server-generated indexes included.</li>
+<li><code>index_frontmatter</code>: folder index.md files carrying frontmatter,
+  server-generated indexes included; the root index.md may carry
+  any keys.</li>
+<li><code>log_frontmatter</code>: log.md files carrying frontmatter.</li>
+<li><code>log_heading_shape</code>: log.md files whose <code>##</code> headings are not
+  YYYY-MM-DD dates.</li>
 </ul>
 <p>Advisory rules, tolerated but worth fixing:</p>
 <ul>
+<li><code>missing_type</code>: files with no frontmatter or no non-empty <code>type</code>.
+  They are not concepts, so the audit skips them and they do not
+  affect conformance.</li>
 <li><code>unknown_status</code>: a <code>status</code> outside draft, stable and deprecated.</li>
-<li><code>log_heading_shape</code>: log.md files whose <code>##</code> headings are not
-  YYYY-MM-DD dates.</li>
 <li><code>root_index_missing</code> (bool): true when the root index.md is absent.</li>
 </ul>
 <p>Informational rules, not deviations:</p>
@@ -4065,11 +4072,11 @@ up to 20 <code>examples</code> (list[str] of paths).</p>
 <ul>
 <li><code>malformed_freshness</code>, <code>malformed_review</code>: assessed notes with
   unsupported expiry or malformed review records.</li>
-<li><code>malformed_sources</code>: assessed notes whose <code>sources</code> is not a list
-  or has an entry that is not a mapping. An empty list is valid.</li>
+<li><code>malformed_sources</code>: assessed notes whose <code>sources</code> has an entry
+  without a <code>resource</code>; one entry may be written without a list.</li>
 <li><code>malformed_generated</code>: assessed notes whose <code>generated</code> lacks a
-  recognized actor or an offset-aware <code>at</code>, the rule <code>verified</code>
-  entries follow.</li>
+  recognized actor or an <code>at</code> that is a date or an offset
+  date-time, the rule <code>verified</code> entries follow.</li>
 <li><code>evidence_unavailable</code>: discovered notes not assessed for evidence
   because reading/parsing failed or the read cap was exceeded.</li>
 </ul>

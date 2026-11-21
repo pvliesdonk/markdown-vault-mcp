@@ -3995,7 +3995,7 @@ on the next startup.</p>
 <h4 id="content-and-transfer">Content<a class="headerlink" href="#content-and-transfer" title="Permanent link">&para;</a></h4>
 <p>Folder convention files guide clients before writes. OKF read semantics can be
 auto-detected from a root <code>index.md</code>; the separately gated OKF write layer adds
-provenance, clears recorded verification, and maintains <code>log.md</code> and
+provenance, keeps recorded verification as history, and maintains <code>log.md</code> and
 <code>index.md</code>. See the <a href="../../use/okf/">OKF guide</a> for the trust and verification
 model.</p>
 <p>Attachments in hidden or excluded directories are never listed. Full note
@@ -4445,7 +4445,7 @@ explains how <code>READ_ONLY</code> and <code>WRITE_PROTECT_EXISTING</code> comb
 <td><code>MARKDOWN_VAULT_MCP_OKF_WRITE</code></td>
 <td><code>false</code></td>
 <td>No</td>
-<td>OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and clears any verified attestation when a note's content changes. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default.</td>
+<td>OKF (Open Knowledge Format) enforced write layer. When true on an OKF-active vault, the server stamps generated provenance on each write and keeps any recorded verified events as history. It also keeps each written folder's log.md and index.md current, and exposes the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code></td>

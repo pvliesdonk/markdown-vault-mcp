@@ -238,7 +238,7 @@ All three link formats work:
 - `[Markdown links](path.md)`: standard markdown
 - `[Reference-style][1]\n\n[1]: path.md`: separates link text from destination
 
-Markdown and reference destinations first resolve relative to the source note. If that path is missing, the index searches for the destination across the vault. An explicit `/`, `./`, or `../` prefix keeps its stated location. When a rename or move updates a vault-path link in a nested note, it writes a source-relative path so the link keeps pointing to the intended note. With link updates enabled, moving a source note also preserves its resolved fallback destinations. Destinations with refused percent escapes do not use the vault-wide search. After a rename with link updates, read the moved note before a guarded write because its etag may have changed.
+Markdown and reference destinations first resolve relative to the source note. If that path is missing, the index searches for the destination across the vault. An explicit `/`, `./`, or `../` prefix keeps its stated location. A destination whose `../` climbs above the vault root points outside the vault: it is never resolved or followed, and `get_broken_links` lists it so you can fix it. When a rename or move updates a vault-path link in a nested note, it writes a source-relative path so the link keeps pointing to the intended note. With link updates enabled, moving a source note also preserves its resolved fallback destinations. Destinations with refused percent escapes do not use the vault-wide search. After a rename with link updates, read the moved note before a guarded write because its etag may have changed.
 
 **Rename safely with link updates:**
 
@@ -526,9 +526,9 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Using Zettelkasten with OKF
 
-Zettelkasten and the [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.2"` to the root `index.md`, and the fit is close because both are note-centric.
+Zettelkasten and the [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.3"` to the root `index.md`, and the fit is close because both are note-centric.
 
-**Types line up already.** The one hard OKF rule is a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind PARA's inbox needs. A `fleeting` note already carries its type as the quick capture.
+**Types line up already.** A note is an OKF concept only when it has a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind PARA's inbox needs. A `fleeting` note already carries its type as the quick capture.
 
 **Status does not collide.** Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF `status` field (`draft`, `stable`, `deprecated`) free to use as intended. Reach for it when a permanent note is provisional (`draft`) or has been superseded (`deprecated`); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.
 
