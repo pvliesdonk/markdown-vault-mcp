@@ -293,6 +293,9 @@ class TestDeclaredBundle:
                 "recorded_entries": 0,
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
+                "current_entries": 0,
+                "earlier_entries": 0,
+                "currency": "no_generation",
             },
             "review_applicability": {"state": "none", "basis": "no_review_supplied"},
             "attribution": {

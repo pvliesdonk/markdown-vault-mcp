@@ -299,12 +299,17 @@ def source_entries(metadata: dict[str, Any]) -> list[Any]:
 
 
 def derive_trust_tier(metadata: dict[str, Any]) -> str:
-    """Derive a note's trust tier from its ``verified`` frontmatter.
+    """Derive a note's trust tier from its current ``verified`` events.
 
     This compatibility label describes recorded claims, not certification.
     Only entries with a recognized actor shape and an OKF §5 timestamp (a
-    date-time with an offset, or a date) count. A malformed sibling does not discard a usable recorded claim.
-    A bare mapping remains one entry (:func:`verified_entries`).
+    date-time with an offset, or a date) count, and of those only the events OKF 0.3 §5.3 calls current: an
+    ``at`` equal to or later than ``generated.at``, or any event when
+    ``generated`` is absent. When ``generated`` is present without a usable
+    ``at``, no event is current (the recorded interpretation in
+    ``docs/design/okf.md``). Earlier events stay in the file as history and
+    do not count. A malformed sibling does not discard a usable recorded
+    claim. A bare mapping remains one entry (:func:`verified_entries`).
 
     Args:
         metadata: The note's frontmatter dict.
@@ -313,7 +318,12 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
         One of :data:`TRUST_UNVERIFIED`, :data:`TRUST_MACHINE`,
         :data:`TRUST_HUMAN`.
     """
-    entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
+    currency = _currency(metadata)
+    entries = [
+        entry
+        for entry in verified_entries(metadata)
+        if _review_recorded(entry) and currency.admits(entry)
+    ]
     if any(_is_human_actor(entry["by"]) for entry in entries):
         return TRUST_HUMAN
     if entries:
@@ -353,6 +363,57 @@ def _is_human_actor(value: Any) -> bool:
 def _is_instant(value: Any) -> bool:
     """Whether a value is an OKF §5 timestamp: a date-time with an offset or a date."""
     return _parse_timestamp(value) is not None
+
+
+#: Currency bases (OKF 0.3 §5.3) reported in ``review.currency``.
+_CURRENCY_NO_GENERATION = "no_generation"
+_CURRENCY_GENERATED_AT = "generated_at"
+_CURRENCY_NO_GENERATION_TIME = "no_generation_time"
+
+
+@dataclass(frozen=True)
+class _Currency:
+    """How a note's verification events are judged current (OKF 0.3 §5.3).
+
+    Attributes:
+        basis: ``no_generation`` (``generated`` absent, or null or empty
+            per §11.2: every event is current), ``generated_at`` (compared with *since*), or
+            ``no_generation_time`` (``generated`` present without a usable
+            ``at``: §5.3 leaves this unstated, and this server reads it as
+            "no event is current").
+        since: The ``generated.at`` instant under ``generated_at``.
+    """
+
+    basis: str
+    since: _dt.datetime | None = None
+
+    def admits(self, entry: Any) -> bool:
+        """Whether a recorded event's ``at`` makes it current."""
+        if self.basis == _CURRENCY_NO_GENERATION:
+            return True
+        if self.since is None or not isinstance(entry, Mapping):
+            return False
+        at = _parse_timestamp(entry.get("at"))
+        return at is not None and at >= self.since
+
+
+def _currency(metadata: dict[str, Any]) -> _Currency:
+    """Read the currency threshold a note's ``generated`` sets (§5.3).
+
+    ``generated`` is absent when the key is missing or, by OKF 0.3 §11.2
+    rule 1, holds a null, an empty string or an empty list.
+    """
+    if not _has_value(metadata, "generated"):
+        return _Currency(_CURRENCY_NO_GENERATION)
+    generated = metadata["generated"]
+    since = (
+        _parse_timestamp(generated.get("at"))
+        if isinstance(generated, Mapping)
+        else None
+    )
+    if since is None:
+        return _Currency(_CURRENCY_NO_GENERATION_TIME)
+    return _Currency(_CURRENCY_GENERATED_AT, since)
 
 
 def _review_recorded(entry: Any) -> bool:
@@ -496,9 +557,24 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     }
 
 
-def _review_evidence(entries: list[Any]) -> dict[str, Any]:
-    """Count usable recorded claims separately from malformed input."""
-    return _entry_evidence(entries, _review_recorded)
+def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
+    """Count usable recorded claims separately from malformed input.
+
+    Recorded events are further split by OKF 0.3 §5.3 currency:
+    ``current_entries`` feed the trust tier, ``earlier_entries`` have an
+    ``at`` before ``generated.at`` and are history, and ``currency`` names
+    the basis. Under ``no_generation_time`` neither count holds an event.
+    """
+    evidence = _entry_evidence(entries, _review_recorded)
+    currency = _currency(metadata)
+    recorded = [entry for entry in entries if _review_recorded(entry)]
+    current = sum(1 for entry in recorded if currency.admits(entry))
+    evidence["current_entries"] = current
+    evidence["earlier_entries"] = (
+        len(recorded) - current if currency.basis == _CURRENCY_GENERATED_AT else 0
+    )
+    evidence["currency"] = currency.basis
+    return evidence
 
 
 def _entry_evidence(
@@ -586,7 +662,7 @@ def derive_annotation(
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
     entries = verified_entries(metadata)
-    annotation["review"] = _review_evidence(entries)
+    annotation["review"] = _review_evidence(metadata, entries)
     annotation["review_applicability"] = _review_applicability(entries)
     annotation["attribution"] = _attribution_evidence(metadata)
     annotation["generation"] = _generation_evidence(metadata)
@@ -886,7 +962,7 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
         acc.missing_freshness.add(rel)
     elif _parse_timestamp(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)
-    if _review_evidence(verified_entries(metadata))["malformed_entries"]:
+    if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)
     if _attribution_evidence(metadata)["malformed_entries"]:
         acc.malformed_sources.add(rel)
@@ -1384,7 +1460,9 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     """Append a ``human:<subject>`` entry to a note's ``verified`` list.
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
-    human attestation, promoting the note's trust tier to ``human-reviewed``.
+    human attestation, promoting the note's trust tier to ``human-reviewed``
+    when the entry is current (OKF 0.3 §5.3; not when ``generated`` is
+    present without a usable ``at``, see :func:`derive_trust_tier`).
     Preserves other frontmatter values and mapping order, including nested
     mappings. A new ``verified`` field appends; an existing field retains its
     slot. The entry keeps the ``{by, at}`` shape :func:`derive_trust_tier` reads.

@@ -214,7 +214,11 @@ frontmatter blob; not persisted):
   not unparseable, so they stay `stale: false`.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor and an `at` timestamp (a
-  date-time with an offset, or a date, #2400) counts. An actor is `<scheme>:<id>` or `<producer>/<version>`
+  date-time with an offset, or a date, #2400) counts, and of those only the current
+  events count (#2409). OKF 0.3 §5.3: "A verification event is **current** when
+  its `at` is equal to or later than `generated.at`, or when `generated` is
+  absent. Consumers MUST calculate the trust tier only from current
+  events." Instants compare as instants, across offsets. An actor is `<scheme>:<id>` or `<producer>/<version>`
   (OKF 0.3 §7, #2407): the id is opaque, and "Consumers MUST accept other
   schemes and treat them as non-human". §7 defines no grammar for a scheme,
   id, producer or version, so the server invents none: any string
@@ -224,12 +228,30 @@ frontmatter blob; not persisted):
   `by` is absent (§11.2). Only the `human:` scheme, matched exactly at the
   start, is human, so `human:` with an empty id is human-reviewed (the spec
   is silent on an empty id), while `Human:x`, `team:x` and every other
-  scheme or `<producer>/<version>` actor are machine-confirmed. A usable
-  human record yields
-  `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
-  otherwise `unverified`. A bare mapping is still one record. Malformed
+  scheme or `<producer>/<version>` actor are machine-confirmed. A current
+  human record yields `human-reviewed`; otherwise a current record yields
+  `machine-confirmed`; otherwise `unverified`. An earlier record stays in
+  the file and in `recorded` as history ("verified before the last
+  change") and promotes nothing. A bare mapping is still one record. Malformed
   siblings do not erase usable records. This deliberately changes the
   public helper and filter behavior from v6.1.4 (#1444).
+
+  **Decision (#2409; spec silent, confirmed by the account holder on
+  21 November 2026):** §5.3 does not say whether an event is current when
+  `generated` is present but has no usable `at` (absent, unparseable, or a
+  non-empty `generated` that is not a mapping). A null, an empty string or
+  an empty list counts as an absent `generated` (§11.2 rule 1), so every
+  event is current there. The server reads the definition
+  literally: neither of its two conditions holds (there is no `generated.at`
+  to reach, and `generated` is not absent), so no event is current and the
+  tier is `unverified`. Treating such a note as if `generated` were absent
+  would count reviews whose relation to the last content change cannot be
+  established, which is the outcome §5.3 exists to prevent. `review.currency`
+  reports this case as `no_generation_time`. The cost of this reading:
+  on such a note an `okf_verify` entry is not current either, so the tool
+  records the review without promoting the tier. Every comparison reads both
+  timestamps through one parser (`_parse_timestamp`), so the accepted
+  timestamp forms (#2404) apply to currency unchanged.
 - `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
   `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`
   (a date-time with an offset), or `utc_day_start` (a date only, read as
@@ -238,7 +260,12 @@ frontmatter blob; not persisted):
   `stale: true` (#2410).
 - `review`: `state` is `missing`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
-  Mixed lists retain both counts; `recorded` never means applicability to
+  The recorded entries are split by §5.3 currency (#2409): `current_entries`
+  feed `trust_tier`; `earlier_entries` have an `at` before `generated.at`;
+  `currency` is `no_generation` (`generated` absent, null or empty, so every
+  recorded entry is current), `generated_at` (compared against it) or `no_generation_time`
+  (`generated` present without a usable `at`; both counts are 0, per the
+  recorded interpretation above). Mixed lists retain both counts; `recorded` never means applicability to
   the current revision has been established. No source fetching or reviewer
   authentication occurs.
 - Absent and single values (#2411, #2412) follow OKF 0.3 §11.2: "A null
@@ -585,9 +612,10 @@ Tool tags following switches: #1412.
   human reviewed the note. In an agentic session the model wields the human's
   token, so attributing to the auth subject alone lets the model self-promote a
   note to `human-reviewed` — which would make the tier meaningless. `okf_verify`
-  is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
-  and the write-time `generated` stamp is provenance that does not affect the
-  tier. So the attestation path is operator-configurable via
+  is the only vector for this: `derive_trust_tier` promotes only from
+  `verified`, and the write-time `generated` stamp can only demote: it moves
+  `generated.at`, so a review older than the write is no longer current
+  (§5.3, #2409). So the attestation path is operator-configurable via
   `MARKDOWN_VAULT_MCP_OKF_VERIFY` (meaningful only when `OKF_WRITE` is on):
 
   - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
