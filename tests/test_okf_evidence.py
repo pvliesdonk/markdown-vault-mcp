@@ -10,9 +10,16 @@ import frontmatter
 import pytest
 from pydantic_core import to_json
 
+from markdown_vault_mcp._okf_write import (
+    OkfWriteIntent,
+    build_okf_write_enrich,
+    okf_write_intent,
+    package_version,
+)
 from markdown_vault_mcp.okf import (
     _MAX_READ_CHARS,
     OkfAuditReport,
+    OkfDetector,
     OkfFinding,
     append_okf_verification,
     audit_bundle,
@@ -289,3 +296,160 @@ def test_review_written_for_a_spaced_subject_reads_back_recorded() -> None:
     metadata = frontmatter.loads(text).metadata
     assert metadata["verified"][0]["by"] == "human:Jane Doe"
     assert derive_trust_tier(metadata) == "human-reviewed"
+
+
+def _attribution(state: str, recorded: int = 0, malformed: int = 0) -> dict[str, Any]:
+    return {
+        "state": state,
+        "recorded_entries": recorded,
+        "malformed_entries": malformed,
+        "basis": "supplied_metadata_only",
+    }
+
+
+def _generation(state: str) -> dict[str, str]:
+    return {"state": state, "basis": "supplied_metadata_only"}
+
+
+@pytest.mark.parametrize(
+    ("sources", "expected"),
+    [
+        ([], _attribution("empty")),
+        ([{"id": "a", "resource": "https://a"}], _attribution("recorded", recorded=1)),
+        ([{"id": "a"}], _attribution("malformed", malformed=1)),
+        (
+            [{"id": "a", "resource": "https://a"}, "https://x"],
+            _attribution("recorded", 1, 1),
+        ),
+        (["https://x"], _attribution("malformed", malformed=1)),
+        ("https://x", _attribution("malformed", malformed=1)),
+        ({"id": "a"}, _attribution("malformed", malformed=1)),
+        (None, _attribution("malformed", malformed=1)),
+    ],
+)
+def test_sources_reported_like_review(sources: Any, expected: dict[str, Any]) -> None:
+    for include_sources in (True, False):
+        result = derive_annotation(
+            {"sources": sources}, now=NOW, include_sources=include_sources
+        )
+        assert result["attribution"] == expected
+        assert "malformed_sources" not in result
+
+
+def test_absent_provenance_is_missing() -> None:
+    result = derive_annotation({}, now=NOW)
+    assert result["attribution"] == _attribution("missing")
+    assert result["generation"] == _generation("missing")
+
+
+@pytest.mark.parametrize(
+    "generated",
+    [
+        {"by": 7, "at": AT},
+        {"by": None, "at": AT},
+        {"by": "", "at": AT},
+        {"by": "codex"},
+        {"at": AT},
+        {"by": "codex/1.0", "at": None},
+        {"by": "codex/1.0", "at": "2026-11-14"},
+        {"by": "codex/1.0", "at": "2026-11-14T09:00:00"},
+        {"by": "human:alice\tsmith", "at": AT},
+        [{"by": "codex/1.0", "at": AT}],
+        "codex at a date",
+        None,
+    ],
+)
+def test_generated_malformed_under_okf_5_2(generated: Any) -> None:
+    result = derive_annotation({"generated": generated}, now=NOW)
+    assert result["generation"] == _generation("malformed")
+    assert "malformed_generated" not in result
+    if isinstance(generated, dict):
+        review = derive_annotation({"verified": generated}, now=NOW)["review"]
+        assert review["state"] == "malformed"
+
+
+@pytest.mark.parametrize(
+    "actor",
+    ["markdown-vault-mcp/1.4.0", "human:alice", "human:Jane Doe", "process:ci"],
+)
+def test_generated_recorded_for_a_usable_actor(actor: str) -> None:
+    result = derive_annotation({"generated": {"by": actor, "at": AT}}, now=NOW)
+    assert result["generation"] == _generation("recorded")
+
+
+def test_generated_at_is_optional_but_verified_at_is_not() -> None:
+    # OKF §5.2 requires `by` within `generated` and gives every verification
+    # event both `by` and `at`.
+    record = {"by": "codex/1.0"}
+    assert derive_annotation({"generated": record}, now=NOW)["generation"] == (
+        _generation("recorded")
+    )
+    assert (
+        derive_annotation({"verified": record}, now=NOW)["review"]["state"]
+        == "malformed"
+    )
+
+
+@pytest.mark.parametrize(
+    ("intent_actor", "expected_by"),
+    [
+        (None, f"markdown-vault-mcp/{package_version()}"),
+        ("human:Jane Doe", "human:Jane Doe"),
+        ("human:alice@example.com", "human:alice@example.com"),
+    ],
+)
+def test_server_generated_stamp_reads_back_recorded(
+    tmp_path: Path, intent_actor: str | None, expected_by: str
+) -> None:
+    enrich = build_okf_write_enrich(
+        okf_write=True,
+        detector=OkfDetector(tmp_path, mode="on"),
+        version=package_version(),
+    )
+    assert enrich is not None
+    note = "---\ntype: Concept\nsources: [{id: a, resource: https://a}]\n---\nBody\n"
+    if intent_actor is None:
+        text = enrich(note, "write")
+    else:
+        with okf_write_intent(OkfWriteIntent(actor=intent_actor)):
+            text = enrich(note, "write")
+    metadata = frontmatter.loads(text).metadata
+    assert metadata["generated"]["by"] == expected_by
+    annotation = derive_annotation(metadata, now=NOW)
+    assert annotation["generation"] == _generation("recorded")
+    assert annotation["attribution"]["state"] == "recorded"
+    (tmp_path / "note.md").write_text(text)
+    report = audit_bundle(tmp_path)
+    assert report.malformed_generated == report.malformed_sources == OkfFinding(0, ())
+
+
+def test_audit_provenance_shares_the_annotation_rules(tmp_path: Path) -> None:
+    files = {
+        "by-number.md": f"---\ntype: Concept\ngenerated: {{by: 7, at: '{AT}'}}\n---\n",
+        "date-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0, at: 2026-11-14}\n---\n",
+        "no-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0}\n---\n",
+        "mixed.md": "---\ntype: Concept\nsources: [{resource: https://a}, https://x]\n---\n",
+        "no-resource.md": "---\ntype: Concept\nsources: [{id: a}]\n---\n",
+        "good.md": (
+            "---\ntype: Concept\nsources: [{id: a, resource: https://a}]\n"
+            f"generated: {{by: markdown-vault-mcp/1.4.0, at: '{AT}'}}\n---\n"
+        ),
+    }
+    for name, raw in files.items():
+        (tmp_path / name).write_text(raw)
+    report = audit_bundle(tmp_path)
+    assert report.malformed_generated == OkfFinding(2, ("by-number.md", "date-at.md"))
+    assert report.malformed_sources == OkfFinding(2, ("mixed.md", "no-resource.md"))
+
+
+def test_over_cap_provenance_is_withheld_like_evidence(tmp_path: Path) -> None:
+    prefix = "---\ntype: Concept\nsources: nope\ngenerated: {by: 7}\n---\n"
+    (tmp_path / "exact.md").write_text(prefix + "a" * (_MAX_READ_CHARS - len(prefix)))
+    (tmp_path / "large.md").write_text(
+        prefix + "a" * (_MAX_READ_CHARS + 1 - len(prefix))
+    )
+    (tmp_path / "broken.md").write_text("---\nsources: [\ngenerated: {by: 7}\n---\n")
+    report = audit_bundle(tmp_path)
+    assert report.malformed_sources == OkfFinding(1, ("exact.md",))
+    assert report.malformed_generated == OkfFinding(1, ("exact.md",))
+    assert report.evidence_unavailable == OkfFinding(2, ("broken.md", "large.md"))

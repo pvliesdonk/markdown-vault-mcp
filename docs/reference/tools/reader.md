@@ -51,10 +51,10 @@ List of result dicts ranked by file relevance. Each contains:
   (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
   `"machine-confirmed"` / `"human-reviewed"`, classifying recorded
   metadata rather than applicability to current content),
-  `freshness`, `review`, `review_applicability`, and
-  `sources_count` (when the note cites sources). Optional
-  `malformed_sources` and `malformed_generated` flags appear
-  only when true, identifying malformed provenance shapes.
+  `freshness`, `review`, `review_applicability`, `attribution`
+  (`sources` in the shape of `review`), `generation`
+  (`generated` as `{state, basis}`), and `sources_count` (when
+  the note cites sources).
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
 
@@ -119,9 +119,10 @@ an 'okf' dict (type, status, stale, `trust_tier` for recorded review
 metadata, freshness, review, `review_applicability`, recorded, and the
 note's 'sources' list when present). `review_applicability`.state is
 "unknown" when verified has entries or is malformed (no snapshot
-binding) and "none" when it is absent or an empty list. Optional
-`malformed_sources` and `malformed_generated` flags appear only
-when true; section reads
+binding) and "none" when it is absent or an empty list.
+attribution reports `sources` in the shape of review, and
+generation reports `generated` as {state, basis}, judged like a
+verified entry (recorded actor, offset-aware `at`). Section reads
 omit the annotation because they carry no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
@@ -603,10 +604,9 @@ Dict with the note context. Fields:
   some folders are self-contained by design.
 - okf (dict, optional): OKF read annotation for this note
   (type, status, stale, `trust_tier` for recorded review metadata,
-  freshness, review, `review_applicability`, `sources_count`). Present
-  only when the vault is an active OKF bundle. Optional
-  `malformed_sources` and `malformed_generated` flags appear
-  only when true.
+  freshness, review, `review_applicability`, attribution,
+  generation, `sources_count`). Present only when the vault is an
+  active OKF bundle.
 
 Index freshness is reported out-of-band in the response's
 `_meta.index_stale` field: True when the IndexWriter had
@@ -711,11 +711,6 @@ Conformance rules, which the format requires:
 Advisory rules, tolerated but worth fixing:
 
 - `unknown_status`: a `status` outside draft, stable and deprecated.
-- `malformed_sources`: a present `sources` that is not a list of
-  mappings. An empty list is valid; mixed lists remain intact.
-- `malformed_generated`: a present `generated` that is not a mapping
-  containing `by`. Only key presence is checked, with no required
-  `at`. Both provenance findings leave `conformant_notes` unchanged.
 - `log_heading_shape`: log.md files whose `##` headings are not
   YYYY-MM-DD dates.
 - `root_index_missing` (bool): true when the root index.md is absent.
@@ -732,6 +727,11 @@ Evidence observations leave `conformant_notes` unchanged:
 
 - `malformed_freshness`, `malformed_review`: assessed notes with
   unsupported expiry or malformed review records.
+- `malformed_sources`: assessed notes whose `sources` is not a list
+  or has an entry that is not a mapping. An empty list is valid.
+- `malformed_generated`: assessed notes whose `generated` lacks a
+  recognized actor or an offset-aware `at`, the rule `verified`
+  entries follow.
 - `evidence_unavailable`: discovered notes not assessed for evidence
   because reading/parsing failed or the read cap was exceeded.
 

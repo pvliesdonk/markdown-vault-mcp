@@ -290,6 +290,13 @@ class TestDeriveAnnotation:
                 "basis": "supplied_metadata_only",
             },
             "review_applicability": {"state": "none", "basis": "no_review_supplied"},
+            "attribution": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "generation": {"state": "missing", "basis": "supplied_metadata_only"},
         }
 
     def test_full_metadata(self) -> None:
@@ -318,6 +325,13 @@ class TestDeriveAnnotation:
                 "state": "unknown",
                 "basis": "no_snapshot_binding",
             },
+            "attribution": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "generation": {"state": "missing", "basis": "supplied_metadata_only"},
         }
 
     def test_unknown_status_passes_through(self) -> None:
@@ -353,16 +367,22 @@ _ABSENT = object()
             ("", True, True),
             ("https://example.com", True, True),
             ([], False, True),
-            ([{}], False, True),
-            ([{"resource": "https://a"}, {}], False, True),
+            ([{}], True, True),
+            ([{"resource": "https://a"}, {}], True, True),
             ([{}, "bad"], True, True),
             ([None], True, True),
             ({}, True, True),
             ({"at": "2026-11-14"}, True, True),
-            ({"by": None}, True, False),
-            ({"by": ""}, True, False),
-            ({"by": 7}, True, False),
-            ({"by": "codex", "extension": True}, True, False),
+            # #2386, OKF §5.2: generated needs an actor `by`; `at` is optional
+            # but, when present, must be a datetime with an offset. §5.1:
+            # every sources entry needs `resource`.
+            ({"by": None}, True, True),
+            ({"by": ""}, True, True),
+            ({"by": 7}, True, True),
+            ({"by": "codex", "extension": True}, True, True),
+            ({"by": "codex/1.0"}, True, False),
+            ({"by": "codex/1.0", "at": "2026-11-14"}, True, True),
+            ({"by": "codex/1.0", "at": "2026-11-14T09:00:00Z"}, True, False),
         ]
     ]
     + [
@@ -370,7 +390,8 @@ _ABSENT = object()
         ({"sources": "https://a"}, True, False),
         ({"sources": [{"resource": "https://a"}, "bad"]}, True, False),
         # Direct library input: UserDict is not produced by a YAML fixture.
-        ({"sources": [UserDict()], "generated": UserDict({"by": None})}, False, False),
+        ({"sources": [UserDict()], "generated": UserDict({"by": None})}, True, True),
+        ({"sources": [UserDict({"resource": "https://a"})]}, False, False),
         (
             {"sources": [{"resource": "https://a"}, {"resource": "https://b"}]},
             False,
@@ -387,15 +408,10 @@ def test_provenance_shape_matrix(
         annotation = derive_annotation(
             metadata, now=NOW, include_sources=include_sources
         )
-        for field, malformed in (
-            ("sources", sources_bad),
-            ("generated", generated_bad),
-        ):
-            flag = f"malformed_{field}"
-            if malformed:
-                assert annotation[flag] is True
-            else:
-                assert flag not in annotation
+        assert (annotation["attribution"]["malformed_entries"] > 0) is sources_bad
+        assert (annotation["generation"]["state"] == "malformed") is generated_bad
+        assert "malformed_sources" not in annotation
+        assert "malformed_generated" not in annotation
         sources = metadata.get("sources")
         if isinstance(sources, list) and sources:
             if include_sources:
@@ -813,7 +829,10 @@ class TestOkfAudit:
             ("sources-only-2.md", "sources: null\n"),
             ("generated-only.md", "generated: codex at a date\n"),
             ("neither.md", ""),
-            ("valid.md", "sources: []\ngenerated: {by: null}\n"),
+            (
+                "valid.md",
+                "sources: []\ngenerated: {by: codex/1.0, at: '2026-11-14T09:00:00Z'}\n",
+            ),
         ):
             (tmp_path / path).write_text(
                 f"---\ntype: Note\n{provenance}---\n# Note\n", encoding="utf-8"

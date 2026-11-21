@@ -47,6 +47,7 @@ sources:
   - resource: https://example.com/b
 generated:
   by: process:enrich
+  at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 
@@ -247,8 +248,18 @@ class TestDeclaredBundle:
             assert read["frontmatter"]["generated"] == "codex at a date"
             assert "Zebra malformed provenance." in read["content"]
             for payload in (hit, read, context):
-                assert payload["okf"]["malformed_sources"] is True
-                assert payload["okf"]["malformed_generated"] is True
+                assert payload["okf"]["attribution"] == {
+                    "state": "malformed",
+                    "recorded_entries": 0,
+                    "malformed_entries": 1,
+                    "basis": "supplied_metadata_only",
+                }
+                assert payload["okf"]["generation"] == {
+                    "state": "malformed",
+                    "basis": "supplied_metadata_only",
+                }
+                assert "malformed_sources" not in payload["okf"]
+                assert "malformed_generated" not in payload["okf"]
             report = _structured(await client.call_tool("okf_validate", {}))
             for field in ("malformed_sources", "malformed_generated"):
                 assert report[field] == {"count": 1, "examples": [path]}
@@ -269,6 +280,8 @@ class TestDeclaredBundle:
         }
         assert playbook["sources_count"] == 2
         assert "sources" not in playbook
+        assert playbook["attribution"]["state"] == "recorded"
+        assert playbook["generation"]["state"] == "recorded"
         plain = by_path["guides/plain.md"]["okf"]
         assert plain == {
             "status": "stable",
@@ -282,6 +295,13 @@ class TestDeclaredBundle:
                 "basis": "supplied_metadata_only",
             },
             "review_applicability": {"state": "none", "basis": "no_review_supplied"},
+            "attribution": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "generation": {"state": "missing", "basis": "supplied_metadata_only"},
         }
 
     async def test_read_includes_full_sources(self) -> None:
