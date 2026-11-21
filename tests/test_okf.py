@@ -367,19 +367,20 @@ _ABSENT = object()
             ("", True, True),
             ("https://example.com", True, True),
             ([], False, True),
-            ([{}], False, True),
-            ([{"resource": "https://a"}, {}], False, True),
+            ([{}], True, True),
+            ([{"resource": "https://a"}, {}], True, True),
             ([{}, "bad"], True, True),
             ([None], True, True),
             ({}, True, True),
             ({"at": "2026-11-14"}, True, True),
-            # #2386: generated takes the verified-entry rule, so `by` alone,
-            # a non-actor `by` or a missing/offset-less `at` is malformed.
+            # #2386, OKF §5.2: generated needs an actor `by`; `at` is optional
+            # but, when present, must be a datetime with an offset. §5.1:
+            # every sources entry needs `resource`.
             ({"by": None}, True, True),
             ({"by": ""}, True, True),
             ({"by": 7}, True, True),
             ({"by": "codex", "extension": True}, True, True),
-            ({"by": "codex/1.0"}, True, True),
+            ({"by": "codex/1.0"}, True, False),
             ({"by": "codex/1.0", "at": "2026-11-14"}, True, True),
             ({"by": "codex/1.0", "at": "2026-11-14T09:00:00Z"}, True, False),
         ]
@@ -389,7 +390,8 @@ _ABSENT = object()
         ({"sources": "https://a"}, True, False),
         ({"sources": [{"resource": "https://a"}, "bad"]}, True, False),
         # Direct library input: UserDict is not produced by a YAML fixture.
-        ({"sources": [UserDict()], "generated": UserDict({"by": None})}, False, True),
+        ({"sources": [UserDict()], "generated": UserDict({"by": None})}, True, True),
+        ({"sources": [UserDict({"resource": "https://a"})]}, False, False),
         (
             {"sources": [{"resource": "https://a"}, {"resource": "https://b"}]},
             False,

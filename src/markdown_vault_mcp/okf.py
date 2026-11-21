@@ -291,19 +291,39 @@ _INSTANT_RE = re.compile(
 _ACTOR_RE = re.compile(r"(?:(?:human|process):\S(?:[ \S]*\S)?|[^\s/:]+/[^\s/]+)")
 
 
-def _review_recorded(entry: Any) -> bool:
-    """Whether a ``{by, at}`` record has a usable actor and an offset-aware instant.
+def _is_actor(value: Any) -> bool:
+    """Whether a ``by`` value is an actor in the OKF convention (§7)."""
+    return isinstance(value, str) and _ACTOR_RE.fullmatch(value.strip()) is not None
 
-    The one rule for a ``verified`` entry and for ``generated`` (#2386).
+
+def _is_instant(value: Any) -> bool:
+    """Whether a value is an ISO 8601 datetime with an explicit offset (§5)."""
+    return isinstance(_parse_stale_after(value), _dt.datetime)
+
+
+def _review_recorded(entry: Any) -> bool:
+    """Whether a ``verified`` entry is a verification event (OKF §5.2).
+
+    The spec gives each event a ``by`` (an actor) and an ``at`` (an ISO 8601
+    datetime), so both are required.
     """
-    if not isinstance(entry, dict):
-        return False
-    actor = entry.get("by")
     return (
-        isinstance(actor, str)
-        and _ACTOR_RE.fullmatch(actor.strip()) is not None
-        and isinstance(_parse_stale_after(entry.get("at")), _dt.datetime)
+        isinstance(entry, dict)
+        and _is_actor(entry.get("by"))
+        and _is_instant(entry.get("at"))
     )
+
+
+def _generation_recorded(value: Any) -> bool:
+    """Whether ``generated`` is well formed under OKF §5.2 (#2386).
+
+    The spec requires ``generated.by``, an actor, and describes ``at`` without
+    requiring it, so an absent ``at`` is valid; a present ``at`` must be an
+    ISO 8601 datetime with an explicit offset, as every OKF timestamp is.
+    """
+    if not isinstance(value, dict) or not _is_actor(value.get("by")):
+        return False
+    return "at" not in value or _is_instant(value["at"])
 
 
 def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
@@ -372,19 +392,26 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
 
 
 def _attribution_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Count usable ``sources`` entries (mappings) apart from malformed ones."""
+    """Count usable ``sources`` entries apart from malformed ones.
+
+    OKF §5.1 makes ``resource`` "REQUIRED within an entry", so an entry is
+    usable only when it is a mapping carrying a ``resource`` key.
+    """
     sources = metadata.get("sources")
     entries = sources if isinstance(sources, list) else []
     return _entry_evidence(
-        metadata, "sources", entries, lambda entry: isinstance(entry, Mapping)
+        metadata,
+        "sources",
+        entries,
+        lambda entry: isinstance(entry, Mapping) and "resource" in entry,
     )
 
 
 def _generation_evidence(metadata: dict[str, Any]) -> dict[str, str]:
-    """Judge ``generated`` by the rule a ``verified`` entry is judged by."""
+    """Judge ``generated`` by OKF §5.2: an actor ``by``, an optional instant ``at``."""
     if "generated" not in metadata:
         state = "missing"
-    elif _review_recorded(metadata["generated"]):
+    elif _generation_recorded(metadata["generated"]):
         state = "recorded"
     else:
         state = "malformed"
@@ -482,9 +509,10 @@ def derive_annotation(
         empty. Full reads additionally carry ``recorded`` with supplied
         expiry/reviews as parsed, including malformed values; omitted keys
         remain absent. ``attribution`` reports ``sources`` in ``review``'s
-        shape, counting mapping entries as recorded; ``generation`` reports
-        ``generated`` as ``{state, basis}`` by the rule a ``verified`` entry
-        is judged by (a recognized actor and an offset-aware ``at``). Both
+        shape, counting entries that carry ``resource`` as recorded (OKF
+        §5.1); ``generation`` reports ``generated`` as ``{state, basis}``
+        under OKF §5.2 (an actor ``by``; an optional ``at`` that, when present,
+        is an offset-aware datetime). Both
         leave the source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
@@ -665,9 +693,9 @@ class OkfAuditReport:
         malformed_sources: Assessed concepts whose ``sources`` has a
             malformed entry or is not a list (an empty list is valid; the
             annotation's ``attribution`` rule).
-        malformed_generated: Assessed concepts whose ``generated`` lacks a
-            recognized actor or an offset-aware ``at`` (the annotation's
-            ``generation`` rule, shared with ``verified`` entries).
+        malformed_generated: Assessed concepts whose ``generated`` lacks an
+            actor ``by``, or has an ``at`` that is not an ISO 8601 datetime
+            with an offset (the annotation's ``generation`` rule, OKF §5.2).
         missing_freshness: Assessed concepts with no expiry supplied.
         malformed_freshness: Assessed concepts with an unsupported expiry.
         malformed_review: Assessed concepts with malformed review input.

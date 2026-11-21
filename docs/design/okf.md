@@ -231,17 +231,20 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
   provenance fields reported in the evidence objects' vocabulary, shared by
   full-read and compact annotations. `attribution` reports `sources` in
   `review`'s shape: `state` `missing`, `empty`, `malformed` or `recorded`,
-  `recorded_entries` (mapping entries), `malformed_entries` (any other
+  `recorded_entries` (entries that are mappings carrying `resource`, which
+  §5.1 makes "REQUIRED within an entry"), `malformed_entries` (any other
   entry, or 1 for a present value that is not a list) and
   `basis: supplied_metadata_only`; a mixed list is `recorded` with both
   counts. `generation` is `{state, basis}` with `state` `missing`,
-  `malformed` or `recorded` and `basis: supplied_metadata_only`, judged by
-  the same predicate as a `verified` entry: a recognized actor (including
-  internal-space `human:`/`process:` ids, #2394) and an offset-aware `at`.
-  A `generated` with `by` but no `at`, or a date-only `at`, is therefore
-  malformed, although the [format reference](reference/okf-v0.2.md)
-  requires only `by` within `generated`; one rule for both `{by, at}`
-  records is the recorded decision. The server's own stamps
+  `malformed` or `recorded` and `basis: supplied_metadata_only`, judged as
+  the [format reference](reference/okf-v0.2.md) states §5.2: `by` is
+  required and is an actor (including internal-space `human:`/`process:`
+  ids, #2394); `at` is optional, and when present it is an ISO 8601
+  datetime with an explicit offset. A `generated` with `by` and no `at` is
+  therefore `recorded`, and a date-only `at` is `malformed`. A `verified`
+  entry needs both `by` and `at`, because §5.2 gives every verification
+  event both. The rules match the spec exactly, by the account holder's
+  decision of 21 November 2026. The server's own stamps
   (`human:<subject>`, `markdown-vault-mcp/<version>`, UTC `Z` instants)
   read back as `recorded`. Source lists pass through intact and retain
   their full count even when mixed with non-mappings; non-list sources

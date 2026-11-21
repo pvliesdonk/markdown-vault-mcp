@@ -2050,9 +2050,10 @@ the spec itself says, dated and sourced, in
   The exact contract and supported timestamp subset are in `okf.md` §3.
   Reads carry the full `sources` list; search hits carry
   `sources_count`. Both modes add `attribution` (`sources` in `review`'s
-  shape, mapping entries recorded) and `generation` (`generated` as
-  `{state, basis}`, judged by the `verified`-entry rule: recognized actor,
-  offset-aware `at`), replacing the unreleased true-only flags (#2386).
+  shape; an entry carrying `resource` is recorded, OKF §5.1) and
+  `generation` (`generated` as `{state, basis}` under OKF §5.2: an actor
+  `by`, and an optional `at` that, when present, has an offset), replacing
+  the unreleased true-only flags (#2386).
   Mixed source lists remain intact and keep their full count; non-list
   sources gain no invented list/count. The audit's `malformed_sources` and
   `malformed_generated` use the same rules and, like the other evidence

@@ -315,8 +315,12 @@ def _generation(state: str) -> dict[str, str]:
     ("sources", "expected"),
     [
         ([], _attribution("empty")),
-        ([{"id": "a"}], _attribution("recorded", recorded=1)),
-        ([{"id": "a"}, "https://x"], _attribution("recorded", 1, 1)),
+        ([{"id": "a", "resource": "https://a"}], _attribution("recorded", recorded=1)),
+        ([{"id": "a"}], _attribution("malformed", malformed=1)),
+        (
+            [{"id": "a", "resource": "https://a"}, "https://x"],
+            _attribution("recorded", 1, 1),
+        ),
         (["https://x"], _attribution("malformed", malformed=1)),
         ("https://x", _attribution("malformed", malformed=1)),
         ({"id": "a"}, _attribution("malformed", malformed=1)),
@@ -345,7 +349,8 @@ def test_absent_provenance_is_missing() -> None:
         {"by": None, "at": AT},
         {"by": "", "at": AT},
         {"by": "codex"},
-        {"by": "codex/1.0"},
+        {"at": AT},
+        {"by": "codex/1.0", "at": None},
         {"by": "codex/1.0", "at": "2026-11-14"},
         {"by": "codex/1.0", "at": "2026-11-14T09:00:00"},
         {"by": "human:alice\tsmith", "at": AT},
@@ -354,7 +359,7 @@ def test_absent_provenance_is_missing() -> None:
         None,
     ],
 )
-def test_generated_uses_the_review_record_rule(generated: Any) -> None:
+def test_generated_malformed_under_okf_5_2(generated: Any) -> None:
     result = derive_annotation({"generated": generated}, now=NOW)
     assert result["generation"] == _generation("malformed")
     assert "malformed_generated" not in result
@@ -370,6 +375,19 @@ def test_generated_uses_the_review_record_rule(generated: Any) -> None:
 def test_generated_recorded_for_a_usable_actor(actor: str) -> None:
     result = derive_annotation({"generated": {"by": actor, "at": AT}}, now=NOW)
     assert result["generation"] == _generation("recorded")
+
+
+def test_generated_at_is_optional_but_verified_at_is_not() -> None:
+    # OKF §5.2 requires `by` within `generated` and gives every verification
+    # event both `by` and `at`.
+    record = {"by": "codex/1.0"}
+    assert derive_annotation({"generated": record}, now=NOW)["generation"] == (
+        _generation("recorded")
+    )
+    assert (
+        derive_annotation({"verified": record}, now=NOW)["review"]["state"]
+        == "malformed"
+    )
 
 
 @pytest.mark.parametrize(
@@ -389,7 +407,7 @@ def test_server_generated_stamp_reads_back_recorded(
         version=package_version(),
     )
     assert enrich is not None
-    note = "---\ntype: Concept\nsources: [{id: a}]\n---\nBody\n"
+    note = "---\ntype: Concept\nsources: [{id: a, resource: https://a}]\n---\nBody\n"
     if intent_actor is None:
         text = enrich(note, "write")
     else:
@@ -408,18 +426,20 @@ def test_server_generated_stamp_reads_back_recorded(
 def test_audit_provenance_shares_the_annotation_rules(tmp_path: Path) -> None:
     files = {
         "by-number.md": f"---\ntype: Concept\ngenerated: {{by: 7, at: '{AT}'}}\n---\n",
+        "date-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0, at: 2026-11-14}\n---\n",
         "no-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0}\n---\n",
-        "mixed.md": "---\ntype: Concept\nsources: [{id: a}, https://x]\n---\n",
+        "mixed.md": "---\ntype: Concept\nsources: [{resource: https://a}, https://x]\n---\n",
+        "no-resource.md": "---\ntype: Concept\nsources: [{id: a}]\n---\n",
         "good.md": (
-            "---\ntype: Concept\nsources: [{id: a}]\n"
+            "---\ntype: Concept\nsources: [{id: a, resource: https://a}]\n"
             f"generated: {{by: markdown-vault-mcp/1.4.0, at: '{AT}'}}\n---\n"
         ),
     }
     for name, raw in files.items():
         (tmp_path / name).write_text(raw)
     report = audit_bundle(tmp_path)
-    assert report.malformed_generated == OkfFinding(2, ("by-number.md", "no-at.md"))
-    assert report.malformed_sources == OkfFinding(1, ("mixed.md",))
+    assert report.malformed_generated == OkfFinding(2, ("by-number.md", "date-at.md"))
+    assert report.malformed_sources == OkfFinding(2, ("mixed.md", "no-resource.md"))
 
 
 def test_over_cap_provenance_is_withheld_like_evidence(tmp_path: Path) -> None:
