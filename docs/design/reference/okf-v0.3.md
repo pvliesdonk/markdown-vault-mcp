@@ -305,7 +305,7 @@ are named where they exist; a fix rewrites them.
 | 18 | No re-serialising unchanged values (§4) | silent | silent | SHOULD NOT | stamps and `okf_verify` re-dump the whole block, dropping comments | SHOULD NOT | none |
 | 19 | Unknown `status` (§5.4) | silent | silent | not stable | a non-string `status` (e.g. `3`) reads as `stable` | stated | none |
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
-| 21 | Known versions (§12) | — | — | `0.3` | `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`; `0.3` warns, then reads best-effort | none broken | none |
+| 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
 
 Notes on the table:
 
@@ -333,6 +333,12 @@ Notes on the table:
 - **#17 is a producer judgement.** The server cannot tell a trivial edit
   from a meaningful one without a caller signal. Recorded as a departure
   because the rule is stated; whether a write flag is in scope is open.
+- **#21 keeps 0.1 and 0.2 known.** §12 asks best-effort consumption, not
+  refusal, of a version the consumer "does not know"; the server's
+  `okf_unknown_version` warning is its own signal for that case. The 0.3
+  text names "0.2 or earlier" and says how a 0.3 consumer reads those
+  values (§12.1, §13), so a 0.2 declaration is known, read by 0.3's rules,
+  and logs nothing. Only a value outside `0.1`–`0.3` logs the warning.
 - Pins of current behaviour a fix will rewrite:
   `tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day` (#4),
   `tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps` (#16),

@@ -19,12 +19,12 @@ The server treats a vault as an OKF bundle when the root `index.md` declares a v
 
 ```yaml
 ---
-okf_version: "0.2"
+okf_version: "0.3"
 ---
 # My bundle
 ```
 
-This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
+This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The server reads every bundle by the rules of OKF 0.3, whatever version it declares, so a bundle that still declares `0.2` is read as 0.3. For a version it does not know, such as a later release, the server logs an `okf_unknown_version` warning and reads the bundle anyway. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
 
 | Value | Behaviour |
 |-------|-----------|
@@ -152,7 +152,7 @@ The evidence findings `malformed_sources` and `malformed_generated` count notes 
 
 ### 2. Declare
 
-Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.
+Add `okf_version: "0.3"` to the root `index.md` frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.
 
 ### 3. Enrich
 
