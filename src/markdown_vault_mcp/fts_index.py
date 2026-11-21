@@ -52,15 +52,19 @@ from markdown_vault_mcp._fts_queries import QueryExecutor, register_functions
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    IndexUnavailableError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.scanner import _resolve_link_path
 from markdown_vault_mcp.types import (
+    FTS_COLUMNS,
     FTSResult,
     ParsedNote,
     SkippedFile,
     SubtreeNote,
     TocEntry,
 )
+from markdown_vault_mcp.utils.links import parse_markdown_destination
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Iterator
@@ -155,6 +159,7 @@ CREATE TABLE IF NOT EXISTS documents (
     modified_at REAL NOT NULL,
     chunk_count INTEGER NOT NULL DEFAULT 1,
     content_chars INTEGER NOT NULL DEFAULT 0,
+    citations_derived INTEGER NOT NULL DEFAULT 0,
     skip_category TEXT,
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -194,6 +199,16 @@ CREATE TABLE IF NOT EXISTS document_tags (
 
 CREATE INDEX IF NOT EXISTS idx_tags_kv ON document_tags(tag_key, tag_value);
 CREATE INDEX IF NOT EXISTS idx_tags_docid ON document_tags(document_id);
+
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY,
@@ -254,6 +269,18 @@ _DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
     "DELETE FROM notes_fts WHERE rowid IN "
     "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
 )
+
+# Citation rows of one resource: its ``declared`` rows select the notes; each
+# note contributes the labels matched to that resource and its unresolved
+# labels, stored once with resource ``""``.
+_CITATION_ROWS_SQL = """
+SELECT d.path, d.title, c.label, c.status, c.occurrences
+FROM citations x
+JOIN documents d ON d.id = x.document_id AND d.citations_derived = ?
+JOIN citations c ON c.document_id = x.document_id AND c.status != 'declared'
+ AND c.resource IN (x.resource, '')
+WHERE x.status = 'declared' AND x.resource = ?
+ORDER BY d.path, c.label"""
 
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
@@ -508,7 +535,18 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: Version 12 (#1384) extracts wikilinks with a literal single closing
 #: bracket in their target, such as ``[[Sq]uare]]``. Version 11 shipped
 #: in v6.1.1; rebuilding adds the previously missing link rows.
-INDEX_SEMANTICS_VERSION = 12
+#: Version 13 (#1383) adds vault-wide fallback for missing source-relative
+#: markdown and reference links, shared grouped path matching, and
+#: shadow-safe rewrites, including links in moved sources, and refuses vault
+#: search on destinations with refused escapes. Version 12 shipped
+#: in v6.1.2.
+#:
+#: Version 13 also covers #2379: every note's citation edges, its declared
+#: source resources and its unresolved citation labels fill the
+#: ``citations`` table, and ``documents.citations_derived`` records which
+#: citation rules derived them. Still one bump: no tag contains the commit
+#: that set 13 (``AGENTS.md``, once per release).
+INDEX_SEMANTICS_VERSION = 13
 
 
 class ChunkingMeta(NamedTuple):
@@ -660,6 +698,33 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
+def _match_vault_path(
+    target: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
+) -> str | None:
+    """Find an exact or suffix path using the shared vault tie-break."""
+    if target in path_set:
+        return target
+    candidates = [
+        path
+        for path in by_name.get(target.rpartition("/")[2], [])
+        if path.endswith("/" + target)
+    ]
+    return _pick_wikilink_candidate(candidates, source) if candidates else None
+
+
+def _markdown_link_target(
+    raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
+) -> str:
+    """Resolve a markdown destination, keeping explicit and existing local paths."""
+    parsed = parse_markdown_destination(raw)
+    decoded = parsed.path
+    baseline, _ = _resolve_link_path(decoded, source)
+    if parsed.refused or baseline in path_set or decoded.startswith(("/", "./", "../")):
+        return baseline
+    target, _ = _resolve_link_path(decoded, "")
+    return _match_vault_path(target, source, path_set, by_name) or baseline
+
+
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
@@ -716,7 +781,7 @@ class FTSIndex:
     SCHEMA_VERSION = 1
 
     # notes_fts column order — bm25() weight argument order must match.
-    _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
+    _FTS_COLUMNS = FTS_COLUMNS
 
     def __init__(
         self,
@@ -875,7 +940,7 @@ class FTSIndex:
                 if "duplicate column name" not in str(exc).lower():
                     raise
                 logger.debug("fts_index_column_already_added column=content_chars")
-        self._migrate_tombstone_columns(conn, cols)
+        self._migrate_document_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
         )
@@ -908,10 +973,10 @@ class FTSIndex:
         )
         conn.commit()
 
-    def _migrate_tombstone_columns(
+    def _migrate_document_columns(
         self, conn: sqlite3.Connection, cols: set[str]
     ) -> None:
-        """Add the skip-tombstone columns to a pre-#1129 ``documents`` table.
+        """Add derived-citation and skip-tombstone columns to older documents.
 
         Additive migration following the ``chunk_count`` / ``content_chars``
         precedent: ``ALTER TABLE ADD COLUMN`` guarded by the PRAGMA column
@@ -924,6 +989,10 @@ class FTSIndex:
             cols: The ``PRAGMA table_info(documents)`` column-name set.
         """
         for name, ddl in (
+            (
+                "citations_derived",
+                "ALTER TABLE documents ADD COLUMN citations_derived INTEGER NOT NULL DEFAULT 0",
+            ),
             ("skip_category", "ALTER TABLE documents ADD COLUMN skip_category TEXT"),
             (
                 "skip_detail",
@@ -1188,8 +1257,8 @@ class FTSIndex:
             """
             INSERT INTO documents (path, title, folder, frontmatter_json,
                                    content_hash, modified_at, chunk_count,
-                                   content_chars)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   content_chars, citations_derived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note.path,
@@ -1200,6 +1269,7 @@ class FTSIndex:
                 note.modified_at,
                 len(note.chunks),
                 note.content_chars,
+                INDEX_SEMANTICS_VERSION,
             ),
         )
         if cur.lastrowid is None:
@@ -1439,6 +1509,49 @@ class FTSIndex:
                 ),
             )
 
+    def _insert_citations(
+        self, cur: sqlite3.Cursor, document_id: int, note: ParsedNote
+    ) -> None:
+        cur.executemany(
+            "INSERT INTO citations (document_id, label, status, occurrences, resource) VALUES (?, ?, ?, ?, ?)",
+            [
+                (document_id, edge.label, edge.status, edge.occurrences, edge.resource)
+                for edge in note.citations
+            ],
+        )
+
+    def get_citation_rows(self, resource: str) -> tuple[list[sqlite3.Row], int]:
+        """Return resource-keyed citation rows and unconverted live-note count.
+
+        Args:
+            resource: Exact source resource string.
+
+        Returns:
+            Citation rows in path and label order and the unconverted count.
+        """
+        conn = self._conn()
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        citation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(citations)")
+        }
+        if (
+            self.get_chunking_meta().semantics_version != INDEX_SEMANTICS_VERSION
+            or "citations_derived" not in columns
+            or not citation_columns
+        ):
+            raise IndexUnavailableError(
+                "Citation index needs a compatible completed build; retry after a writer rebuilds it.",
+                reason="never_built",
+            )
+        rows = conn.execute(
+            _CITATION_ROWS_SQL, (INDEX_SEMANTICS_VERSION, resource)
+        ).fetchall()
+        count = conn.execute(
+            "SELECT count(*) FROM documents_live WHERE citations_derived != ?",
+            (INDEX_SEMANTICS_VERSION,),
+        ).fetchone()[0]
+        return rows, count
+
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
         """Delete a document row (cascade deletes sections, headings, tags,
         and the notes_fts rowid bridge entries) and its notes_fts rows.
@@ -1512,6 +1625,7 @@ class FTSIndex:
                 self._insert_tags(cur, doc_id, note)
                 self._insert_aliases(cur, doc_id, note)
                 self._insert_links(cur, doc_id, note)
+                self._insert_citations(cur, doc_id, note)
                 total_chunks += len(note.chunks)
                 logger.debug(
                     "build_from_notes_indexed_note chunk_count=%d path=%s",
@@ -1545,6 +1659,7 @@ class FTSIndex:
             self._insert_tags(cur, doc_id, note)
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
+            self._insert_citations(cur, doc_id, note)
         logger.debug(
             "upsert_note_indexed chunk_count=%d path=%s", len(note.chunks), note.path
         )
@@ -2563,7 +2678,7 @@ class FTSIndex:
 
     @_retry_on_locked
     def resolve_vault_wikilinks(self) -> int:
-        """Resolve vault-wide wikilink ``target_path`` values against the document set.
+        """Resolve link ``target_path`` values against the document set.
 
         Obsidian resolves a bare wikilink (``[[Note]]``) by searching the
         whole vault for a document whose name matches, and a path-qualified
@@ -2580,7 +2695,7 @@ class FTSIndex:
         renamed — the original stem is always available regardless of how many
         times the index has been rebuilt.
 
-        When no path match is found, the method also checks the
+        When no wikilink path match is found, the method also checks the
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
         that document.  This mirrors Obsidian's alias resolution behaviour
@@ -2591,6 +2706,12 @@ class FTSIndex:
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
         and do not participate in vault-wide resolution.
+
+        Markdown and reference links retain an existing source-relative path.
+        Otherwise they search exact and suffix paths with the same tie-break,
+        except that explicit decoded ``/``, ``./`` and ``../`` prefixes remain
+        authoritative. They do not infer extensions or resolve aliases. Each
+        pass recomputes their source-relative path from the raw destination.
 
         Call this method after all documents have been indexed
         (``IndexFacet.build_index()`` and ``IndexFacet.reindex()`` do this
@@ -2612,6 +2733,9 @@ class FTSIndex:
             for r in conn.execute("SELECT path FROM documents_live").fetchall()
         ]
         doc_paths_set = set(doc_paths)
+        by_name: dict[str, list[str]] = {}
+        for path in doc_paths:
+            by_name.setdefault(path.rpartition("/")[2], []).append(path)
 
         # Build alias → document path mapping for fallback resolution.
         # Case-insensitive: Obsidian alias matching is case-insensitive.
@@ -2657,17 +2781,28 @@ class FTSIndex:
 
             # An exact vault path wins outright (rule 1); the suffix matches
             # and the alias fallback go through the tie-break (rules 2, 3).
-            if search_target in doc_paths_set:
-                new_path = search_target
-            else:
-                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
-                if not candidates:
-                    # Fallback: check if the stem matches a document alias.
-                    # Use the raw stem (without .md) for alias matching.
-                    candidates = alias_map.get(stem.lower(), [])
+            new_path = _match_vault_path(
+                search_target, row["source_path"], doc_paths_set, by_name
+            )
+            if new_path is None:
+                candidates = alias_map.get(stem.lower(), [])
                 if not candidates:
                     continue  # Genuinely broken — no document matches.
                 new_path = _pick_wikilink_candidate(candidates, row["source_path"])
+            if new_path != row["target_path"]:
+                updates.append((new_path, row["id"]))
+
+        markdown_rows = conn.execute(
+            """
+            SELECT l.id, l.raw_target, l.target_path, d.path AS source_path
+            FROM links l JOIN documents d ON d.id = l.source_id
+            WHERE l.link_type IN ('markdown', 'reference') AND l.raw_target != ''
+            """
+        ).fetchall()
+        for row in markdown_rows:
+            new_path = _markdown_link_target(
+                row["raw_target"], row["source_path"], doc_paths_set, by_name
+            )
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 

@@ -467,7 +467,9 @@ configuring structured filters activates it too:
    (`INSERT INTO notes_fts(notes_fts, rank) VALUES('rank', 'bm25(...)')`)
    at init, so every `f.rank` read — including the snippet re-query — ranks
    consistently. All-`1.0`/unset writes the default `bm25()` back
-   (idempotent reset). The weights live in the index, not the process: a
+   (idempotent reset). SearchConfig rejects a map in which all six effective column weights
+   are 0. Omitted columns keep a weight of 1. Repeated weight keys that normalise to the same key
+   must have equal weights. The weights live in the index, not the process: a
    connection already open ranks with a new value as soon as it is
    committed, so only the index's owner writes them, and a read-only open
    ranks with the stored ones (#1758; see
@@ -1965,6 +1967,53 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Reverse citation lookup (#1446)
+
+`find_citing_notes(resource)` reads persisted citation edges derived from one
+normalized note snapshot. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
+each distinct resource declared by that note. The result is unbounded. Reserved
+files are excluded only while OKF is active. Navigation links do not create edges.
+On the first writer startup after upgrading from index semantics version 12,
+the index rebuilds. A lookup reports `unconverted_notes` for retained indexed
+notes not yet re-read with compatible citation rules; they are omitted until
+re-read. Change detection is hash-based, so an ordinary reindex re-reads only
+changed or previously unreadable notes. If the count stays above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild. Incompatible or missing schema is unavailable rather than empty. No resource is fetched and attribution
+does not establish support.
+
+### Exact-note citation inspection (#1446, bounded slice)
+
+`ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
+tool inspect one explicitly selected `.md` note through the existing whole-note
+reader. There is no index-readiness requirement, bundle declaration gate or
+change to OKF annotations. `okf.py`, link scanning and graph navigation are
+unchanged. This is not a vault-wide evidence audit.
+
+`citations.inspect_citation_text` takes only the returned content string. It
+parses its metadata and body together, never using `NoteContent.frontmatter` or
+`etag`: `DocumentManager.read` currently obtains those from a separate disk read.
+The SHA-256 covers LF-normalized returned text encoded as UTF-8, explicitly not
+raw file identity or an optimistic-concurrency token. A newer malformed
+frontmatter snapshot raises `DocumentUnreadableError`, not an empty report.
+
+A direct `markdown-it-py` dependency supplies CommonMark block/inline contexts.
+The narrow extension recognizes literal non-whitespace footnote labels, excludes
+navigation links/images/wikilinks, and omits definition blocks rather than
+interpreting their prose as provenance. Exact IDs join to source-list positions;
+duplicate IDs stay ambiguous even when records are identical. Source metadata
+and extension keys remain literal parsed values; optional absent IDs are listed
+as unkeyed, while malformed shapes are separate observations. Citation IDs remain
+stable under source reordering; response-local list indices do not.
+
+Scope and syntax limits accompany every result. Nothing fetches sources,
+traverses another note, infers evidentiary support or truth, writes metadata,
+or widens access. Source strings are data, not instructions.
+The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
+syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
+records the current source/footnote distinction.
+
 ### OKF Read Semantics (phase 1, #960)
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
@@ -1988,14 +2037,51 @@ the spec itself says, dated and sourced, in
   `stale` (a bare `stale_after` date: the server-local day has reached it;
   an instant with an offset: `now >= stale_after`; an offset-less datetime
   is ignored — #1357, #1373), and
-  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
-  prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`; a bare `verified` mapping is a one-element list, as the
-  spec's single-verifier shorthand requires, at every site that reads
-  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
-  `sources_count`. Section reads omit the key (no frontmatter to derive
+  `trust_tier` as a recorded-claim label. Only records with a recognized
+  actor shape and an offset-aware `at` contribute; malformed records never
+  promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
+  evidence and its basis; `review` counts usable and malformed records with
+  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  `review_applicability` (`{state, basis}`) reports applicability apart from
+  the recorded claims: `unknown` for a `verified` value with entries or a
+  malformed one, `none` when absent or an empty list; it never infers snapshot coverage from timestamps.
+  Full reads additionally expose supplied expiry/reviews under `recorded`,
+  preserving parsed values, while compact results omit that projection.
+  The exact contract and supported timestamp subset are in `okf.md` §3.
+  Reads carry the full `sources` list; search hits carry
+  `sources_count`. Both modes add `attribution` (`sources` in `review`'s
+  shape; an entry carrying `resource` is recorded, OKF §5.1) and
+  `generation` (`generated` as `{state, basis}` under OKF §5.2: an actor
+  `by`, and an optional `at` that, when present, has an offset), replacing
+  the unreleased true-only flags (#2386).
+  Mixed source lists remain intact and keep their full count; non-list
+  sources gain no invented list/count. The audit's `malformed_sources` and
+  `malformed_generated` use the same rules and, like the other evidence
+  findings, are withheld for `evidence_unavailable` files. These computed
+  diagnostics change no stored metadata or index semantics. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.
+- **Review presentation (#1413, partial)**: `trust_tier` and the stats
+  `trust` histogram keep their keys and labels and classify the usable
+  recorded claims described above (#1444), so an empty or malformed
+  `verified` yields `unverified`. They describe recorded claims, not
+  authenticated review or applicability to the current content. Human-readable CLI search results
+  label that distinction; text reads print the notice to stderr without
+  changing content on stdout. The CLI keys the notice on
+  `review_applicability`: `none` prints nothing, while `unknown` (recorded
+  or malformed) and a payload without the field keep it (#2385). App note
+  and context views follow the same rule: their app-only routes
+  (`vault_read`, `vault_context`) carry the same `okf` annotation as `read`
+  and `get_context`, present only on an active bundle, and the views show a
+  visible notice for a supplied `verified` field only when that annotation
+  is present and its `review_applicability` is not `none` (#2384). A vault
+  without OKF keeps its previous app output, and the raw metadata stays
+  visible either way. Applicability
+  is explicitly unknown; no timestamp comparison, history inference, byte
+  comparison or metadata rewrite is performed. JSON/agent payloads and
+  filters are unchanged by the presentation slice; the structured
+  `review_applicability` field above carries the same `unknown` to them.
+  Assessment after observed changes remains #1413.
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
@@ -2046,15 +2132,16 @@ the spec itself says, dated and sourced, in
   conformance as a degree (``conformant_notes`` of ``total_notes``), not
   a verdict — during a migration it is the progress meter. The audit
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
-  index-independent, per-file reads capped at the probe's read limit
-  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  index-independent, existing checks capped at the probe's read limit
+  (content beyond the cap goes unexamined),
   usable pre-index and pre-declaration. The vault's *effective* exclude
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
   (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
   bundle root, ``index.md`` frontmatter beyond the root's ``okf_version``
   — generated indexes included, #1396), advisory (unknown ``status``
-  vocabulary, ``log.md`` heading shape, missing root ``index.md``),
+  vocabulary, malformed ``sources`` and ``generated`` shapes using the
+  annotation predicates, ``log.md`` heading shape, missing root ``index.md``),
   informational (wikilink
   usage, missing recommended fields). Reserved files are exempt from the
   ``type`` rule. The tool is registered with an ``okf`` tag and hidden
@@ -2062,6 +2149,18 @@ the spec itself says, dated and sourced, in
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+  Additional evidence findings distinguish missing expiry (informational),
+  malformed expiry/reviews (format observations), and evidence unavailable
+  due to reading/parsing failures or overflow detected by one-character
+  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
+  non-excluded concepts, not complete traversal or editorial-policy compliance.
+  Existing capped conformance checks and discovery rules are unchanged.
+  The provenance findings count parsed non-reserved notes once per field,
+  leaving ``conformant_notes`` unchanged. The report's new fields are all
+  defaulted and appended after ``index_frontmatter``: the provenance fields
+  first, then the evidence fields, preserving existing positional
+  construction.
+  Neither reading nor auditing repairs the files.
 - **Migration transforms (phase 4, #963)**: three one-shot write tools
   move a vault toward the bundle conventions, each built on the existing
   ``DocumentManager.write`` path (atomic write, read-only gate, index
@@ -2658,6 +2757,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- producer semantics for citation rows
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2706,6 +2806,21 @@ CREATE INDEX IF NOT EXISTS idx_tags_kv
 
 CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
+
+-- Citation attribution rows are separate from navigation links (#1446).
+-- This additive table keeps schema_version at 1. Per note: one status
+-- 'declared' row per valid source resource, one row per matched label under
+-- its resource, and one row per other label under resource '' (diagnostic for
+-- each declared resource of that note), so rows grow linearly with the note.
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 -- Links: inter-document references extracted from markdown content
 CREATE TABLE IF NOT EXISTS links (
@@ -2916,6 +3031,8 @@ form) is read as a fragment, or as an anchor when the name begins with one,
 and a parenthesis that will not parse in the plain form ends the destination
 early, so `/notes/a)b.md` becomes a link to `notes/a`. Exactly those are
 backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`, `/notes/a\)b.md`).
+A literal percent escape is written with `%25`, and a named character
+reference is escaped, so decoding preserves those characters in the path.
 The paren half was first assigned to the *other* class and left unrepaired;
 #1516 showed that only an unbalanced `(` breaks visibly, while a `)`
 re-points silently, so both now escape.
@@ -3485,11 +3602,13 @@ vault root clamps to root.
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
 is stored without it.
 
-**Link rewrites preserve the spelling they found.** `rename` and `move_folder`
+**Link rewrites preserve the spelling they found where safe.** `rename` and `move_folder`
 repoint links through `compute_new_raw_target`, which recognises three shapes
 for markdown and reference links: leading-slash root-relative (`/folder/x.md`),
 root-relative matching `old_path` (`folder/x.md`), and relative to the source
-file's directory (`../x.md`). Each is rewritten in its own shape. The first was
+file's directory (`../x.md`). A bare vault path in a nested source is always
+rewritten source-relative, so a later local file cannot shadow it. A
+leading-slash link stays rooted. The first shape was
 missing until issue #1105: `old_path` carries no leading slash, so a
 leading-slash link never compared equal to it and fell into the
 relative-to-source branch, silently converting OKF's recommended spelling (and
@@ -3497,6 +3616,24 @@ what `okf_convert_links` / `okf_generate_index` emit) into a bare relative
 filename on any rename or folder move. Nothing broke — the output was a correct
 relative path — which is what made it a fidelity defect rather than a
 correctness one, and what let it go unnoticed.
+
+**Markdown and reference resolution**: The decoded destination first resolves
+relative to the source. If that indexed path is absent, the resolver searches
+for an exact vault path and then suffix matches, using the wikilink tie-break
+below. Explicit decoded `/`, `./`, and `../` prefixes keep their stated
+location. A destination whose percent decoding is refused does not use the
+vault search; its source-relative literal path remains available. Obsidian's
+precedence when both paths exist is [unverified]; local-first is proposed
+for generic Markdown compatibility. Unlike
+wikilinks, these links do not infer `.md` or match aliases.
+Every pass recomputes the source-relative path from the original destination,
+so adding or removing a target updates the graph consistently.
+On rename with link updates or folder move, fallback links in moved sources and
+vault-path links to moved targets become source-relative so a source-local
+note cannot shadow the intended target. The rewrite does not promise the
+shortest spelling. A rename without link updates leaves bytes as written.
+After a rename with link updates, read the moved note before a guarded write:
+its own rewritten links may have changed its etag.
 
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:
@@ -6479,11 +6616,11 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 | Tool | Description |
 |-|-|
-| `_vault_context` | Returns full NoteContext JSON for the Context Card view |
+| `_vault_context` | Returns full NoteContext JSON for the Context Card view, plus the `okf` annotation on an active bundle |
 | `_vault_graph_neighborhood` | Returns `{nodes, edges}` for a note's link neighborhood |
 | `_vault_graph_hubs` | Returns `{nodes, edges}` for the most-linked hub notes |
 | `_vault_list` | Returns `{folders, notes}` for a vault directory |
-| `_vault_read` | Returns note content, frontmatter, and metadata |
+| `_vault_read` | Returns note content, frontmatter, and metadata, plus the `okf` annotation on an active bundle |
 | `_vault_search` | Returns search results with snippets (default mode `hybrid`) |
 
 **View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
@@ -7204,7 +7341,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 **Git history queries** (`log -z` framing, `--follow`, rename detection and
 date semantics in [`reference/git-history-queries.md`](reference/git-history-queries.md) § History queries): `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
 
-- `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. A repository with no commit yet (unborn HEAD, where `git log` exits 128) has an empty history rather than a failure, and a `since_timestamp` diff there is empty too: `rev-parse --verify --quiet HEAD` is checked first, and its exit 1 counts as unborn only while `symbolic-ref -q HEAD` still names a branch, so an unreadable branch ref stays a fault (#1608). Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. Path-bearing NUL streams use `run_git_capturing(preserve_newlines=True)` (#1290): stdout is captured as bytes and strictly decoded with Python's existing default text encoding, preserving lone `\r` and `\r\n` pairs. The same capture mode serves rename/lineage walks, revision tree entries, conflict path discovery and ignored-path echoes; patch bodies and note content keep their separate text decoding. Stderr retains ordinary text newline normalization. This establishes CR/CRLF identity, not support for arbitrary filename encodings; Python's newline behavior is recorded in the linked reference.
+- `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. A repository with no commit yet (unborn HEAD, where `git log` exits 128) has an empty history rather than a failure, and a `since_timestamp` diff there is empty too: `rev-parse --verify --quiet HEAD` is checked first, and its exit 1 counts as unborn only while `symbolic-ref -q HEAD` still names a branch, so an unreadable branch ref stays a fault (#1608). Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). `GitQueryManager` validates `since`, `until` and `since_timestamp` before dispatch: extended ISO calendar dates/times (checked for valid fields and Git's 1970-2099 UTC range), `now`, `today`, `yesterday`, or one or more integer second/minute/hour/day/week/month/year quantities ending in `ago` (at most eight digits each, no leading zeros). Relative quantities conservatively bound months by 31 days and years by 366 days and must fit signed-int seconds and stay a day after the epoch, preventing Git's numeric overflow and absolute-timestamp fallback. Date-only values retain Git's local clock time and require the entire local day to fit its UTC range. Other free-form git dates are refused as `InvalidRequestError` rather than silently guessed (#1631); the no-git empty-result behavior is unchanged. Accepted text is passed through verbatim to git, preserving its timezone and relative-date semantics, except `today`, which is sent as today's local midnight because git before 2.56 ignores the word and reads it as the current time; history bounds remain inclusive. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. Path-bearing NUL streams use `run_git_capturing(preserve_newlines=True)` (#1290): stdout is captured as bytes and strictly decoded with Python's existing default text encoding, preserving lone `\r` and `\r\n` pairs. The same capture mode serves rename/lineage walks, revision tree entries, conflict path discovery and ignored-path echoes; patch bodies and note content keep their separate text decoding. Stderr retains ordinary text newline normalization. This establishes CR/CRLF identity, not support for arbitrary filename encodings; Python's newline behavior is recorded in the linked reference.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. A caller's SHA is checked first with `rev-parse --verify --quiet <sha>^{commit}`, and one that names no commit is an `InvalidRequestError`; the full id it prints replaces the caller's prefix, which a blob may share. A later git failure that stops the diff is then the repository's, raised as a plain `ValueError` carrying git's stderr (#1608; the git facts are in `reference/git-history-queries.md`). Through the tool layer (Error Handling), an `InvalidRequestError` reaches the model at INFO and any other `ValueError` is a fault the boundary logs with its traceback, answering with a fixed message so git's stderr, which can name server paths, never reaches the model. The `per_commit=True` walk (`_per_commit_rows`) enumerates commits with `git log -z --follow --name-only --find-renames=30`, filters them to the note's own lineage (the boundary below, #1285), supplements them with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306), and reuses each block's path as the pathspec for that commit's diff, so the same `-z` framing is what keeps a non-ASCII note's per-commit diff from coming back empty (#1282). The patch and `--stat` payloads are a separate half of that fix: they name files in their own body, nothing parses them, and they are handed to the caller as text — so `_range_diff`, `_root_commit_diff`, and the per-commit `git diff` render them under `-c core.quotePath=false` rather than under `-z`. Rendering and framing are different problems and take different tools: `-z` is not available for a patch body, and the config override cannot be trusted where output is parsed, because it leaves the unconditionally-quoted names quoted.
 
 - `_lineage(git_root, path, cur_rel, env, *, rev_range=None)` (#1285): the boundary both single-note readers above are filtered by. `git log --follow` does not stop at the commit that created the file it follows: where a name was freed by a rename or a delete and later reused, it walks past that boundary and reports the *previous* occupant's commits under today's note. So the boundary is established from git's own records — `git -c diff.renameLimit=2000 log -z --follow --name-status --find-renames=30 [<range>] -- <path>` walked newest-first carrying a tracked path, exactly as the `get_file_at_ref` walk does, stopping at the `A` (or `C`) record that creates the tracked note. It returns the lineage's commit SHAs and whether that creation was reached. Three properties are load-bearing. It is **its own invocation** rather than a reading of the caller's stream, because `--since` / `--until` and the `-n` cap trim what the caller's `git log` returns and a window that excludes the note's creation would leave no birth record to stop at. It pins **`--find-renames=30`** (#338) because at git's 50% default a commit that renames and substantially rewrites a note reports as a plain `A`, indistinguishable from a reuse. Its callers pin the same threshold (#1297): while they left it to git, this walk followed *further* than the stream it was filtering, and the extra commits it knew about were ones the caller had never listed — a revision `read` served but `get_history` did not report. One threshold across every rename-crossing query is what makes the filter a filter. And a failed invocation returns **unknown rather than empty** (`shas=None`), so a caller falls back to its previous behaviour instead of discarding every commit. Records that do not name the tracked path are ignored rather than treated as a break in identity: a range-bounded walk can hide the rename that would have retargeted it, and dropping the note's own commits on that evidence is worse than following a name one commit too far. The exception is a block that names exactly one path and not the tracked one: a single-path `--follow` walk reports only the path it is following, so git has retargeted the walk itself, and that path is adopted (`_followed_name`, #1779). From git 2.56, `--follow` crosses a rename made while resolving a merge this way, with no `R` record for the merge; without adopting the name, the creation record under the earlier name went unrecognised and an earlier owner of that name had its commits reported. The single-range `get_file_diff` uses the same walk over `<ref>..HEAD`: when it reports the note was created inside that range, the diff is taken against the empty tree instead of `<ref>`, so the note reads as the creation it is rather than pairing one note's content against another's. One shape this cannot see, because git does not record it either: a commit that renames a note away **and** creates a new one under the freed name in the same commit reports as a plain `M` on that path, which is also what defeats `get_file_at_ref`'s walk.

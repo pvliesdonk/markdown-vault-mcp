@@ -781,6 +781,7 @@ class TestToolManifest:
             "edit",
             "embeddings_status",
             "fetch",
+            "find_citing_notes",
             "get_backlinks",
             "get_broken_links",
             "get_connection_path",
@@ -796,6 +797,7 @@ class TestToolManifest:
             "get_similar",
             "get_toc",
             "git_sync",
+            "inspect_citations",
             "list_documents",
             "list_folders",
             "list_tags",
@@ -829,6 +831,8 @@ class TestToolAnnotations:
         for name in (
             "search",
             "read",
+            "inspect_citations",
+            "find_citing_notes",
             "list_documents",
             "list_folders",
             "list_tags",
@@ -4102,6 +4106,23 @@ class TestGetHistoryTool:
     @pytest.fixture(autouse=True)
     def _setup(self, _mcp_env_git: None) -> None:
         pass
+
+    @pytest.mark.parametrize("argument", ["since", "until", "since_timestamp"])
+    async def test_malformed_date_is_a_request_error(
+        self, argument: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Date mistakes ask the caller to correct the input, not alert operators."""
+        tool = "get_diff" if argument == "since_timestamp" else "get_history"
+        server = make_server()
+        async with Client(server) as client:
+            with (
+                caplog.at_level(logging.INFO),
+                pytest.raises(ToolError, match=argument),
+            ):
+                await client.call_tool(
+                    tool, {"path": "alpha.md", argument: "2026-13-45"}
+                )
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
     async def test_vault_wide_history(self) -> None:
         """get_history with no path returns vault-wide commits."""

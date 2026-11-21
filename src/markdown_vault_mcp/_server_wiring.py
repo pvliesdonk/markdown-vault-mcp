@@ -281,7 +281,7 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
     if not config.content.okf_write or config.content.okf_verify == "off":
         # The enforced-write layer (#964) is opt-in: hide its tool surface
         # (okf_verify) unless OKF_WRITE is enabled. Provenance stamping and
-        # verification invalidation are behaviours gated in the write path,
+        # verification clearing are behaviours gated in the write path,
         # not tools, so they need no disable pass here. OKF_VERIFY=off (#990)
         # hides okf_verify even with the layer on, so attestation happens
         # solely via external tooling beyond the model's reach.

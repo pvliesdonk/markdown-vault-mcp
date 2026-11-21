@@ -140,6 +140,9 @@ def _read_text(data: dict[str, Any]) -> None:
             f"({terminal_text(data.get('mime_type') or 'unknown type')}); use --json for base64."
         )
         return
+    review = _recorded_review_text(data)
+    if review:
+        typer.echo(review, err=True)
     # Preserve note line breaks without letting note text issue terminal commands.
     typer.echo("\n".join(terminal_text(line) for line in data["content"].split("\n")))
 
@@ -174,11 +177,37 @@ def _agent_records(
         typer.echo(_json_record(item))
 
 
+def _recorded_review_text(data: dict[str, Any]) -> str:
+    """Label the existing metadata classification without certifying content.
+
+    A note whose ``review_applicability.state`` is ``none`` (no ``verified``
+    field, or an empty one) has no review to label. Malformed and recorded
+    reviews report ``unknown`` and keep the notice; so does a payload that
+    omits the field, since it cannot rule a review out.
+    """
+    annotation = data.get("okf")
+    if not isinstance(annotation, dict):
+        return ""
+    tier = annotation.get("trust_tier")
+    if not isinstance(tier, str) or not tier:
+        return ""
+    applicability = annotation.get("review_applicability")
+    if isinstance(applicability, dict) and applicability.get("state") == "none":
+        return ""
+    return (
+        f"Recorded review metadata: {terminal_text(tier)}. "
+        "Applicability to current content: unknown."
+    )
+
+
 def _search_text(items: list[Any]) -> None:
     for hit in items:
         typer.echo(f"  {terminal_text(hit['path'])} ({hit['score']:.4f})")
         if hit.get("title"):
             typer.echo(f"    {terminal_text(hit['title'])}")
+        review = _recorded_review_text(hit)
+        if review:
+            typer.echo(f"    {review}")
 
 
 def _json_record(value: object) -> str:

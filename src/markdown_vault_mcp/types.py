@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.citations import CitationEdge
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 # The four deterministic, non-excluded skip categories surfaced via
@@ -34,6 +35,16 @@ SEARCH_MODES: tuple[str, ...] = ("keyword", "semantic", "hybrid")
 #: env route validated while the library route did not, and an unrecognised
 #: value reached the dispatch's final branch and ran hybrid silently (#1205).
 DEFAULT_SEARCH_MODES: tuple[str, ...] = ("auto", *SEARCH_MODES)
+
+#: notes_fts column order is the bm25() argument order.
+FTS_COLUMNS: tuple[str, ...] = (
+    "path",
+    "title",
+    "folder",
+    "heading",
+    "content",
+    "summary",
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +113,7 @@ class ParsedNote:
         content_hash: SHA-256 hash of the raw file content for change detection.
         modified_at: Last-modified time as a Unix timestamp float.
         links: All links extracted from the document body.
+        citations: Literal citation edges extracted from this note snapshot.
         content_chars: Character count of the document body as parsed:
             frontmatter removed and surrounding whitespace normalised by the
             frontmatter parser, except that the first line keeps its
@@ -126,6 +138,7 @@ class ParsedNote:
     links: list[LinkInfo] = field(default_factory=list)
     content_chars: int = 0
     headings: list[TocEntry] = field(default_factory=list)
+    citations: list[CitationEdge] = field(default_factory=list)
 
 
 @dataclass

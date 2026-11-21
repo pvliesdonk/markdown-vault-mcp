@@ -1,5 +1,12 @@
 # Reference research log
 
+## 2026-11-20
+
+- [Open Knowledge Format v0.2](okf-v0.2.md): reworded the project deviation
+  on clearing `verified` for #1413. Clearing on a server write no longer
+  claims the earlier review is invalid. No spec claim changed. Review date
+  unchanged.
+
 ## 2026-11-17
 
 - [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md): added the
@@ -24,6 +31,9 @@
 
 ## 2026-11-15
 
+- **Update**: Rechecked the canonical OKF specification's source/footnote join
+  semantics for exact-note citation inspection; recorded the dated subsection
+  in [Open Knowledge Format v0.2](okf-v0.2.md#citation-joins-checked-2026-11-15).
 - New: [LEANN query-time embedding recomputation](leann.md), for #1368.
   Cross-checked the technique against paper v2, §§1, 3–4.2 and 7.1,
   and the upstream README. No implementation or deployment benchmark.

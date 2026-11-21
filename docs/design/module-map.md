@@ -26,6 +26,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
+    citations.py       -- reverse citation attribution and scoped diagnostics (#1446)
     _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
@@ -105,6 +106,7 @@ src/markdown_vault_mcp/
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
+  citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964); index.md refresh after delete/rename/move_folder (#1609), from the nearest indexed ancestor (#1647)

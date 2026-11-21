@@ -1,7 +1,7 @@
 """End-to-end tests for OKF read semantics via the MCP server.
 
 Covers the ``okf`` annotation on ``search`` / ``read`` / ``get_context``
-results, the ``okf`` section of ``stats``, the effective indexed-field
+results and the app-only ``vault_read`` / ``vault_context`` routes, the ``okf`` section of ``stats``, the effective indexed-field
 extension (and the ``document_tags`` filters riding it), the
 ``config://vault`` fields, the server-instructions sentence, and — the
 phase-1 acceptance baseline — that a non-OKF vault's payloads carry no OKF
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 from fastmcp import Client
 
+from markdown_vault_mcp._server_apps import _hashed
+from tests.fixtures.okf import malformed_okf_note as malformed_okf_note
 from tests.server_factory import make_server
 
 from .conftest import _parse_tool_data, wait_for_mcp_writer_drain
@@ -38,13 +40,14 @@ status: deprecated
 stale_after: 2020-01-01
 verified:
   - by: human:peter
-    at: 2026-01-01
+    at: "2026-01-01T00:00:00Z"
 sources:
   - resource: https://example.com/a
     id: a
   - resource: https://example.com/b
 generated:
   by: process:enrich
+  at: "2026-01-01T00:00:00Z"
 ---
 # Playbook
 
@@ -142,6 +145,37 @@ def _structured(result: Any) -> dict[str, Any]:
     return data
 
 
+_APP_READ_KEYS = {"path", "title", "frontmatter", "content", "modified_at"}
+_APP_CONTEXT_KEYS = {
+    "path",
+    "title",
+    "folder",
+    "frontmatter",
+    "modified_at",
+    "backlinks",
+    "outlinks",
+    "similar",
+    "folder_notes",
+    "tags",
+}
+
+
+async def _app_payloads(
+    client: Client[Any], path: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the SPA's ``vault_read`` and ``vault_context`` payloads for *path*."""
+    await wait_for_mcp_writer_drain(client)
+    read = _parse_tool_data(
+        await client.call_tool(_hashed("vault_read"), {"path": path})
+    )
+    context = _parse_tool_data(
+        await client.call_tool(_hashed("vault_context"), {"path": path})
+    )
+    assert isinstance(read, dict)
+    assert isinstance(context, dict)
+    return read, context
+
+
 async def _search(client: Client[Any], **kwargs: Any) -> list[dict[str, Any]]:
     await wait_for_mcp_writer_drain(client)
     result = await client.call_tool("search", {"query": "zebra", **kwargs})
@@ -172,6 +206,12 @@ class TestNonOkfBaseline:
             )
             assert "okf" not in context
 
+    async def test_app_payloads_keep_their_keys(self) -> None:
+        async with Client(make_server()) as client:
+            read, context = await _app_payloads(client, "guides/playbook.md")
+        assert set(read) == _APP_READ_KEYS
+        assert set(context) == _APP_CONTEXT_KEYS
+
     async def test_indexed_fields_not_extended(self) -> None:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -191,6 +231,40 @@ class TestNonOkfBaseline:
 class TestDeclaredBundle:
     """A declared vault gains annotations on every read surface."""
 
+    async def test_malformed_provenance_survives_public_reads(
+        self, malformed_okf_note: tuple[str, Path, bytes]
+    ) -> None:
+        path, note, before = malformed_okf_note
+        async with Client(make_server()) as client:
+            hits = await _search(client, mode="keyword")
+            hit = next(hit for hit in hits if hit["path"] == path)
+            read = _structured(await client.call_tool("read", {"path": path}))
+            context = _structured(
+                await client.call_tool(
+                    "get_context", {"path": path, "similar_limit": 0}
+                )
+            )
+            assert read["frontmatter"]["sources"] == "https://example.com"
+            assert read["frontmatter"]["generated"] == "codex at a date"
+            assert "Zebra malformed provenance." in read["content"]
+            for payload in (hit, read, context):
+                assert payload["okf"]["attribution"] == {
+                    "state": "malformed",
+                    "recorded_entries": 0,
+                    "malformed_entries": 1,
+                    "basis": "supplied_metadata_only",
+                }
+                assert payload["okf"]["generation"] == {
+                    "state": "malformed",
+                    "basis": "supplied_metadata_only",
+                }
+                assert "malformed_sources" not in payload["okf"]
+                assert "malformed_generated" not in payload["okf"]
+            report = _structured(await client.call_tool("okf_validate", {}))
+            for field in ("malformed_sources", "malformed_generated"):
+                assert report[field] == {"count": 1, "examples": [path]}
+        assert note.read_bytes() == before
+
     async def test_search_hits_carry_annotations(self) -> None:
         async with Client(make_server()) as client:
             hits = await _search(client)
@@ -200,13 +274,34 @@ class TestDeclaredBundle:
         assert playbook["status"] == "deprecated"
         assert playbook["stale"] is True
         assert playbook["trust_tier"] == "human-reviewed"
+        assert playbook["review_applicability"] == {
+            "state": "unknown",
+            "basis": "no_snapshot_binding",
+        }
         assert playbook["sources_count"] == 2
         assert "sources" not in playbook
+        assert playbook["attribution"]["state"] == "recorded"
+        assert playbook["generation"]["state"] == "recorded"
         plain = by_path["guides/plain.md"]["okf"]
         assert plain == {
             "status": "stable",
             "stale": False,
             "trust_tier": "unverified",
+            "freshness": {"state": "missing", "basis": "no_expiry_supplied"},
+            "review": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "review_applicability": {"state": "none", "basis": "no_review_supplied"},
+            "attribution": {
+                "state": "missing",
+                "recorded_entries": 0,
+                "malformed_entries": 0,
+                "basis": "supplied_metadata_only",
+            },
+            "generation": {"state": "missing", "basis": "supplied_metadata_only"},
         }
 
     async def test_read_includes_full_sources(self) -> None:
@@ -216,6 +311,10 @@ class TestDeclaredBundle:
             )
         okf = read["okf"]
         assert okf["trust_tier"] == "human-reviewed"
+        assert okf["review_applicability"] == {
+            "state": "unknown",
+            "basis": "no_snapshot_binding",
+        }
         assert [s["resource"] for s in okf["sources"]] == [
             "https://example.com/a",
             "https://example.com/b",
@@ -243,6 +342,27 @@ class TestDeclaredBundle:
                 )
             )
         assert context["okf"]["type"] == "Playbook"
+        assert context["okf"]["review_applicability"] == {
+            "state": "unknown",
+            "basis": "no_snapshot_binding",
+        }
+
+    async def test_app_payloads_carry_annotation(self) -> None:
+        async with Client(make_server()) as client:
+            read, context = await _app_payloads(client, "guides/playbook.md")
+            plain_read, plain_context = await _app_payloads(client, "guides/plain.md")
+        assert set(read) == _APP_READ_KEYS | {"okf"}
+        assert set(context) == _APP_CONTEXT_KEYS | {"okf"}
+        for payload in (read, context):
+            assert payload["okf"]["review_applicability"] == {
+                "state": "unknown",
+                "basis": "no_snapshot_binding",
+            }
+        for payload in (plain_read, plain_context):
+            assert payload["okf"]["review_applicability"] == {
+                "state": "none",
+                "basis": "no_review_supplied",
+            }
 
     async def test_stats_okf_section(self) -> None:
         async with Client(make_server()) as client:
@@ -304,13 +424,30 @@ class TestModeOff:
     def _off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
 
-    async def test_no_okf_surfaces(self) -> None:
+    async def test_no_okf_surfaces(
+        self, malformed_okf_note: tuple[str, Path, bytes]
+    ) -> None:
+        path, note, before = malformed_okf_note
         async with Client(make_server()) as client:
             hits = await _search(client)
             assert hits and all("okf" not in hit for hit in hits)
+            hit = next(hit for hit in hits if hit["path"] == path)
+            read = _structured(await client.call_tool("read", {"path": path}))
+            context = _structured(
+                await client.call_tool(
+                    "get_context", {"path": path, "similar_limit": 0}
+                )
+            )
+            app_read, app_context = await _app_payloads(client, path)
+            for payload in (hit, read, context, app_read, app_context):
+                assert "okf" not in payload
+            assert read["frontmatter"]["sources"] == "https://example.com"
+            assert read["frontmatter"]["generated"] == "codex at a date"
+            assert "Zebra malformed provenance." in read["content"]
             stats = _structured(await client.call_tool("stats", {}))
             assert "okf" not in stats
             assert "type" not in stats["indexed_frontmatter_fields"]
+        assert note.read_bytes() == before
         server = make_server()
         assert server.instructions is not None
         assert "okf_version" not in server.instructions

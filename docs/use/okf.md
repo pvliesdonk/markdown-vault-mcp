@@ -42,8 +42,13 @@ On a recognised bundle, the server reads a few OKF frontmatter families and surf
 
 - **Type**: the free-text `type` field, such as `Playbook`, `Metric`, or `Reference`.
 - **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after` marks a note stale from a date on (`2026-12-31`) or from an instant on (`2026-12-31T00:00:00Z`; the offset is required).
-- **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
+- **Recorded review tier**: `trust_tier` describes supplied review claims (a single entry may be a bare mapping). A record with a usable `human:<id>` actor and an offset-aware `at` gives `human-reviewed`; otherwise, usable records give `machine-confirmed`, and no usable record gives `unverified`. Malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision. The `stats` trust breakdown counts these same classifications.
+- **Evidence**: `freshness.state` distinguishes `missing`, `malformed`, `unexpired`, and `expired`. `review` separates recorded and malformed entry counts. Whole reads include the parsed values under `recorded`; compact results keep the summary. `stale: false` includes absent or malformed expiry, so it does not establish freshness.
+- **Review applicability**: `review_applicability.state` is `unknown` whenever the note's `verified` value has entries or is malformed, because no review is bound to the content it covered. Its `basis` is `no_snapshot_binding` for entries, malformed ones included, and `malformed_review` for an unreadable value. `review` reports entry validity. No timestamp or extension establishes coverage of the current content. An absent `verified` or an empty list reports `state: none`. This assessment is separate from freshness and the recorded review tier.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
+- **Provenance**: `attribution` reports the `sources` list in the same shape as `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with counts of entries that carry a `resource`, which the OKF spec requires in each entry (recorded), and of other entries (malformed), and `basis: supplied_metadata_only`. A value that is not a list counts as one malformed entry. `generation` reports `generated` as `{state, basis}` with `state` `missing`, `malformed`, or `recorded`. It follows the OKF spec: `by` is required and is an actor (`human:<id>`, `process:<id>`, or `<tool>/<version>`), and `at` is optional but, when present, must be a datetime with an offset. A `verified` entry needs both. The server's own stamps meet it. Neither object repairs or hides the raw values, so mixed source lists stay intact on reads and keep their full count on hits.
+
+The CLI labels recorded review metadata and unknown applicability in human-readable search output. For whole-note text reads, it sends that notice to `stderr`, leaving the note content on `stdout` unchanged. In both, a note without a review, where `review_applicability` reports `none` (no `verified` field or an empty one), gets no notice; a malformed or recorded `verified` field keeps it. The app's note and context views follow the same rule on an OKF bundle: a malformed or recorded `verified` field gets the notice, while an absent or empty one does not. On a vault without OKF they show no notice. The original metadata stays visible in all cases. These notices change only the human-readable presentation. JSON and agent output retain their existing payloads.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See [`list_documents`](../reference/tools/reader.md#list_documents) for the full filter set.
 
@@ -68,6 +73,69 @@ verified:
 ---
 ```
 
+## Inspect citations in one note
+
+Call `inspect_citations(path="research/note.md")` for an exact path you found with
+`search` or `list_documents`. The library equivalent is
+`vault.reader.inspect_citations("research/note.md")`. This opt-in read works
+without a bundle declaration, including when OKF annotations are off.
+
+It joins body markers such as `[^handbook]` to frontmatter `sources` entries whose
+`id` is exactly `handbook`. The result includes the literal parsed source records,
+unknown fields included. `source_indices` identifies matching records by their
+zero-based positions in that response. Those positions can change when sources
+are reordered; the exact string `id` is the stable key. Labels are not trimmed,
+case-folded or coerced from numbers.
+
+- `matched`: exactly one source entry has the label's ID, even if that entry has
+  a separately reported source-shape issue.
+- `ambiguous`: multiple entries have that ID, even if their resources are equal.
+- `unmatched`: no entry has that ID. This may be an ordinary explanatory footnote,
+  not a broken citation.
+
+The report also lists duplicate IDs whether cited or not, entries without IDs,
+and source-shape issues. An ID is optional; an entry without one is not invalid.
+A resource may describe a scope rather than a location. URLs and paths are also
+accepted. The inspector does not open resources or check whether they exist. It
+does not assess whether a source supports a claim or whether the claim is true.
+
+### Find notes citing a source
+
+Call `find_citing_notes(resource="https://example.org/source")` to find indexed
+notes with literal footnote labels matching a source record for that
+exact resource. The result includes label occurrence counts and unresolved or
+ambiguous labels, plus labels whose matched source has no valid resource, in notes
+declaring the resource. Results are unbounded. When OKF is active, reserved
+`index.md` and `log.md` files are excluded. Body links alone do not count.
+On the first writer startup after upgrading from index semantics version 12, the
+index rebuilds. `unconverted_notes` counts indexed notes whose citation rows were
+not derived with the current rules, such as a note that could not be re-read
+during that rebuild; they are left out of the result. An ordinary reindex skips
+unchanged notes, so if the count stays above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild.
+The lookup does not fetch resources or assess whether they support a claim.
+
+### Syntax coverage
+
+The reader uses CommonMark block and inline parsing with a small literal marker
+extension. It recognizes single-line labels with no whitespace, brackets or
+backslashes. It skips code spans and fences, escaped markers, HTML blocks and
+attributes, navigation links, images, wikilinks, and footnote definition blocks.
+A citation right after inline code, an inline link or a wikilink is still
+recognized. A marker right after other bracketed text, such as the reference-style
+link in `[text][ref][^a]`, is read as part of that link and skipped. Footnote
+definition prose never supplies the source join. Other Markdown dialect
+extensions are not interpreted; an empty result is not an exhaustive citation
+audit. The response's `syntax` and `scope` fields retain these limits.
+
+The existing whole-note read limits apply. The source list and body are parsed
+from one returned content string. `returned_text_sha256` hashes that complete
+string after line endings are normalized to LF and it is encoded as UTF-8. It
+is not the file's raw-byte etag or a portable file identity, and cannot be used
+as `if_match`. No index refresh, traversal, metadata write or permission change
+is part of this call. See the [tool reference](../reference/tools/reader.md#inspect_citations).
+
 ## Migrating an existing vault
 
 Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.
@@ -76,7 +144,11 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
+The evidence findings report missing expiry, malformed expiry, review, source or `generated` records, and unavailable assessments. An assessment is unavailable when a discovered concept cannot be read or parsed, or exceeds the read cap. Missing expiry is informational; malformed fields are format observations, not failures of a team's editorial policy. These findings leave the existing conformance ratio unchanged. The report covers discovered, non-excluded paths and does not certify complete traversal or current-review applicability.
+
 The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+
+The evidence findings `malformed_sources` and `malformed_generated` count notes whose `attribution` reports a malformed entry or whose `generation` is `malformed`, using the same rules as the read annotation. Like the other evidence findings, they are withheld for a note counted under `evidence_unavailable`. They leave the conformant count unchanged, and affected notes remain readable and searchable. Reading and auditing preserve your files; they never repair these fields.
 
 ### 2. Declare
 
@@ -109,12 +181,12 @@ Anything already in the file wins, so a title you wrote yourself and the root `i
 
 The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
 
-Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification invalidation, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
+Enabling `OKF_WRITE` on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, verification clearing, reserved-file upkeep, and `okf_verify` are inactive regardless of `OKF_VERIFY`; OKF read semantics remain available. Startup logs `okf_write_inert` at INFO, and `config://vault` reports `okf_write_effective=false`.
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
 - **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
-- **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
+- **Clears recorded reviews.** The server clears `verified` on any content-changing write, including an edit that touches only a frontmatter line. A change alone does not establish that an earlier review is invalid or whether it applies to the current content. A `rename` may mechanically rewrite links in the moved note when link updates are enabled; this rewrite leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
 
 Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.
 
@@ -124,7 +196,7 @@ The stamp goes into the note's own frontmatter, so the layer refuses a write who
 
 ### Recording a human review
 
-Enabling the layer also exposes the [`okf_verify`](../reference/tools/writer.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+Enabling the layer also exposes the [`okf_verify`](../reference/tools/writer.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the clearing above, so attesting a note does not immediately clear the attestation you just added.
 
 One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It applies only when `OKF_WRITE` is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.
 
@@ -134,9 +206,9 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 
 **Upgrading bearer-based review clients:** deployments that used `trust-auth` with a static or mapped bearer token must switch `MARKDOWN_VAULT_MCP_OKF_VERIFY` to `elicit` and use a client that presents the confirmation to a person. Existing provenance and verification entries are not rewritten.
 
-Whichever mode you pick, `human-reviewed` means a person deliberately confirmed the review, not that the note is provably correct. Someone can still rubber-stamp a note. The tier promises a deliberate human act rather than diligence, so treat it as one signal instead of a guarantee.
+The verification mode controls how this tool records a review claim. The `human-reviewed` tier itself only reports a `human:` prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.
 
-A `verified` entry is also a claim about the note as it stood when the entry was written. This server clears it when its own write path changes the note, but a change that arrives another way (a teammate's editor, a git pull, a script) leaves the entry in place. On a shared vault, read the tier as a record that someone confirmed a review at that time, and read `generated.at` beside it.
+A `verified` entry records a review claim without identifying the reviewed snapshot. This server clears it when its own write path changes the note, but a change that arrives another way (a teammate's editor, a git pull, a script) leaves the entry in place. Applicability to current content remains unknown, and `review_applicability` reports it as `unknown`. Review timestamps do not establish applicability or invalidity. Neither do `generated.at`, missing history or changed bytes. The presentation layer leaves write behavior unchanged. Snapshot-bound reviews and change-history assessment remain separate work.
 
 ### Keeping `log.md` and `index.md` current
 

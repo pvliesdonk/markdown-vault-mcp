@@ -299,7 +299,7 @@ class TestTheRewriteStaysLinear:
 
 
 class TestASourceTheRewriteCannotChange:
-    def test_it_is_not_counted_and_is_logged(
+    def test_missing_destination_raises_and_leaves_source_unchanged(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         # A row the rewrite cannot find is a disagreement between index and
@@ -308,7 +308,8 @@ class TestASourceTheRewriteCannotChange:
         # and the mismatch is logged. Driven through the private helper with
         # a target the file does not contain, because the defect that
         # produced it for real is fixed above.
-        (tmp_path / SRC).write_text("no links here\n", encoding="utf-8")
+        original = "[found](found.md)\n"
+        (tmp_path / SRC).write_text(original, encoding="utf-8")
         manager = DocumentManager(
             fts=FTSIndex(db_path=":memory:"),
             source_dir=tmp_path,
@@ -316,15 +317,17 @@ class TestASourceTheRewriteCannotChange:
             chunk_strategy=HeadingChunker(),
             read_only=False,
         )
-        with caplog.at_level(logging.WARNING):
-            content = manager._rewrite_one_source(
+        with caplog.at_level(logging.WARNING), pytest.raises(ValueError):
+            manager._rewrite_one_source(
                 tmp_path / SRC,
-                [("markdown", "absent.md", None, "absent.md", "moved.md")],
+                [
+                    ("markdown", "found.md", None, "found.md", "new.md"),
+                    ("markdown", "absent.md", None, "absent.md", "moved.md"),
+                ],
                 SRC,
             )
-        assert content is None
         assert "link_rewrite_matched_nothing" in caplog.text
-        assert (tmp_path / SRC).read_text(encoding="utf-8") == "no links here\n"
+        assert (tmp_path / SRC).read_text(encoding="utf-8") == original
 
     def test_a_rename_does_not_count_it(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

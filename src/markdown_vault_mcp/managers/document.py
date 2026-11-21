@@ -59,9 +59,11 @@ from markdown_vault_mcp.managers._write_notifier import (
 )
 from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
+    _resolve_link_path,
     extract_section,
     list_section_headings,
     parse_note,
+    strip_frontmatter_block,
 )
 from markdown_vault_mcp.source_probe import require_vault_root
 from markdown_vault_mcp.types import (
@@ -91,10 +93,10 @@ from markdown_vault_mcp.utils.fs import (
     walk_files_strict,
 )
 from markdown_vault_mcp.utils.links import (
-    apply_link_replacement as _apply_link_replacement,
+    compute_new_raw_target as _compute_new_raw_target,
 )
 from markdown_vault_mcp.utils.links import (
-    compute_new_raw_target as _compute_new_raw_target,
+    rewrite_link_destinations as _rewrite_link_destinations,
 )
 from markdown_vault_mcp.utils.text import (
     build_position_map as _build_position_map,
@@ -1376,7 +1378,10 @@ class DocumentManager:
                 this value. Pass ``None`` (default) to skip the check.
             update_links: When ``True``, find all documents that link to
                 *old_path* and rewrite their link targets to point to
-                *new_path*. Only applies to ``.md`` documents.
+                *new_path*. Also preserve resolved outgoing vault-fallback
+                links when the source note moves. Those changes may invalidate
+                its old etag; read *new_path* before a guarded write. Only
+                applies to ``.md`` documents.
             tolerate_link_rewrites: When ``True``, a note's *if_match* that
                 no longer matches is still accepted if every change since
                 it is a link rewrite this manager recorded, such as one a
@@ -1432,6 +1437,7 @@ class DocumentManager:
                 )
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
+                outgoing = self._fallback_outgoing(old_path) if update_links else []
 
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
@@ -1443,13 +1449,19 @@ class DocumentManager:
                     title_field=self._title_field,
                 )
 
-                callback_content = _read_text_utf8(new_abs)
-
                 backlink_callbacks, backlink_paths, unrewritten = (
-                    self._update_backlinks(old_path, new_path, backlinks)
+                    self._update_backlinks(old_path, new_path, backlinks, outgoing)
                 )
-                updated_links = len(backlink_callbacks)
+                callback_content = _read_text_utf8(new_abs)
+                updated_links = len(set(backlink_paths))
                 hint = self._submodule_links_hint(unrewritten)
+                if new_path in unrewritten:
+                    warning = (
+                        f"Note {new_path!r} moved but its links could not be rewritten; "
+                        "a link may now point to a different file. Check its links "
+                        "or rename it back."
+                    )
+                    hint = f"{hint} {warning}" if hint else warning
 
                 if self._mark_paths_dirty is not None:
                     dirty: list[str] = [old_path, note.path]
@@ -1464,6 +1476,8 @@ class DocumentManager:
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
             with auxiliary_commit_writes():
                 for src_abs, src_content in backlink_callbacks:
+                    if src_abs == new_abs:
+                        continue
                     self._notifier.fire(src_abs, src_content, "edit")
 
         return RenameResult(
@@ -1473,6 +1487,23 @@ class DocumentManager:
             hint=hint,
             link_rewrites_since_etag=crossed,
         )
+
+    def _fallback_outgoing(self, source: str) -> list[tuple[str, dict[str, Any]]]:
+        """Capture live markdown links resolved beyond their source directory."""
+        result: list[tuple[str, dict[str, Any]]] = []
+        for row in self._fts.get_outlinks(source):
+            if row["link_type"] not in ("markdown", "reference"):
+                continue
+            if not row["raw_target"] or not row["target_exists"]:
+                continue
+            baseline, _ = _resolve_link_path(
+                row["raw_target"], source, decode_markdown=True
+            )
+            target = row["target_path"]
+            if baseline != target:
+                row["source_path"] = source
+                result.append((target, row))
+        return result
 
     def _check_rename_etag(
         self, abs_path: Path, path: str, if_match: str | None, *, tolerate: bool
@@ -1537,37 +1568,37 @@ class DocumentManager:
                 location — used for correct relative-path computation.
 
         Returns:
-            The rewritten file content, or ``None`` when every replacement
-            matched nothing and the file is unchanged. The caller must not
-            count, write back or announce such a source: it still names the
-            old target, and saying otherwise is what made #1521 silent.
+            The rewritten file content, or ``None`` when the file is already
+            as the rewrite would leave it. The caller must not count, write
+            back or announce such a source.
+
+        Raises:
+            ValueError: A selected destination was not found in the file, so
+                the source is left unwritten and still names the old target;
+                saying otherwise is what made #1521 silent.
         """
         # One read, hashed as is: a second read could see an external edit
         # the ledger would then vouch for (#1492). Newlines are normalised
         # as Path.read_text would, which the rewrite has always relied on.
         raw = source_abs.read_bytes()
         original = _decode_utf8(raw).replace("\r\n", "\n").replace("\r", "\n")
-        content = original
-        for link_type, raw_target, fragment, target_old, target_new in rewrites:
-            new_raw = _compute_new_raw_target(
-                link_type,
-                raw_target,
-                fragment,
-                target_new,
-                source_path=source_path,
-                old_path=target_old,
-            )
-            content = _apply_link_replacement(content, link_type, raw_target, new_raw)
-        if content == original:
-            # The index held a row the rewrite could not find. That is a
-            # disagreement between the two, not a no-op, so it is logged
-            # rather than passed over: #1521 was exactly this, invisible
-            # because the source was still counted as updated.
+        content, unmatched = self._apply_rewrites(original, rewrites, source_path)
+        if unmatched:
+            # All or nothing per source, decided before anything is written:
+            # the index held a row the rewrite could not find. That is a
+            # disagreement between the two, logged because #1521 was exactly
+            # this, invisible; a partly rewritten note would still name the
+            # old target through the spellings it missed.
             logger.warning(
                 "link_rewrite_matched_nothing source=%s links=%d",
                 source_path,
                 len(rewrites),
             )
+            raise ValueError(
+                f"link rewrite of {source_path!r} found no destination for "
+                f"{sorted(unmatched)!r}"
+            )
+        if content == original:
             return None
         # The bytes a text-mode write would produce, encoded here so the
         # ledger records the hash of exactly what landed.
@@ -1577,6 +1608,46 @@ class DocumentManager:
             source_path, compute_etag(raw), compute_etag(encoded)
         )
         return content
+
+    def _apply_rewrites(
+        self,
+        original: str,
+        rewrites: list[tuple[str, str, str | None, str, str]],
+        source_path: str,
+    ) -> tuple[str, set[str]]:
+        """Apply *rewrites* to a note's body, keeping its frontmatter verbatim.
+
+        Args:
+            original: Whole note text with line endings normalised.
+            rewrites: ``(link_type, raw_target, fragment, target_old,
+                target_new)`` per link, as in :meth:`_rewrite_one_source`.
+            source_path: Vault-relative path of the source at its current
+                location.
+
+        Returns:
+            ``(content, unmatched)``: the rewritten text and the written
+            destinations no scan of the body found.
+        """
+        body = strip_frontmatter_block(original)
+        head = original[: len(original) - len(body)]
+        replacements: dict[str, dict[str, str]] = defaultdict(dict)
+        for link_type, raw_target, fragment, target_old, target_new in rewrites:
+            replacements[link_type].setdefault(
+                raw_target,
+                _compute_new_raw_target(
+                    link_type,
+                    raw_target,
+                    fragment,
+                    target_new,
+                    source_path=source_path,
+                    old_path=target_old,
+                ),
+            )
+        unmatched: set[str] = set()
+        for link_type, mapping in replacements.items():
+            body, matched = _rewrite_link_destinations(body, link_type, mapping)
+            unmatched.update(set(mapping) - matched)
+        return head + body, unmatched
 
     def _rewrite_link_sources(
         self,
@@ -1599,8 +1670,8 @@ class DocumentManager:
             by_source: Mapping of source path (at its *current* on-disk
                 location) to ``(target_old, backlink_row)`` pairs to rewrite
                 within that source.
-            target_map: Mapping of old target path to new target path; must
-                cover every ``target_old`` in *by_source*.
+            target_map: Mapping of moved target paths to their new paths;
+                targets absent from the map remain at their old paths.
             op_name: Caller name used as the log-message prefix.
 
         Returns:
@@ -1643,7 +1714,7 @@ class DocumentManager:
                         row["raw_target"],
                         row["fragment"],
                         target_old,
-                        target_map[target_old],
+                        target_map.get(target_old, target_old),
                     )
                     for target_old, row in items
                 ]
@@ -1693,6 +1764,7 @@ class DocumentManager:
         old_path: str,
         new_path: str,
         backlinks: list[dict[str, Any]],
+        outgoing: Iterable[tuple[str, dict[str, Any]]] = (),
     ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
         """Rewrite source files that link to *old_path* to point to *new_path*.
 
@@ -1710,6 +1782,7 @@ class DocumentManager:
             new_path: Vault-relative path after the rename (the new location).
             backlinks: Rows returned by :meth:`FTSIndex.get_backlinks` before
                 the rename.
+            outgoing: Resolved fallback links in the moved source.
 
         Returns:
             Tuple ``(callbacks, dirty_paths, failed_sources)``:
@@ -1722,9 +1795,6 @@ class DocumentManager:
             * ``failed_sources`` — sources left naming *old_path*, such as
               a note inside a git submodule or nested repository (#1564).
         """
-        if not backlinks:
-            return [], [], []
-
         by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
         for row in backlinks:
             by_source[row["source_path"]].append((old_path, row))
@@ -1732,8 +1802,13 @@ class DocumentManager:
         if old_path in by_source:
             by_source[new_path] = by_source.pop(old_path)
 
+        target_map = {old_path: new_path}
+        for target, row in outgoing:
+            if target != old_path:
+                by_source[new_path].append((target, row))
+
         return self._rewrite_link_sources(
-            by_source, {old_path: new_path}, op_name="_update_backlinks"
+            by_source, target_map, op_name="_update_backlinks"
         )
 
     def _plan_folder_move(
@@ -1936,6 +2011,10 @@ class DocumentManager:
             for target_old in md_map:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
+            for source_old in md_map:
+                for target, row in self._fallback_outgoing(source_old):
+                    if target not in md_map:
+                        annotated.append((target, row))
 
             # 4. Move every file. From here an OS error can leave the subtree
             #    part-moved, which callers must tell apart from an error

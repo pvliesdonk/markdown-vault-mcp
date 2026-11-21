@@ -49,11 +49,25 @@
     // toggle handled by delegated listener on #panel-context
   }
 
-  function renderChips(fm) {
+  // The server attaches `okf` only on an active OKF bundle. There, a supplied
+  // `verified` field gets the notice unless review_applicability rules a
+  // review out (state "none": absent or empty), the rule the CLI follows.
+  function showsReviewNotice(fm, okf) {
+    if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
+    const applicability = okf.review_applicability;
+    return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
+  }
+
+  function renderChips(fm, okf) {
     if (!fm) return '';
     let html = '';
     if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
     if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
+    // Describe the supplied field without authenticating it or assessing validity.
+    if (showsReviewNotice(fm, okf)) {
+      html += '<span class="chip">Supplied verified field. Review applicability to current content: unknown.</span>';
+    }
     return html;
   }
 
@@ -143,7 +157,7 @@
         data.folder ? data.folder.split('/').join(' / ') : '';
       document.getElementById('ctx-modified').textContent =
         data.modified_at ? relTime(data.modified_at) : '';
-      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter);
+      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter, data.okf);
 
       const fmCount = data.frontmatter ? Object.keys(data.frontmatter).length : 0;
       makeSection('ctx-frontmatter', 'Frontmatter', fmCount, renderFrontmatter(data.frontmatter));

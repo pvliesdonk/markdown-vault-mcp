@@ -75,8 +75,10 @@ _TOOL_ICONS["append"] = _TOOL_ICONS["edit"]
 # Status tools reuse existing icons rather than introducing new SVG files.
 _TOOL_ICONS["get_index_status"] = _TOOL_ICONS["embeddings_status"]
 
-# get_toc reuses the read icon.
+# get_toc and the citation tools reuse the read icon.
 _TOOL_ICONS["get_toc"] = _TOOL_ICONS["read"]
+_TOOL_ICONS["inspect_citations"] = _TOOL_ICONS["read"]
+_TOOL_ICONS["find_citing_notes"] = _TOOL_ICONS["inspect_citations"]
 
 # OKF migration transforms reuse existing icons (#963).
 _TOOL_ICONS["okf_convert_links"] = _TOOL_ICONS["rename"]

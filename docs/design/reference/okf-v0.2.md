@@ -13,6 +13,10 @@ verified:
 stale_after: 2027-03-06
 status: stable
 sources:
+  - id: spec-current
+    title: Open Knowledge Format (OKF), Version 0.2, SPEC.md section 5.1 at commit 0b87c52c6e (2026-08-21)
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/0b87c52c6e/SPEC.md
+    accessed: 2026-11-15
   - id: spec
     title: Open Knowledge Format (OKF), Version 0.2, okf/SPEC.md at commit 62432a09 (2026-08-21)
     resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a0954/okf/SPEC.md
@@ -129,11 +133,11 @@ months, not twelve.
   [`human:`] for hand-authored or human-confirmed content" because
   consumers key trust off that prefix. [source: spec] (§7)
   [pins: tests/test_okf_write.py::TestActorResolution::test_tool_actor_format, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_human_actor_is_recorded_verbatim]
-- The spec says nothing about a tier for a `verified` entry that carries no
-  `by`, or an empty list; "non-`human:` actors only" reads naturally as
-  machine-confirmed for `[{}]`, which is what the server does.
-  [unverified] A spec-maintainer answer or a reference-agent fixture would
-  settle it.
+- The spec says nothing about a tier for a malformed `verified` entry.
+  The server formerly promoted any mapping, including `{}`; #1444 follows
+  the adopted north star instead, counting only usable actor/timestamp
+  records as recorded claims. This is a local interpretation, not a claim
+  that upstream mandates the server's exact supported timestamp subset.
 
 ### Lifecycle: `status` and `stale_after` (§5.4, §5.5)
 
@@ -175,10 +179,11 @@ months, not twelve.
   entry" and `id`, `title`, `author`, `usage_count` and `last_modified` are
   optional; the server passes the list through on reads and counts it on
   search hits. [source: spec] (§5.1)
-  [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
+  [pins: tests/test_okf.py::test_provenance_shape_matrix]
 - Per-claim attribution is a markdown footnote whose label is a
-  `sources[].id`, "keyed rather than positional". Nothing here depends on
-  it. [source: spec] (§5.1)
+  `sources[].id`, "keyed rather than positional". The [bounded citation
+  inspector](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  implements this literal join. [source: spec] (§5.1)
 
 ### Links and paths (§6)
 
@@ -235,9 +240,10 @@ tree, 2026-09-07].
   [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
-  re-confirmation"; the server's enforced write layer clears it so an
-  attestation cannot outlive the bytes it attested. Deliberate; decided in
-  `docs/design/okf.md` § 6.
+  re-confirmation"; the server's enforced write layer clears it on its own
+  content-changing writes. Clearing does not establish that the earlier
+  review was invalid or whether it applies to the new content (#1413).
+  Deliberate; decided in `docs/design/okf.md` § 6.
   [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
@@ -287,3 +293,14 @@ tree, 2026-09-07].
   (`usage_count`, `usage_window`): nothing here reads or writes them.
 - The v0.1 fallbacks (`timestamp`, `# Citations`): the server neither reads
   nor migrates them, and no test covers a v0.1 bundle.
+
+## Citation joins (checked 2026-11-15)
+
+- [source: spec-current] Section 5.1 makes `id` optional and `resource` required
+  within each source entry; a resource may describe a population rather than
+  something followable. [pins: tests/test_citations.py::test_literal_join_and_stable_ids]
+- [source: spec-current] Claim-level footnote labels key into `sources` entries;
+  footnote definition prose is not that entry. [pins: tests/test_citations.py::test_non_citation_contexts]
+- [source: spec-current] Source signals record attribution, not a stored
+  credibility verdict. The [bounded inspection design](../design.md#exact-note-citation-inspection-1446-bounded-slice)
+  therefore reports literal joins without evaluating support.
