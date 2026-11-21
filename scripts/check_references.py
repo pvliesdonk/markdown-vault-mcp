@@ -9,10 +9,10 @@ describes how one is written; the directory is an Open Knowledge Format
 can be checked mechanically:
 
 * the YAML frontmatter carries every key in ``REQUIRED_KEYS``; ``type`` is
-  ``Reference``; ``generated`` is ``{by, at}`` with an actor and an ISO date
-  or datetime; ``stale_after`` is an instant, written as an ISO 8601 datetime
-  with an explicit offset or, for pages that predate the OKF v0.2 amendment
-  of 2026-08-21, a calendar date (``YYYY-MM-DD``, read as midnight UTC);
+  ``Reference``; ``generated`` is ``{by, at}`` with an actor and an OKF 0.3
+  §5 timestamp; ``stale_after`` is one too.  A timestamp is an ISO 8601
+  datetime with an explicit offset or a calendar date (``YYYY-MM-DD``, "the
+  start of that day in UTC"); a datetime without an offset is invalid;
   ``status``, when present, is one of OKF's ``draft`` / ``stable`` /
   ``deprecated``; ``verified`` is a list of ``{by, at}`` entries, or one such
   mapping, which OKF says to read as a one-element list; a ``superseded_by``
@@ -179,34 +179,18 @@ def _instant_from_text(text: str) -> dt.datetime | None:
 
 
 def _as_instant(value: object) -> dt.datetime | None:
-    """``stale_after`` as an aware instant, or ``None`` when it is not one.
+    """An OKF 0.3 §5 timestamp as an aware instant, or ``None`` when it is not one.
 
     Accepts a calendar date (midnight UTC) or an ISO 8601 datetime that
     carries an explicit offset, as YAML's own datetime or as a string. A
-    datetime without an offset is rejected: an instant compared against
-    "now" needs a zone, and OKF v0.2 requires the offset to be explicit.
+    datetime without an offset is rejected: OKF 0.3 says it "stays invalid"
+    (§13.2). Used for ``stale_after``, ``generated.at`` and ``verified[].at``.
     """
     if isinstance(value, dt.datetime):
         return value if value.tzinfo is not None else None
     if isinstance(value, dt.date):
         return dt.datetime.combine(value, dt.time.min, tzinfo=dt.UTC)
     return _instant_from_text(value) if isinstance(value, str) else None
-
-
-def _as_date(value: object) -> dt.date | None:
-    """A calendar date or a datetime whose date part is spelt ``YYYY-MM-DD``."""
-    if isinstance(value, dt.datetime):
-        return value.date()
-    if isinstance(value, dt.date):
-        return value
-    if isinstance(value, str) and _DAY_PREFIX_RE.match(value):
-        for parse in (dt.date.fromisoformat, dt.datetime.fromisoformat):
-            try:
-                parsed = parse(value)
-            except ValueError:
-                continue
-            return parsed.date() if isinstance(parsed, dt.datetime) else parsed
-    return None
 
 
 def _verified_list(meta: dict[str, Any]) -> list[Any] | None:
@@ -259,8 +243,11 @@ def _check_actor_entry(label: str, entry: object) -> list[str]:
             f"`{label}.by` must follow the OKF actor convention "
             f"(human:<id>, process:<id> or <producer>/<version>), got {by!r}"
         )
-    if _as_date(entry.get("at")) is None:
-        problems.append(f"`{label}.at` must be an ISO date or datetime")
+    if _as_instant(entry.get("at")) is None:
+        problems.append(
+            f"`{label}.at` must be an ISO 8601 datetime with an explicit offset "
+            f"or a calendar date (YYYY-MM-DD), got {entry.get('at')!r}"
+        )
     return problems
 
 

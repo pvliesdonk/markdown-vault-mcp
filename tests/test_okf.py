@@ -220,6 +220,14 @@ class TestVaultIntegration:
             TRUST_MACHINE,
         ),
         ({"verified": [{"at": "2026-01-01"}]}, TRUST_UNVERIFIED),
+        # OKF 0.3 §5: a date-only `at` is valid, the start of that day in UTC.
+        ({"verified": [{"by": "human:alice", "at": "2026-01-01"}]}, TRUST_HUMAN),
+        ({"verified": {"by": "process:ci", "at": dt.date(2026, 1, 1)}}, TRUST_MACHINE),
+        # A date-time without an offset stays invalid (§13.2).
+        (
+            {"verified": [{"by": "human:alice", "at": "2026-01-01T09:00"}]},
+            TRUST_UNVERIFIED,
+        ),
         (
             {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,
@@ -289,13 +297,40 @@ def test_derive_stale(metadata: dict, expected: bool) -> None:
     assert derive_stale(metadata, now=NOW) is expected
 
 
-def test_derive_stale_bare_date_uses_the_server_local_day() -> None:
-    """A bare date is judged against now's local calendar day, not UTC's."""
-    # 2026-08-08T00:30 at +02:00 is still 2026-08-07 in UTC; the bare date
-    # 2026-08-08 is stale there because the server's day has turned.
-    now = dt.datetime(2026, 8, 8, 0, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is True
-    assert derive_stale({"stale_after": dt.date(2026, 8, 9)}, now=now) is False
+_PLUS_ONE = dt.timezone(dt.timedelta(hours=1))
+_MINUS_ONE = dt.timezone(dt.timedelta(hours=-1))
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        # OKF 0.3 §5: a date only is "The start of that day in UTC" (#2404).
+        # 00:30+01:00 on the named day is still the day before in UTC.
+        (dt.datetime(2026, 11, 21, 0, 30, tzinfo=_PLUS_ONE), False),
+        (dt.datetime(2026, 11, 21, 1, 0, tzinfo=_PLUS_ONE), True),
+        # 23:30-01:00 the day before is already 00:30Z on the named day.
+        (dt.datetime(2026, 11, 20, 23, 30, tzinfo=_MINUS_ONE), True),
+        (dt.datetime(2026, 11, 20, 22, 59, tzinfo=_MINUS_ONE), False),
+    ],
+)
+@pytest.mark.parametrize(
+    "frontmatter",
+    ["stale_after: 2026-11-21\n", "stale_after: '2026-11-21'\n"],
+    ids=["yaml-native", "quoted"],
+)
+def test_derive_stale_bare_date_is_the_utc_day_start(
+    frontmatter: str, now: dt.datetime, expected: bool
+) -> None:
+    """A date only expires at 00:00 UTC of that day, whatever now's zone."""
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    metadata = dict(parse_frontmatter(f"---\n{frontmatter}---\nbody\n").metadata)
+    assert derive_stale(metadata, now=now) is expected
+    freshness = derive_annotation(metadata, now=now)["freshness"]
+    assert freshness == {
+        "state": "expired" if expected else "unexpired",
+        "basis": "utc_day_start",
+    }
 
 
 class TestDeriveAnnotation:
@@ -337,7 +372,7 @@ class TestDeriveAnnotation:
             "status": "deprecated",
             "stale": True,
             "trust_tier": TRUST_HUMAN,
-            "freshness": {"state": "expired", "basis": "server_local_date"},
+            "freshness": {"state": "expired", "basis": "utc_day_start"},
             "review": {
                 "state": "recorded",
                 "recorded_entries": 1,
@@ -397,14 +432,16 @@ _ABSENT = object()
             ({}, True, True),
             ({"at": "2026-11-14"}, True, True),
             # #2386, OKF §5.2: generated needs an actor `by`; `at` is optional
-            # but, when present, must be a datetime with an offset. §5.1:
-            # every sources entry needs `resource`.
+            # but, when present, must be an OKF §5 timestamp: a date-time with
+            # an offset or a date (#2400). §5.1: every sources entry needs
+            # `resource`.
             ({"by": None}, True, True),
             ({"by": ""}, True, True),
             ({"by": 7}, True, True),
             ({"by": "codex", "extension": True}, True, True),
             ({"by": "codex/1.0"}, True, False),
-            ({"by": "codex/1.0", "at": "2026-11-14"}, True, True),
+            ({"by": "codex/1.0", "at": "2026-11-14"}, True, False),
+            ({"by": "codex/1.0", "at": "2026-11-14T09:00:00"}, True, True),
             ({"by": "codex/1.0", "at": "2026-11-14T09:00:00Z"}, True, False),
         ]
     ]

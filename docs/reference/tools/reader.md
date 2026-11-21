@@ -122,8 +122,9 @@ note's 'sources' list when present). `review_applicability`.state is
 binding) and "none" when it is absent or an empty list.
 attribution reports `sources` in the shape of review, and
 generation reports `generated` as {state, basis}, judged like a
-verified entry (recorded actor, offset-aware `at`). Section reads
-omit the annotation because they carry no frontmatter to derive it from.
+verified entry (recorded actor; `at` a date or an offset
+date-time). Section reads omit the annotation because they carry
+no frontmatter to derive it from.
 For attachments: dict with path, `mime_type` (str or null),
 `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp),
 etag (SHA-256 hex str or null).
@@ -730,8 +731,8 @@ Evidence observations leave `conformant_notes` unchanged:
 - `malformed_sources`: assessed notes whose `sources` is not a list
   or has an entry that is not a mapping. An empty list is valid.
 - `malformed_generated`: assessed notes whose `generated` lacks a
-  recognized actor or an offset-aware `at`, the rule `verified`
-  entries follow.
+  recognized actor or an `at` that is a date or an offset
+  date-time, the rule `verified` entries follow.
 - `evidence_unavailable`: discovered notes not assessed for evidence
   because reading/parsing failed or the read cap was exceeded.
 
