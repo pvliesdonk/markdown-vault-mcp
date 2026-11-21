@@ -364,7 +364,9 @@ _DATE_ONLY_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 #: RFC 3339 §5.6 ``date-time``: ``full-date "T" full-time``, seconds required,
 #: a ``.`` fraction, and ``Z`` or a ``+hh:mm`` / ``-hh:mm`` offset. "T" and
 #: "Z" may be lower case (§5.6 NOTE). Ranges are checked when the instant is
-#: built. OKF 0.3 §5 admits no other form (#2428).
+#: built. OKF 0.3 §5 admits no other form (#2428); the grammar, its open
+#: erratum and PyYAML's looser native timestamps are recorded in
+#: ``docs/design/reference/rfc3339-timestamps.md``.
 _DATE_TIME_RE = re.compile(
     r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})"
     r"(?:\.([0-9]+))?(?:([Zz])|([+-])([0-9]{2}):([0-9]{2}))"

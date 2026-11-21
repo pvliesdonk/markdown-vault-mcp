@@ -117,6 +117,11 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   typeless files as non-concepts, root `index.md` metadata; the 0.2 → 0.3
   changes and the table of server departures (#2403). Read before `okf.py`,
   `_okf_write.py`, `_okf_convention.py`, `okf_bundle.py` or link resolution.
+- [RFC 3339 timestamps](rfc3339-timestamps.md) — the `date-time` and
+  `full-date` grammar OKF timestamps follow, the `Z` / `-00:00` meaning as
+  RFC 9557 updated it, the open erratum on a space separator, and where
+  PyYAML and `fromisoformat` depart. Read before changing timestamp parsing
+  in `okf.py` or `scripts/check_references.py`.
 - [Open Knowledge Format v0.2](okf-v0.2.md) — frontmatter families, trust
   tiers, `stale_after` in both texts of v0.2 (date in July, instant with offset
   since 2026-08-21), reserved files, links, conformance; the timestamp

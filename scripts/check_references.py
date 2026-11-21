@@ -149,7 +149,8 @@ def parse_reference(path: Path, text: str) -> Reference:
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # RFC 3339 §5.6 ``date-time``, the only other form OKF 0.3 §5 admits
 # (#2428); ``markdown_vault_mcp.okf`` reads the same grammar, and
-# ``tests/test_okf_rfc3339.py`` holds the two to it.
+# ``tests/test_okf_rfc3339.py`` holds the two to it
+# (``docs/design/reference/rfc3339-timestamps.md``).
 _DATE_TIME_RE = re.compile(
     r"(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})"
     r"(?:\.(\d+))?(?:([Zz])|([+-])(\d{2}):(\d{2}))"

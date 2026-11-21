@@ -29,10 +29,6 @@ sources:
     title: GoogleCloudPlatform/open-knowledge-format README, deprecation notice (commit 8a8ff87bfd, 2026-11-18)
     resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/8a8ff87bfd/README.md
     accessed: 2026-11-21
-  - id: rfc3339
-    title: "RFC 3339, Date and Time on the Internet: Timestamps (July 2002), §5.6"
-    resource: https://www.rfc-editor.org/rfc/rfc3339.txt
-    accessed: 2026-11-21
 ---
 
 # Open Knowledge Format v0.3
@@ -130,21 +126,9 @@ where the account holder ruled that a departure from the standard is a bug.
   values again, with a fixed meaning, so v0.2 bundles that contain them
   stay valid. A date-time without an offset stays invalid."
   [source: spec] (§13.2)
-- RFC 3339's `date-time` is `full-date "T" full-time`, with
-  `partial-time = time-hour ":" time-minute ":" time-second [time-secfrac]`,
-  `time-secfrac = "." 1*DIGIT` and `time-offset = "Z" / time-numoffset`,
-  `time-numoffset = ("+" / "-") time-hour ":" time-minute`. So seconds are
-  required, the fraction separator is `.`, and an offset carries its colon.
-  "the "T" and "Z" characters in this syntax may alternatively be lower
-  case"; `time-second` may be 60 at a leap second. [source: rfc3339] (§5.6)
-  [pins: tests/test_okf_rfc3339.py::test_rfc3339_forms_parse, tests/test_okf_rfc3339.py::test_non_rfc3339_forms_are_rejected]
-- A space between date and time is a separate note, not part of the rule:
-  "Applications using this syntax may choose, for the sake of readability,
-  to specify a full-date and full-time separated by (say) a space
-  character." OKF names the `date-time` rule and admits "No other form",
-  so a quoted string with a space is not an OKF timestamp; a YAML-native
-  datetime is a value, accepted under §5's MUST. [source: rfc3339] (§5.6)
-  [source: spec] (§5)
+- What the RFC 3339 `date-time` and `full-date` rules accept, the open
+  erratum on a space separator, and how PyYAML and `fromisoformat` differ
+  from them are recorded in [RFC 3339 timestamps](rfc3339-timestamps.md).
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3)
 

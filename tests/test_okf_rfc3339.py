@@ -33,6 +33,11 @@ UTC = dt.UTC
             dt.datetime(2026, 6, 30, 14, 0, 0, 123456, tzinfo=UTC),
         ),
         ("2026-06-30T14:00:00-00:00", dt.datetime(2026, 6, 30, 14, tzinfo=UTC)),
+        # §5.8: an offset need not be whole hours.
+        (
+            "1937-01-01T12:00:27.87+00:20",
+            dt.datetime(1937, 1, 1, 11, 40, 27, 870000, tzinfo=UTC),
+        ),
         # time-second allows 60 at a leap second; it names the next second.
         ("2016-12-31T23:59:60Z", dt.datetime(2017, 1, 1, tzinfo=UTC)),
         ("2026-06-30", dt.datetime(2026, 6, 30, tzinfo=UTC)),
@@ -54,6 +59,10 @@ def test_rfc3339_forms_parse(text: str, expected: dt.datetime) -> None:
         "2026-06-30T14:00:00+02",
         "20260630T140000Z",  # basic format is not RFC 3339
         "2026-06-30T24:00:00Z",  # time-hour is 00-23
+        "2026-06-30T14:60:00Z",  # time-minute is 00-59
+        "2026-06-30T14:00:61Z",  # time-second tops out at 60
+        "2026-06-30T14:00:00+24:00",  # time-numoffset reuses time-hour
+        "2026-06-30T14:00:00+05:60",  # ...and time-minute
         "2026-02-30T14:00:00Z",  # date-mday by month
         "2026-06-30T14:00:00.Z",  # 1*DIGIT after "."
         " 2026-06-30T14:00:00Z",  # no surrounding whitespace
