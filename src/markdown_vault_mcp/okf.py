@@ -239,27 +239,63 @@ class OkfDetector:
         return None
 
 
+def _is_absent(value: Any) -> bool:
+    """Whether a value counts as an absent key (OKF 0.3 §11.2 rule 1).
+
+    "A null value, an empty string, and an empty list are the same as an
+    absent key." An empty mapping is none of these and stays a value.
+    """
+    return value is None or (isinstance(value, (str, list)) and not value)
+
+
+def _has_value(metadata: Mapping[str, Any], key: str) -> bool:
+    """Whether *key* carries a value not read as absent (§11.2 rule 1)."""
+    return key in metadata and not _is_absent(metadata[key])
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Read a list field's value as a list (OKF 0.3 §11.2 rules 1 and 2).
+
+    An absent value is the empty list, a list is itself, and any other value
+    is "one item as a list with one item".
+    """
+    if _is_absent(value):
+        return []
+    return value if isinstance(value, list) else [value]
+
+
 def verified_entries(metadata: dict[str, Any]) -> list[Any]:
     """Return a note's ``verified`` field as the list the spec defines.
 
-    The field reference allows a single verifier "as a bare mapping without
-    the list dash" and requires consumers to "treat a bare mapping as a
-    one-element list" (#1357). Every reader of ``verified`` goes through
-    here so the shorthand is honoured at each of them alike.
+    OKF 0.3 §5.2 lets a producer write one verifier as a bare ``{by, at}``
+    mapping, and §11.2 rule 2 makes consumers "accept one item as a list
+    with one item" for every list field. A null, empty-string or empty-list
+    value is the same as an absent key (§11.2 rule 1). Every reader of
+    ``verified`` goes through here so these readings hold at each of them.
 
     Args:
         metadata: The note's frontmatter dict.
 
     Returns:
-        The list as written, a bare mapping wrapped as one element, or an
-        empty list when the field is absent or of neither shape.
+        The list as written, any other present value wrapped as one item,
+        or an empty list when the field is absent, null, ``""`` or ``[]``.
     """
-    verified = metadata.get("verified")
-    if isinstance(verified, list):
-        return verified
-    if isinstance(verified, dict):
-        return [verified]
-    return []
+    return _as_list(metadata.get("verified"))
+
+
+def source_entries(metadata: dict[str, Any]) -> list[Any]:
+    """Return a note's ``sources`` field as a list (OKF 0.3 §11.2).
+
+    Read like :func:`verified_entries`: one mapping (or any other single
+    value) is a one-item list, and a null, ``""`` or ``[]`` value is absent.
+
+    Args:
+        metadata: The note's frontmatter dict.
+
+    Returns:
+        The ``sources`` entries, empty when the field is absent.
+    """
+    return _as_list(metadata.get("sources"))
 
 
 def derive_trust_tier(metadata: dict[str, Any]) -> str:
@@ -323,12 +359,13 @@ def _generation_recorded(value: Any) -> bool:
     """Whether ``generated`` is well formed under OKF §5.2 (#2386).
 
     The spec requires ``generated.by``, an actor, and describes ``at`` without
-    requiring it, so an absent ``at`` is valid; a present ``at`` must be an
-    OKF §5 timestamp: a date-time with an offset, or a date (#2400).
+    requiring it, so an absent ``at`` is valid, and a null or empty one is
+    absent (§11.2 rule 1); a present ``at`` must be an OKF §5 timestamp: a
+    date-time with an offset, or a date (#2400).
     """
     if not isinstance(value, dict) or not _is_actor(value.get("by")):
         return False
-    return "at" not in value or _is_instant(value["at"])
+    return _is_absent(value.get("at")) or _is_instant(value["at"])
 
 
 def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
@@ -378,14 +415,6 @@ def _parse_timestamp(raw: Any) -> _dt.datetime | None:
     return _aware_or_none(parsed, raw)
 
 
-def _is_blank(value: Any) -> bool:
-    """Whether a value is null, an empty string or an empty list (OKF §11.2).
-
-    §11.2 rule 1 makes each of these "the same as an absent key".
-    """
-    return value is None or value == "" or value == []
-
-
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     """Derive staleness from ``stale_after``.
 
@@ -412,29 +441,26 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     raw = metadata.get("stale_after")
     boundary = _parse_timestamp(raw)
     if boundary is None:
-        return not _is_blank(raw)
+        return not _is_absent(raw)
     return now >= boundary
 
 
 def _attribution_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
     """Count usable ``sources`` entries apart from malformed ones.
 
-    OKF §5.1 makes ``resource`` "REQUIRED within an entry", so an entry is
-    usable only when it is a mapping carrying a ``resource`` key.
+    OKF §5.1 makes ``resource`` "REQUIRED in an entry", so an entry is
+    usable only when it is a mapping whose ``resource`` has a value. §11.2
+    rule 3 ignores any other entry; its malformed count is the warning.
     """
-    sources = metadata.get("sources")
-    entries = sources if isinstance(sources, list) else []
     return _entry_evidence(
-        metadata,
-        "sources",
-        entries,
-        lambda entry: isinstance(entry, Mapping) and "resource" in entry,
+        source_entries(metadata),
+        lambda entry: isinstance(entry, Mapping) and _has_value(entry, "resource"),
     )
 
 
 def _generation_evidence(metadata: dict[str, Any]) -> dict[str, str]:
     """Judge ``generated`` by OKF §5.2: an actor ``by``, an optional instant ``at``."""
-    if "generated" not in metadata:
+    if not _has_value(metadata, "generated"):
         state = "missing"
     elif _generation_recorded(metadata["generated"]):
         state = "recorded"
@@ -445,7 +471,7 @@ def _generation_evidence(metadata: dict[str, Any]) -> dict[str, str]:
 
 def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str, str]:
     """Describe the supplied expiry without implying knowledge is true."""
-    if "stale_after" not in metadata:
+    if not _has_value(metadata, "stale_after"):
         return {"state": "missing", "basis": "no_expiry_supplied"}
     raw = metadata["stale_after"]
     boundary = _parse_timestamp(raw)
@@ -457,33 +483,26 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     }
 
 
-def _review_evidence(metadata: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
+def _review_evidence(entries: list[Any]) -> dict[str, Any]:
     """Count usable recorded claims separately from malformed input."""
-    return _entry_evidence(metadata, "verified", entries, _review_recorded)
+    return _entry_evidence(entries, _review_recorded)
 
 
 def _entry_evidence(
-    metadata: dict[str, Any],
-    key: str,
-    entries: list[Any],
-    usable: Callable[[Any], bool],
+    entries: list[Any], usable: Callable[[Any], bool]
 ) -> dict[str, Any]:
     """Report a list-valued field's entries as recorded or malformed.
 
-    *entries* is the field read as a list (empty when it has no list
-    reading); a present value with no list reading counts as one malformed
-    entry.
+    *entries* is the field read as a list (:func:`_as_list`), so a field
+    with no entries is ``missing`` whether its key is absent, null, ``""``
+    or ``[]`` (OKF 0.3 §11.2 rule 1), and a single non-list value is one
+    entry (rule 2).
     """
     recorded = sum(1 for entry in entries if usable(entry))
     malformed = len(entries) - recorded
-    if key not in metadata:
+    state = "recorded" if recorded else "malformed"
+    if not entries:
         state = "missing"
-    elif not entries and not isinstance(metadata[key], list):
-        state, malformed = "malformed", 1
-    elif not entries:
-        state = "empty"
-    else:
-        state = "recorded" if recorded else "malformed"
     return {
         "state": state,
         "recorded_entries": recorded,
@@ -492,17 +511,16 @@ def _entry_evidence(
     }
 
 
-def _review_applicability(entries: list[Any], review: dict[str, Any]) -> dict[str, str]:
+def _review_applicability(entries: list[Any]) -> dict[str, str]:
     """Report whether a supplied review applies to the current content.
 
     No review is bound to a content snapshot, so a supplied review's
-    applicability is always ``unknown``; ``basis`` says why. Only an absent
-    or empty ``verified`` reports ``none``.
+    applicability is always ``unknown``; ``basis`` says why. Only a
+    ``verified`` with no entries (absent, null, ``""`` or ``[]``) reports
+    ``none``.
     """
     if entries:
         return {"state": "unknown", "basis": "no_snapshot_binding"}
-    if review["state"] == "malformed":
-        return {"state": "unknown", "basis": "malformed_review"}
     return {"state": "none", "basis": "no_review_supplied"}
 
 
@@ -529,8 +547,9 @@ def derive_annotation(
         ``review`` describe the supplied evidence and its parsing basis, not
         truth or applicability to this revision. ``review_applicability``
         reports that separately as ``{state, basis}``: ``unknown`` when
-        ``verified`` has entries or is malformed, ``none`` when absent or
-        empty. Full reads additionally carry ``recorded`` with supplied
+        ``verified`` has entries, ``none`` when it has none. A null, ``""``
+        or ``[]`` field reads as absent and a single ``verified`` or
+        ``sources`` value as a one-item list (OKF 0.3 §11.2). Full reads additionally carry ``recorded`` with supplied
         expiry/reviews as parsed, including malformed values; omitted keys
         remain absent. ``attribution`` reports ``sources`` in ``review``'s
         shape, counting entries that carry ``resource`` as recorded (OKF
@@ -554,17 +573,16 @@ def derive_annotation(
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
     entries = verified_entries(metadata)
-    annotation["review"] = _review_evidence(metadata, entries)
-    annotation["review_applicability"] = _review_applicability(
-        entries, annotation["review"]
-    )
+    annotation["review"] = _review_evidence(entries)
+    annotation["review_applicability"] = _review_applicability(entries)
     annotation["attribution"] = _attribution_evidence(metadata)
     annotation["generation"] = _generation_evidence(metadata)
-    sources = metadata.get("sources")
-    source_list = sources if isinstance(sources, list) else []
+    source_list = source_entries(metadata)
     if include_sources:
         annotation["recorded"] = {
-            key: metadata[key] for key in ("stale_after", "verified") if key in metadata
+            key: metadata[key]
+            for key in ("stale_after", "verified")
+            if _has_value(metadata, key)
         }
         if source_list:
             annotation["sources"] = source_list
@@ -714,9 +732,10 @@ class OkfAuditReport:
             index declaring ``okf_version`` is also
             ``misplaced_okf_version``. Appended and defaulted so earlier
             positional construction still works.
-        malformed_sources: Assessed concepts whose ``sources`` has a
-            malformed entry or is not a list (an empty list is valid; the
-            annotation's ``attribution`` rule).
+        malformed_sources: Assessed concepts whose ``sources`` has an
+            entry without a ``resource``; a single value is a one-item list
+            and a null or empty one is absent (the annotation's
+            ``attribution`` rule).
         malformed_generated: Assessed concepts whose ``generated`` lacks an
             actor ``by``, or has an ``at`` that is not an ISO 8601 datetime
             with an offset (the annotation's ``generation`` rule, OKF §5.2).
@@ -850,11 +869,11 @@ def _evaluate_note(
 
 def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> None:
     """Report supplied-field shape findings, not local editorial policy."""
-    if "stale_after" not in metadata:
+    if not _has_value(metadata, "stale_after"):
         acc.missing_freshness.add(rel)
     elif _parse_timestamp(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)
-    if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
+    if _review_evidence(verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)
     if _attribution_evidence(metadata)["malformed_entries"]:
         acc.malformed_sources.add(rel)

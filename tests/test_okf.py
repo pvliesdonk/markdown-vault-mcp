@@ -430,12 +430,13 @@ _ABSENT = object()
         for field in ("sources", "generated")
         for value, sources_bad, generated_bad in [
             (_ABSENT, False, False),
-            (None, True, True),
+            # OKF 0.3 §11.2 rule 1: null, "" and [] are an absent key.
+            (None, False, False),
             (False, True, True),
             (0, True, True),
-            ("", True, True),
+            ("", False, False),
             ("https://example.com", True, True),
-            ([], False, True),
+            ([], False, False),
             ([{}], True, True),
             ([{"resource": "https://a"}, {}], True, True),
             ([{}, "bad"], True, True),
@@ -484,6 +485,9 @@ def test_provenance_shape_matrix(
         assert "malformed_sources" not in annotation
         assert "malformed_generated" not in annotation
         sources = metadata.get("sources")
+        # OKF 0.3 §11.2 rule 2: one item is a list with one item.
+        if sources not in (None, "", []) and not isinstance(sources, list):
+            sources = [sources]
         if isinstance(sources, list) and sources:
             if include_sources:
                 assert annotation["sources"] == sources
@@ -891,7 +895,9 @@ class TestOkfAudit:
     def test_provenance_audit_boundaries(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import OkfFinding, audit_bundle
 
-        malformed = "---\ntype: Note\nsources: null\ngenerated: false\n---\n# Note\n"
+        malformed = (
+            "---\ntype: Note\nsources: [{id: x}]\ngenerated: false\n---\n# Note\n"
+        )
         for path in ("z.md", "b.md", "a.md", "index.md", "log.md", "drop-excluded.md"):
             (tmp_path / path).write_text(malformed, encoding="utf-8")
         (tmp_path / "b.md").write_text(
@@ -901,7 +907,8 @@ class TestOkfAudit:
         )
         for path, provenance in (
             ("sources-only.md", "sources: https://example.com\n"),
-            ("sources-only-2.md", "sources: null\n"),
+            ("sources-only-2.md", "sources: {id: x}\n"),
+            ("absent-sources.md", "sources: null\ngenerated: ''\n"),
             ("generated-only.md", "generated: codex at a date\n"),
             ("neither.md", ""),
             (
@@ -919,8 +926,8 @@ class TestOkfAudit:
         assert report.malformed_sources == OkfFinding(5, ("a.md",))
         assert report.malformed_generated == OkfFinding(4, ("a.md",))
         assert report.unparseable_frontmatter == OkfFinding(1, ("broken.md",))
-        assert report.total_notes == 9
-        assert report.conformant_notes == 8
+        assert report.total_notes == 10
+        assert report.conformant_notes == 9
         assert report.missing_type.count == 0
         empty = audit_bundle(tmp_path / "missing")
         assert empty.malformed_sources == empty.malformed_generated == OkfFinding(0, ())
@@ -941,7 +948,7 @@ class TestOkfAudit:
                 "*excluded*",
             ],
         )
-        assert valid.total_notes == valid.conformant_notes == 2
+        assert valid.total_notes == valid.conformant_notes == 3
         assert valid.unparseable_frontmatter.count == 0
         assert valid.malformed_sources == valid.malformed_generated == OkfFinding(0, ())
 

@@ -221,9 +221,17 @@ class TestAppendOkfVerification:
             {"by": "human:peter", "at": _ISO},
         ]
 
-    def test_scalar_verified_is_replaced(self) -> None:
-        # A malformed scalar verified is treated as empty, not crashed on.
+    def test_scalar_verified_is_kept_as_one_item(self) -> None:
+        # OKF 0.3 §11.2 rule 2: a scalar is one item, so it stays in the list.
         text = "---\nverified: nonsense\n---\n# N\n"
+        meta = fm.loads(
+            append_okf_verification(text, subject="peter", now=_NOW)
+        ).metadata
+        assert meta["verified"] == ["nonsense", {"by": "human:peter", "at": _ISO}]
+
+    @pytest.mark.parametrize("value", ["null", "''", "[]"])
+    def test_absent_verified_starts_a_list(self, value: str) -> None:
+        text = f"---\nverified: {value}\n---\n# N\n"
         meta = fm.loads(
             append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
