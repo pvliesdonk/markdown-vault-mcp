@@ -74,7 +74,7 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 #: The ``human:peter`` event the fixtures carry, as it reads back: a write
 #: keeps it as history (OKF 0.3 §5.3; #2405).
-_KEPT_VERIFIED = [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
+_KEPT_VERIFIED = [{"by": "human:peter", "at": "2026-01-01"}]
 
 
 class TestApplyOkfWriteStamp:
@@ -256,7 +256,7 @@ class TestAppendOkfVerification:
         # The pre-existing unquoted YAML date round-trips as a date object; the
         # appended entry carries the ISO string we wrote.
         assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+            {"by": "human:alice", "at": "2026-01-01"},
             {"by": "human:peter", "at": _ISO},
         ]
 
@@ -268,7 +268,7 @@ class TestAppendOkfVerification:
             append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
         assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+            {"by": "human:alice", "at": "2026-01-01"},
             {"by": "human:peter", "at": _ISO},
         ]
 
@@ -793,6 +793,8 @@ class TestWriteToolThreadsActor:
         meta = fm.loads(
             (enforced_env / "guides" / "plain.md").read_text(encoding="utf-8")
         ).metadata
+        # Read back with plain python-frontmatter (YAML 1.1), so the date is
+        # a ``date`` here; the server itself reads it as the string (#2415).
         assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
         assert "generated" not in meta
 

@@ -553,6 +553,11 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: root. Its row keeps the surplus ``..`` in front (``../x.md``), so it is
 #: reported broken but is never an outlink, backlink or graph edge. Still one bump: no tag contains the commit that
 #: set 13 (``AGENTS.md``, once per release).
+#:
+#: Version 13 also covers #2415: frontmatter is read by the YAML 1.2 core
+#: schema, so ``yes``, ``1:30`` and dates are stored as the strings written
+#: and a date-time keeps its own spelling rather than ``isoformat()``'s.
+#: Still one bump: no tag contains the commit that set 13.
 INDEX_SEMANTICS_VERSION = 13
 
 

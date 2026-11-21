@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
+from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.git._run import literal_pathspec, run_git_capturing
 from markdown_vault_mcp.git.health import log_git_stderr
 from markdown_vault_mcp.git.types import (
@@ -432,7 +433,8 @@ def write_conflict_files(
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
         conflict_abs.write_text(
-            frontmatter.dumps(post, sort_keys=False), encoding="utf-8"
+            frontmatter.dumps(post, handler=YAML12_HANDLER, sort_keys=False),
+            encoding="utf-8",
         )
 
         # --- Update original file with conflict_with frontmatter ---
@@ -466,7 +468,10 @@ def write_conflict_files(
                 orig_post.metadata["conflict_with"] = conflict_rel
                 orig_post.metadata["conflict_date"] = conflict_date
                 original_abs.write_text(
-                    frontmatter.dumps(orig_post, sort_keys=False), encoding="utf-8"
+                    frontmatter.dumps(
+                        orig_post, handler=YAML12_HANDLER, sort_keys=False
+                    ),
+                    encoding="utf-8",
                 )
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):

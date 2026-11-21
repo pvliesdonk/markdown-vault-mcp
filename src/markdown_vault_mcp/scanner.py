@@ -18,7 +18,9 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
+from frontmatter.default_handlers import YAMLHandler
 
+from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import (
     Chunk,
@@ -802,7 +804,9 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     """Parse *text* as markdown-with-frontmatter, one error for one failure.
 
     The package's single entry point to ``frontmatter.loads``, so no caller
-    has to know which handler will run or which error it raises (#1408). A
+    has to know which handler will run or which error it raises (#1408).
+    A YAML block is read by the YAML 1.2 core schema (OKF 0.3 §4, #2415), so
+    a date or timestamp arrives as the string written, not a ``date``. A
     YAML failure propagates as the ``yaml.YAMLError`` it already was; every
     other handler's failure — all of them ``ValueError`` subclasses — is
     re-raised as :class:`MalformedFrontmatterError`, which is one.
@@ -817,8 +821,13 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
+    handler = frontmatter.detect_format(text, frontmatter.handlers)
+    if isinstance(handler, YAMLHandler):
+        # OKF 0.3 §4: YAML frontmatter is read by the YAML 1.2 core schema
+        # (#2415); TOML and JSON blocks keep their own handlers.
+        handler = YAML12_HANDLER
     try:
-        return frontmatter.loads(text)
+        return frontmatter.loads(text, handler=handler)
     except ValueError as exc:
         # yaml.YAMLError is not a ValueError, so it is never caught here and
         # reaches the caller unchanged.

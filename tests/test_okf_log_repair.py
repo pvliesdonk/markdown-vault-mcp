@@ -105,6 +105,24 @@ def test_preserves_opening_metadata_and_suffix_bytes(
 
 @pytest.mark.parametrize(
     "raw",
+    [b"---\nupdated: 2026-02-30\n---\n\n" * 3, b"---\ndate: 2026-99-99\n---\n\n" * 3],
+)
+def test_a_date_like_string_unit_is_a_candidate(
+    manager: DocumentManager, tmp_path: Path, raw: bytes
+) -> None:
+    """Under the YAML 1.2 core schema these blocks are mappings of strings.
+
+    YAML 1.1 timestamp construction failed on them, so they used to be left
+    alone; read by the core schema (OKF 0.3 §4, #2415) they are ordinary
+    repeated units, and the repair proposes them for review only.
+    """
+    (tmp_path / "log.md").write_bytes(raw)
+    preview = manager.okf_preview_log_repair("log.md")
+    assert preview.status == "review_required"
+
+
+@pytest.mark.parametrize(
+    "raw",
     [
         b"# Log\n",
         UNIT + SUFFIX,
@@ -113,8 +131,6 @@ def test_preserves_opening_metadata_and_suffix_bytes(
         UNIT + UNIT.replace(b"Log", b"Other") + SUFFIX,
         UNIT * 2 + b"---\ntitle: Other\n---\n\n" + SUFFIX,
         b"---\nbad: [\n---\n\n" * 3,
-        b"---\nupdated: 2026-02-30\n---\n\n" * 3,
-        b"---\ndate: 2026-99-99\n---\n\n" * 3,
         b"---\n- list\n---\n\n" * 3,
         UNIT.replace(b"\n\n", b"\n") * 3,
     ],
