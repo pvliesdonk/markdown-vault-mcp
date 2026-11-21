@@ -85,6 +85,7 @@ where the account holder ruled that a departure from the standard is a bug.
   SHOULD warn about it." [source: spec] (§3.2) *0.2 differed:* every
   non-reserved `.md` was a concept and needed a `type` to conform.
   [source: spec-v02] (§3.1, §11)
+  [pins: tests/test_okf.py::TestNonConceptAudit::test_typeless_files_are_warned_about_not_counted]
 - Files and directories starting with `.` "are not part of the bundle". A
   consumer "does not follow symbolic links that go out of the bundle root".
   [source: spec] (§3.2)
@@ -202,13 +203,14 @@ where the account holder ruled that a departure from the standard is a bug.
 - A subdirectory `index.md` "has no frontmatter". A bundle-root `index.md`
   MAY carry `okf_version`, `title`, `description`, `license` and extension
   keys. *0.2 allowed only `okf_version`.* [source: spec] (§8, §8.1)
+  [pins: tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_may_carry_bundle_metadata, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_with_a_block]
 - "A producer that regenerates `index.md` MUST keep the existing
   frontmatter of the bundle-root `index.md`." [source: spec] (§8.1)
   [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured]
 - `log.md` date headings MUST be `YYYY-MM-DD`; "`log.md` has no
   frontmatter." *The no-frontmatter sentence is new in 0.3.*
   [source: spec] (§9)
-  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first]
+  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first, tests/test_okf.py::TestLogFileAudit::test_log_frontmatter_is_a_log_finding, tests/test_okf.py::TestLogFileAudit::test_non_date_heading_is_reported]
 
 ### Conformance (§11)
 
@@ -219,6 +221,7 @@ where the account holder ruled that a departure from the standard is a bug.
   every non-reserved `.md` file and a non-empty `type` in it; 0.3 "does not
   require frontmatter in every `.md` file".* [source: spec-v02] (§11)
   [source: spec] (§13.2)
+  [pins: tests/test_okf.py::TestLogFileAudit::test_unparseable_log_block_is_both_findings, tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_block_not_a_mapping_is_unparseable, tests/test_okf.py::TestNonConceptAudit::test_note_block_that_is_not_a_mapping_is_unparseable]
 - §11.2 consumer rules, for absent, empty or unexpected values: "A null
   value, an empty string, and an empty list are the same as an absent
   key"; for a list field (`tags`, `sources`, `verified`, `parameters`)
@@ -294,11 +297,11 @@ are named where they exist; a fix rewrites them.
 | 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | fixed by #2404: recorded, read as 00:00 UTC (was malformed, the event ignored and the tier unverified) | valid form (no keyword) | #2400 (inverted) |
 | 6 | Null/empty = absent (§11.2) | silent | silent | required | fixed: null, `""` and `[]` read as absent in the annotation and the audit (was: null `stale_after` / `generated` malformed; empty `verified` reported `empty`) | stated (no keyword) | #2411 (fixed) |
 | 7 | One item as a list (§11.2) | `verified` only | `verified` only | every list field | fixed: one `sources` item is a one-item list (was: a `sources` mapping is malformed) | MUST | #2412 (fixed) |
-| 8 | `type` not a conformance rule (§3.2, §11.1) | required | required | not required; SHOULD warn | `missing_type` is a conformance finding; README.md counts in `total_notes` | stricter | #2406 (dissolves) |
-| 9 | Reserved files under rule 1 (§11.1) | n/a | n/a | every `.md` | an unparseable `log.md` block is not reported | lenient | none |
-| 10 | Root `index.md` keys (§8.1) | `okf_version` | `okf_version` | + title, description, license, extensions | anything but a lone `okf_version` is `index_frontmatter` | stricter | none |
-| 11 | `log.md` frontmatter (§9) | silent | silent | none | the audit ignores it; generators seed it under `required_frontmatter` | lenient / producer | #1438 (032) |
-| 12 | Log heading shape (§9, §11.1 rule 2) | MUST + conformance | MUST + conformance | MUST + conformance | reported as an advisory | lenient | none |
+| 8 | `type` not a conformance rule (§3.2, §11.1) | required | required | not required; SHOULD warn | fixed: `missing_type` is the §3.2 warning; `total_notes` counts concepts | stricter | #2406 (fixed) |
+| 9 | Reserved files under rule 1 (§11.1) | n/a | n/a | every `.md` | fixed: an unparseable block in any reserved file is `unparseable_frontmatter` | lenient | #2413 (fixed) |
+| 10 | Root `index.md` keys (§8.1) | `okf_version` | `okf_version` | + title, description, license, extensions | fixed: the root may carry any keys; only a folder index's block is `index_frontmatter` | stricter | #2414 (fixed) |
+| 11 | `log.md` frontmatter (§9) | silent | silent | none | audit fixed (`log_frontmatter`, #2413); generators seed it under `required_frontmatter` | lenient / producer | #2413 (audit), #1438 (032) |
+| 12 | Log heading shape (§9, §11.1 rule 2) | MUST + conformance | MUST + conformance | MUST + conformance | fixed: `log_heading_shape` is a conformance finding | lenient | #2413 (fixed) |
 | 13 | YAML 1.2 core schema (§4) | silent | silent | MUST | PyYAML 1.1: `yes`/`on` → `True`, `1_000` → 1000, `0o17` → string | MUST | none |
 | 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | `..` above the root is clamped: `../../x.md` from `a/n.md` resolves to `x.md` | MUST NOT | none |
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | `%` is left literal and `#` is backslash-escaped: `50%%20done/a\#b%20(c).md` | MUST | none |
@@ -345,8 +348,6 @@ Notes on the table:
   text names "0.2 or earlier" and says how a 0.3 consumer reads those
   values (§12.1, §13), so a 0.2 declaration is known, read by 0.3's rules,
   and logs nothing. Only a value outside `0.1`–`0.3` logs the warning.
-- Pins of current behaviour a fix will rewrite:
-  `tests/test_okf.py::TestIndexFrontmatterAudit::test_log_frontmatter_is_not_an_index_finding` (#11).
 - **Not departures:** the ranking weights (§5 of `okf.md`; the spec is
   silent on ranking), wikilinks reported rather than rejected (the spec
   says they are not links, not that a bundle with them is non-conformant),

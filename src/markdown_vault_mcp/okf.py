@@ -43,7 +43,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -802,11 +802,15 @@ class OkfAuditReport:
 
     Degrees, not verdicts: during a migration the audit is a progress
     meter, so partial conformance is first-class. ``conformance`` findings
-    violate the spec's single hard rule (parseable frontmatter with a
-    non-empty ``type``), its placement rule for ``okf_version``, or its
-    index-file rule; ``advisories`` are tolerated-by-spec deviations worth
-    fixing; ``informational`` entries are not deviations at all (wikilinks
-    only matter at export; recommended fields are optional).
+    break OKF 0.3 §11.1: a frontmatter block in any ``.md`` file that does
+    not parse as a YAML mapping (rule 1), or a reserved file that disagrees
+    with §8 or §9 (rule 2), plus the ``okf_version`` placement rule.
+    ``advisories`` are tolerated-by-spec deviations worth fixing;
+    ``informational`` entries are not deviations at all (wikilinks only
+    matter at export; recommended fields are optional). A ``.md`` file with
+    no frontmatter or no ``type`` is not a concept (§3.2): it does not
+    affect conformance and is reported only as the ``missing_type``
+    warning the spec asks validators for.
 
     Missing freshness is informational; malformed freshness, reviews,
     sources and generated records are format observations and do not change
@@ -819,34 +823,37 @@ class OkfAuditReport:
         mode: Configured OKF mode at audit time.
         declared_version: Declared ``okf_version``, or ``None``.
         active: Whether read semantics were active at audit time.
-        total_notes: Non-reserved markdown files examined.
-        conformant_notes: Notes with parseable frontmatter and a
-            non-empty ``type``.
-        missing_type: Notes lacking a non-empty ``type``.
-        unparseable_frontmatter: Notes whose frontmatter fails to parse.
+        total_notes: Concepts examined, plus non-reserved files whose
+            frontmatter does not parse (they may be concepts). Non-concepts
+            and reserved files are not counted.
+        conformant_notes: Concepts: non-reserved files whose frontmatter
+            parses and has a non-empty ``type``.
+        missing_type: Non-reserved files with no frontmatter or no
+            non-empty ``type``. Not concepts and not a conformance finding:
+            the §3.2 warning (advisory).
+        unparseable_frontmatter: Files, reserved ones included, whose
+            frontmatter block does not parse as a mapping (§11.1 rule 1).
+            An empty or comment-only block reads as no keys and passes.
         misplaced_okf_version: Notes outside the bundle root carrying
             ``okf_version``.
-        unknown_status: Notes with a ``status`` outside the spec
+        unknown_status: Concepts with a ``status`` outside the spec
             vocabulary (tolerated; advisory).
         log_heading_shape: ``log.md`` files with ``##`` headings that are
-            not ``YYYY-MM-DD`` dates (advisory).
+            not ``YYYY-MM-DD`` dates (conformance: §9, §11.1 rule 2).
         root_index_missing: Whether the bundle-root ``index.md`` is absent
             (advisory; consumers must tolerate it).
-        wikilink_files: Notes containing wikilinks (informational; only
+        wikilink_files: Concepts containing wikilinks (informational; only
             matters at export).
-        missing_recommended: Notes lacking a recommended ``title`` or
+        missing_recommended: Concepts lacking a recommended ``title`` or
             ``description`` (informational).
-        index_frontmatter: ``index.md`` files carrying frontmatter the
-            format does not allow there: any block on a folder index, and
-            on the bundle root anything but a lone ``okf_version`` key.
-            Server-generated indexes are held to the same rule. An empty or
-            non-mapping block, or YAML that does not parse, counts, since
-            presence is read from the block rather than its keys; keys are
-            read by the same parser as every other rule, so JSON frontmatter
-            is judged by its keys and its syntax is not checked. A folder
-            index declaring ``okf_version`` is also
-            ``misplaced_okf_version``. Appended and defaulted so earlier
-            positional construction still works.
+        index_frontmatter: Folder ``index.md`` files carrying a frontmatter
+            block, which §8 does not allow there (§11.1 rule 2). The
+            bundle-root ``index.md`` may carry any keys (§8.1) and is held
+            only to rule 1. Server-generated indexes are held to the same
+            rule. Presence is read from the block rather than its keys, so
+            an empty block counts. A folder index declaring ``okf_version``
+            is also ``misplaced_okf_version``. Appended and defaulted so
+            earlier positional construction still works.
         malformed_sources: Assessed concepts whose ``sources`` has an
             entry without a ``resource``; a single value is a one-item list
             and a null or empty one is absent (the annotation's
@@ -859,6 +866,9 @@ class OkfAuditReport:
         malformed_review: Assessed concepts with malformed review input.
         evidence_unavailable: Discovered concepts not assessed for evidence
             because reading/parsing failed or the read cap was exceeded.
+        log_frontmatter: ``log.md`` files carrying a frontmatter block,
+            parseable or not; §9 says ``log.md`` has none (conformance,
+            §11.1 rule 2). Appended and defaulted like the fields above.
     """
 
     mode: str
@@ -881,6 +891,7 @@ class OkfAuditReport:
     malformed_freshness: OkfFinding = OkfFinding(count=0, examples=())
     malformed_review: OkfFinding = OkfFinding(count=0, examples=())
     evidence_unavailable: OkfFinding = OkfFinding(count=0, examples=())
+    log_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
 
 
 class _FindingAccumulator:
@@ -912,6 +923,7 @@ class _AuditCounters:
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.index_frontmatter = _FindingAccumulator(cap)
+        self.log_frontmatter = _FindingAccumulator(cap)
         self.malformed_sources = _FindingAccumulator(cap)
         self.malformed_generated = _FindingAccumulator(cap)
         self.missing_freshness = _FindingAccumulator(cap)
@@ -935,20 +947,44 @@ def _log_headings_conform(body: str) -> bool:
     )
 
 
-def _index_frontmatter_conforms(rel: str, raw: str, metadata: dict[str, Any]) -> bool:
-    """Whether an ``index.md`` carries only the frontmatter §8 allows.
+def _block_is_mapping(raw: str) -> bool:
+    """Whether a leading frontmatter block, if any, loads as a mapping.
 
-    Presence is read from the block, not from *metadata*: an empty,
-    comment-only, non-mapping or unparseable block parses to no keys yet is
-    still a block. The splitter agrees with the parse about where a block
-    is — after leading blank lines, and never when the opening ``---`` is
-    left unclosed.
+    The shared parser reads a block that loads as a sequence or a scalar as
+    no keys, which would make it indistinguishable from a file with no
+    frontmatter. OKF §11.1 rule 1 asks every block to parse "as a YAML
+    mapping"; an empty or comment-only block loads as null, which §11.2
+    reads as absent, so it passes. Called only after the parse succeeded,
+    so the same handler loads the block again without raising.
     """
-    from markdown_vault_mcp.scanner import strip_frontmatter_block
+    candidate = raw.lstrip()
+    handler = fm.detect_format(candidate, fm.handlers)
+    loaded = handler.load(handler.split(candidate)[0]) if handler else None
+    return loaded is None or isinstance(loaded, dict)
 
-    if strip_frontmatter_block(raw) == raw:
-        return True
-    return rel == _ROOT_INDEX and set(metadata) == {"okf_version"}
+
+def _is_concept(metadata: dict[str, Any]) -> bool:
+    """Whether parsed frontmatter makes a non-reserved file a concept (§3.2)."""
+    note_type = metadata.get("type")
+    return isinstance(note_type, str) and bool(note_type.strip())
+
+
+def _audit_reserved(
+    rel: str, name: str, body: str, has_block: bool, acc: _AuditCounters
+) -> None:
+    """Apply §8 and §9 to a reserved file (§11.1 rule 2).
+
+    A folder ``index.md`` and every ``log.md`` have no frontmatter; the
+    bundle-root ``index.md`` may carry any keys (§8.1, extension keys
+    included), so only rule 1 applies to it.
+    """
+    if name == "log.md":
+        if has_block:
+            acc.log_frontmatter.add(rel)
+        if not _log_headings_conform(body):
+            acc.log_shape.add(rel)
+    elif has_block and rel != _ROOT_INDEX:
+        acc.index_frontmatter.add(rel)
 
 
 def _read_capped(file_path: Path, rel: str) -> str | None:
@@ -963,12 +999,8 @@ def _read_capped(file_path: Path, rel: str) -> str | None:
 def _evaluate_note(
     rel: str, metadata: dict[str, Any], body: str, acc: _AuditCounters
 ) -> None:
-    """Apply the non-reserved-note rules to one parsed note."""
-    note_type = metadata.get("type")
-    if isinstance(note_type, str) and note_type.strip():
-        acc.conformant += 1
-    else:
-        acc.missing_type.add(rel)
+    """Apply the concept rules to one concept's parsed frontmatter."""
+    acc.conformant += 1
     if derive_status(metadata) not in OKF_STATUS_VALUES:
         acc.unknown_status.add(rel)
     if "[[" in body:
@@ -992,14 +1024,21 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
 
 
 def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
-    """Classify one markdown file and update the audit counters."""
+    """Classify one markdown file and update the audit counters.
+
+    Rule 1 of OKF §11.1 (the block parses as a mapping) applies to every
+    file, reserved ones included. A non-reserved file whose block parses
+    but has no non-empty ``type`` is not a concept (§3.2): it is counted
+    under ``missing_type`` as a warning and skipped by every concept rule.
+    """
     evidence_available = len(raw) <= _MAX_READ_CHARS
     raw = raw[:_MAX_READ_CHARS]
+    has_block = strip_frontmatter_block(raw) != raw
     try:
         post = parse_frontmatter(raw)
         metadata: dict[str, Any] = dict(post.metadata)
         body = post.content
-        parse_ok = True
+        parse_ok = not has_block or _block_is_mapping(raw)
     except yaml.YAMLError:
         metadata, body, parse_ok = {}, raw, False
 
@@ -1008,17 +1047,17 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
         acc.root_index_seen = True
     elif "okf_version" in metadata:
         acc.misplaced.add(rel)
+    if not parse_ok:
+        acc.unparseable.add(rel)
     if is_okf_reserved_file(rel):
-        if name == "log.md" and not _log_headings_conform(body):
-            acc.log_shape.add(rel)
-        elif name == "index.md" and not _index_frontmatter_conforms(rel, raw, metadata):
-            acc.index_frontmatter.add(rel)
+        _audit_reserved(rel, name, body, has_block, acc)
+        return
+    if parse_ok and not _is_concept(metadata):
+        acc.missing_type.add(rel)
         return
 
     acc.total += 1
-    if not parse_ok:
-        acc.unparseable.add(rel)
-    else:
+    if parse_ok:
         _evaluate_note(rel, metadata, body, acc)
     if parse_ok and evidence_available:
         _audit_evidence(rel, metadata, acc)
@@ -1110,6 +1149,7 @@ def audit_bundle(
         malformed_freshness=acc.malformed_freshness.finding(),
         malformed_review=acc.malformed_review.finding(),
         evidence_unavailable=acc.evidence_unavailable.finding(),
+        log_frontmatter=acc.log_frontmatter.finding(),
     )
 
 

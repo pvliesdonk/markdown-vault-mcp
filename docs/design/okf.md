@@ -420,19 +420,27 @@ Graph surfaces (`GraphFacet`, SPA GraphView) may color/segment nodes by
 Read-only tool reporting bundle conformance **as a degree, not a verdict** —
 during migration it is a progress meter:
 
-- Per-rule counts + capped example lists: notes missing parseable
-  frontmatter; notes missing non-empty `type`; unknown `status` values;
-  `okf_version` outside bundle root; `index.md` frontmatter §8 does not
-  allow (a conformance finding under §11 rule 3: any block on a folder index,
-  anything beyond `okf_version` on the root — #1396). That rule reads
-  presence from the block, so an empty block or YAML that does not parse
-  counts, and judges keys, not syntax: a JSON block, which the shared parser accepts, is
-  judged on its keys like a YAML one. `log.md` frontmatter is not a finding;
-  §9 says nothing about it. The other reserved-file convention violations
-  are structural only — `log.md` heading shape, root `index.md` presence —
-  and advisory, since the spec tolerates their absence.
-- Informational (non-conformance) counts: wikilink usage (matters at export
-  only), notes lacking recommended fields.
+- Conformance findings follow OKF 0.3 §11.1. Rule 1: a frontmatter block
+  in any `.md` file, `index.md` and `log.md` included, that does not parse
+  as a YAML mapping (`unparseable_frontmatter`; an empty or comment-only
+  block reads as no keys and passes). Rule 2: a reserved file that
+  disagrees with §8 or §9 — any block on a folder `index.md`
+  (`index_frontmatter`, presence read from the block, #1396), any block on
+  a `log.md` (`log_frontmatter`), a `log.md` `##` heading that is not
+  `YYYY-MM-DD` (`log_heading_shape`). The bundle-root `index.md` may carry
+  any keys (§8.1: `okf_version`, `title`, `description`, `license` and
+  extension keys), so only rule 1 applies to it (#2413, #2414).
+  `okf_version` outside the bundle root is also reported here.
+- Concepts (§3.2): a non-reserved `.md` file whose frontmatter has a
+  non-empty `type`. `conformant_notes` counts them; `total_notes` adds the
+  non-reserved files whose block fails rule 1, since they may be concepts.
+  A file with no frontmatter or no `type` is not a concept, does not affect
+  conformance, and is reported only as the `missing_type` warning §3.2 asks
+  validators for; every concept and evidence rule skips it (#2406).
+- Advisory: `missing_type`, unknown `status` values on concepts, and a
+  missing root `index.md`, which the spec tolerates.
+- Informational (non-conformance) counts: wikilink usage in concepts
+  (matters at export only), concepts lacking recommended fields.
 - `malformed_sources` and `malformed_generated` are evidence findings
   (#2386): they reuse the annotation's `attribution` (any malformed entry)
   and `generation` (`state: malformed`) rules, counting each assessed
@@ -808,8 +816,10 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   trade one defect for another.
 
 The audit does not exempt these files. A key the policy seeds into an
-`index.md` is an `index_frontmatter` finding like any hand-written one
-(#1396): the finding describes the file against §8, not who wrote it, and
+folder `index.md` is an `index_frontmatter` finding like any hand-written
+one, and one seeded into a `log.md` a `log_frontmatter` finding (#1396,
+#2413); the root `index.md` may carry the keys (§8.1). The finding
+describes the file against §8 and §9, not who wrote it, and
 changes neither what the policy seeds nor what the gate admits. Whether the
 gate should reach generated reserved files at all is open (#1438).
 

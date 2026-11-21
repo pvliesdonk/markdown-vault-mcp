@@ -84,13 +84,13 @@ months, not twelve.
   `okf_version` key". The body is sections of `* [Title](url) - description`
   entries; producers MAY generate one, consumers MAY synthesise one when
   none is present. [source: spec] (§8, §12)
-  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_finding, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_declaring_okf_version_is_both_findings]
+  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_declaring_okf_version_is_both_findings]
 - A `log.md` MAY appear at any level; it is "a flat list of date-grouped
   entries, newest first"; "Date headings MUST use ISO 8601 `YYYY-MM-DD`
   form"; the leading bold word of an entry is a convention, not a
   requirement. §9 says nothing about frontmatter in a `log.md`; the
   no-frontmatter rule is §8's, and names index files only. [source: spec] (§9)
-  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first, tests/test_okf.py::TestAppendOkfLogEntry::test_inserts_new_day_section_on_top, tests/test_okf.py::TestIndexFrontmatterAudit::test_log_frontmatter_is_not_an_index_finding]
+  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first, tests/test_okf.py::TestAppendOkfLogEntry::test_inserts_new_day_section_on_top]
 - The August amendment left the log's date headings alone: "`## 2026-05-22`
   groups a day's entries and is not a field value." [source: pr-323]
 

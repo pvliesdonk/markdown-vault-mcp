@@ -2,6 +2,11 @@
 
 ## 2026-11-21
 
+- [Open Knowledge Format v0.3](okf-v0.3.md): marked departures 8, 9, 10
+  and 12, and the audit side of 11, fixed by #2406, #2413 and #2414, and
+  pinned the §3.2, §8, §9 and §11.1 claims to the audit tests. Dropped the
+  [v0.2 page](okf-v0.2.md)'s pins on the root-index and log-frontmatter
+  audit tests, which now honour 0.3. No claim changed.
 - New: [Open Knowledge Format v0.3](okf-v0.3.md), for #2403. Read SPEC.md at
   527e81aff5 in the successor repository, diffed it against the 0.3 draft and
   the amended 0.2 text, and observed 21 server departures with fixtures.

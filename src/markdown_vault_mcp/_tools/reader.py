@@ -1030,25 +1030,30 @@ def register(mcp: FastMCP) -> None:
 
             - mode (str), declared_version (str | None), active (bool): the
               detection state.
-            - total_notes (int), conformant_notes (int): the progress ratio;
-              the reserved index.md and log.md are not counted as notes.
+            - total_notes (int), conformant_notes (int): the progress ratio.
+              conformant_notes counts concepts, the files with a non-empty
+              `type`; total_notes adds the files whose frontmatter does not
+              parse. Reserved files and non-concepts are not counted.
 
             Conformance rules, which the format requires:
 
-            - missing_type: notes without a non-empty `type`; the reserved
-              index.md and log.md are exempt.
-            - unparseable_frontmatter: notes whose frontmatter does not parse.
+            - unparseable_frontmatter: files, index.md and log.md included,
+              whose frontmatter does not parse as a mapping.
             - misplaced_okf_version: `okf_version` declared anywhere but the
               root index.md.
-            - index_frontmatter: index.md files carrying frontmatter, any on a
-              folder index and anything but `okf_version` on the root,
-              server-generated indexes included.
+            - index_frontmatter: folder index.md files carrying frontmatter,
+              server-generated indexes included; the root index.md may carry
+              any keys.
+            - log_frontmatter: log.md files carrying frontmatter.
+            - log_heading_shape: log.md files whose `##` headings are not
+              YYYY-MM-DD dates.
 
             Advisory rules, tolerated but worth fixing:
 
+            - missing_type: files with no frontmatter or no non-empty `type`.
+              They are not concepts, so the audit skips them and they do not
+              affect conformance.
             - unknown_status: a `status` outside draft, stable and deprecated.
-            - log_heading_shape: log.md files whose `##` headings are not
-              YYYY-MM-DD dates.
             - root_index_missing (bool): true when the root index.md is absent.
 
             Informational rules, not deviations:

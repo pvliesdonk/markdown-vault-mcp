@@ -516,15 +516,17 @@ class TestReservedFilesUnderRequiredFrontmatter:
         self, gated_vault: Vault
     ) -> None:
         # The seeded title keeps the file indexed, and the audit still reports
-        # it: the index-file rule does not ask who wrote the file (#1396).
-        _write(gated_vault, "note.md", "---\ntitle: A Note\n---\n# A Note\n")
+        # a folder index carrying it: the index-file rule does not ask who
+        # wrote the file (#1396). The root index may carry a title (§8.1).
+        _write(gated_vault, "guides/one.md", "---\ntitle: One\n---\n# One\n")
 
         gated_vault.writer.okf_generate_index()
+        gated_vault.writer.okf_generate_index(folder="guides")
         wait_for_writer_drain(gated_vault)
 
-        assert "index.md" in _indexed_paths(gated_vault)
+        assert "guides/index.md" in _indexed_paths(gated_vault)
         report = gated_vault.reader.okf_validate()
-        assert report.index_frontmatter.examples == ("index.md",)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
 
     def test_folder_index_takes_the_folder_name_as_its_title(
         self, gated_vault: Vault
