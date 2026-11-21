@@ -175,20 +175,19 @@ class TestRenameRewritesEncodedLinks:
         assert "b[1]" not in body
         assert body.count("/probe/b2.md") == 2
 
-    def test_rename_into_a_name_needing_escapes_keeps_the_spelling(
+    def test_rename_into_a_name_with_brackets_writes_a_uri_reference(
         self, tmp_path: Path
     ) -> None:
-        """The encoded link stays encoded; the literal one stays literal.
+        """Both spellings come back as RFC 3986 references (#2417).
 
-        No encoding is introduced where the author used none — that is the
-        #1105 rule, and it is why a rename cannot repair a destination whose
-        new name would need escaping to parse. Out of scope here.
+        ``[`` and ``]`` are gen-delims, which a URI path cannot hold
+        literally, so the literal link is encoded too (OKF 0.3 §6).
         """
         col = self._vault(tmp_path)
         col.writer.rename("probe/b[1].md", "probe/c[2].md", update_links=True)
         body = (tmp_path / "vault" / "hub.md").read_text(encoding="utf-8")
         assert "[encoded](/probe/c%5B2%5D.md)" in body
-        assert "[literal](/probe/c[2].md)" in body
+        assert "[literal](/probe/c%5B2%5D.md)" in body
 
     def test_a_refused_destination_stays_visible_as_broken(
         self, tmp_path: Path
@@ -210,4 +209,4 @@ class TestRenameRewritesEncodedLinks:
         col.writer.move_folder("probe", "moved")
         body = (tmp_path / "vault" / "hub.md").read_text(encoding="utf-8")
         assert "[encoded](/moved/b%5B1%5D.md)" in body
-        assert "[literal](/moved/b[1].md)" in body
+        assert "[literal](/moved/b%5B1%5D.md)" in body

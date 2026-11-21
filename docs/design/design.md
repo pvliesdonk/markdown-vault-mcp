@@ -2189,23 +2189,27 @@ the spec itself says, dated and sourced, in
   seeds only the commits that touched that subtree (via the read-only
   git-history layer's directory support — ``git log -- <dir>``), while the
   bundle root seeds whole-vault history (#974).
-  Both link-writing transforms percent-encode what a plain markdown
-  destination cannot hold (#1494): a vault path is a *name*, and
-  interpolating one that carries a space into ``[t](…)`` verbatim produced
-  something that is not a link — accepted by this project's deliberately
-  tolerant scanner, rejected by Obsidian and by CommonMark §6.3 alike. The
-  encoder is ``utils/links.py::encode_plain_destination``, the write-side
-  counterpart to ``decode_link_target``, and it touches only the space and
-  the ASCII control characters, so a destination stays as readable as the
-  one Obsidian's own writer emits. The tolerant reader is unchanged: what
-  the server *accepts* and what it *emits* are separate decisions, and
-  resolution through the index never established that emitted output
-  parses. Both transforms reach the encoder through
-  ``build_plain_destination``, which first applies the same
-  ``_escape_meaning_changers`` the rename path uses and then attaches the
-  fragment marker, so a name carrying ``#`` or a parenthesis that will not
-  parse is escaped exactly as a rename escapes it and a generated
-  destination cannot disagree with a rewritten one (#1513). A generated
+  Both link-writing transforms write each destination as an RFC 3986 URI
+  reference, which OKF 0.3 §6 requires ("A value that contains a space or
+  another reserved character MUST be percent-encoded", #2417): a vault path
+  is a *name*, and interpolating one that carries a space into ``[t](…)``
+  verbatim produced something that is not a link — accepted by this
+  project's deliberately tolerant scanner, rejected by Obsidian and by
+  CommonMark §6.3 alike (#1494). The encoder is
+  ``utils/links.py::encode_uri_path``, the write-side counterpart to
+  ``decode_link_target``: it keeps literal what RFC 3986 §3.3 admits in a
+  path segment (unreserved, sub-delims, ``:``, ``@``; ``&`` excepted, which
+  a markdown reader would decode as an entity first) and percent-encodes
+  everything else, ``%`` as ``%25``, ``#`` as ``%23`` and non-ASCII as UTF-8
+  octets; a relative path whose first segment holds a ``:`` gets a ``./``
+  dot-segment (§4.2). The tolerant reader is unchanged: what the server
+  *accepts* and what it *emits* are separate decisions, and resolution
+  through the index never established that emitted output parses. Both
+  transforms reach the encoder through ``build_plain_destination``, which
+  the rename path shares, then attaches the fragment (encoded as §3.5
+  allows) and percent-encodes parentheses only when the assembled
+  destination would not parse, so a generated destination cannot disagree
+  with a rewritten one (#1513). A generated
   link's *text* — a title or an alias, not markdown anyone wrote — has its
   brackets escaped by ``escape_link_text`` for the same reason; that output
   is valid CommonMark, and since #1517 (inline) and #1519 (reference) the
@@ -2941,9 +2945,10 @@ into the relative-to-source branch, coming back rewritten as a relative link:
 the #1105 fidelity defect reached by a second route. The comparison is now
 made against the decoded destination, and the replacement is re-encoded
 (`quote`, `safe="/"`) only when the original was encoded; a refused
-destination never decoded, so it is not re-encoded either. No encoding is
-introduced where the author used none, beyond what the new name needs to
-parse at all (below).
+destination never decoded, so it is not re-encoded either. An original
+written literally gets the new name through `encode_uri_path`, which keeps
+literal everything RFC 3986 admits in a path and encodes only the rest
+(below; #2417).
 
 **A destination is read by CommonMark's grammar, in any of its spellings
 (#1353).** It used to be everything up to the first `)`, so the five spellings
@@ -3026,32 +3031,37 @@ a rename rewrites, and `compute_new_raw_target` compared the destination with
 its brackets on, fell into the relative branch and would have written
 `[x](new.md#frag>)`. It now takes the brackets off for the comparison, decodes
 escapes and entities as well as percent-escapes, and puts the brackets back
-on the answer: pointy stays pointy, plain stays plain, and no escaping is
-introduced where the author used none — with two bounded exceptions, drawn
-on what the new name would be *read as* rather than on which character it
-is.
+on the answer: pointy stays pointy, plain stays plain. The new name itself
+is written as an RFC 3986 URI reference through `encode_uri_path` (OKF 0.3
+§6, #2417), inside the brackets too, so it carries no backslash escape; what
+RFC 3986 admits in a path stays literal, so an author who wrote literally
+still sees a literal name wherever the URI grammar allows one. Two classes
+of name motivated the repairs, drawn on what the new name would be *read
+as* rather than on which character it is.
 
 The first is the **re-pointing** class: the link still parses, so nothing
 looks wrong, and it names something else. `#` (and `<`/`>` inside the pointy
 form) is read as a fragment, or as an anchor when the name begins with one,
 and a parenthesis that will not parse in the plain form ends the destination
-early, so `/notes/a)b.md` becomes a link to `notes/a`. Exactly those are
-backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`, `/notes/a\)b.md`).
-A literal percent escape is written with `%25`, and a named character
-reference is escaped, so decoding preserves those characters in the path.
-The paren half was first assigned to the *other* class and left unrepaired;
-#1516 showed that only an unbalanced `(` breaks visibly, while a `)`
-re-points silently, so both now escape.
+early, so `/notes/a)b.md` becomes a link to `notes/a`. Those are
+percent-encoded on rewrite (`%23y.md`, `<new%3Ex.md>`, `/notes/a%29b.md`);
+they were backslash-escaped until #2417, but a backslash is not a URI
+character. A literal `%` is always written `%25` and a `&` `%26`, so
+decoding preserves those characters in the path. The paren half was first
+assigned to the *other* class and left unrepaired; #1516 showed that only an
+unbalanced `(` breaks visibly, while a `)` re-points silently, so both are
+now encoded.
 
 The second is the **invalidity** class: a space (or an ASCII control
 character) ends a plain destination and the rest is read as a title, so the
-line is not a link at all. Those are percent-encoded rather than escaped,
+line is not a link at all. Those are percent-encoded,
 matching what Obsidian's own writer emits (`/Project%20Notes/target.md`,
 #1494).
 
-Neither repair reaches the other spellings: `<…>` holds a space and a
+The parenthesis repair does not reach the other spellings: `<…>` holds a
 parenthesis already, and a percent-encoded original is re-encoded by
-`quote`. Escaping stays minimal in both classes — a **balanced** `a(b).md`
+`quote`. An author's fragment is re-attached as found, with only the two
+plain-form repairs (space, unbalanced parenthesis). Encoding stays minimal — a **balanced** `a(b).md`
 parses in the plain form, so it is left literal, and the write-side depth
 limit mirrors the parser's three levels rather than guessing
 (`_MAX_PLAIN_PAREN_DEPTH`; the agreement is pinned by a test, so a change to

@@ -78,8 +78,26 @@ class TestComputeNewRawTargetEncoded:
             == "/probe/c%5B2%5D.md"
         )
 
-    def test_an_unencoded_target_is_still_written_literally(self) -> None:
-        """No encoding is introduced where the author used none (#1105)."""
+    def test_an_unencoded_target_keeps_what_a_uri_path_admits_literal(
+        self,
+    ) -> None:
+        """No encoding beyond what RFC 3986 requires (#1105, #2417)."""
+        assert (
+            compute_new_raw_target(
+                "markdown",
+                "probe/b(1).md",
+                None,
+                "probe/c(2)!.md",
+                source_path="hub.md",
+                old_path="probe/b(1).md",
+            )
+            == "probe/c(2)!.md"
+        )
+
+    def test_an_unencoded_target_encodes_brackets_a_uri_path_refuses(
+        self,
+    ) -> None:
+        """``[`` and ``]`` are gen-delims, not ``pchar`` (RFC 3986 §3.3)."""
         assert (
             compute_new_raw_target(
                 "markdown",
@@ -89,7 +107,7 @@ class TestComputeNewRawTargetEncoded:
                 source_path="hub.md",
                 old_path="probe/b[1].md",
             )
-            == "probe/c[2].md"
+            == "probe/c%5B2%5D.md"
         )
 
     def test_fragment_is_preserved(self) -> None:

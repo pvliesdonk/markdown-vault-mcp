@@ -77,6 +77,54 @@ sources:
     title: Obsidian changelog
     resource: https://obsidian.md/changelog/
     accessed: 2026-09-06
+  - id: help-src-links
+    title: "obsidian-help en/Linking notes and files/Internal links.md at ced32050 (the source of obsidian.md/help/links)"
+    resource: https://github.com/obsidianmd/obsidian-help/blob/ced32050c0d9d1e1f8d3faa19a8ba8474d75a32d/en/Linking%20notes%20and%20files/Internal%20links.md
+    accessed: 2026-11-21
+  - id: help-src-syntax
+    title: "obsidian-help en/Editing and formatting/Basic formatting syntax.md at ced32050 (the source of obsidian.md/help/syntax)"
+    resource: https://github.com/obsidianmd/obsidian-help/blob/ced32050c0d9d1e1f8d3faa19a8ba8474d75a32d/en/Editing%20and%20formatting/Basic%20formatting%20syntax.md
+    accessed: 2026-11-21
+  - id: help-src-settings
+    title: "obsidian-help en/User interface/Settings.md at ced32050 (the source of obsidian.md/help/settings)"
+    resource: https://github.com/obsidianmd/obsidian-help/blob/ced32050c0d9d1e1f8d3faa19a8ba8474d75a32d/en/User%20interface/Settings.md
+    accessed: 2026-11-21
+  - id: api-dts-737629a
+    title: obsidian-api obsidian.d.ts at 737629a5 (2026-11-19)
+    resource: https://github.com/obsidianmd/obsidian-api/blob/737629a51f6b4d30f8336fa3d38f3df006e322d4/obsidian.d.ts
+    accessed: 2026-11-21
+  - id: devdocs-generatemarkdownlink
+    title: "FileManager.generateMarkdownLink - Obsidian Developer Documentation (obsidian-developer-docs at 1c26772a)"
+    resource: https://github.com/obsidianmd/obsidian-developer-docs/blob/1c26772ac13d6e9870c865936d389fdfe694e742/en/Reference/TypeScript%20API/FileManager/generateMarkdownLink.md
+    accessed: 2026-11-21
+  - id: devdocs-getlinkpath
+    title: "getLinkpath - Obsidian Developer Documentation (obsidian-developer-docs at 1c26772a)"
+    resource: https://github.com/obsidianmd/obsidian-developer-docs/blob/1c26772ac13d6e9870c865936d389fdfe694e742/en/Reference/TypeScript%20API/getLinkpath.md
+    accessed: 2026-11-21
+  - id: changelog-0-8-5
+    title: Obsidian changelog, Desktop 0.8.5 (catalyst, 2020-08-21)
+    resource: https://obsidian.md/changelog/2020-08-21-desktop-v0.8.5/
+    accessed: 2026-11-21
+  - id: changelog-0-10-3
+    title: Obsidian changelog, Desktop 0.10.3 (catalyst, 2020-12-29)
+    resource: https://obsidian.md/changelog/2020-12-29-desktop-v0.10.3/
+    accessed: 2026-11-21
+  - id: changelog-0-10-12
+    title: Obsidian changelog, Desktop 0.10.12 (catalyst, 2021-02-01)
+    resource: https://obsidian.md/changelog/2021-02-01-desktop-v0.10.12/
+    accessed: 2026-11-21
+  - id: changelog-0-11-0
+    title: Obsidian changelog, Desktop 0.11.0 (public, 2021-02-09)
+    resource: https://obsidian.md/changelog/2021-02-09-desktop-v0.11.0/
+    accessed: 2026-11-21
+  - id: changelog-0-12-4
+    title: Obsidian changelog, Desktop 0.12.4 (public, 2021-05-25)
+    resource: https://obsidian.md/changelog/2021-05-25-desktop-v0.12.4/
+    accessed: 2026-11-21
+  - id: changelog-1-7-4
+    title: Obsidian changelog, Desktop 1.7.4 (public, 2024-10-16)
+    resource: https://obsidian.md/changelog/2024-10-16-desktop-v1.7.4/
+    accessed: 2026-11-21
 ---
 
 # Obsidian markdown dialect and link resolution
@@ -426,9 +474,92 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   the link cache decodes it to `Sub/We!rd (name) [x] #1.md` but
   `unresolvedLinks` holds `Sub/We!rd (name) [x] ` — it splits at the `#`
   exactly as the scanner does (#1353). [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358]
-  `encode_plain_destination` shows the same restraint, encoding only what
-  §6.3 forbids (#1494).
+  The server's writer no longer shows that restraint: OKF 0.3 §6 makes a
+  target an RFC 3986 URI reference, so `encode_uri_path` also encodes `%`,
+  `#`, `?`, `[`, `]` and non-ASCII, and keeps the sub-delims `(` `)` `!`
+  literal (#2417). Obsidian percent-decodes a destination before resolving
+  it (above), so it should read `%23` and `%5B` as the name's own `#` and
+  `[`; that it does is [unverified] beyond the `%20` case observed.
+  [pins: tests/test_links_uri_destinations.py::TestEveryProducerWritesAUriReference::test_the_destination_matches_the_rfc_3986_grammar]
+  `encode_plain_destination` keeps the old restraint, encoding only what
+  §6.3 forbids, for the author's own fragment a rename re-attaches (#1494).
   [pins: tests/test_links_generated_destinations.py::TestWhatEncodePlainDestinationLeavesAlone::test_a_legal_destination_is_returned_untouched]
+
+#### Percent-escapes other than `%20` (checked 2026-11-21)
+
+The help, the API typings and the developer docs were reread, and every
+desktop changelog entry through 1.15.1 (2026-11-12) was searched for
+encoding, decoding, percent, `%20` and angle brackets. Obsidian could not be
+run, so nothing in this block was observed.
+
+- The help's only rule for a markdown destination is "When using the
+  Markdown format, make sure to URL encode the link destination. For
+  example, blank spaces become `%20`." The "URL encode" text links to
+  Wikipedia's Percent-encoding article. Its only example is the space, and it
+  names no other character. [source: help-src-links] (§ Supported formats
+  for internal links)
+- The basic-syntax page escapes a space as `%20` or wraps the destination in
+  `< >`. Its examples are `obsidian://` URLs, not vault paths.
+  [source: help-src-syntax] (§ Escape blank spaces in links)
+- The API docs say nothing about encoding. `generateMarkdownLink` is
+  documented only as "Generate a Markdown link based on the user's
+  preferences". `getLinkpath` and `parseLinktext` take "a wikilink without
+  the leading [[ and trailing ]]". `Reference.link` is the "Link
+  destination", with no word on whether it is stored decoded.
+  [source: api-dts-737629a] [source: devdocs-generatemarkdownlink]
+  [source: devdocs-getlinkpath]
+- Write side, from the changelog. 0.8.5 (2020) added Markdown-format
+  autocomplete, which "will automatically encode spaces as %20"
+  [source: changelog-0-8-5]. 0.10.12 made auto-generated Markdown links "only
+  URL-encode special characters not recognized by Markdown (such as the
+  space character), as opposed to fully URL-encode any non-ASCII
+  character" [source: changelog-0-10-12]. 0.12.4 stopped rename from
+  causing "unnecessary characters to be url encoded" [source: changelog-0-12-4].
+  These are pre-1.x entries. The 1.13.7 observation above (only the space
+  encoded; `(` `)` `[` `]` `!` `#` literal) is the current evidence, and it
+  agrees with them. Before 0.10.12 Obsidian wrote non-ASCII percent-encoded.
+  The changelog does not say whether later versions still read those links
+  back. [unverified]
+- Angle brackets: 1.7.4 fixed rename that "would mangle Markdown links if
+  the link destination was inside angle brackets" (first shipped in the
+  1.7.0 catalyst build, 2024-08-08). So rename handles a `<...>` destination
+  from 1.7.4 on. No source says Obsidian ever writes one.
+  [source: changelog-1-7-4]
+- Read side: 0.10.3 says "Links with %20 now decode properly when
+  navigating using the editor" [source: changelog-0-10-3], and the 1.13.7
+  observation above confirms `%20` decoding. No source documents decoding
+  of any other escape. Each row below is [unverified]. The fixture for each
+  is a scratch vault holding the named file. Check `metadataCache.resolvedLinks`
+  and `getFirstLinkpathDest` for the link in a root note, then rename the
+  target with "Automatically update internal links" on and record the
+  rewritten text:
+  - `%25` (literal `%`): file `100% done.md`, link `[x](100%25%20done.md)`.
+    [unverified]
+  - `%23` (`#`): file `Sub/A #1.md`, link `[x](Sub/A%20%231.md)`. The open
+    question is whether Obsidian decodes `%23` to a file-name `#` or splits
+    on it. Above, Obsidian splits a literal `#` and writes the `#` literal
+    itself. Rename could therefore turn a working `%23` link into one that
+    does not resolve. [unverified]
+  - `%5B` / `%5D` (`[` `]`): file `A [x].md`, link `[x](A%20%5Bx%5D.md)`.
+    [unverified]
+  - `%26` (`&`): file `A & B.md`, link `[x](A%20%26%20B.md)`. [unverified]
+  - `%3F` (`?`): run on macOS or Linux only, because on Windows Obsidian
+    refuses `?` in a file name (§ File names). 0.11.0 allowed "more special
+    characters on MacOS and Linux, such as ? and *" [source: changelog-0-11-0].
+    File `Why?.md`, link `[x](Why%3F.md)`. [unverified]
+  - `%28` / `%29` (`(` `)`): file `A (b).md`, link `[x](A%20%28b%29.md)`.
+    [unverified]
+  - UTF-8 escapes: file `café.md` (NFC), link `[x](caf%C3%A9.md)`.
+    [unverified]
+  - `./` before a segment holding `:`: run on macOS or Linux only. Windows
+    refuses `:`, and no source documents `:` in a file name on any platform.
+    File `a:b.md`, links `[x](./a:b.md)` and `[x](a%3Ab.md)`. [unverified]
+- Nothing found argues against writing RFC 3986 percent-encoding for these
+  characters. The help's one rule is to URL-encode the destination. Nothing
+  found confirms that Obsidian reads any escape other than `%20` back to the
+  right file. Nothing says whether its link updater keeps the escape on
+  rename or regenerates the minimal form, which for `#` it cannot itself
+  resolve.
 
 ### File names
 
@@ -527,5 +658,7 @@ Each entry names the function and the design section that decides it.
   a self-edge there.
 - A wikilink inside a code span, `%%` comment, callout title, math, or
   footnote body: the scanner strips code only; Obsidian's treatment unknown.
-- Percent-decoding of markdown destinations, chained `#H1#H2` subpaths, and
-  headings containing a link: no test either way.
+- Percent-decoding of markdown destinations other than `%20`: undocumented
+  (checked 2026-11-21). The fixtures are listed under "Percent-escapes other
+  than `%20`". Chained `#H1#H2` subpaths and headings containing a link: no
+  test either way.

@@ -1,7 +1,7 @@
 """Link target helpers: decoding, encoding, replacement, substitution.
 
 :func:`decode_link_target` is shared with link extraction and
-:func:`encode_plain_destination` with every site that *writes* a markdown
+:func:`encode_uri_path` with every site that *writes* a markdown
 destination; the rest compute replacement link targets and apply
 substitutions in file content when a note is renamed within the vault.
 """
@@ -96,21 +96,15 @@ _RE_PLAIN_DESTINATION_ILLEGAL = re.compile(r"[\x00-\x20\x7f]")
 def encode_plain_destination(path: str) -> str:
     """Percent-encode what a plain markdown destination cannot hold.
 
-    The counterpart to :func:`decode_link_target`, used wherever the server
-    *writes* a destination rather than reads one: a vault path is not a
-    markdown destination, and interpolating one into ``[t](…)`` verbatim
-    emits invalid markdown for every note or folder whose name carries a
-    space (#1494). Obsidian's own link writer does the same thing —
-    ``[Three laws of motion](Projects/Three%20laws%20of%20motion.md)``
-    (``docs/design/reference/obsidian-markdown.md``, "Markdown links
-    Obsidian writes") — so the output matches what a vault's other writer
-    produces.
+    The minimal repair, for text the server re-emits but did not choose:
+    the fragment an author wrote, which a rename re-attaches as found. A
+    space anywhere in a plain destination ends it (#1494), so that much is
+    encoded even there. A name the server writes goes through
+    :func:`encode_uri_path` instead, which encodes everything RFC 3986
+    requires (#2417).
 
-    Only the characters §6.3 forbids are touched. Everything else is left
-    literal, so the destination stays readable and
-    :func:`decode_link_target` reads back exactly *path*: a ``%`` already in
-    the name is not an escape (it is not followed by two hex digits once the
-    space beside it becomes ``%20``), and ``/`` is structure, never encoded.
+    Only the characters §6.3 forbids are touched; everything else is left
+    as the author wrote it.
 
     A NUL is encoded like any other control character, to ``%00``, which
     :func:`decode_link_target` then refuses — the link shows up broken
@@ -353,102 +347,121 @@ def _parentheses_parse_plainly(name: str) -> bool:
     return depth == 0
 
 
-#: A literal ``%`` that would read as a percent-escape, or an ``&`` that
-#: would open a named character reference, once written into a destination.
-_RE_LITERAL_ENCODING = re.compile(
-    r"%(?=[0-9A-Fa-f]{2})|&(?=[A-Za-z][A-Za-z0-9]{1,31};)"
-)
+#: What a written path segment may hold literally beyond the unreserved
+#: characters ``quote`` never encodes: RFC 3986 §3.3's ``pchar`` is
+#: ``unreserved / pct-encoded / sub-delims / ":" / "@"``, and ``/`` is the
+#: separator between segments. One sub-delim is taken out: ``&``, which a
+#: markdown reader decodes as a character reference before the URL layer
+#: sees it (``&amp;`` is ``&``), so it is written ``%26``.
+_PATH_SAFE = "/!$'()*+,;=:@"
+#: RFC 3986 §3.5: ``fragment = *( pchar / "/" / "?" )``.
+_FRAGMENT_SAFE = _PATH_SAFE + "?"
 
 
-def _escape_literal_encodings(name: str) -> str:
-    """Spell a literal ``%XX`` or ``&name;`` so decoding returns it as written."""
-    return _RE_LITERAL_ENCODING.sub(
-        lambda match: "%25" if match.group() == "%" else "\\&", name
+def encode_uri_path(path: str) -> str:
+    """Percent-encode a vault path into an RFC 3986 path reference.
+
+    OKF 0.3 §6 makes every link target a URI reference (RFC 3986), so a
+    destination the server writes encodes everything a path segment cannot
+    hold literally: a space and the controls, ``%`` itself (always ``%25``,
+    RFC 3986 §2.4), the delimiters ``#``, ``?``, ``[`` and ``]``, the
+    characters outside the URI set (``"``, ``<``, ``>``, ``\\``, ``^``,
+    backtick, ``{``, ``|``, ``}``), and every non-ASCII character as its
+    UTF-8 octets (§2.5; a URI holds ASCII only). Sub-delims, ``:`` and
+    ``@`` stay literal, as ``pchar`` allows, except ``&`` (see
+    :data:`_PATH_SAFE`). A relative path whose first segment holds a ``:``
+    is written behind a ``./`` dot-segment, as RFC 3986 §4.2 prescribes,
+    since otherwise it would read as a scheme (``draft:v2.md``).
+
+    :func:`decode_link_target` reads back exactly *path*, and so does
+    Obsidian, which percent-decodes a markdown destination before resolving
+    it (``docs/design/reference/obsidian-markdown.md``).
+
+    Args:
+        path: A vault path, as the file system spells it.
+
+    Returns:
+        The path as a URI reference, ``/`` kept as structure.
+    """
+    return _guard_scheme_lookalike(
+        path, quote(path, safe=_PATH_SAFE, errors="surrogateescape")
     )
 
 
-def _escape_meaning_changers(name: str, *, pointy: bool) -> str:
-    """Backslash-escape the characters that would re-parse a rewritten link.
+def _guard_scheme_lookalike(path: str, encoded: str) -> str:
+    """Prefix ``./`` when *path*'s first relative segment holds a ``:``.
 
-    A rename introduces no escaping the author did not use — except where
-    the new name would otherwise be read as something other than itself.
-    Four cases qualify, and nothing else is touched:
-
-    * ``#`` is always escaped: it would be read as a fragment, and a name
-      *beginning* with one as a same-document anchor (#1353).
-    * ``<`` and ``>`` are escaped inside the ``<…>`` form, which they would
-      end early (#1353).
-    * A literal ``%XX`` or ``&name;`` is spelled ``%25XX`` or ``\\&name;`` so
-      decoding returns the name (#1383).
-    Parentheses are *not* handled here: §6.3 balances them across the whole
-    destination, fragment included, so the decision cannot be made on the
-    path alone — :func:`escape_unparsable_parentheses` makes it on the
-    assembled string (#1516).
-
-    Args:
-        name: The new destination path, not percent-encoded.
-        pointy: Whether it will be wrapped in ``<…>``.
-
-    Returns:
-        *name* with the characters that would re-point it escaped.
+    RFC 3986 §4.2: such a segment "cannot be used as the first segment of a
+    relative-path reference, as it would be mistaken for a scheme name", and
+    "must be preceded by a dot-segment". Encoding the colon instead is no
+    help here: the scanner tests for a scheme after percent-decoding.
     """
-    name = _escape_literal_encodings(name.replace("#", "\\#"))
-    if pointy:
-        name = name.replace("<", "\\<").replace(">", "\\>")
-    return name
+    if path.startswith("/") or ":" not in path.split("/", 1)[0]:
+        return encoded
+    return "./" + encoded
+
+
+def _encode_uri_fragment(fragment: str) -> str:
+    """Percent-encode a generated fragment as RFC 3986 §3.5 requires."""
+    return quote(fragment, safe=_FRAGMENT_SAFE, errors="surrogateescape")
 
 
 def escape_unparsable_parentheses(written: str) -> str:
-    """Escape a plain destination's parentheses when they would not parse.
+    """Percent-escape a plain destination's parentheses when they would not parse.
 
-    The third repair in the re-pointing class, and the one that cannot be
-    made per-part: CommonMark §6.3 reads a destination's parentheses as one
-    balanced run, so ``a(b.md#c)d`` parses — the fragment closes what the
-    path opened — while escaping the path's ``(`` alone would unbalance it
-    and break a link that worked. The test therefore runs on the assembled
-    destination, and when it fails every parenthesis is escaped, the
-    author's fragment included: at that point the alternative is not a
-    tidier link but no link (#1516).
+    The repair that cannot be made per-part: CommonMark §6.3 reads a
+    destination's parentheses as one balanced run, so ``a(b.md#c)d``
+    parses — the fragment closes what the path opened — while encoding the
+    path's ``(`` alone would unbalance it and break a link that worked. The
+    test therefore runs on the assembled destination, and when it fails
+    every parenthesis is written ``%28`` or ``%29``, the author's fragment
+    included: at that point the alternative is not a tidier link but no
+    link (#1516). Percent-escapes, not backslashes, because a backslash is
+    not a URI character and OKF 0.3 §6 makes the target a URI reference
+    (#2417).
 
-    Left alone when they parse, so a balanced ``a(b).md`` stays literal.
+    Left alone when they parse, so a balanced ``a(b).md`` stays literal:
+    parentheses are sub-delims, which RFC 3986 §3.3 admits in a segment.
 
-    Only *unescaped* parentheses are escaped. A blind replace would turn an
-    author's existing ``\\(`` into ``\\\\(`` — an escaped backslash followed by
-    a bare parenthesis — which is not the same destination and, on a
-    fragment carrying one, not a link at all.
+    Only *unescaped* parentheses are encoded. An author's existing ``\\(``
+    is already legal (§6.3 admits a parenthesis "escaped or balanced") and
+    is left as found.
 
     Args:
         written: The assembled destination — path, marker and fragment —
             as it is written, escapes included.
 
     Returns:
-        *written*, with every unescaped parenthesis escaped if any of them
-        would not parse.
+        *written*, with every unescaped parenthesis percent-encoded if any
+        of them would not parse.
     """
     if _parentheses_parse_plainly(written):
         return written
     out: list[str] = []
     for pos, char in enumerate(written):
         if char in "()" and not _is_escaped(written, pos):
-            out.append("\\")
-        out.append(char)
+            out.append("%28" if char == "(" else "%29")
+        else:
+            out.append(char)
     return "".join(out)
 
 
 def build_plain_destination(path: str, fragment: str | None = None) -> str:
-    """Render a vault path as a destination a markdown reader parses.
+    """Render a vault path as an RFC 3986 reference a markdown reader parses.
 
     The write-side entry point for every site that *generates* a link
-    rather than rewriting one: it applies the same two repairs the rename
-    path uses — :func:`_escape_meaning_changers` for what would re-point the
-    link, :func:`encode_plain_destination` for what a plain destination
-    cannot hold at all — so a generated destination and a rewritten one
-    cannot disagree about what a name needs (#1494, #1513).
+    rather than rewriting one (the OKF index builder, the wikilink
+    converter and so the bundle export). The path goes through
+    :func:`encode_uri_path`, the same encoder the rename path uses, so a
+    generated destination and a rewritten one cannot disagree about what a
+    name needs; OKF 0.3 §6 requires the result to be a URI reference
+    (#2417), which also keeps it a link that means what it says (#1494,
+    #1513): a space cannot end it and a ``#`` in a name, written ``%23``,
+    cannot become a fragment marker.
 
-    The fragment is attached between the two repairs: after the ``#``
-    escape, so the marker that separates them stays a marker while a ``#``
-    inside either part does not become one, and before the parenthesis
-    test, which §6.3 runs on the whole destination.
+    The fragment is encoded as RFC 3986 §3.5 allows and attached after the
+    path is encoded, so the marker between them stays the only ``#``, and
+    before the parenthesis test, which §6.3 runs on the whole destination.
 
     Args:
         path: The destination's path portion, as the vault spells it.
@@ -457,10 +470,10 @@ def build_plain_destination(path: str, fragment: str | None = None) -> str:
     Returns:
         The destination, ready to interpolate between ``(`` and ``)``.
     """
-    written = _escape_meaning_changers(path, pointy=False)
+    written = encode_uri_path(path)
     if fragment:
-        written += "#" + fragment
-    return encode_plain_destination(escape_unparsable_parentheses(written))
+        written += "#" + _encode_uri_fragment(fragment)
+    return escape_unparsable_parentheses(written)
 
 
 def escape_link_text(text: str) -> str:
@@ -514,10 +527,11 @@ def compute_new_raw_target(
     Returns:
         The replacement raw_target string to write into the source file,
         preserving the original spelling where possible: a destination the
-        author percent-encoded is re-encoded, one written
-        literally stays literal (#1105, #1332) — except where writing the
-        new name literally would not parse, when a space or an ASCII control
-        character is percent-encoded so the rewrite stays a link (#1494).
+        author percent-encoded is re-encoded with ``quote`` (#1105, #1332);
+        otherwise the new name goes through :func:`encode_uri_path`, which
+        leaves what RFC 3986 admits in a path literal and encodes the rest,
+        so the rewrite is a URI reference as OKF 0.3 §6 requires (#1494,
+        #2417). The ``<…>`` form keeps its brackets.
         A vault-path spelling from a nested source becomes source-relative so
         a source-local path cannot shadow the rewritten target.
     """
@@ -571,9 +585,11 @@ def compute_new_raw_target(
         else:
             new_path_part = new_path
         if was_encoded:
-            new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
+            new_path_part = _guard_scheme_lookalike(
+                new_path_part, quote(new_path_part, safe=_QUOTE_SAFE)
+            )
         else:
-            new_path_part = _escape_meaning_changers(new_path_part, pointy=pointy)
+            new_path_part = encode_uri_path(new_path_part)
         # The fragment is the author's spelling, not a name this rewrite
         # introduces, so it is re-attached as found and never reformatted.
         # The two plain-form repairs below still reach it, because both are
@@ -585,7 +601,7 @@ def compute_new_raw_target(
         new_raw = new_path_part + ("#" + fragment if fragment else "")
         if pointy:
             # ``<…>`` holds a space and a parenthesis, so neither plain-form
-            # repair applies and the author's spelling survives whole.
+            # repair applies; the new name inside is still a URI reference.
             return f"<{new_raw}>"
         if not was_encoded:
             # Both plain-form repairs, on the assembled destination: the

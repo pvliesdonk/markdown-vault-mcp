@@ -20,8 +20,10 @@ spec-property test asserts the one thing §6.3 actually forbids.
 Spaces are the *invalidity* half. The other half is a name that stays a
 link and means something else: a ``#`` read as a fragment, or an unbalanced
 parenthesis ending the destination early so the link resolves to the shorter
-path (#1513, #1516). Those are escaped rather than encoded, and only when
-they would not parse — a balanced ``a(b).md`` is legal and stays literal.
+path (#1513, #1516). Both are percent-encoded, since OKF 0.3 §6 makes every
+written target an RFC 3986 URI reference (#2417): ``#`` always, parentheses
+only when they would not parse — a balanced ``a(b).md`` is legal in both
+grammars and stays literal.
 A bracket in generated *link text* is escaped too; that output is valid
 CommonMark but this project's own scanner still will not index it (#1517),
 which the tests below state rather than paper over.
@@ -208,14 +210,16 @@ class TestWhatEncodePlainDestinationLeavesAlone:
 
 
 class TestTheOtherSpellingsAreUnchanged:
-    def test_the_pointy_form_keeps_its_literal_space(self) -> None:
-        # ``<…>`` may hold a space, so there is nothing to repair and the
-        # spelling the author chose survives (#1353).
+    def test_the_pointy_form_keeps_its_brackets_around_a_uri_reference(
+        self,
+    ) -> None:
+        # ``<…>`` may hold a space, but OKF 0.3 §6 makes the target a URI
+        # reference, so the new name is encoded inside the author's brackets.
         assert (
             compute_new_raw_target(
                 "markdown", "<old.md>", None, "new name.md", SRC, "old.md"
             )
-            == "<new name.md>"
+            == "<new%20name.md>"
         )
 
     def test_an_already_encoded_original_is_re_encoded_as_before(self) -> None:
@@ -226,13 +230,12 @@ class TestTheOtherSpellingsAreUnchanged:
             == "/new%20name.md"
         )
 
-    def test_a_hash_is_still_backslash_escaped_beside_an_encoded_space(self) -> None:
-        # The two bounded repairs compose: ``#`` would re-point the link,
-        # the space would end it.
+    def test_a_hash_is_encoded_beside_an_encoded_space(self) -> None:
+        # ``#`` would re-point the link, the space would end it.
         new_raw = compute_new_raw_target(
             "markdown", "old.md", None, "#y note.md", SRC, "old.md"
         )
-        assert new_raw == "\\#y%20note.md"
+        assert new_raw == "%23y%20note.md"
         assert extract_links(f"[a]({new_raw})", SRC)[0].target_path == "#y note.md"
 
     def test_a_wikilink_target_is_never_encoded(self) -> None:
@@ -305,19 +308,19 @@ class TestIssue1513Table:
     def test_a_hash_in_the_path_no_longer_becomes_a_fragment(self) -> None:
         # The quiet one: it stayed a link, to a note that does not exist.
         line = _index_line("Hash", "/notes/a#b.md")
-        assert line == "- [Hash](/notes/a\\#b.md)"
+        assert line == "- [Hash](/notes/a%23b.md)"
         assert _one(line) == ("notes/a#b.md", None, "Hash")
 
     def test_an_unbalanced_open_paren_no_longer_kills_the_link(self) -> None:
         line = _index_line("P", "/notes/a(b.md")
-        assert line == "- [P](/notes/a\\(b.md)"
+        assert line == "- [P](/notes/a%28b.md)"
         assert _one(line) == ("notes/a(b.md", None, "P")
 
     def test_an_unbalanced_close_paren_no_longer_truncates_the_target(self) -> None:
         # Reported as "no link"; it was worse — the link resolved to
         # ``notes/a``, a different note.
         line = _index_line("P", "/notes/a)b.md")
-        assert line == "- [P](/notes/a\\)b.md)"
+        assert line == "- [P](/notes/a%29b.md)"
         assert _one(line) == ("notes/a)b.md", None, "P")
 
 
@@ -343,22 +346,22 @@ class TestOnlyWhatWouldNotParseIsEscaped:
 
     def test_escaping_composes_with_the_space_encoder(self) -> None:
         line = _index_line("P", "/Project Notes/a#b.md")
-        assert line == "- [P](/Project%20Notes/a\\#b.md)"
+        assert line == "- [P](/Project%20Notes/a%23b.md)"
         assert _one(line) == ("Project Notes/a#b.md", None, "P")
 
     def test_a_fragment_marker_survives_a_hash_in_the_path(self) -> None:
-        # ``build_plain_destination`` attaches the marker after escaping, so
+        # ``build_plain_destination`` attaches the marker after encoding, so
         # the separator stays a separator and the name's ``#`` does not.
         written = build_plain_destination("notes/a#b.md", "My Heading")
-        assert written == "notes/a\\#b.md#My%20Heading"
+        assert written == "notes/a%23b.md#My%20Heading"
         target, fragment, _text = _one(f"[t]({written})")
         assert (target, fragment) == ("notes/a#b.md", "My%20Heading")
 
 
 class TestTheConverterSharesTheRepairs:
-    def test_a_resolved_path_with_a_hash_is_escaped(self) -> None:
+    def test_a_resolved_path_with_a_hash_is_encoded(self) -> None:
         new, _, _ = convert_wikilinks_to_markdown("[[T]]", [_wl("T", "notes/a#b.md")])
-        assert new == "[T](/notes/a\\#b.md)"
+        assert new == "[T](/notes/a%23b.md)"
         assert extract_links(new, SRC)[0].target_path == "notes/a#b.md"
 
     def test_an_alias_bracket_is_escaped(self) -> None:
@@ -408,8 +411,8 @@ class TestIssue1516RenameRewriter:
     @pytest.mark.parametrize(
         ("new_path", "expected"),
         [
-            ("notes/a(b.md", "/notes/a\\(b.md"),
-            ("notes/a)b.md", "/notes/a\\)b.md"),
+            ("notes/a(b.md", "/notes/a%28b.md"),
+            ("notes/a)b.md", "/notes/a%29b.md"),
             ("notes/a(b).md", "/notes/a(b).md"),
         ],
         ids=["open", "close", "balanced"],
@@ -451,7 +454,7 @@ class TestIssue1516RenameRewriter:
 
         assert result.updated_links == 1
         assert (tmp_path / SRC).read_text(encoding="utf-8") == (
-            "See [it](/a\\)b.md).\n"
+            "See [it](/a%29b.md).\n"
         )
 
 
@@ -467,8 +470,8 @@ class TestParenthesesBalanceAcrossTheWholeDestination:
     @pytest.mark.parametrize(
         ("fragment", "expected"),
         [
-            ("Heading (draft", "notes/x.md#Heading%20\\(draft"),
-            ("Heading) draft", "notes/x.md#Heading\\)%20draft"),
+            ("Heading (draft", "notes/x.md#Heading%20%28draft"),
+            ("Heading) draft", "notes/x.md#Heading%29%20draft"),
             ("Heading (draft)", "notes/x.md#Heading%20(draft)"),
         ],
         ids=["open", "close", "balanced"],
@@ -549,9 +552,9 @@ class TestAnAlreadyEscapedParenthesisIsLeftAlone:
         ("written", "parses", "expected"),
         [
             ("a\\(b", True, "a\\(b"),
-            ("a\\\\(b", False, "a\\\\\\(b"),
+            ("a\\\\(b", False, "a\\\\%28b"),
             ("a\\\\\\(b", True, "a\\\\\\(b"),
-            ("a\\(b(c", False, "a\\(b\\(c"),
+            ("a\\(b(c", False, "a\\(b%28c"),
             ("a\\(b\\)c", True, "a\\(b\\)c"),
         ],
         ids=["odd-run", "even-run", "three", "mixed", "both-escaped"],
