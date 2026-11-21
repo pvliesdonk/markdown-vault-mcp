@@ -437,7 +437,9 @@ during migration it is a progress meter:
   `YYYY-MM-DD` (`log_heading_shape`). The bundle-root `index.md` may carry
   any keys (§8.1: `okf_version`, `title`, `description`, `license` and
   extension keys), so only rule 1 applies to it (#2413, #2414).
-  `okf_version` outside the bundle root is also reported here.
+  `okf_version` on a concept is an extension key (§4.1: "Consumers MUST
+  NOT reject documents that contain unknown keys") and no finding; on a
+  folder `index.md` it is part of that file's `index_frontmatter` (#2427).
 - Concepts (§3.2): a non-reserved `.md` file whose frontmatter has a
   non-empty `type`. `conformant_notes` counts them; `total_notes` adds the
   non-reserved files whose block fails rule 1, since they may be concepts.
@@ -818,9 +820,9 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 - **`title_field` gets the derived title** (the same H1 the body builders
   emit); any other required field is seeded as `null`, since the gate tests
   presence rather than value and the server has nothing truthful to put there.
-- **`okf_version` is never synthesized.** The audit flags it on any file but
-  the bundle root as `misplaced`, so seeding it into a folder's index would
-  trade one defect for another.
+- **`okf_version` is never synthesized.** Only the bundle-root `index.md`
+  declares the version (OKF 0.3 §8.1), and a folder index carries no
+  frontmatter at all (§8).
 
 The audit does not exempt these files. A key the policy seeds into an
 folder `index.md` is an `index_frontmatter` finding like any hand-written

@@ -2142,9 +2142,10 @@ the spec itself says, dated and sourced, in
   to 20 example paths and come in three severities — conformance, by
   OKF 0.3 §11.1 (frontmatter in any ``.md`` file, reserved ones included,
   that does not parse as a mapping; a block on a folder ``index.md`` or on
-  any ``log.md``; a ``log.md`` heading that is not ``YYYY-MM-DD``;
-  ``okf_version`` outside the bundle root — generated reserved files
-  included, #1396, #2413, #2414; the root ``index.md`` may carry any keys),
+  any ``log.md``; a ``log.md`` heading that is not ``YYYY-MM-DD`` —
+  generated reserved files included, #1396, #2413, #2414; the root
+  ``index.md`` may carry any keys, and ``okf_version`` on a concept is an
+  extension key, not a finding, #2427),
   advisory (``missing_type``, the §3.2 warning for a file that is not a
   concept, #2406; unknown ``status`` vocabulary, malformed ``sources`` and
   ``generated`` shapes using the annotation predicates, missing root

@@ -1128,7 +1128,9 @@ class TestOkfAudit:
         assert report.conformant_notes == 3  # good, misplaced, odd-status
         assert report.missing_type.count == 2  # untyped, junk/excluded
         assert report.unparseable_frontmatter.examples == ("guides/broken.md",)
-        assert report.misplaced_okf_version.examples == ("guides/misplaced.md",)
+        # okf_version on a concept is an extension key under OKF 0.3 §4.1
+        # (#2427): no finding.
+        assert not hasattr(report, "misplaced_okf_version")
         assert report.unknown_status.examples == ("guides/odd-status.md",)
         assert report.log_heading_shape.examples == ("junk/log.md",)
         assert report.index_frontmatter.examples == ("guides/index.md",)
@@ -1298,14 +1300,15 @@ class TestOkfAudit:
 
         none = OkfFinding(count=0, examples=())
         sentinel = OkfFinding(1, ("index.md",))
-        # The v4.1.0 positional signature: every field up to missing_recommended.
+        # The positional signature up to missing_recommended. #2427 removed
+        # misplaced_okf_version from it; the report is not public library
+        # interface (tests/public_import_surface.txt).
         legacy = (
             "auto",
             "0.2",
             True,
             0,
             0,
-            none,
             none,
             none,
             none,
@@ -1434,7 +1437,7 @@ class TestIndexFrontmatterAudit:
         (tmp_path / "guides" / "index.md").write_text(text, encoding="utf-8")
         assert audit_bundle(tmp_path).index_frontmatter.count == 0
 
-    def test_folder_index_declaring_okf_version_is_both_findings(
+    def test_folder_index_declaring_okf_version_is_one_finding(
         self, tmp_path: Path
     ) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -1444,8 +1447,10 @@ class TestIndexFrontmatterAudit:
             '---\nokf_version: "0.2"\n---\n# Guides\n', encoding="utf-8"
         )
         report = audit_bundle(tmp_path)
+        # §8: a folder index has no frontmatter, okf_version included; it is
+        # one finding, not two (#2427).
         assert report.index_frontmatter.examples == ("guides/index.md",)
-        assert report.misplaced_okf_version.examples == ("guides/index.md",)
+        assert report.unparseable_frontmatter.count == 0
 
     def test_excluded_index_is_not_reported(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -1798,10 +1803,9 @@ class TestReservedFrontmatterPolicy:
         }
 
     def test_okf_version_is_never_synthesized(self) -> None:
-        """A folder index carrying ``okf_version`` audits as ``misplaced``.
+        """A generated folder index never gains ``okf_version``.
 
-        Only the bundle root may declare it, so seeding it would trade the
-        missing-frontmatter defect for a conformance one.
+        Only the bundle-root ``index.md`` declares the version (§8.1).
         """
         policy = ReservedFrontmatterPolicy(required_fields=("title",))
         assert "okf_version" not in policy.build(None, title="guides")

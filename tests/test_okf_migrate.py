@@ -539,8 +539,7 @@ class TestReservedFilesUnderRequiredFrontmatter:
         index = gated_vault.reader.read("guides/index.md")
         assert result.frontmatter_preserved is False
         assert index.frontmatter["title"] == "guides"
-        # Only the bundle root may declare okf_version; a folder index
-        # carrying it audits as misplaced.
+        # Only the bundle root declares okf_version (§8.1).
         assert "okf_version" not in index.frontmatter
 
     def test_root_declaration_survives_regeneration(self, gated_vault: Vault) -> None:

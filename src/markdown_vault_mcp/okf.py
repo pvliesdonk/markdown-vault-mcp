@@ -804,7 +804,7 @@ class OkfAuditReport:
     meter, so partial conformance is first-class. ``conformance`` findings
     break OKF 0.3 §11.1: a frontmatter block in any ``.md`` file that does
     not parse as a YAML mapping (rule 1), or a reserved file that disagrees
-    with §8 or §9 (rule 2), plus the ``okf_version`` placement rule.
+    with §8 or §9 (rule 2).
     ``advisories`` are tolerated-by-spec deviations worth fixing;
     ``informational`` entries are not deviations at all (wikilinks only
     matter at export; recommended fields are optional). A ``.md`` file with
@@ -834,8 +834,6 @@ class OkfAuditReport:
         unparseable_frontmatter: Files, reserved ones included, whose
             frontmatter block does not parse as a mapping (§11.1 rule 1).
             An empty or comment-only block reads as no keys and passes.
-        misplaced_okf_version: Notes outside the bundle root carrying
-            ``okf_version``.
         unknown_status: Concepts with a ``status`` outside the spec
             vocabulary (tolerated; advisory).
         log_heading_shape: ``log.md`` files with ``##`` headings that are
@@ -851,9 +849,9 @@ class OkfAuditReport:
             bundle-root ``index.md`` may carry any keys (§8.1) and is held
             only to rule 1. Server-generated indexes are held to the same
             rule. Presence is read from the block rather than its keys, so
-            an empty block counts. A folder index declaring ``okf_version``
-            is also ``misplaced_okf_version``. Appended and defaulted so
-            earlier positional construction still works.
+            an empty block counts. ``okf_version`` on a folder index is
+            this finding (§8); on a concept it is an extension key (§4.1)
+            and no finding (#2427). Defaulted, like the fields after it.
         malformed_sources: Assessed concepts whose ``sources`` has an
             entry without a ``resource``; a single value is a one-item list
             and a null or empty one is absent (the annotation's
@@ -878,7 +876,6 @@ class OkfAuditReport:
     conformant_notes: int
     missing_type: OkfFinding
     unparseable_frontmatter: OkfFinding
-    misplaced_okf_version: OkfFinding
     unknown_status: OkfFinding
     log_heading_shape: OkfFinding
     root_index_missing: bool
@@ -917,7 +914,6 @@ class _AuditCounters:
     def __init__(self, cap: int) -> None:
         self.missing_type = _FindingAccumulator(cap)
         self.unparseable = _FindingAccumulator(cap)
-        self.misplaced = _FindingAccumulator(cap)
         self.unknown_status = _FindingAccumulator(cap)
         self.log_shape = _FindingAccumulator(cap)
         self.wikilinks = _FindingAccumulator(cap)
@@ -1045,8 +1041,6 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     name = rel.rsplit("/", 1)[-1]
     if rel == _ROOT_INDEX:
         acc.root_index_seen = True
-    elif "okf_version" in metadata:
-        acc.misplaced.add(rel)
     if not parse_ok:
         acc.unparseable.add(rel)
     if is_okf_reserved_file(rel):
@@ -1136,7 +1130,6 @@ def audit_bundle(
         conformant_notes=acc.conformant,
         missing_type=acc.missing_type.finding(),
         unparseable_frontmatter=acc.unparseable.finding(),
-        misplaced_okf_version=acc.misplaced.finding(),
         unknown_status=acc.unknown_status.finding(),
         log_heading_shape=acc.log_shape.finding(),
         root_index_missing=not acc.root_index_seen,
@@ -1316,9 +1309,9 @@ class ReservedFrontmatterPolicy:
         (:func:`~markdown_vault_mcp.scanner.parse_note_categorized`), and the
         server has nothing truthful to put there.
 
-        ``okf_version`` is never synthesized. The conformance audit flags it
-        on any file but the bundle root as ``misplaced``, so seeding it into
-        a folder's generated index would trade one defect for another.
+        ``okf_version`` is never synthesized: only the bundle-root
+        ``index.md`` declares the version (OKF 0.3 §8.1), and a folder index
+        carries no frontmatter at all (§8).
 
         Args:
             existing: The file's current frontmatter, or ``None`` when the
