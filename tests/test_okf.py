@@ -9,6 +9,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+import frontmatter
 import pytest
 
 from markdown_vault_mcp import okf
@@ -265,6 +266,126 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
     assert derive_trust_tier(metadata) == expected
 
 
+_GEN_AT = "2026-07-01T00:00:00Z"
+_HUMAN_BEFORE = {"by": "human:a", "at": "2026-06-25T09:00:00Z"}
+_HUMAN_SAME = {"by": "human:a", "at": _GEN_AT}
+_HUMAN_AFTER = {"by": "human:a", "at": "2026-07-02T00:00:00Z"}
+_PROCESS_AFTER = {"by": "process:ci", "at": "2026-07-02T00:00:00Z"}
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        # OKF 0.3 §5.3: only an event at or after generated.at is current.
+        (
+            {"generated": {"by": "x/1", "at": _GEN_AT}, "verified": _HUMAN_BEFORE},
+            TRUST_UNVERIFIED,
+        ),
+        (
+            {"generated": {"by": "x/1", "at": _GEN_AT}, "verified": _HUMAN_SAME},
+            TRUST_HUMAN,
+        ),
+        (
+            {"generated": {"by": "x/1", "at": _GEN_AT}, "verified": _HUMAN_AFTER},
+            TRUST_HUMAN,
+        ),
+        (
+            {
+                "generated": {"by": "x/1", "at": _GEN_AT},
+                "verified": [_HUMAN_BEFORE, _PROCESS_AFTER],
+            },
+            TRUST_MACHINE,
+        ),
+        # Instants compare across offsets: 01:30+02:00 is 23:30Z the day before.
+        (
+            {
+                "generated": {"by": "x/1", "at": _GEN_AT},
+                "verified": {"by": "human:a", "at": "2026-07-01T01:30:00+02:00"},
+            },
+            TRUST_UNVERIFIED,
+        ),
+        (
+            {
+                "generated": {
+                    "by": "x/1",
+                    "at": dt.datetime(2026, 7, 1, tzinfo=dt.UTC),
+                },
+                "verified": {
+                    "by": "human:a",
+                    "at": dt.datetime(2026, 7, 1, 1, tzinfo=dt.UTC),
+                },
+            },
+            TRUST_HUMAN,
+        ),
+        # generated absent: every event is current. §11.2: null, "" and []
+        # are the same as an absent key.
+        ({"verified": _HUMAN_BEFORE}, TRUST_HUMAN),
+        ({"generated": None, "verified": _HUMAN_BEFORE}, TRUST_HUMAN),
+        ({"generated": "", "verified": _HUMAN_BEFORE}, TRUST_HUMAN),
+        ({"generated": [], "verified": _HUMAN_BEFORE}, TRUST_HUMAN),
+        # Recorded interpretation (okf.md): generated present without a
+        # usable at gives no comparison, so no event is current.
+        ({"generated": {"by": "x/1"}, "verified": _HUMAN_AFTER}, TRUST_UNVERIFIED),
+        (
+            {"generated": {"by": "x/1", "at": "yesterday"}, "verified": _HUMAN_AFTER},
+            TRUST_UNVERIFIED,
+        ),
+        ({"generated": "codex at a date", "verified": _HUMAN_AFTER}, TRUST_UNVERIFIED),
+    ],
+)
+def test_trust_tier_counts_only_current_events(metadata: dict, expected: str) -> None:
+    assert derive_trust_tier(metadata) == expected
+    assert derive_annotation(metadata, now=NOW)["trust_tier"] == expected
+
+
+def test_verification_cannot_promote_without_a_generation_time() -> None:
+    """The recorded interpretation's cost: okf_verify's entry is not current."""
+    from markdown_vault_mcp.okf import append_okf_verification
+
+    text = "---\ngenerated:\n  by: x/1\n---\nBody\n"
+    stamped = append_okf_verification(text, subject="alice", now=NOW)
+    assert derive_trust_tier(frontmatter.loads(stamped).metadata) == TRUST_UNVERIFIED
+
+
+def test_trust_tier_filter_skips_earlier_review() -> None:
+    from markdown_vault_mcp.okf import matches_okf_filters
+
+    earlier = {"generated": {"by": "x/1", "at": _GEN_AT}, "verified": _HUMAN_BEFORE}
+    assert not matches_okf_filters(earlier, {"trust_tier": TRUST_HUMAN}, now=NOW)
+    assert matches_okf_filters(earlier, {"trust_tier": TRUST_UNVERIFIED}, now=NOW)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "current", "earlier", "currency"),
+    [
+        ({}, 0, 0, "no_generation"),
+        ({"verified": [_HUMAN_BEFORE, None]}, 1, 0, "no_generation"),
+        (
+            {
+                "generated": {"by": "x/1", "at": _GEN_AT},
+                "verified": [_HUMAN_BEFORE, _HUMAN_SAME, _PROCESS_AFTER, None],
+            },
+            2,
+            1,
+            "generated_at",
+        ),
+        (
+            {"generated": {"by": "x/1"}, "verified": [_HUMAN_BEFORE, _HUMAN_AFTER]},
+            0,
+            0,
+            "no_generation_time",
+        ),
+    ],
+)
+def test_review_reports_current_and_earlier_events(
+    metadata: dict, current: int, earlier: int, currency: str
+) -> None:
+    review = derive_annotation(metadata, now=NOW)["review"]
+    assert review["current_entries"] == current
+    assert review["earlier_entries"] == earlier
+    assert review["currency"] == currency
+
+
 @pytest.mark.parametrize(
     ("metadata", "expected"),
     [
@@ -362,6 +483,9 @@ class TestDeriveAnnotation:
                 "recorded_entries": 0,
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
+                "current_entries": 0,
+                "earlier_entries": 0,
+                "currency": "no_generation",
             },
             "review_applicability": {"state": "none", "basis": "no_review_supplied"},
             "attribution": {
@@ -394,6 +518,9 @@ class TestDeriveAnnotation:
                 "recorded_entries": 1,
                 "malformed_entries": 0,
                 "basis": "supplied_metadata_only",
+                "current_entries": 1,
+                "earlier_entries": 0,
+                "currency": "no_generation",
             },
             "review_applicability": {
                 "state": "unknown",
