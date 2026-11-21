@@ -107,6 +107,9 @@ def test_malformed_review_never_promotes(entry: Any) -> None:
         "recorded_entries": 0,
         "malformed_entries": 1,
         "basis": "supplied_metadata_only",
+        "current_entries": 0,
+        "earlier_entries": 0,
+        "currency": "no_generation",
     }
     assert result["recorded"]["verified"] == [entry]
 

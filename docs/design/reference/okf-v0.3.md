@@ -286,7 +286,7 @@ are named where they exist; a fix rewrites them.
 
 | # | Rule | 0.2 July | 0.2 Aug | 0.3 | Server | Level | Issue |
 |---|------|----------|---------|-----|--------|-------|-------|
-| 1 | Trust tier from current events only (§5.3) | every event counts | every event counts | required | counts every event: a human event older than `generated.at` gives human-reviewed | MUST | none |
+| 1 | Trust tier from current events only (§5.3) | every event counts | every event counts | required | fixed: counts only current events; `generated` without a usable `at` makes none current (recorded interpretation in `okf.md`) | MUST | #2409 |
 | 2 | Actor schemes (§7) | 2 schemes | 2 schemes | any `<scheme>:<id>`, id opaque | fixed: any string with a `:` or `/` is an actor; `team:x`, `svc:x` and an id with a tab are machine-confirmed, only `human:` gives human-reviewed | MUST | #2407 (fixed) |
 | 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | fixed by #2410: `stale: true`, so `stale=false` excludes it and it is downweighted | MUST NOT | #2410 (fixed) |
 | 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | fixed by #2404: read as 00:00 UTC (was the server-local day, stale an hour early at 00:30+01:00) | defined (no keyword) | #2404 (inverted) |
@@ -332,7 +332,9 @@ Notes on the table:
   events as history and makes clearing unnecessary.
 - **#1 needs a decision the spec does not make:** whether an event is
   current when `generated` is present but has no `at` (§5.3 covers only an
-  absent `generated`).
+  absent `generated`). #2409 reads it as "no event is current" and records
+  that as an interpretation in `okf.md`, pending the account holder's
+  confirmation.
 - **#17 is a producer judgement.** The server cannot tell a trivial edit
   from a meaningful one without a caller signal. Recorded as a departure
   because the rule is stated; whether a write flag is in scope is open.
