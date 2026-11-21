@@ -6,6 +6,14 @@
   `okf_version` on a concept reported as a conformance finding, found while
   fixing #2406 and fixed by #2427. The v0.2 page's pin follows the renamed
   test. No spec claim changed.
+- New: [RFC 3339 timestamps](rfc3339-timestamps.md), for #2428. Read RFC
+  3339 §4.3 and §5.6–5.8, RFC 9557 §2, the RFC 3339 errata (5783 on the
+  space separator is held for document update), the YAML 1.1 timestamp
+  type and Python's `fromisoformat` docs; observed PyYAML 6.0.4 and
+  Python 3.11.17 on each spelling, including a leap second that PyYAML
+  cannot load. Next review: 2027-11-21.
+- [Open Knowledge Format v0.3](okf-v0.3.md): departure 23 fixed by #2428;
+  the timestamp section now points at the RFC 3339 page.
 - [Open Knowledge Format v0.3](okf-v0.3.md): marked departures 8, 9, 10
   and 12, and the audit side of 11, fixed by #2406, #2413 and #2414, and
   pinned the §3.2, §8, §9 and §11.1 claims to the audit tests. Dropped the

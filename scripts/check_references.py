@@ -147,7 +147,14 @@ def parse_reference(path: Path, text: str) -> Reference:
 # the basic (``20270306``) and week (``2027-W10-6``) ISO spellings from Python
 # 3.11 on, which a date-only consumer may not, so the text is checked first.
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_DAY_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:$|[T ])")
+# RFC 3339 §5.6 ``date-time``, the only other form OKF 0.3 §5 admits
+# (#2428); ``markdown_vault_mcp.okf`` reads the same grammar, and
+# ``tests/test_okf_rfc3339.py`` holds the two to it
+# (``docs/design/reference/rfc3339-timestamps.md``).
+_DATE_TIME_RE = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})"
+    r"(?:\.(\d+))?(?:([Zz])|([+-])(\d{2}):(\d{2}))"
+)
 
 
 def _as_day(value: object) -> dt.date | None:
@@ -164,25 +171,46 @@ def _as_day(value: object) -> dt.date | None:
     return None
 
 
-def _instant_from_text(text: str) -> dt.datetime | None:
-    """The string half of :func:`_as_instant`: ``YYYY-MM-DD`` or an offset datetime."""
-    if not _DAY_PREFIX_RE.match(text):
+def _date_time_from_text(text: str) -> dt.datetime | None:
+    """An RFC 3339 ``date-time`` string as an aware instant, else ``None``.
+
+    A ``time-second`` of 60 (a leap second) names the next second; fraction
+    digits past microseconds are dropped.
+    """
+    match = _DATE_TIME_RE.fullmatch(text)
+    if match is None:
         return None
+    year, month, day, hour, minute, second = (int(g) for g in match.groups()[:6])
+    fraction, zulu, sign, off_hour, off_minute = match.groups()[6:]
+    if second > 60 or int(off_hour or 0) > 23 or int(off_minute or 0) > 59:
+        return None
+    micro = int((fraction or "0")[:6].ljust(6, "0"))
+    offset = dt.timedelta(hours=int(off_hour or 0), minutes=int(off_minute or 0))
+    zone = dt.UTC if zulu else dt.timezone(offset if sign == "+" else -offset)
     try:
-        if _DAY_RE.match(text):
-            day = dt.date.fromisoformat(text)
-            return dt.datetime.combine(day, dt.time.min, tzinfo=dt.UTC)
-        parsed = dt.datetime.fromisoformat(text)
+        base = dt.datetime(year, month, day, hour, minute, min(second, 59), micro, zone)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else None
+    return base + dt.timedelta(seconds=1) if second == 60 else base
+
+
+def _instant_from_text(text: str) -> dt.datetime | None:
+    """The string half of :func:`_as_instant`: ``YYYY-MM-DD`` or a ``date-time``."""
+    if _DAY_RE.match(text):
+        try:
+            day = dt.date.fromisoformat(text)
+        except ValueError:
+            return None
+        return dt.datetime.combine(day, dt.time.min, tzinfo=dt.UTC)
+    return _date_time_from_text(text)
 
 
 def _as_instant(value: object) -> dt.datetime | None:
     """An OKF 0.3 §5 timestamp as an aware instant, or ``None`` when it is not one.
 
-    Accepts a calendar date (midnight UTC) or an ISO 8601 datetime that
-    carries an explicit offset, as YAML's own datetime or as a string. A
+    Accepts a calendar date (midnight UTC) or a datetime with an explicit
+    offset: YAML's own datetime, or a string in the RFC 3339 ``date-time``
+    form (#2428). A
     datetime without an offset is rejected: OKF 0.3 says it "stays invalid"
     (§13.2). Used for ``stale_after``, ``generated.at`` and ``verified[].at``.
     """

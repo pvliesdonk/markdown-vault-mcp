@@ -126,6 +126,9 @@ where the account holder ruled that a departure from the standard is a bug.
   values again, with a fixed meaning, so v0.2 bundles that contain them
   stay valid. A date-time without an offset stays invalid."
   [source: spec] (§13.2)
+- What the RFC 3339 `date-time` and `full-date` rules accept, the open
+  erratum on a space separator, and how PyYAML and `fromisoformat` differ
+  from them are recorded in [RFC 3339 timestamps](rfc3339-timestamps.md).
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3)
 
@@ -312,6 +315,7 @@ are named where they exist; a fix rewrites them.
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
 | 22 | `okf_version` on a concept (§4.1, §8.1) | silent | silent | an extension key; MUST NOT reject unknown keys | fixed: no finding (was `misplaced_okf_version`, a conformance finding); on a folder `index.md` it is `index_frontmatter` | MUST NOT | #2427 (fixed) |
+| 23 | RFC 3339 `date-time` only (§5) | silent | silent | the `date-time` rule; "No other form is valid" | fixed: seconds, a `.` fraction and a `T` separator required, lower-case `t`/`z` and a `:60` leap second accepted (was: `14:00Z`, `,5` fractions and a space accepted; the checker took any `fromisoformat` form) | stated (no keyword) | #2428 (fixed) |
 
 Notes on the table:
 
