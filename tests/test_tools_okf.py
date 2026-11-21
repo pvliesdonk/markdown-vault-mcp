@@ -1,7 +1,7 @@
 """End-to-end tests for OKF read semantics via the MCP server.
 
 Covers the ``okf`` annotation on ``search`` / ``read`` / ``get_context``
-results, the ``okf`` section of ``stats``, the effective indexed-field
+results and the app-only ``vault_read`` / ``vault_context`` routes, the ``okf`` section of ``stats``, the effective indexed-field
 extension (and the ``document_tags`` filters riding it), the
 ``config://vault`` fields, the server-instructions sentence, and — the
 phase-1 acceptance baseline — that a non-OKF vault's payloads carry no OKF
