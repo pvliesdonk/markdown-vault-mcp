@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:5429df032c75031c5088164384db8626113ec164ee66e37e6900a14f149efdfb -->
+<!-- vendor-spa-source-sha256:370962bd070c3858386587b8b94c451b358bfa5715c46b1bee3333d3c10fd216 -->
 </head>
 <body>
 <div class="app-container">
@@ -939,7 +939,7 @@ app.onteardown = () => {
   // review out (state "none": absent or empty), the rule the CLI follows.
   function showsReviewNotice(fm, okf) {
     if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
-    if (!fm || !Object.prototype.hasOwnProperty.call(fm, 'verified')) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
     const applicability = okf.review_applicability;
     return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
   }
@@ -1750,7 +1750,7 @@ app.onteardown = () => {
   // review out (state "none": absent or empty), the rule the CLI follows.
   function showsReviewNotice(fm, okf) {
     if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
-    if (!fm || !Object.prototype.hasOwnProperty.call(fm, 'verified')) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
     const applicability = okf.review_applicability;
     return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
   }

@@ -54,7 +54,7 @@
   // review out (state "none": absent or empty), the rule the CLI follows.
   function showsReviewNotice(fm, okf) {
     if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
-    if (!fm || !Object.prototype.hasOwnProperty.call(fm, 'verified')) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
     const applicability = okf.review_applicability;
     return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
   }
