@@ -1039,6 +1039,157 @@ class TestParseFrontmatter:
         assert post.metadata == {"title": "T"}
 
 
+class TestParseFrontmatterYaml12CoreSchema:
+    """#2415 / OKF 0.3 §4: a `---` block parses as a YAML 1.2 core-schema mapping.
+
+    python-frontmatter's default handler resolves plain scalars by PyYAML's
+    YAML 1.1 rules (`yes` -> True, `012` -> 10, `1:30` -> 90, `1_000` -> 1000,
+    and a leap-second timestamp fails the whole block). The core schema makes
+    all of those strings, reads `0o17` as 15, and has no timestamp tag.
+    """
+
+    @staticmethod
+    def _metadata(block_body: str) -> dict[str, Any]:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        return parse_frontmatter(f"---\n{block_body}\n---\nbody\n").metadata
+
+    @pytest.mark.parametrize(
+        ("line", "expected"),
+        [
+            # YAML 1.1 booleans are plain strings in the 1.2 core schema.
+            ("a: yes", "yes"),
+            ("a: Yes", "Yes"),
+            ("a: no", "no"),
+            ("a: on", "on"),
+            ("a: Off", "Off"),
+            # ...while the true/false spellings stay booleans.
+            ("a: true", True),
+            ("a: True", True),
+            ("a: TRUE", True),
+            ("a: false", False),
+            ("a: FALSE", False),
+            # Numbers: no underscores, no leading-zero octal, no sexagesimal;
+            # 0o octal and 0x hex are core-schema integers.
+            ("a: 1_000", "1_000"),
+            ("a: 012", 12),
+            ("a: 0o17", 15),
+            ("a: -0o17", -15),
+            ("a: 0x1F", 31),
+            ("a: 1:30", "1:30"),
+            ("a: 190:20:30", "190:20:30"),
+            ("a: 42", 42),
+            ("a: 1e5", 100000.0),
+            # The core schema has no timestamp tag: dates and date-times are
+            # strings, and a leap second no longer fails the whole block.
+            ("a: 2026-06-30", "2026-06-30"),
+            ("a: 2026-06-30 14:00:00", "2026-06-30 14:00:00"),
+            ("a: 2016-12-31T23:59:60Z", "2016-12-31T23:59:60Z"),
+            # Null forms.
+            ("a: ~", None),
+            ("a: null", None),
+            ("a:", None),
+        ],
+    )
+    def test_plain_scalars_resolve_by_yaml_12_core(
+        self, line: str, expected: Any
+    ) -> None:
+        metadata = self._metadata(line)
+        assert metadata["a"] == expected
+        assert type(metadata["a"]) is type(expected)
+
+    def test_okf_03_example_block(self) -> None:
+        """The OKF 0.3 §4 example block: 1.1-misparsed values read correctly."""
+        metadata = self._metadata(
+            "draft: yes\n"
+            "enabled: on\n"
+            "retries: 1_000\n"
+            "mode: 0o17\n"
+            "legacy: 012\n"
+            "elapsed: 1:30\n"
+            "generated:\n"
+            "  at: 2026-11-21T11:04:16+01:00\n"
+            "verified:\n"
+            "  - at: 2016-12-31T23:59:60Z\n"
+            "    by: human:ada\n"
+        )
+        assert metadata["draft"] == "yes"
+        assert metadata["enabled"] == "on"
+        assert metadata["retries"] == "1_000"
+        assert metadata["mode"] == 15
+        assert metadata["legacy"] == 12
+        assert metadata["elapsed"] == "1:30"
+        assert metadata["generated"] == {"at": "2026-11-21T11:04:16+01:00"}
+        assert metadata["verified"] == [
+            {"at": "2016-12-31T23:59:60Z", "by": "human:ada"}
+        ]
+
+    def test_leap_second_no_longer_fails_the_block(self) -> None:
+        # PyYAML 1.1 raised ValueError ("second must be in 0..59") while
+        # constructing the timestamp, which parse_frontmatter normalised into
+        # MalformedFrontmatterError: the whole note landed in
+        # `unparseable_frontmatter`. Under the core schema the value is a
+        # plain string and the note parses (#2415).
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        post = parse_frontmatter(
+            "---\nstale_after: 2016-12-31T23:59:60Z\n---\n# body\n"
+        )
+        assert post.metadata == {"stale_after": "2016-12-31T23:59:60Z"}
+        assert post.content == "# body"
+
+    def test_block_after_leading_whitespace_uses_core_schema(self) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        post = parse_frontmatter("\n  ---\na: yes\n---\nbody\n")
+        assert post.metadata == {"a": "yes"}
+
+    def test_quoted_values_are_unchanged(self) -> None:
+        assert self._metadata('a: "yes"')["a"] == "yes"
+        assert self._metadata("a: '0o17'")["a"] == "0o17"
+
+    def test_explicit_yaml_tag_still_applies(self) -> None:
+        assert self._metadata("a: !!str 0o17")["a"] == "0o17"
+        assert self._metadata("a: !!int 0o17")["a"] == 15
+
+    def test_json_frontmatter_is_not_yaml(self) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        post = parse_frontmatter('{\n"a": "yes"\n}\nbody\n')
+        assert post.metadata == {"a": "yes"}
+
+    def test_no_frontmatter_yields_empty_metadata(self) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        post = parse_frontmatter("just body\n")
+        assert post.metadata == {}
+        assert post.content == "just body"
+
+    def test_malformed_yaml_still_raises_yaml_error(self) -> None:
+        import yaml
+
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        with pytest.raises(yaml.YAMLError):
+            parse_frontmatter("---\na: [unclosed\n---\nbody\n")
+
+    def test_body_is_untouched_by_the_loader_swap(self) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        text = "---\na: yes\n---\n# Title\n\nBody with `a: no` inline.\n"
+        post = parse_frontmatter(text)
+        assert post.metadata == {"a": "yes"}
+        assert post.content == "# Title\n\nBody with `a: no` inline."
+
+    def test_safe_loader_itself_is_not_rewritten(self) -> None:
+        # The fix is scoped to parse_frontmatter's handler; PyYAML's own
+        # safe_load keeps its YAML 1.1 behaviour for every other caller.
+        import yaml
+
+        assert yaml.safe_load("a: yes") == {"a": True}
+        assert yaml.safe_load("a: 1:30") == {"a": 90}
+
+
 class TestContentChars:
     """Body-size measurement backing the enumeration signal (#1039)."""
 

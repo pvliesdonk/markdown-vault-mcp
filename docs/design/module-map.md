@@ -25,6 +25,7 @@ src/markdown_vault_mcp/
     content_kind.py    -- is_note/has_md_suffix/artifact_suffix/is_allowed_artifact(_suffix): single owner of the note-vs-artifact boundary + the registry of the three '.md' axes (#1235); names_attachment/canonical_attachment_extensions: whether a link *target* names an attachment, and the allowlist's provenance rendering (#1333)
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
+    yaml12.py          -- Yaml12CoreLoader/load_core_schema: PyYAML SafeLoader restricted to the YAML 1.2 core schema, the frontmatter dialect OKF 0.3 §4 mandates; scanner.parse_frontmatter reads every `---` block through it (#2415)
   managers/
     citations.py       -- reverse citation attribution and scoped diagnostics (#1446)
     _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)

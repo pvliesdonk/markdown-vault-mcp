@@ -42,6 +42,7 @@ from markdown_vault_mcp.okf import (
     append_okf_verification,
     apply_okf_write_stamp,
 )
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
     _parse_tool_data,
@@ -73,8 +74,11 @@ def _assert_recent_utc_stamp(value: object) -> None:
 
 
 #: The ``human:peter`` event the fixtures carry, as it reads back: a write
-#: keeps it as history (OKF 0.3 §5.3; #2405).
-_KEPT_VERIFIED = [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
+#: keeps it as history (OKF 0.3 §5.3; #2405). The unquoted ``at: 2026-01-01``
+#: in the fixture text reads as the *string* ``"2026-01-01"`` under the YAML
+#: 1.2 core schema OKF 0.3 §4 requires (#2415) — the write re-dumps it quoted,
+#: so it stays a string on the way back too.
+_KEPT_VERIFIED = [{"by": "human:peter", "at": "2026-01-01"}]
 
 
 class TestApplyOkfWriteStamp:
@@ -253,10 +257,11 @@ class TestAppendOkfVerification:
         meta = fm.loads(
             append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
-        # The pre-existing unquoted YAML date round-trips as a date object; the
+        # The pre-existing unquoted YAML date reads as the string "2026-01-01"
+        # under the YAML 1.2 core schema (#2415) and round-trips quoted; the
         # appended entry carries the ISO string we wrote.
         assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+            {"by": "human:alice", "at": "2026-01-01"},
             {"by": "human:peter", "at": _ISO},
         ]
 
@@ -268,7 +273,7 @@ class TestAppendOkfVerification:
             append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
         assert meta["verified"] == [
-            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+            {"by": "human:alice", "at": "2026-01-01"},
             {"by": "human:peter", "at": _ISO},
         ]
 
@@ -790,10 +795,13 @@ class TestWriteToolThreadsActor:
             await wait_for_mcp_writer_drain(client)
             await client.call_tool("okf_convert_links", {})
             await wait_for_mcp_writer_drain(client)
-        meta = fm.loads(
+        # Read through the server's own entry point: the migration did not
+        # rewrite the block, so the unquoted date is still the raw text, which
+        # the YAML 1.2 core schema reads as the string "2026-01-01" (#2415).
+        meta = parse_frontmatter(
             (enforced_env / "guides" / "plain.md").read_text(encoding="utf-8")
         ).metadata
-        assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
+        assert meta["verified"] == [{"by": "human:peter", "at": "2026-01-01"}]
         assert "generated" not in meta
 
 
