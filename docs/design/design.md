@@ -2038,10 +2038,13 @@ the spec itself says, dated and sourced, in
   UTC, an instant with an offset is that instant, an offset-less datetime
   is not a timestamp — OKF 0.3 §5, #2404), and
   `trust_tier` as a recorded-claim label. Only records with a recognized
-  actor shape and an `at` timestamp (offset date-time or date) contribute; malformed records never
+  actor shape and an `at` timestamp (offset date-time or date) contribute,
+  and only the current ones (OKF 0.3 §5.3: `at` at or after `generated.at`,
+  or `generated` absent, #2409); malformed records never
   promote a tier. `freshness` distinguishes missing/malformed/unexpired/expired
   evidence and its basis; `review` counts usable and malformed records with
-  `basis: supplied_metadata_only`. Neither certifies truth or applicability.
+  `basis: supplied_metadata_only`, and splits the usable ones into
+  `current_entries` and `earlier_entries` under a `currency` basis. Neither certifies truth or applicability.
   `review_applicability` (`{state, basis}`) reports applicability apart from
   the recorded claims: `unknown` for a `verified` value with entries or a
   malformed one, `none` when it has no entries (absent, null, empty or an empty list); it never infers snapshot coverage from timestamps.
