@@ -515,7 +515,7 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Using Zettelkasten with OKF
 
-Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.2"` to the root `index.md`, and the fit is close because both are note-centric.
+Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.3"` to the root `index.md`, and the fit is close because both are note-centric.
 
 **Types line up already.** The one hard OKF rule is a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind PARA's inbox needs. A `fleeting` note already carries its type as the quick capture.
 

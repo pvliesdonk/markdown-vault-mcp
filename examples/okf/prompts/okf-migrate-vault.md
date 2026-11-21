@@ -25,7 +25,7 @@ into the indexes it generates, and an index without them drops out of search.
 ## Step 2: Declare
 
 If the root `index.md` has no `okf_version`, propose adding
-`okf_version: "0.2"` to its frontmatter (create the file if absent). From this
+`okf_version: "0.3"` to its frontmatter (create the file if absent). From this
 point the server annotates results and the filters work. Confirm, then read the
 current `index.md` and pass its etag as `write(if_match=...)` while preserving
 its body and other frontmatter. If the file is absent, create it without
