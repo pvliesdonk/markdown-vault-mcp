@@ -361,9 +361,13 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
 
 
 _DATE_ONLY_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_INSTANT_RE = re.compile(
-    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ](?:[01][0-9]|2[0-3]):[0-5][0-9]"
-    r"(?::[0-5][0-9](?:[.,][0-9]+)?)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
+#: RFC 3339 §5.6 ``date-time``: ``full-date "T" full-time``, seconds required,
+#: a ``.`` fraction, and ``Z`` or a ``+hh:mm`` / ``-hh:mm`` offset. "T" and
+#: "Z" may be lower case (§5.6 NOTE). Ranges are checked when the instant is
+#: built. OKF 0.3 §5 admits no other form (#2428).
+_DATE_TIME_RE = re.compile(
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})"
+    r"(?:\.([0-9]+))?(?:([Zz])|([+-])([0-9]{2}):([0-9]{2}))"
 )
 
 
@@ -485,10 +489,10 @@ def _full_date(raw: Any) -> _dt.date | None:
         return None
     if isinstance(raw, _dt.date):
         return raw
-    if not isinstance(raw, str) or not _DATE_ONLY_RE.fullmatch(raw.strip()):
+    if not isinstance(raw, str) or not _DATE_ONLY_RE.fullmatch(raw):
         return None
     try:
-        return _dt.date.fromisoformat(raw.strip())
+        return _dt.date.fromisoformat(raw)
     except ValueError:
         logger.debug("okf_timestamp_invalid value=%r", raw)
         return None
@@ -500,22 +504,50 @@ def _parse_timestamp(raw: Any) -> _dt.datetime | None:
     Used for every timestamp key the server reads (``stale_after``,
     ``generated.at``, ``verified[].at``). A date-time with an offset is that
     instant; a date only, quoted or YAML-native, is "The start of that day
-    in UTC" (#2404). Anything else is ``None``, including a date-time
-    without an offset, which OKF 0.3 says "stays invalid" (§13.2).
+    in UTC" (#2404). A string is read by the RFC 3339 grammar alone
+    (#2428): seconds required, a ``.`` fraction, a ``T`` separator.
+    Anything else is ``None``, including a date-time without an offset,
+    which OKF 0.3 says "stays invalid" (§13.2). A YAML-native datetime is a
+    value, accepted when it carries an offset (§5 "MUST accept ... a
+    YAML-native timestamp").
     """
     day = _full_date(raw)
     if day is not None:
         return _dt.datetime.combine(day, _dt.time.min, tzinfo=_dt.UTC)
     if isinstance(raw, _dt.datetime):
         return _aware_or_none(raw, raw)
-    if not isinstance(raw, str) or not _INSTANT_RE.fullmatch(raw.strip()):
+    if not isinstance(raw, str):
         return None
-    try:
-        parsed = _dt.datetime.fromisoformat(raw.strip())
-    except ValueError:
+    parsed = _rfc3339_date_time(raw)
+    if parsed is None:
         logger.debug("okf_timestamp_invalid value=%r", raw)
+    return parsed
+
+
+def _rfc3339_date_time(text: str) -> _dt.datetime | None:
+    """Read an RFC 3339 §5.6 ``date-time`` string as an aware instant.
+
+    ``None`` for any other text, a value out of range included. A
+    ``time-second`` of 60, which the grammar allows at a leap second, names
+    the second after ``:59``; fraction digits past microseconds are dropped.
+    """
+    match = _DATE_TIME_RE.fullmatch(text)
+    if match is None:
         return None
-    return _aware_or_none(parsed, raw)
+    year, month, day, hour, minute, second = (int(g) for g in match.groups()[:6])
+    fraction, zulu, sign, off_hour, off_minute = match.groups()[6:]
+    if second > 60 or int(off_hour or 0) > 23 or int(off_minute or 0) > 59:
+        return None
+    micro = int((fraction or "0")[:6].ljust(6, "0"))
+    offset = _dt.timedelta(hours=int(off_hour or 0), minutes=int(off_minute or 0))
+    zone = _dt.UTC if zulu else _dt.timezone(offset if sign == "+" else -offset)
+    try:
+        base = _dt.datetime(
+            year, month, day, hour, minute, min(second, 59), micro, zone
+        )
+    except ValueError:
+        return None
+    return base + _dt.timedelta(seconds=1) if second == 60 else base
 
 
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:

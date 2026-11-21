@@ -29,6 +29,10 @@ sources:
     title: GoogleCloudPlatform/open-knowledge-format README, deprecation notice (commit 8a8ff87bfd, 2026-11-18)
     resource: https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/8a8ff87bfd/README.md
     accessed: 2026-11-21
+  - id: rfc3339
+    title: "RFC 3339, Date and Time on the Internet: Timestamps (July 2002), §5.6"
+    resource: https://www.rfc-editor.org/rfc/rfc3339.txt
+    accessed: 2026-11-21
 ---
 
 # Open Knowledge Format v0.3
@@ -126,6 +130,21 @@ where the account holder ruled that a departure from the standard is a bug.
   values again, with a fixed meaning, so v0.2 bundles that contain them
   stay valid. A date-time without an offset stays invalid."
   [source: spec] (§13.2)
+- RFC 3339's `date-time` is `full-date "T" full-time`, with
+  `partial-time = time-hour ":" time-minute ":" time-second [time-secfrac]`,
+  `time-secfrac = "." 1*DIGIT` and `time-offset = "Z" / time-numoffset`,
+  `time-numoffset = ("+" / "-") time-hour ":" time-minute`. So seconds are
+  required, the fraction separator is `.`, and an offset carries its colon.
+  "the "T" and "Z" characters in this syntax may alternatively be lower
+  case"; `time-second` may be 60 at a leap second. [source: rfc3339] (§5.6)
+  [pins: tests/test_okf_rfc3339.py::test_rfc3339_forms_parse, tests/test_okf_rfc3339.py::test_non_rfc3339_forms_are_rejected]
+- A space between date and time is a separate note, not part of the rule:
+  "Applications using this syntax may choose, for the sake of readability,
+  to specify a full-date and full-time separated by (say) a space
+  character." OKF names the `date-time` rule and admits "No other form",
+  so a quoted string with a space is not an OKF timestamp; a YAML-native
+  datetime is a value, accepted under §5's MUST. [source: rfc3339] (§5.6)
+  [source: spec] (§5)
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3)
 
@@ -312,6 +331,7 @@ are named where they exist; a fix rewrites them.
 | 20 | `superseded_by` (§5.4) | absent | absent | SHOULD follow | not read | SHOULD | none |
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
 | 22 | `okf_version` on a concept (§4.1, §8.1) | silent | silent | an extension key; MUST NOT reject unknown keys | fixed: no finding (was `misplaced_okf_version`, a conformance finding); on a folder `index.md` it is `index_frontmatter` | MUST NOT | #2427 (fixed) |
+| 23 | RFC 3339 `date-time` only (§5) | silent | silent | the `date-time` rule; "No other form is valid" | fixed: seconds, a `.` fraction and a `T` separator required, lower-case `t`/`z` and a `:60` leap second accepted (was: `14:00Z`, `,5` fractions and a space accepted; the checker took any `fromisoformat` form) | stated (no keyword) | #2428 (fixed) |
 
 Notes on the table:
 

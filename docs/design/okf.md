@@ -79,7 +79,10 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   `stale_after`: a timestamp. Every timestamp key (`generated.at`,
   `verified[].at`, `stale_after`) is an RFC 3339 date-time with an offset
   (that instant) or a date only, `YYYY-MM-DD`, "The start of that day in
-  UTC"; a date-time without an offset is invalid (OKF 0.3 §5, §13.2).
+  UTC"; a date-time without an offset is invalid (OKF 0.3 §5, §13.2). A
+  string date-time follows the RFC 3339 grammar exactly: seconds required,
+  a `.` fraction, `T` (or `t`) between date and time, `Z` (or `z`) or
+  `±hh:mm` (#2428); a YAML-native datetime is a value and is read as one.
 - **Bundle marker:** `okf_version: "0.2"` allowed only in the bundle-root
   `index.md` frontmatter. Under 0.3 a bundle declares `"0.3"`; see Detection.
 - **Reserved files:** `index.md` (progressive-disclosure directory listing)

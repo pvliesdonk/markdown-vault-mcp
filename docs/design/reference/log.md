@@ -6,6 +6,10 @@
   `okf_version` on a concept reported as a conformance finding, found while
   fixing #2406 and fixed by #2427. The v0.2 page's pin follows the renamed
   test. No spec claim changed.
+- [Open Knowledge Format v0.3](okf-v0.3.md): added RFC 3339 §5.6 as a
+  source, with its `date-time` grammar, the lower-case and leap-second
+  notes, and the space-separator note read against OKF's "No other form is
+  valid"; departure 23 fixed by #2428.
 - [Open Knowledge Format v0.3](okf-v0.3.md): marked departures 8, 9, 10
   and 12, and the audit side of 11, fixed by #2406, #2413 and #2414, and
   pinned the §3.2, §8, §9 and §11.1 claims to the audit tests. Dropped the

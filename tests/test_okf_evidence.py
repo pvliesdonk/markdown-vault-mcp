@@ -72,7 +72,7 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
         (dt.datetime(2026, 11, 15, 12, tzinfo=dt.UTC), "expired", "offset_instant"),
         ("2026-11-15T12:00:00Z", "expired", "offset_instant"),
         ("2026-11-15T14:00:01+02:00", "unexpired", "offset_instant"),
-        ("2026-11-15 14:00:00.123+02:00", "unexpired", "offset_instant"),
+        ("2026-11-15T14:00:00.123+02:00", "unexpired", "offset_instant"),
     ],
 )
 def test_freshness_basis(value: Any, state: str, basis: str) -> None:
