@@ -48,8 +48,9 @@ List of result dicts ranked by file relevance. Each contains:
 - okf (dict, optional): OKF read annotation: present only when
   the vault is an active OKF bundle. Carries `type` (when
   declared), `status` (defaults to `"stable"`), `stale`
-  (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-  `"machine-confirmed"` / `"human-reviewed"`, classifying recorded
+  (bool, `stale_after` reached or unparseable), `trust_tier`
+  (`"unverified"` / `"machine-confirmed"` / `"human-reviewed"`,
+  classifying recorded
   metadata rather than applicability to current content),
   `freshness`, `review`, `review_applicability`, `attribution`
   (`sources` in the shape of `review`), `generation`

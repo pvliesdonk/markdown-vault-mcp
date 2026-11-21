@@ -378,6 +378,14 @@ def _parse_timestamp(raw: Any) -> _dt.datetime | None:
     return _aware_or_none(parsed, raw)
 
 
+def _is_blank(value: Any) -> bool:
+    """Whether a value is null, an empty string or an empty list (OKF §11.2).
+
+    §11.2 rule 1 makes each of these "the same as an absent key".
+    """
+    return value is None or value == "" or value == []
+
+
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     """Derive staleness from ``stale_after``.
 
@@ -385,20 +393,27 @@ def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     only means the start of that day in UTC (§5), so ``2026-12-31`` is stale
     from ``2026-12-31T00:00:00Z`` on, whatever the server's own zone
     (#2404); a date-time with an offset is compared as that instant. A
-    date-time without an offset is not a valid timestamp.
+    value that does not parse, a date-time without an offset included, is
+    stale: OKF 0.3 §5.5 says a consumer "MUST NOT treat a ``stale_after``
+    value that it cannot parse as fresh" (#2410). An absent, null or empty
+    value, or an empty list, is not stale (§11.2).
 
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
             ``date`` or ``datetime`` (YAML parses bare timestamps) or their
             supported extended-calendar spellings (see ``okf.md`` §3);
-            anything else yields false, not an assurance of freshness.
+            any other present value is unparseable and yields true.
         now: The current instant, timezone-aware.
 
     Returns:
-        ``True`` iff ``stale_after`` parses and *now* has reached it.
+        ``True`` when *now* has reached a parsed ``stale_after``, or when a
+        present ``stale_after`` does not parse.
     """
-    boundary = _parse_timestamp(metadata.get("stale_after"))
-    return boundary is not None and now >= boundary
+    raw = metadata.get("stale_after")
+    boundary = _parse_timestamp(raw)
+    if boundary is None:
+        return not _is_blank(raw)
+    return now >= boundary
 
 
 def _attribution_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
