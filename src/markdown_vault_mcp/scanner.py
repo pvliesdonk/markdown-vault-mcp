@@ -1221,12 +1221,15 @@ def _strip_inline_code(region: str) -> str:
 
 def _resolve_link_path(
     target: str, source_rel: str, *, decode_markdown: bool = False
-) -> tuple[str, str | None]:
+) -> tuple[str | None, str | None]:
     """Resolve a raw link target against the source document's directory.
 
-    Splits off any fragment identifier (``#heading``), resolves the path
-    relative to the source document using POSIX semantics, and clamps any
-    traversal above the vault root to the root.
+    Splits off any fragment identifier (``#heading``) and resolves the path
+    relative to the source document using POSIX semantics. A target whose
+    ``..`` segments climb above the vault root is external, as OKF 0.3 §6
+    defines it ("A value that resolves to a location outside the bundle
+    root is external"), and resolves to ``None`` rather than to a path
+    inside the vault (#2416).
 
     Args:
         target: Raw target string from the link (may include ``#fragment``).
@@ -1239,8 +1242,9 @@ def _resolve_link_path(
 
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
-        vault-relative POSIX path with forward slashes and ``fragment`` is the
-        heading identifier or ``None``.
+        vault-relative POSIX path with forward slashes, or ``None`` when the
+        target lies outside the vault root, and ``fragment`` is the heading
+        identifier or ``None``.
     """
     # Split fragment BEFORE decoding: an encoded ``%23`` or an escaped
     # ``\#`` is a literal ``#`` in the file name, and decoding first would
@@ -1251,9 +1255,9 @@ def _resolve_link_path(
     fragment: str | None = None
     if decode_markdown:
         # A refused percent-escape leaves that layer as written, so it never
-        # invents a resolvable name; the traversal clamp below still runs on
-        # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
-        # root. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
+        # invents a resolvable name; the root check below still runs on
+        # whatever comes out, so a decoded ``%2E%2E`` that climbs above the
+        # root is external like a literal ``..``. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
         parsed = parse_markdown_destination(target)
         target, fragment = parsed.path, parsed.fragment
 
@@ -1274,14 +1278,15 @@ def _resolve_link_path(
         # Resolve relative to the source document's directory.
         resolved = PurePosixPath(source_rel).parent / target
 
-    # Normalise (collapse /../ and /./) without going above root.
-    parts = resolved.parts
+    # Normalise (collapse /../ and /./). A ``..`` with nothing left to pop
+    # leaves the vault root: the target is external (OKF 0.3 §6), and
+    # dropping the segment instead would land on an unrelated in-vault note.
     normalised: list[str] = []
-    for part in parts:
+    for part in resolved.parts:
         if part == "..":
-            if normalised:
-                normalised.pop()
-            # else: clamp — traversal above root is dropped silently
+            if not normalised:
+                return None, fragment
+            normalised.pop()
         elif part != ".":
             normalised.append(part)
 
@@ -1383,6 +1388,9 @@ def _extract_inline_links(
         resolved, fragment = _resolve_link_path(
             raw_target, source_path, decode_markdown=True
         )
+        if resolved is None:
+            # Above the vault root: external, like a URL (#2416).
+            continue
         if names_attachment(resolved, attachment_extensions):
             # [paper](x.pdf) names a file the index never holds; the
             # non-image spelling of the reference ![alt](src) already skips.
@@ -1749,6 +1757,8 @@ def _extract_reference_links(
         resolved, fragment = _resolve_link_path(
             raw_target, source_path, decode_markdown=True
         )
+        if resolved is None:
+            continue
         if names_attachment(resolved, attachment_extensions):
             continue
         links.append(
@@ -1923,7 +1933,11 @@ def _extract_wikilinks(
         # FTSIndex.resolve_vault_wikilinks() can resolve them vault-wide
         # against the full indexed document set.
         if raw_path.startswith("./") or raw_path.startswith("../"):
-            resolved, path_fragment = _resolve_link_path(raw_path, source_path)
+            relative, path_fragment = _resolve_link_path(raw_path, source_path)
+            if relative is None:
+                # Above the vault root: no note can be there (#2416).
+                continue
+            resolved = relative
             fragment = fragment or path_fragment
         else:
             resolved = raw_path

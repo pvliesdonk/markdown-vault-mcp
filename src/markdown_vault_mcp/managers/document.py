@@ -1540,7 +1540,7 @@ class DocumentManager:
                 row["raw_target"], source, decode_markdown=True
             )
             target = row["target_path"]
-            if baseline != target:
+            if baseline is not None and baseline != target:
                 row["source_path"] = source
                 result.append((target, row))
         return result

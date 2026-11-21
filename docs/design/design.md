@@ -2912,7 +2912,8 @@ made:
   single decoder, shared by extraction and by the rename-shape comparison.
 - **What is not an escape passes through**: a `%` not followed by two hex
   digits, and `+`, which is a space only in form encoding. A decoded `%2E%2E`
-  meets the same root clamp as a literal `..`, since the decode runs first.
+  meets the same root check as a literal `..`, since the decode runs first:
+  one that climbs above the root is external (#2416).
 - **`raw_target` keeps the spelling as written**, because it is what
   `apply_link_replacement` searches for in the file. Only `target_path` is
   decoded.
@@ -3600,8 +3601,17 @@ with `^`.
 source document's directory. `../sibling.md` from `Journal/2024/today.md` resolves
 to `Journal/sibling.md`. A leading slash makes the target vault-root-relative
 (#969): `/guides/note.md` resolves to `guides/note.md` regardless of the source
-document's location — this is OKF's recommended link style. Traversal above the
-vault root clamps to root.
+document's location — this is OKF's recommended link style. A target whose
+`..` segments climb above the vault root is external (#2416), as OKF 0.3 §6
+defines it: "A value that resolves to a location outside the bundle root is
+external." It gets no link row, exactly like a URL (Exclusions, above), so it
+is no backlink, outlink, broken link or graph edge, and a rename never
+rewrites it. `../../x.md` from `a/n.md` is external; `../x.md` from `a/n.md`,
+which reaches the root without passing it, resolves to `x.md`. The rule covers
+markdown, reference and `./`/`../` wikilink targets alike. Before #2416 the
+surplus `..` was dropped, which landed the link on an unrelated note at the
+root; no recorded reason backed that clamp (it arrived with link extraction
+in #185).
 
 **Fragment handling**: `path.md#heading` splits into `target_path=path.md` and
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path

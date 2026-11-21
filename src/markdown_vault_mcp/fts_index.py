@@ -546,6 +546,12 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: ``citations`` table, and ``documents.citations_derived`` records which
 #: citation rules derived them. Still one bump: no tag contains the commit
 #: that set 13 (``AGENTS.md``, once per release).
+#:
+#: Version 13 also covers #2416: a markdown, reference or ``./``/``../``
+#: wikilink target whose ``..`` climbs above the vault root is external
+#: (OKF 0.3 §6) and loses its link row, where the resolver used to clamp it
+#: onto a note at the root. Still one bump: no tag contains the commit that
+#: set 13 (``AGENTS.md``, once per release).
 INDEX_SEMANTICS_VERSION = 13
 
 
@@ -714,14 +720,26 @@ def _match_vault_path(
 
 def _markdown_link_target(
     raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
-) -> str:
-    """Resolve a markdown destination, keeping explicit and existing local paths."""
+) -> str | None:
+    """Resolve a markdown destination, keeping explicit and existing local paths.
+
+    Returns ``None`` only for a destination above the vault root, which
+    extraction never stores (#2416).
+    """
     parsed = parse_markdown_destination(raw)
     decoded = parsed.path
     baseline, _ = _resolve_link_path(decoded, source)
-    if parsed.refused or baseline in path_set or decoded.startswith(("/", "./", "../")):
+    if (
+        baseline is None
+        or parsed.refused
+        or baseline in path_set
+        or decoded.startswith(("/", "./", "../"))
+    ):
         return baseline
     target, _ = _resolve_link_path(decoded, "")
+    if target is None:
+        # In the vault from the source's folder, above it from the root.
+        return baseline
     return _match_vault_path(target, source, path_set, by_name) or baseline
 
 
@@ -2803,7 +2821,7 @@ class FTSIndex:
             new_path = _markdown_link_target(
                 row["raw_target"], row["source_path"], doc_paths_set, by_name
             )
-            if new_path != row["target_path"]:
+            if new_path is not None and new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
         with conn:
