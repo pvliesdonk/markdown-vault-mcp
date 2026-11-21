@@ -15,7 +15,7 @@ The maintainer is built only when ``OKF_WRITE`` is enabled (mirroring the
 enricher's gating), and it re-checks ``detector.state().active`` on every call
 because an OKF declaration can flip mid-session. The secondary writes are done
 under :func:`okf_write_suppressed` so the reserved files are not themselves
-provenance-stamped or verification-cleared.
+provenance-stamped.
 """
 
 from __future__ import annotations

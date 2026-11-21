@@ -1,11 +1,12 @@
 """OKF enforced-write layer runtime (#964): request-scoped actor + enrichment.
 
-The enforced-write layer (design §6) stamps ``generated`` provenance and clears
-``verified`` on content writes, attributing them to the authenticated identity.
+The enforced-write layer (design §6) stamps ``generated`` provenance on content
+writes, attributing it to the authenticated identity, and keeps ``verified`` as
+history (OKF 0.3 §5.3; #2405).
 That identity is a FastMCP request-context dependency (``get_subject``), so it is
 resolvable only inside a tool handler — but the write path runs deep under
 ``asyncio.to_thread``. The actor (and a *suppress* flag for ``okf_verify``, which
-sets ``verified`` deliberately and must not have it cleared) therefore travel via
+records a verification and must not restamp ``generated``) therefore travel via
 a contextvar: ``asyncio.to_thread`` copies the current context into its worker, so
 a value set around the ``to_thread`` call is visible to the enricher. This mirrors
 the auth-mode contextvar in ``_subject``.
@@ -38,13 +39,13 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from markdown_vault_mcp._identity import current_principal, resolve_mcp_principal
 from markdown_vault_mcp.okf import apply_okf_write_stamp
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Iterator
 
     from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.types import WriteOperation
@@ -59,6 +60,23 @@ logger = logging.getLogger(__name__)
 _LOCAL_SUBJECT = "local"
 
 
+class OkfWriteEnrich(Protocol):
+    """The ``DocumentManager`` write-enrichment hook's call shape."""
+
+    def __call__(
+        self, text: str, operation: WriteOperation, *, stored: str | None = None
+    ) -> str:
+        """Return *text* as it should land.
+
+        Args:
+            text: The full note text the write would save.
+            operation: The write operation.
+            stored: The note's text on disk before the write, or ``None``
+                for a new note.
+        """
+        ...
+
+
 @dataclass(frozen=True)
 class OkfWriteIntent:
     """The current request's OKF write intent, carried across ``to_thread``.
@@ -66,7 +84,7 @@ class OkfWriteIntent:
     Attributes:
         actor: The provenance actor to stamp (``human:<subject>`` or a tool actor).
         suppress: When ``True`` the enricher is a no-op — used by ``okf_verify``,
-            which sets ``verified`` on purpose and must not have it cleared.
+            which records a verification and must not restamp ``generated``.
     """
 
     actor: str
@@ -96,9 +114,9 @@ def okf_write_intent(intent: OkfWriteIntent) -> Iterator[None]:
 def okf_write_suppressed() -> Iterator[None]:
     """Bind a suppressing intent so the enricher is a no-op for the duration.
 
-    For mechanical writes that must not be re-stamped or have ``verified``
-    cleared — the one-shot migration transforms and ``okf_verify`` (which sets
-    ``verified`` deliberately). Enter it **before** the ``asyncio.to_thread``
+    For writes that must not restamp ``generated`` — the one-shot migration
+    transforms (mechanical rewrites) and ``okf_verify`` (a verification, not a
+    generation; OKF 0.3 §5.2). Enter it **before** the ``asyncio.to_thread``
     write call.
     """
     with okf_write_intent(OkfWriteIntent(actor="", suppress=True)):
@@ -157,12 +175,13 @@ def resolve_verify_subject() -> str:
 
 def build_okf_write_enrich(
     *, okf_write: bool, detector: OkfDetector, version: str
-) -> Callable[[str, WriteOperation], str] | None:
+) -> OkfWriteEnrich | None:
     """Build the ``DocumentManager`` write-enrichment hook, or ``None`` when off.
 
     Returns ``None`` (zero overhead, no detector probe) when ``okf_write`` is
     disabled. Otherwise returns a callable that, for ``write`` / ``edit`` on an
-    OKF-active vault, stamps provenance and clears verification — unless the
+    OKF-active vault, stamps ``generated`` provenance and carries the stored
+    note's ``verified`` across in place of the written text's — unless the
     current request carries a suppressing :class:`OkfWriteIntent` (``okf_verify``).
 
     Args:
@@ -177,7 +196,9 @@ def build_okf_write_enrich(
         return None
     default_actor = tool_actor(version)
 
-    def enrich(text: str, operation: WriteOperation) -> str:
+    def enrich(
+        text: str, operation: WriteOperation, *, stored: str | None = None
+    ) -> str:
         if operation not in ("write", "edit"):
             return text
         intent = current_okf_intent()
@@ -186,6 +207,8 @@ def build_okf_write_enrich(
         if not detector.state().active:
             return text
         actor = intent.actor if intent is not None else default_actor
-        return apply_okf_write_stamp(text, actor=actor, now=datetime.now(UTC))
+        return apply_okf_write_stamp(
+            text, actor=actor, now=datetime.now(UTC), stored=stored
+        )
 
     return enrich

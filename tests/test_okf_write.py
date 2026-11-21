@@ -7,9 +7,9 @@ Covers the four pieces of the frontmatter-enforcement phase:
 - The runtime seam in ``_okf_write.py`` (actor resolution, the enrichment
   builder, and the suppress contextvar).
 - Config cross-validation (``OKF_WRITE`` requires ``OKF_MODE != off``).
-- The invalidation matrix end-to-end through a writable, OKF-active vault
-  (body write / body edit / frontmatter-only edit clear ``verified``; rename
-  preserves it) and the ``okf_verify`` tool under both an authed and a
+- The write matrix end-to-end through a writable, OKF-active vault
+  (body write / body edit / append / frontmatter-only edit restamp
+  ``generated`` and keep ``verified`` as history; rename touches neither) and the ``okf_verify`` tool under both an authed and a
   no-auth server.
 """
 
@@ -36,6 +36,7 @@ from markdown_vault_mcp._okf_write import (
     tool_actor,
 )
 from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.okf import (
     OkfDetector,
     append_okf_verification,
@@ -71,6 +72,11 @@ def _assert_recent_utc_stamp(value: object) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: The ``human:peter`` event the fixtures carry, as it reads back: a write
+#: keeps it as history (OKF 0.3 §5.3; #2405).
+_KEPT_VERIFIED = [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
+
+
 class TestApplyOkfWriteStamp:
     @pytest.mark.parametrize("existing_stamp", [False, True])
     def test_preserves_sources_and_other_fields(self, existing_stamp: bool) -> None:
@@ -83,16 +89,26 @@ class TestApplyOkfWriteStamp:
             "x_custom: 1\nalpha: false\n---\n\n# Body\n\nText."
         )
         before = fm.loads(text)
-        post = fm.loads(apply_okf_write_stamp(text, actor="human:writer", now=_NOW))
+        post = fm.loads(
+            apply_okf_write_stamp(text, actor="human:writer", now=_NOW, stored=text)
+        )
         expected = (
-            ["zeta", "type", "generated", "sources", "x_custom", "alpha"]
+            ["zeta", "type", "generated", "verified", "sources", "x_custom", "alpha"]
             if existing_stamp
-            else ["zeta", "type", "sources", "x_custom", "alpha", "generated"]
+            else [
+                "zeta",
+                "type",
+                "verified",
+                "sources",
+                "x_custom",
+                "alpha",
+                "generated",
+            ]
         )
         assert list(post.metadata) == expected
         assert post.metadata["generated"] == {"by": "human:writer", "at": _ISO}
         assert list(post.metadata["generated"]) == ["by", "at"]
-        for key in ("zeta", "type", "sources", "x_custom", "alpha"):
+        for key in ("zeta", "type", "verified", "sources", "x_custom", "alpha"):
             assert post.metadata[key] == before.metadata[key]
         assert list(post.metadata["zeta"]) == ["zeta", "alpha"]
         assert list(post.metadata["sources"][0]) == ["resource", "id"]
@@ -104,7 +120,10 @@ class TestApplyOkfWriteStamp:
         assert post.metadata["generated"] == {"by": "a/1", "at": _ISO}
         assert "Body." in post.content
 
-    def test_clears_verified_on_content_change(self) -> None:
+    def test_keeps_verified_as_history_on_content_change(self) -> None:
+        # OKF 0.3 §5.3: "Earlier events stay in the file as history." The
+        # stamp moves generated.at; whether an event is current is the
+        # reader's comparison, not the writer's deletion (#2405).
         text = (
             "---\n"
             "verified:\n"
@@ -114,16 +133,48 @@ class TestApplyOkfWriteStamp:
             "---\n"
             "# T\n"
         )
-        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW)
+        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW, stored=text)
         meta = fm.loads(out).metadata
-        assert "verified" not in meta
+        assert meta["verified"] == _KEPT_VERIFIED
         assert meta["generated"] == {"by": "human:x", "at": _ISO}
         # Unrelated fields survive.
         assert meta["title"] == "T"
 
+    def test_verified_comes_from_the_stored_note_not_the_written_text(
+        self,
+    ) -> None:
+        # A write cannot record a review: only okf_verify adds an event.
+        stored = "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n---\n# T\n"
+        forged = (
+            "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n"
+            "  - by: human:alice\n    at: '2099-01-01T00:00:00Z'\n---\n# T\n"
+        )
+        out = apply_okf_write_stamp(forged, actor="a/1", now=_NOW, stored=stored)
+        assert fm.loads(out).metadata["verified"] == _KEPT_VERIFIED
+
+    def test_a_write_that_drops_verified_keeps_the_stored_history(self) -> None:
+        stored = "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n---\n# T\n"
+        out = apply_okf_write_stamp(
+            "# T\n\nNew.\n", actor="a/1", now=_NOW, stored=stored
+        )
+        assert fm.loads(out).metadata["verified"] == _KEPT_VERIFIED
+
+    @pytest.mark.parametrize(
+        "stored",
+        [None, "# T\n", "---\ntitle: [unclosed\n---\n# T\n"],
+        ids=["new-note", "stored-without-verified", "stored-unparseable"],
+    )
+    def test_written_verified_is_dropped_without_stored_history(
+        self, stored: str | None
+    ) -> None:
+        text = (
+            "---\nverified: {by: 'human:alice', at: '2099-01-01T00:00:00Z'}\n---\n# T\n"
+        )
+        out = apply_okf_write_stamp(text, actor="a/1", now=_NOW, stored=stored)
+        assert "verified" not in fm.loads(out).metadata
+
     def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
-        # Once a note carries this exact actor/instant stamp and no verified,
-        # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
+        # Once a note carries this exact actor/instant stamp, re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
         once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", now=_NOW)
         assert apply_okf_write_stamp(once, actor="t/1", now=_NOW) == once
 
@@ -437,16 +488,73 @@ def enforced_vault(tmp_path: Path) -> Iterator[Vault]:
         col.close()
 
 
-class TestInvalidationMatrix:
-    def test_body_write_clears_verified_and_stamps(self, enforced_vault: Vault) -> None:
+class TestContentWriteMatrix:
+    def test_body_write_keeps_verified_and_stamps(self, enforced_vault: Vault) -> None:
+        (enforced_vault._source_dir / "note.md").write_text(
+            _VERIFIED_NOTE, encoding="utf-8"
+        )
+        enforced_vault.index.build_index()
+        # The written text drops `verified`; the stored history survives.
+        enforced_vault.writer.write("note.md", "---\ntitle: Playbook\n---\n# New\n")
+        wait_for_writer_drain(enforced_vault)
+        meta = _meta(enforced_vault, "note.md")
+        assert meta["verified"] == _KEPT_VERIFIED
+        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        _assert_recent_utc_stamp(meta["generated"]["at"])
+
+    def test_write_cannot_add_a_verification(self, enforced_vault: Vault) -> None:
+        (enforced_vault._source_dir / "note.md").write_text(
+            _VERIFIED_NOTE, encoding="utf-8"
+        )
+        enforced_vault.index.build_index()
+        forged = _VERIFIED_NOTE.replace(
+            "    at: 2026-01-01\n",
+            "    at: 2026-01-01\n  - by: human:alice\n    at: '2099-01-01T00:00:00Z'\n",
+        )
+        enforced_vault.writer.write("note.md", forged)
+        wait_for_writer_drain(enforced_vault)
+        assert _meta(enforced_vault, "note.md")["verified"] == _KEPT_VERIFIED
+
+    def test_new_note_is_written_without_supplied_verified(
+        self, enforced_vault: Vault
+    ) -> None:
         enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
         assert "verified" not in meta
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-        _assert_recent_utc_stamp(meta["generated"]["at"])
 
-    def test_body_edit_clears_verified(self, enforced_vault: Vault) -> None:
+    def test_edit_cannot_add_a_verification(self, enforced_vault: Vault) -> None:
+        (enforced_vault._source_dir / "note.md").write_text(
+            _VERIFIED_NOTE, encoding="utf-8"
+        )
+        enforced_vault.index.build_index()
+        enforced_vault.writer.edit(
+            "note.md",
+            old_text="    at: 2026-01-01\n",
+            new_text="    at: 2026-01-01\n  - by: human:alice\n    at: '2099-01-01T00:00:00Z'\n",
+        )
+        wait_for_writer_drain(enforced_vault)
+        assert _meta(enforced_vault, "note.md")["verified"] == _KEPT_VERIFIED
+
+    def test_append_to_a_new_note_drops_supplied_verified(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.append("fresh.md", _VERIFIED_NOTE, create_if_missing=True)
+        wait_for_writer_drain(enforced_vault)
+        assert "verified" not in _meta(enforced_vault, "fresh.md")
+
+    def test_write_over_a_non_utf8_note_drops_supplied_verified(
+        self, enforced_vault: Vault
+    ) -> None:
+        # A stored file that is not text has no history to keep; the write
+        # still lands, and the text's own `verified` does not.
+        (enforced_vault._source_dir / "note.md").write_bytes(b"\xff\xfe\x00bad")
+        enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
+        wait_for_writer_drain(enforced_vault)
+        assert "verified" not in _meta(enforced_vault, "note.md")
+
+    def test_body_edit_keeps_verified(self, enforced_vault: Vault) -> None:
         enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
         wait_for_writer_drain(enforced_vault)
         # Re-establish a verified attestation without going through the enricher.
@@ -456,10 +564,11 @@ class TestInvalidationMatrix:
         enforced_vault.writer.edit("note.md", old_text="Body.", new_text="Changed.")
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
+        assert meta["verified"] == _KEPT_VERIFIED
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        _assert_recent_utc_stamp(meta["generated"]["at"])
 
-    def test_body_append_clears_verified(self, enforced_vault: Vault) -> None:
+    def test_body_append_keeps_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
             _VERIFIED_NOTE, encoding="utf-8"
         )
@@ -467,22 +576,24 @@ class TestInvalidationMatrix:
         enforced_vault.writer.append("note.md", "Appended line.\n")
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
+        assert meta["verified"] == _KEPT_VERIFIED
+        _assert_recent_utc_stamp(meta["generated"]["at"])
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
 
-    def test_frontmatter_only_edit_clears_verified(self, enforced_vault: Vault) -> None:
+    def test_frontmatter_only_edit_keeps_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
             _VERIFIED_NOTE, encoding="utf-8"
         )
         enforced_vault.index.build_index()
-        # Edit a frontmatter line only — still a content change, still invalidates.
+        # Edit a frontmatter line only — still a content write, still restamped.
         enforced_vault.writer.edit(
             "note.md", old_text="title: Playbook", new_text="title: Renamed Playbook"
         )
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
-        assert "verified" not in meta
+        assert meta["verified"] == _KEPT_VERIFIED
         assert meta["title"] == "Renamed Playbook"
+        _assert_recent_utc_stamp(meta["generated"]["at"])
 
     def test_rename_preserves_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
@@ -492,7 +603,7 @@ class TestInvalidationMatrix:
         enforced_vault.writer.rename("note.md", "renamed.md")
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "renamed.md")
-        assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
+        assert meta["verified"] == _KEPT_VERIFIED
         # Rename bypasses the enricher: generated is left untouched.
         assert meta["generated"] == {"by": "process:enrich"}
 
@@ -627,19 +738,26 @@ def _verified_meta(path: Path) -> Any:
 
 @pytest.mark.usefixtures("enforced_env")
 class TestWriteToolThreadsActor:
-    async def test_write_stamps_tool_actor_and_clears_verified(
+    async def test_write_stamps_tool_actor_and_keeps_verified(
         self, enforced_env: Path
     ) -> None:
         # No auth configured → get_subject() is "local" → tool actor, not human.
+        (enforced_env / "note.md").write_text(_VERIFIED_NOTE, encoding="utf-8")
+        forged = _VERIFIED_NOTE.replace(
+            "    at: 2026-01-01\n",
+            "    at: 2026-01-01\n  - by: human:alice\n    at: '2099-01-01T00:00:00Z'\n",
+        )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
+            etag = compute_etag(_VERIFIED_NOTE.encode())
             await client.call_tool(
-                "write", {"path": "note.md", "content": _VERIFIED_NOTE}
+                "write", {"path": "note.md", "content": forged, "if_match": etag}
             )
             await wait_for_mcp_writer_drain(client)
         meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
-        assert "verified" not in meta
+        assert meta["verified"] == _KEPT_VERIFIED
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+        _assert_recent_utc_stamp(meta["generated"]["at"])
 
     async def test_write_stamps_human_actor_when_authed(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
@@ -771,8 +889,8 @@ class TestOkfVerifyTrustAuth:
         payload = _parse_tool_data(result)
         assert payload["verifier"] == "human:peter"
         assert payload["verified_count"] == 1
-        # The append survives — okf_verify suppresses the enricher so its own
-        # write does not clear the verification it just added.
+        # okf_verify suppresses the enricher: verifying is not generating
+        # (OKF 0.3 §5.2), so its own write leaves `generated` alone.
         meta = fm.loads(
             (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata

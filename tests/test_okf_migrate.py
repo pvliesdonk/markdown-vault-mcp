@@ -74,7 +74,7 @@ def _frontmatter_of(vault: Vault, path: str) -> dict[str, object]:
 class TestTransformsAreMechanicalThroughEveryEntryPoint:
     """#1401: the suppression belongs to the transform, not to the tool layer.
 
-    The enforced-write layer stamps `generated` and clears `verified` on a
+    The enforced-write layer stamps `generated` on a
     content write. A mechanical rewrite is exempt — `docs/design/okf.md` says
     so without qualifying it by caller — but the suppression was entered in the
     MCP tool handlers only, so a library caller got its bundle stamped.

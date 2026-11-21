@@ -676,7 +676,7 @@ class Vault:
         )
 
         # OKF enforced-write enrichment (#964): None (zero overhead) unless
-        # OKF_WRITE is on; when on, it stamps provenance and clears verification
+        # OKF_WRITE is on; when on, it stamps `generated` provenance
         # for write/edit on an OKF-active vault.
         self._okf_write_enrich = build_okf_write_enrich(
             okf_write=settings.okf_write,
