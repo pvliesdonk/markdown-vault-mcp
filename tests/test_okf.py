@@ -1122,9 +1122,9 @@ class TestOkfAudit:
         report = audit_bundle(tmp_path, detector=OkfDetector(tmp_path, mode="auto"))
         assert report.active is True
         assert report.declared_version == "0.2"
-        # Non-reserved notes: good, untyped, broken, misplaced, odd-status,
-        # junk/excluded (not excluded in this run).
-        assert report.total_notes == 6
+        # Concepts and possible concepts: good, broken, misplaced, odd-status.
+        # untyped and junk/excluded have no type: not concepts (§3.2).
+        assert report.total_notes == 4
         assert report.conformant_notes == 3  # good, misplaced, odd-status
         assert report.missing_type.count == 2  # untyped, junk/excluded
         assert report.unparseable_frontmatter.examples == ("guides/broken.md",)
@@ -1133,8 +1133,12 @@ class TestOkfAudit:
         assert report.log_heading_shape.examples == ("junk/log.md",)
         assert report.index_frontmatter.examples == ("guides/index.md",)
         assert report.root_index_missing is False
-        assert report.wikilink_files.examples == ("guides/untyped.md",)
-        assert report.missing_recommended.count >= 3
+        # Concept rules skip the non-concept untyped.md and its wikilink.
+        assert report.wikilink_files.count == 0
+        assert report.missing_recommended.examples == (
+            "guides/misplaced.md",
+            "guides/odd-status.md",
+        )
 
     def test_unknown_status_counts_every_value_outside_vocabulary(
         self, tmp_path: Path
@@ -1351,33 +1355,72 @@ class TestIndexFrontmatterAudit:
     @pytest.mark.parametrize(
         "text",
         [
-            '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
+            '---\nokf_version: "0.3"\ntitle: Bundle\n---\n# Bundle\n',
             "---\ntitle: Bundle\n---\n# Bundle\n",
+            '---\nokf_version: "0.3"\ntitle: Acme\ndescription: Retail tables.\n'
+            "license: CC-BY-4.0\nx-acme-owner: data-team\n---\n# Bundle\n",
             "---\n---\n# Bundle\n",
             "---\n# only a comment\n---\n# Bundle\n",
-            "---\n- a\n- b\n---\n# Bundle\n",
-            "---\n: [broken\n---\n# Bundle\n",
             '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
         ],
         ids=[
             "extra-key",
             "title-only",
+            "bundle-metadata",
             "empty",
             "comment-only",
-            "sequence",
-            "malformed",
             "leading-blank-line",
         ],
     )
-    def test_root_index_finding(self, tmp_path: Path, text: str) -> None:
+    def test_root_index_may_carry_bundle_metadata(
+        self, tmp_path: Path, text: str
+    ) -> None:
+        # OKF 0.3 §8.1: the root index MAY carry okf_version, title,
+        # description, license and extension keys (#2414).
         from markdown_vault_mcp.okf import audit_bundle
 
         _write_root_index(tmp_path, text)
         report = audit_bundle(tmp_path)
-        assert report.index_frontmatter.examples == ("index.md",)
+        assert report.index_frontmatter.count == 0
+        assert report.unparseable_frontmatter.count == 0
+        assert report.total_notes == 0
+
+    @pytest.mark.parametrize(
+        "text",
+        ["---\n- a\n- b\n---\n# Bundle\n", "---\n: [broken\n---\n# Bundle\n"],
+        ids=["sequence", "malformed"],
+    )
+    def test_root_index_block_not_a_mapping_is_unparseable(
+        self, tmp_path: Path, text: str
+    ) -> None:
+        # §11.1 rule 1 covers every .md file, reserved ones included (#2413).
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, text)
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("index.md",)
+        assert report.index_frontmatter.count == 0
         # A reserved file is not a note: the concept counts do not move.
         assert report.total_notes == 0
-        assert report.unparseable_frontmatter.count == 0
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "---\ntitle: Guides\n---\n# Guides\n",
+            "---\n---\n# Guides\n",
+            "---\n: [broken\n---\n# Guides\n",
+        ],
+        ids=["title", "empty", "malformed"],
+    )
+    def test_folder_index_with_a_block(self, tmp_path: Path, text: str) -> None:
+        # §8: an index file in a subdirectory has no frontmatter.
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(text, encoding="utf-8")
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+        assert report.total_notes == 0
 
     @pytest.mark.parametrize(
         "text",
@@ -1414,24 +1457,103 @@ class TestIndexFrontmatterAudit:
         report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
         assert report.index_frontmatter.count == 0
 
-    def test_root_index_finding_behind_a_bom(self, tmp_path: Path) -> None:
-        # The rule reads presence and keys from one string, so it starts
-        # seeing a BOM-prefixed index as soon as the reader does (#1407).
+    def test_folder_index_finding_behind_a_bom(self, tmp_path: Path) -> None:
+        # The rule reads presence from the same string the reader does, so it
+        # sees a BOM-prefixed index as soon as the reader does (#1407).
         from markdown_vault_mcp.okf import audit_bundle
 
-        (tmp_path / "index.md").write_bytes(
-            b'\xef\xbb\xbf---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_bytes(
+            b"\xef\xbb\xbf---\ntitle: Guides\n---\n# Guides\n"
         )
-        assert audit_bundle(tmp_path).index_frontmatter.examples == ("index.md",)
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
 
-    def test_log_frontmatter_is_not_an_index_finding(self, tmp_path: Path) -> None:
+
+class TestLogFileAudit:
+    """#2413: OKF 0.3 §9 and §11.1 rule 2 hold every log.md to its format."""
+
+    def test_log_frontmatter_is_a_log_finding(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
 
         (tmp_path / "log.md").write_text(
             "---\ntitle: Log\n---\n# Log\n\n## 2026-08-07\n\n- fine\n",
             encoding="utf-8",
         )
-        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+        report = audit_bundle(tmp_path)
+        assert report.log_frontmatter.examples == ("log.md",)
+        assert report.index_frontmatter.count == 0
+        assert report.unparseable_frontmatter.count == 0
+        assert report.log_heading_shape.count == 0
+
+    def test_unparseable_log_block_is_both_findings(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "log.md").write_text(
+            "---\n: [broken\n---\n# Log\n\n## 2026-08-07\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("sub/log.md",)
+        assert report.log_frontmatter.examples == ("sub/log.md",)
+        assert report.total_notes == 0
+
+    def test_body_only_log_with_date_headings_has_no_finding(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "log.md").write_text(
+            "# Log\n\n## 2026-08-07\n\n- fine\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.log_frontmatter.count == 0
+        assert report.log_heading_shape.count == 0
+
+    def test_non_date_heading_is_reported(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "log.md").write_text(
+            "# Log\n\n## Last week\n\n- vague\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).log_heading_shape.examples == ("log.md",)
+
+
+class TestNonConceptAudit:
+    """#2406: OKF 0.3 §3.2, a file without frontmatter or type is no concept."""
+
+    def test_typeless_files_are_warned_about_not_counted(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "concept.md").write_text(
+            "---\ntype: Playbook\n---\n# Concept\n", encoding="utf-8"
+        )
+        (tmp_path / "README.md").write_text("# Read me\n", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text(
+            "---\ntitle: Agents\n---\n# Agents\nSee [[concept]].\n",
+            encoding="utf-8",
+        )
+        report = audit_bundle(tmp_path)
+        assert report.total_notes == report.conformant_notes == 1
+        assert report.missing_type.examples == ("AGENTS.md", "README.md")
+        # Consumers skip a non-concept: no concept or evidence rule sees it.
+        assert report.wikilink_files.count == 0
+        assert report.missing_recommended.examples == ("concept.md",)
+        assert report.missing_freshness.examples == ("concept.md",)
+        assert report.evidence_unavailable.count == 0
+
+    def test_note_block_that_is_not_a_mapping_is_unparseable(
+        self, tmp_path: Path
+    ) -> None:
+        # §11.1 rule 1: the block must parse as a YAML mapping; a sequence
+        # parses to no keys, so it must not pass as a typeless non-concept.
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "list.md").write_text("---\n- a\n---\n# L\n", encoding="utf-8")
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("list.md",)
+        assert report.missing_type.count == 0
+        assert report.total_notes == 1
+        assert report.conformant_notes == 0
 
 
 # --- Phase 4 (#963): migration transform pure helpers -----------------------
