@@ -23,14 +23,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+import pytest  # noqa: E402
 from scripts.check_references import (  # noqa: E402
     DEFAULT_ROOT,
+    _check_actor_entry,
     bundle_findings,
     discover,
     expiry,
     findings,
     load,
 )
+
+from markdown_vault_mcp.okf import audit_bundle  # noqa: E402
 
 ROOT = REPO_ROOT / DEFAULT_ROOT
 
@@ -60,3 +64,32 @@ def test_expired_references_are_surfaced_as_warnings() -> None:
                 "researching-references skill rather than trusting it",
                 stacklevel=1,
             )
+
+
+@pytest.mark.parametrize(
+    ("at", "valid"),
+    [
+        (dt.date(2026, 9, 12), True),
+        ("2026-09-12", True),
+        ("2026-09-12T10:00:00+02:00", True),
+        (dt.datetime(2026, 9, 12, 10, tzinfo=dt.UTC), True),
+        # OKF 0.3 §13.2: "A date-time without an offset stays invalid."
+        ("2026-09-12T10:00:00", False),
+        (dt.datetime(2026, 9, 12, 10), False),
+        ("12 September 2026", False),
+    ],
+)
+def test_checker_reads_at_as_an_okf_timestamp(at: object, valid: bool) -> None:
+    problems = _check_actor_entry("verified[0]", {"by": "human:a", "at": at})
+    assert (not problems) is valid, problems
+
+
+def test_server_reads_every_reference_page_as_recorded() -> None:
+    # The checker and the server agree on a valid record (#2400): a page the
+    # checker passes reads as recorded, not malformed, through the server.
+    if not ROOT.is_dir():
+        pytest.skip("no reference bundle")
+    report = audit_bundle(ROOT)
+    assert report.malformed_generated.count == 0, report.malformed_generated
+    assert report.malformed_review.count == 0, report.malformed_review
+    assert report.malformed_freshness.count == 0, report.malformed_freshness

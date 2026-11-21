@@ -27,6 +27,7 @@ from markdown_vault_mcp.okf import (
     derive_stale,
     derive_trust_tier,
 )
+from markdown_vault_mcp.scanner import parse_frontmatter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -67,8 +68,10 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
 @pytest.mark.parametrize(
     ("value", "state", "basis"),
     [
-        ("2026-11-15", "expired", "server_local_date"),
-        (dt.date(2026, 11, 16), "unexpired", "server_local_date"),
+        ("2026-11-15", "expired", "utc_day_start"),
+        (dt.date(2026, 11, 16), "unexpired", "utc_day_start"),
+        # NOW is 12:00Z: 2026-11-15T12:00Z exactly, as a YAML-native datetime.
+        (dt.datetime(2026, 11, 15, 12, tzinfo=dt.UTC), "expired", "offset_instant"),
         ("2026-11-15T12:00:00Z", "expired", "offset_instant"),
         ("2026-11-15T14:00:01+02:00", "unexpired", "offset_instant"),
         ("2026-11-15 14:00:00.123+02:00", "unexpired", "offset_instant"),
@@ -98,8 +101,8 @@ def test_freshness_basis(value: Any, state: str, basis: str) -> None:
         {"by": "agent/1.0/extra", "at": AT},
         {"by": "agent/one two", "at": AT},
         {"by": " ", "at": AT},
-        {"by": "human:alice", "at": "2026-11-14"},
         {"by": "human:alice", "at": "2026-11-14T10:00:00"},
+        {"by": "human:alice", "at": "2026-11-31"},
         "human:alice",
         None,
     ],
@@ -351,8 +354,8 @@ def test_absent_provenance_is_missing() -> None:
         {"by": "codex"},
         {"at": AT},
         {"by": "codex/1.0", "at": None},
-        {"by": "codex/1.0", "at": "2026-11-14"},
         {"by": "codex/1.0", "at": "2026-11-14T09:00:00"},
+        {"by": "codex/1.0", "at": "2026-02-30"},
         {"by": "human:alice\tsmith", "at": AT},
         [{"by": "codex/1.0", "at": AT}],
         "codex at a date",
@@ -375,6 +378,23 @@ def test_generated_malformed_under_okf_5_2(generated: Any) -> None:
 def test_generated_recorded_for_a_usable_actor(actor: str) -> None:
     result = derive_annotation({"generated": {"by": actor, "at": AT}}, now=NOW)
     assert result["generation"] == _generation("recorded")
+
+
+@pytest.mark.parametrize("at", ["2026-06-25", "'2026-06-25'"])
+def test_date_only_at_is_recorded(at: str) -> None:
+    # OKF 0.3 §5: a date only, quoted or YAML-native, is a valid timestamp
+    # for every key (#2400).
+    raw = (
+        "---\n"
+        f"generated: {{by: 'human:a', at: {at}}}\n"
+        f"verified: {{by: 'human:a', at: {at}}}\n"
+        "---\nbody\n"
+    )
+    metadata = dict(parse_frontmatter(raw).metadata)
+    result = derive_annotation(metadata, now=NOW)
+    assert result["generation"] == _generation("recorded")
+    assert result["review"]["state"] == "recorded"
+    assert result["trust_tier"] == "human-reviewed"
 
 
 def test_generated_at_is_optional_but_verified_at_is_not() -> None:
@@ -427,6 +447,10 @@ def test_audit_provenance_shares_the_annotation_rules(tmp_path: Path) -> None:
     files = {
         "by-number.md": f"---\ntype: Concept\ngenerated: {{by: 7, at: '{AT}'}}\n---\n",
         "date-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0, at: 2026-11-14}\n---\n",
+        "naive-at.md": (
+            "---\ntype: Concept\n"
+            "generated: {by: codex/1.0, at: '2026-11-14T09:00:00'}\n---\n"
+        ),
         "no-at.md": "---\ntype: Concept\ngenerated: {by: codex/1.0}\n---\n",
         "mixed.md": "---\ntype: Concept\nsources: [{resource: https://a}, https://x]\n---\n",
         "no-resource.md": "---\ntype: Concept\nsources: [{id: a}]\n---\n",
@@ -438,7 +462,7 @@ def test_audit_provenance_shares_the_annotation_rules(tmp_path: Path) -> None:
     for name, raw in files.items():
         (tmp_path / name).write_text(raw)
     report = audit_bundle(tmp_path)
-    assert report.malformed_generated == OkfFinding(2, ("by-number.md", "date-at.md"))
+    assert report.malformed_generated == OkfFinding(2, ("by-number.md", "naive-at.md"))
     assert report.malformed_sources == OkfFinding(2, ("mixed.md", "no-resource.md"))
 
 

@@ -75,8 +75,10 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   Actor convention `human:<id>` / `process:<id>` / `<tool>/<version>`.
   Derived tiers: **unverified → machine-confirmed → human-reviewed**.
 - **Lifecycle:** `status: draft|stable|deprecated` (default `stable`),
-  `stale_after`: a `YYYY-MM-DD` date (the July 2026 text) or an ISO 8601
-  instant with an offset (the text since 2026-08-21).
+  `stale_after`: a timestamp. Every timestamp key (`generated.at`,
+  `verified[].at`, `stale_after`) is an RFC 3339 date-time with an offset
+  (that instant) or a date only, `YYYY-MM-DD`, "The start of that day in
+  UTC"; a date-time without an offset is invalid (OKF 0.3 §5, §13.2).
 - **Bundle marker:** `okf_version: "0.2"` allowed only in the bundle-root
   `index.md` frontmatter. Under 0.3 a bundle declares `"0.3"`; see Detection.
 - **Reserved files:** `index.md` (progressive-disclosure directory listing)
@@ -187,27 +189,27 @@ server's ranking math — layer 1 surfaces signal and lets the agent judge.
 **Computed per-note properties** (derived at annotation time from the stored
 frontmatter blob; not persisted):
 
-- `staleness`: both texts of v0.2 honoured (#1357, #1373). A bare date is
-  stale from that server-local day on (the named date is the first stale
-  day); an instant with an offset is stale when `now >= stale_after`,
-  compared as instants; a datetime *without* an offset is allowed by neither
-  text and is ignored (treated as absent), as the 2026-08-21 amendment
-  asks; absent field → not stale. Accepting the bare date is a deliberate
-  lenience against the amended text's "ignore" — Obsidian authors write
-  dates, and the upstream issue behind the amendment is still open.
+- `staleness`: stale when `now >= stale_after`, compared as instants (OKF
+  0.3 §5.5). A date only, quoted or YAML-native, is the start of that day
+  in UTC, so `2026-12-31` is stale from `2026-12-31T00:00:00Z` whatever the
+  server's zone (#2404; it was the server-local day before); a date-time
+  with an offset is that instant; a date-time *without* an offset is not a
+  valid timestamp and reads not stale; absent field → not stale.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
   or `<producer>/<version>`; a `human:`/`process:` id is nonempty and may
   contain internal spaces but no other whitespace (#2393), and producer and
   version are whitespace-free)
-  and an offset-aware `at` instant counts. A usable human record yields
+  and an `at` timestamp (a date-time with an offset, or a date, #2400)
+  counts. A usable human record yields
   `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
   otherwise `unverified`. A bare mapping is still one record. Malformed
   siblings do not erase usable records. This deliberately changes the
   public helper and filter behavior from v6.1.4 (#1444).
 - `freshness`: `state` is `missing`, `malformed`, `unexpired`, or `expired`;
-  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`,
-  or `server_local_date`. The compatibility `stale: false` includes missing
+  `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`
+  (a date-time with an offset), or `utc_day_start` (a date only, read as
+  00:00 UTC). The compatibility `stale: false` includes missing
   and malformed expiry and therefore does not mean fresh or true.
 - `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
@@ -246,9 +248,10 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
   `malformed` or `recorded` and `basis: supplied_metadata_only`, judged as
   the [format reference](reference/okf-v0.2.md) states §5.2: `by` is
   required and is an actor (including internal-space `human:`/`process:`
-  ids, #2394); `at` is optional, and when present it is an ISO 8601
-  datetime with an explicit offset. A `generated` with `by` and no `at` is
-  therefore `recorded`, and a date-only `at` is `malformed`. A `verified`
+  ids, #2394); `at` is optional, and when present it is an OKF §5
+  timestamp: a date-time with an explicit offset or a date only (#2400). A
+  `generated` with `by` and no `at` is therefore `recorded`, a date-only
+  `at` is `recorded`, and an offset-less date-time `at` is `malformed`. A `verified`
   entry needs both `by` and `at`, because §5.2 gives every verification
   event both. The rules match the spec exactly, by the account holder's
   decision of 21 November 2026. The server's own stamps
@@ -874,9 +877,9 @@ phase owns.
 - Reads report a supplied review's applicability as unknown (#1413). How observed changes
   are represented and how reviews bind to snapshots remain follow-ups (#1414,
   #1445).
-- ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
-  amendment and #1373: the value carries its own offset; a bare date is the
-  server-local day.
+- ~~`stale_after` timezone semantics~~ — settled by OKF 0.3 §5 (#2404): a
+  date-time carries its own offset; a date only is the start of that day in
+  UTC.
 - Whether `okf_export` should optionally include a generated bundle-root
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is

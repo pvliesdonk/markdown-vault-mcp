@@ -119,6 +119,7 @@ where the account holder ruled that a departure from the standard is a bug.
   YAML-native date value means the start of that day in UTC." Producers
   SHOULD use the date-time form for `generated.at` and `verified[].at`.
   [source: spec] (§5)
+  [pins: tests/test_okf.py::test_derive_stale_bare_date_is_the_utc_day_start, tests/test_okf_evidence.py::test_date_only_at_is_recorded]
 - The change list says why: the v0.2 text gave a date-only value no time
   zone, the amendment then required an offset, and "v0.3 accepts date-only
   values again, with a fixed meaning, so v0.2 bundles that contain them
@@ -288,8 +289,8 @@ are named where they exist; a fix rewrites them.
 | 1 | Trust tier from current events only (§5.3) | every event counts | every event counts | required | counts every event: a human event older than `generated.at` gives human-reviewed | MUST | none |
 | 2 | Actor schemes (§7) | 2 schemes | 2 schemes | any `<scheme>:<id>`, id opaque | only `human:`/`process:`; `team:x`, `svc:x` and an id with a tab are malformed, so the tier is unverified | MUST | #2407 (narrower) |
 | 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | `stale: false`, and `stale=false` matches it | MUST NOT | none |
-| 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | server-local day; at 00:30+01:00 on the day it is stale an hour early | defined (no keyword) | #2404 (inverted) |
-| 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | malformed; the event is ignored and the tier is unverified | valid form (no keyword) | #2400 (inverted) |
+| 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | fixed by #2404: read as 00:00 UTC (was the server-local day, stale an hour early at 00:30+01:00) | defined (no keyword) | #2404 (inverted) |
+| 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | fixed by #2404: recorded, read as 00:00 UTC (was malformed, the event ignored and the tier unverified) | valid form (no keyword) | #2400 (inverted) |
 | 6 | Null/empty = absent (§11.2) | silent | silent | required | null `stale_after` / `generated` reported malformed; empty `verified` reported `empty` | stated (no keyword) | none |
 | 7 | One item as a list (§11.2) | `verified` only | `verified` only | every list field | a `sources` mapping is malformed | MUST | none |
 | 8 | `type` not a conformance rule (§3.2, §11.1) | required | required | not required; SHOULD warn | `missing_type` is a conformance finding; README.md counts in `total_notes` | stricter | #2406 (dissolves) |
@@ -340,7 +341,6 @@ Notes on the table:
   values (§12.1, §13), so a 0.2 declaration is known, read by 0.3's rules,
   and logs nothing. Only a value outside `0.1`–`0.3` logs the warning.
 - Pins of current behaviour a fix will rewrite:
-  `tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day` (#4),
   `tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps` (#16),
   `tests/test_okf.py::TestIndexFrontmatterAudit::test_log_frontmatter_is_not_an_index_finding` (#11).
 - **Not departures:** the ranking weights (§5 of `okf.md`; the spec is
