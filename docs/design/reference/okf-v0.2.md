@@ -11,7 +11,8 @@ verified:
   - by: process:researching-references-refute
     at: 2026-09-06T22:11:28+02:00
 stale_after: 2027-03-06
-status: stable
+status: deprecated
+superseded_by: okf-v0.3.md
 sources:
   - id: spec-current
     title: Open Knowledge Format (OKF), Version 0.2, SPEC.md section 5.1 at commit 0b87c52c6e (2026-08-21)
@@ -224,6 +225,10 @@ months, not twelve.
   tell which from the declaration.
 
 ## Where this project departs from the subject
+
+The spec has since moved to v0.3, which changes several of the rules
+below; the current departures table is in the [v0.3 page](okf-v0.3.md),
+"Where this server departs".
 
 Behaviour lines are [observed: `okf.py`, `_okf_write.py` on the working
 tree, 2026-09-07].

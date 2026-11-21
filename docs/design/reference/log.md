@@ -1,5 +1,16 @@
 # Reference research log
 
+## 2026-11-21
+
+- New: [Open Knowledge Format v0.3](okf-v0.3.md), for #2403. Read SPEC.md at
+  527e81aff5 in the successor repository, diffed it against the 0.3 draft and
+  the amended 0.2 text, and observed 21 server departures with fixtures.
+  Next review: 2027-05-21.
+- [Open Knowledge Format v0.2](okf-v0.2.md): pointed its departures section at
+  the v0.3 page and marked it deprecated, superseded by the v0.3 page: the
+  server reads every bundle by 0.3's rules (account holder, 2026-11-21). No
+  0.2 claim changed.
+
 ## 2026-11-20
 
 - [Open Knowledge Format v0.2](okf-v0.2.md): reworded the project deviation
