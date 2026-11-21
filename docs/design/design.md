@@ -176,13 +176,24 @@ Frontmatter is **optional by default**. Documents without frontmatter are
 indexed normally with an empty metadata dict. Title defaults to the first H1
 heading, then the filename (without extension).
 
+A YAML block is read by the YAML 1.2.2 core schema (#2415): PyYAML's C
+loader with the §10.3.2 resolvers swapped in (`_yaml12.py`), chosen in
+`scanner.parse_frontmatter`, the one read entry point. Only null, bool, int
+and float are resolved, so `yes`, `1:30` and every untagged date or
+timestamp arrive as the strings written. Every frontmatter dump passes the
+same handler, whose dumper quotes a string if a YAML 1.1 or a YAML 1.2
+reader would read its plain form as anything else. TOML and JSON blocks
+keep their own handlers. The external rules are in
+[YAML 1.2 core schema](reference/yaml-1-2-core-schema.md).
+
 Content writes serialize supplied frontmatter in caller insertion order,
 including nested mappings and mappings inside lists. Edit, append, OKF
 verification and git conflict marking retain surviving fields in their
 existing order when they serialize a header. This preserves mapping order and
 values, not comments, quoting, whitespace or arbitrary exact formatting. Every
 frontmatter dump (the document writer, the two OKF transforms and the two
-conflict-file writes in `git/conflict.py`) passes `sort_keys=False`; the pinned dependency behavior is recorded in
+conflict-file writes in `git/conflict.py`) passes `sort_keys=False` and the
+YAML 1.2 handler; the pinned dependency behavior is recorded in
 [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
 **The body the index reads (#2036)**: `scanner.note_body` returns

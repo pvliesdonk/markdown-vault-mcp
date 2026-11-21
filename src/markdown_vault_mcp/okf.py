@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 from markdown_vault_mcp.utils.fs import is_directory
@@ -1584,7 +1585,9 @@ def apply_okf_write_stamp(
         new_meta["verified"] = kept
     if new_meta == meta:
         return text
-    return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)
+    return fm.dumps(
+        fm.Post(post.content, **new_meta), handler=YAML12_HANDLER, sort_keys=False
+    )
 
 
 def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
@@ -1614,4 +1617,6 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
     meta["verified"] = verified
-    return fm.dumps(fm.Post(post.content, **meta), sort_keys=False)
+    return fm.dumps(
+        fm.Post(post.content, **meta), handler=YAML12_HANDLER, sort_keys=False
+    )

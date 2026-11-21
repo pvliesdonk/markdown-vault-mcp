@@ -83,6 +83,13 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   string date-time follows the RFC 3339 grammar exactly: seconds required,
   a `.` fraction, `T` (or `t`) between date and time, `Z` (or `z`) or
   `±hh:mm` (#2428); a YAML-native datetime is a value and is read as one.
+- **YAML version:** every frontmatter block is read by the YAML 1.2.2 core
+  schema (OKF 0.3 §4, #2415): `yes`, `on`, `1_000`, `1:30` and every
+  untagged date or timestamp are strings, and `0o17` is 15. So a
+  timestamp reaches the rules above as the text written, and only an
+  explicit `!!timestamp` arrives as a native value. Writes quote any string
+  a YAML 1.1 or 1.2 reader would take for something else
+  ([YAML 1.2 core schema](reference/yaml-1-2-core-schema.md)).
 - **Bundle marker:** `okf_version: "0.2"` allowed only in the bundle-root
   `index.md` frontmatter. Under 0.3 a bundle declares `"0.3"`; see Detection.
 - **Reserved files:** `index.md` (progressive-disclosure directory listing)

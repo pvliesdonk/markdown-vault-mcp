@@ -117,6 +117,10 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   typeless files as non-concepts, root `index.md` metadata; the 0.2 → 0.3
   changes and the table of server departures (#2403). Read before `okf.py`,
   `_okf_write.py`, `_okf_convention.py`, `okf_bundle.py` or link resolution.
+- [YAML 1.2 core schema](yaml-1-2-core-schema.md) — how YAML 1.2.2 resolves
+  plain scalars, how PyYAML's YAML 1.1 resolution differs, and why writes
+  must quote for both. Read before changing `_yaml12.py`, frontmatter
+  parsing or any `frontmatter.dumps` call.
 - [RFC 3339 timestamps](rfc3339-timestamps.md) — the `date-time` and
   `full-date` grammar OKF timestamps follow, the `Z` / `-00:00` meaning as
   RFC 9557 updated it, the open erratum on a space separator, and where

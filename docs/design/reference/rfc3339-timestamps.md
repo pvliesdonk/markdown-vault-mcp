@@ -184,8 +184,10 @@ v0.3](okf-v0.3.md), "Timestamps".
   server then reports the whole note's frontmatter as unparseable.
   [observed: `parse_frontmatter` raises `MalformedFrontmatterError`, and
   `audit_bundle` lists the note under `unparseable_frontmatter`]
-  Under the YAML 1.2 core schema OKF §4 requires, the value would be a
-  string; tracked with #2415.
+  Under the YAML 1.2 core schema OKF §4 requires, the value is a string,
+  and since #2415 the server reads it that way, so the note parses and its
+  `stale_after` is read by the RFC 3339 grammar.
+  [pins: tests/test_yaml12.py::test_a_leap_second_note_is_readable_and_its_stale_after_parses]
 - OKF §5: "Consumers MUST accept a quoted string and a YAML-native
   timestamp." The server accepts a native value with an offset as that
   instant and a native date as 00:00 UTC. It reads a naive native value as
@@ -194,8 +196,11 @@ v0.3](okf-v0.3.md), "Timestamps".
   rule on 21 November 2026: "We follow okf here". [source: okf-spec] (§5, §13.2)
   [source: yaml-timestamp] OKF §4 also requires the YAML 1.2 core schema,
   which has no timestamp tag, so read strictly the "YAML-native timestamp"
-  rule has force only under a YAML 1.1 loader such as PyYAML; #2415 decides
-  which loader the server uses. [source: okf-spec] (§4, §5)
+  rule has force only under a YAML 1.1 loader. Since #2415 the server reads
+  frontmatter by the core schema, so a timestamp arrives as the string
+  written unless it carries an explicit `!!timestamp` tag, and the native
+  path above serves only such tagged values ([YAML 1.2 core
+  schema](yaml-1-2-core-schema.md)). [source: okf-spec] (§4, §5)
   [pins: tests/test_okf_rfc3339.py::test_yaml_native_timestamps_are_still_accepted]
 
 ### `datetime.fromisoformat`: why it is not the gate

@@ -37,6 +37,7 @@ from markdown_vault_mcp._okf_log_repair import (
     require_reviewed,
     retain_original,
 )
+from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import (
     FIND_NOTE,
     ConcurrentModificationError,
@@ -920,7 +921,7 @@ class DocumentManager:
 
             if frontmatter is not None:
                 post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post, sort_keys=False)
+                file_content = fm.dumps(post, handler=YAML12_HANDLER, sort_keys=False)
             else:
                 file_content = content
 

@@ -2,6 +2,10 @@
 
 ## 2026-11-21
 
+- New: [YAML 1.2 core schema](yaml-1-2-core-schema.md), for #2415. Read
+  YAML 1.2.2 §3.2.1.1, §6.8.1 and §10.2–10.4 and the YAML 1.1 bool and
+  timestamp types; observed PyYAML 6.0.4 resolution and dumping, and
+  python-frontmatter 1.3.0's handlers. Next review: 2027-11-21.
 - [Open Knowledge Format v0.3](okf-v0.3.md): added departure 22,
   `okf_version` on a concept reported as a conformance finding, found while
   fixing #2406 and fixed by #2427. The v0.2 page's pin follows the renamed

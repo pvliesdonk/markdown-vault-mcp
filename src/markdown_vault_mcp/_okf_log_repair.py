@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from pydantic import BaseModel
 
+from markdown_vault_mcp._yaml12 import load_yaml
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     InvalidRequestError,
@@ -88,11 +89,12 @@ def _unit_length(data: bytes) -> int:
     if match is None:
         return 0
     try:
-        mapping = yaml.safe_load(match["yaml"].decode("utf-8"))
+        mapping = load_yaml(match["yaml"].decode("utf-8"))
     except (yaml.YAMLError, ValueError):
-        # PyYAML timestamp construction can raise ValueError, as normalized
-        # by scanner.parse_frontmatter. Keep safe_load here to reject a
-        # non-mapping explicitly; frontmatter's Post always exposes a dict.
+        # The core-schema loader raises YAMLError on bad YAML or an explicit
+        # tag it rejects; ValueError stays caught for a standard tag such as
+        # !!timestamp on an impossible date. Load the block directly here to
+        # reject a non-mapping explicitly; frontmatter's Post is always a dict.
         return 0
     return match.end() if isinstance(mapping, dict) else 0
 
