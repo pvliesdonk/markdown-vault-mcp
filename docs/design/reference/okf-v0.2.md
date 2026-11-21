@@ -241,8 +241,9 @@ tree, 2026-09-07].
   offset-less value, but a bare date is what the July text prescribed and
   what an Obsidian author writes, and upstream #242 is still open. A
   datetime *without* an offset — allowed by neither text — is ignored.
-  Decided in `docs/design/okf.md` § 3 (#1373).
-  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
+  Decided in `docs/design/okf.md` § 3 (#1373). Since #2404 a bare date is
+  read as the start of that day in UTC, as OKF 0.3 §5 defines it.
+  [pins: tests/test_okf.py::test_derive_stale]
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
   re-confirmation"; the server's enforced write layer clears it on its own

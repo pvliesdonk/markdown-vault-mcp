@@ -266,8 +266,8 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
     """Derive a note's trust tier from its ``verified`` frontmatter.
 
     This compatibility label describes recorded claims, not certification.
-    Only entries with a recognized actor shape and an offset-aware timestamp
-    count. A malformed sibling does not discard a usable recorded claim.
+    Only entries with a recognized actor shape and an OKF §5 timestamp (a
+    date-time with an offset, or a date) count. A malformed sibling does not discard a usable recorded claim.
     A bare mapping remains one entry (:func:`verified_entries`).
 
     Args:
@@ -302,15 +302,15 @@ def _is_actor(value: Any) -> bool:
 
 
 def _is_instant(value: Any) -> bool:
-    """Whether a value is an ISO 8601 datetime with an explicit offset (§5)."""
-    return isinstance(_parse_stale_after(value), _dt.datetime)
+    """Whether a value is an OKF §5 timestamp: a date-time with an offset or a date."""
+    return _parse_timestamp(value) is not None
 
 
 def _review_recorded(entry: Any) -> bool:
     """Whether a ``verified`` entry is a verification event (OKF §5.2).
 
-    The spec gives each event a ``by`` (an actor) and an ``at`` (an ISO 8601
-    datetime), so both are required.
+    The spec gives each event a ``by`` (an actor) and an ``at`` (an OKF §5
+    timestamp), so both are required.
     """
     return (
         isinstance(entry, dict)
@@ -324,7 +324,7 @@ def _generation_recorded(value: Any) -> bool:
 
     The spec requires ``generated.by``, an actor, and describes ``at`` without
     requiring it, so an absent ``at`` is valid; a present ``at`` must be an
-    ISO 8601 datetime with an explicit offset, as every OKF timestamp is.
+    OKF §5 timestamp: a date-time with an offset, or a date (#2400).
     """
     if not isinstance(value, dict) or not _is_actor(value.get("by")):
         return False
@@ -334,66 +334,71 @@ def _generation_recorded(value: Any) -> bool:
 def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
     """Keep an instant that carries an offset; drop one that does not."""
     if value.utcoffset() is None:
-        logger.debug("okf_stale_after_naive value=%r", raw)
+        logger.debug("okf_timestamp_naive value=%r", raw)
         return None
     return value
 
 
-def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
-    """Read a ``stale_after`` value into the shape its text of v0.2 gives it.
-
-    Returns a ``date`` for the July text's calendar-day form, an aware
-    ``datetime`` for the August text's instant form, and ``None`` for
-    anything else — including a datetime without an offset, which neither
-    text allows and the amendment says to ignore (#1373).
-    """
+def _full_date(raw: Any) -> _dt.date | None:
+    """Read an RFC 3339 ``full-date`` (a YAML date or a ``YYYY-MM-DD`` string)."""
     if isinstance(raw, _dt.datetime):
-        return _aware_or_none(raw, raw)
+        return None
     if isinstance(raw, _dt.date):
         return raw
-    if not isinstance(raw, str):
-        return None
-    text = raw.strip()
-    if not (_DATE_ONLY_RE.fullmatch(text) or _INSTANT_RE.fullmatch(text)):
+    if not isinstance(raw, str) or not _DATE_ONLY_RE.fullmatch(raw.strip()):
         return None
     try:
-        parsed = (
-            _dt.date.fromisoformat(text)
-            if _DATE_ONLY_RE.fullmatch(text)
-            else _dt.datetime.fromisoformat(text)
-        )
+        return _dt.date.fromisoformat(raw.strip())
     except ValueError:
-        logger.debug("okf_stale_after_invalid value=%r", raw)
+        logger.debug("okf_timestamp_invalid value=%r", raw)
         return None
-    return _aware_or_none(parsed, raw) if isinstance(parsed, _dt.datetime) else parsed
+
+
+def _parse_timestamp(raw: Any) -> _dt.datetime | None:
+    """Read an OKF §5 timestamp value into the instant it names.
+
+    Used for every timestamp key the server reads (``stale_after``,
+    ``generated.at``, ``verified[].at``). A date-time with an offset is that
+    instant; a date only, quoted or YAML-native, is "The start of that day
+    in UTC" (#2404). Anything else is ``None``, including a date-time
+    without an offset, which OKF 0.3 says "stays invalid" (§13.2).
+    """
+    day = _full_date(raw)
+    if day is not None:
+        return _dt.datetime.combine(day, _dt.time.min, tzinfo=_dt.UTC)
+    if isinstance(raw, _dt.datetime):
+        return _aware_or_none(raw, raw)
+    if not isinstance(raw, str) or not _INSTANT_RE.fullmatch(raw.strip()):
+        return None
+    try:
+        parsed = _dt.datetime.fromisoformat(raw.strip())
+    except ValueError:
+        logger.debug("okf_timestamp_invalid value=%r", raw)
+        return None
+    return _aware_or_none(parsed, raw)
 
 
 def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
     """Derive staleness from ``stale_after``.
 
-    Both texts of OKF v0.2 are honoured (``docs/design/reference/okf-v0.2.md``,
-    "Lifecycle"): a calendar date is stale from that day on, judged by the
-    server-local day of *now* (the July rule, #1357); an instant with an
-    offset is stale when ``now >= stale_after`` (the August rule, #1373). A
-    datetime without an offset is ignored, as the amendment asks.
+    OKF 0.3 §5.5: a concept is stale when ``now >= stale_after``. A date
+    only means the start of that day in UTC (§5), so ``2026-12-31`` is stale
+    from ``2026-12-31T00:00:00Z`` on, whatever the server's own zone
+    (#2404); a date-time with an offset is compared as that instant. A
+    date-time without an offset is not a valid timestamp.
 
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
             ``date`` or ``datetime`` (YAML parses bare timestamps) or their
             supported extended-calendar spellings (see ``okf.md`` §3);
             anything else yields false, not an assurance of freshness.
-        now: The current instant, timezone-aware. Its local calendar day is
-            what a bare date is compared against.
+        now: The current instant, timezone-aware.
 
     Returns:
         ``True`` iff ``stale_after`` parses and *now* has reached it.
     """
-    boundary = _parse_stale_after(metadata.get("stale_after"))
-    if boundary is None:
-        return False
-    if isinstance(boundary, _dt.datetime):
-        return now >= boundary
-    return now.date() >= boundary
+    boundary = _parse_timestamp(metadata.get("stale_after"))
+    return boundary is not None and now >= boundary
 
 
 def _attribution_evidence(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -427,14 +432,13 @@ def _freshness_evidence(metadata: dict[str, Any], now: _dt.datetime) -> dict[str
     """Describe the supplied expiry without implying knowledge is true."""
     if "stale_after" not in metadata:
         return {"state": "missing", "basis": "no_expiry_supplied"}
-    boundary = _parse_stale_after(metadata["stale_after"])
+    raw = metadata["stale_after"]
+    boundary = _parse_timestamp(raw)
     if boundary is None:
         return {"state": "malformed", "basis": "unsupported_expiry"}
-    instant = isinstance(boundary, _dt.datetime)
-    expired = now >= boundary if instant else now.date() >= boundary
     return {
-        "state": "expired" if expired else "unexpired",
-        "basis": "offset_instant" if instant else "server_local_date",
+        "state": "expired" if now >= boundary else "unexpired",
+        "basis": "offset_instant" if _full_date(raw) is None else "utc_day_start",
     }
 
 
@@ -517,7 +521,7 @@ def derive_annotation(
         shape, counting entries that carry ``resource`` as recorded (OKF
         §5.1); ``generation`` reports ``generated`` as ``{state, basis}``
         under OKF §5.2 (an actor ``by``; an optional ``at`` that, when present,
-        is an offset-aware datetime). Both
+        is an OKF §5 timestamp). Both
         leave the source projections unchanged.
     """
     now = now or _dt.datetime.now().astimezone()
@@ -833,7 +837,7 @@ def _audit_evidence(rel: str, metadata: dict[str, Any], acc: _AuditCounters) -> 
     """Report supplied-field shape findings, not local editorial policy."""
     if "stale_after" not in metadata:
         acc.missing_freshness.add(rel)
-    elif _parse_stale_after(metadata["stale_after"]) is None:
+    elif _parse_timestamp(metadata["stale_after"]) is None:
         acc.malformed_freshness.add(rel)
     if _review_evidence(metadata, verified_entries(metadata))["malformed_entries"]:
         acc.malformed_review.add(rel)

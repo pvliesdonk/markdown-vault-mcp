@@ -10,6 +10,11 @@
   the v0.3 page and marked it deprecated, superseded by the v0.3 page: the
   server reads every bundle by 0.3's rules (account holder, 2026-11-21). No
   0.2 claim changed.
+- [Open Knowledge Format v0.3](okf-v0.3.md): departure rows 4 and 5 marked
+  fixed by #2404, which reads a date-only timestamp as the start of that day
+  in UTC; the §5 timestamp claims gain their pins. No spec claim changed.
+  The v0.2 page's bare-date pin, which named the removed server-local-day
+  test, now points at `test_derive_stale` only.
 
 ## 2026-11-20
 
