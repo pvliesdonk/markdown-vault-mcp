@@ -33,7 +33,7 @@ Check the claims against the note's own `sources` and against the vault:
 If the note needs changes, call `get_conventions(path=$path)` and keep them
 within the vault owner's rules it returns, then make them first with
 `edit` / `write` and stop —
-a content change invalidates any prior verification, so verify only once the
+a content change makes any prior verification no longer current, so verify only once the
 bytes are right. For a full-note `write`, preserve unchanged content and
 frontmatter and pass the etag from Step 1's read as `if_match`. If it conflicts,
 report the failure and stop; do not retry without `if_match` or proceed to

@@ -27,7 +27,7 @@ how to organize your vault, so it composes with methods like
    `type`, so a vault built from them passes `okf_validate` from the first note.
 3. Optional: enable the enforced write layer with
    `MARKDOWN_VAULT_MCP_OKF_WRITE=true` so the server stamps `generated`
-   provenance, invalidates `verified` on content changes, exposes the
+   provenance (keeping earlier `verified` events as history), exposes the
    `okf_verify` tool, and keeps each folder's `log.md` / `index.md` current.
 
 ## Templates

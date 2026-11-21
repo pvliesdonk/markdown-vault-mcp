@@ -1194,7 +1194,7 @@ def register(mcp: FastMCP) -> None:
         # write must be atomic: pass the read's etag as if_match so a concurrent
         # write/edit/delete in the window fails the attestation instead of
         # silently clobbering it or resurrecting a deleted note (#964). Suppress
-        # the enricher so it does not clear the verification just added.
+        # the enricher: a verification is not a generation, so `generated` stays.
         try:
             with okf_write_suppressed():
                 await asyncio.to_thread(
