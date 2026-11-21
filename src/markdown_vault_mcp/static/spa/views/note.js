@@ -43,7 +43,17 @@
     return Object.entries(fm).filter(([k]) => k !== 'tags');
   }
 
-  function renderProps(fm) {
+  // The server attaches `okf` only on an active OKF bundle. There, a supplied
+  // `verified` field gets the notice unless review_applicability rules a
+  // review out (state "none": absent or empty), the rule the CLI follows.
+  function showsReviewNotice(fm, okf) {
+    if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
+    const applicability = okf.review_applicability;
+    return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
+  }
+
+  function renderProps(fm, okf) {
     const entries = propEntries(fm);
     if (entries.length === 0) return '';
     const rows = entries.map(([k, v], i) => {
@@ -58,7 +68,7 @@
         + '<span id="preview-props-toggle-label">Show ' + more + ' more properties</span></button>'
       : '';
     // The supplied field is a claim, not evidence about the displayed content.
-    const review = Object.prototype.hasOwnProperty.call(fm, 'verified')
+    const review = showsReviewNotice(fm, okf)
       ? '<p>Supplied verified field. Review applicability to current content: unknown.</p>'
       : '';
     return review + '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
@@ -149,7 +159,7 @@
         + '<div class="preview-toc" id="preview-toc" hidden></div>'
         + '</div>';
       html += '</div>';
-      html += renderProps(data.frontmatter);
+      html += renderProps(data.frontmatter, data.okf);
       html += renderTags(data.frontmatter);
       html += '<div class="preview-content">' + rendered + '</div>';
       html += '<div class="preview-footer">';

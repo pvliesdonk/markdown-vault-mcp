@@ -19,6 +19,7 @@ from fastmcp.dependencies import Depends
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
 from markdown_vault_mcp._tool_boundary import tool_boundary
+from markdown_vault_mcp._tools._common import attach_okf
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp._vault_apps import _graph_view_payload
 from markdown_vault_mcp.domain import get_vault
@@ -146,13 +147,15 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         Returns:
             Dict with path, title, folder, frontmatter, modified_at, backlinks,
             outlinks, similar, folder_notes, and tags; see 'get_context' for
-            field details. Returns `{"error": "..."}` if the note is not found.
+            field details. On an active OKF bundle it also carries the same
+            'okf' annotation as 'get_context'. Returns `{"error": "..."}` if
+            the note is not found.
         """
         try:
             ctx = await asyncio.to_thread(vault.reader.get_context, path)
         except ValueError:
             return {"error": f"Note not found: {path}"}
-        return asdict(ctx)
+        return await attach_okf(vault, asdict(ctx), ctx.frontmatter)
 
     @mcp.tool(
         tags={"apps-ui"},
@@ -434,18 +437,20 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         Returns:
             Dict with path, title, frontmatter, content (the full raw file,
             including the frontmatter block), and modified_at (Unix timestamp),
-            or null if the note is not found.
+            plus, on an active OKF bundle, the same 'okf' annotation as a
+            whole-note 'read'; or null if the note is not found.
         """
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             return None
-        return {
+        data = {
             "path": note.path,
             "title": note.title,
             "frontmatter": note.frontmatter,
             "content": note.content,
             "modified_at": note.modified_at,
         }
+        return await attach_okf(vault, data, note.frontmatter, include_sources=True)
 
     @mcp.tool(
         icons=_TOOL_ICONS["vault_search"],

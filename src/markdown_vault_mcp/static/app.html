@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:f116427c09dfc132f640b7b7e08dbfe1b43bc94cac28cfe6ff1cd19425973814 -->
+<!-- vendor-spa-source-sha256:370962bd070c3858386587b8b94c451b358bfa5715c46b1bee3333d3c10fd216 -->
 </head>
 <body>
 <div class="app-container">
@@ -934,13 +934,23 @@ app.onteardown = () => {
     // toggle handled by delegated listener on #panel-context
   }
 
-  function renderChips(fm) {
+  // The server attaches `okf` only on an active OKF bundle. There, a supplied
+  // `verified` field gets the notice unless review_applicability rules a
+  // review out (state "none": absent or empty), the rule the CLI follows.
+  function showsReviewNotice(fm, okf) {
+    if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
+    const applicability = okf.review_applicability;
+    return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
+  }
+
+  function renderChips(fm, okf) {
     if (!fm) return '';
     let html = '';
     if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
     if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
     // Describe the supplied field without authenticating it or assessing validity.
-    if (Object.prototype.hasOwnProperty.call(fm, 'verified')) {
+    if (showsReviewNotice(fm, okf)) {
       html += '<span class="chip">Supplied verified field. Review applicability to current content: unknown.</span>';
     }
     return html;
@@ -1032,7 +1042,7 @@ app.onteardown = () => {
         data.folder ? data.folder.split('/').join(' / ') : '';
       document.getElementById('ctx-modified').textContent =
         data.modified_at ? relTime(data.modified_at) : '';
-      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter);
+      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter, data.okf);
 
       const fmCount = data.frontmatter ? Object.keys(data.frontmatter).length : 0;
       makeSection('ctx-frontmatter', 'Frontmatter', fmCount, renderFrontmatter(data.frontmatter));
@@ -1735,7 +1745,17 @@ app.onteardown = () => {
     return Object.entries(fm).filter(([k]) => k !== 'tags');
   }
 
-  function renderProps(fm) {
+  // The server attaches `okf` only on an active OKF bundle. There, a supplied
+  // `verified` field gets the notice unless review_applicability rules a
+  // review out (state "none": absent or empty), the rule the CLI follows.
+  function showsReviewNotice(fm, okf) {
+    if (!okf || typeof okf !== 'object' || Array.isArray(okf)) return false;
+    if (!fm || !Object.hasOwn(fm, 'verified')) return false;
+    const applicability = okf.review_applicability;
+    return !(applicability && typeof applicability === 'object' && applicability.state === 'none');
+  }
+
+  function renderProps(fm, okf) {
     const entries = propEntries(fm);
     if (entries.length === 0) return '';
     const rows = entries.map(([k, v], i) => {
@@ -1750,7 +1770,7 @@ app.onteardown = () => {
         + '<span id="preview-props-toggle-label">Show ' + more + ' more properties</span></button>'
       : '';
     // The supplied field is a claim, not evidence about the displayed content.
-    const review = Object.prototype.hasOwnProperty.call(fm, 'verified')
+    const review = showsReviewNotice(fm, okf)
       ? '<p>Supplied verified field. Review applicability to current content: unknown.</p>'
       : '';
     return review + '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
@@ -1841,7 +1861,7 @@ app.onteardown = () => {
         + '<div class="preview-toc" id="preview-toc" hidden></div>'
         + '</div>';
       html += '</div>';
-      html += renderProps(data.frontmatter);
+      html += renderProps(data.frontmatter, data.okf);
       html += renderTags(data.frontmatter);
       html += '<div class="preview-content">' + rendered + '</div>';
       html += '<div class="preview-footer">';

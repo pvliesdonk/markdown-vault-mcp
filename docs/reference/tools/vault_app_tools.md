@@ -61,7 +61,9 @@ Not visible to the LLM.
 
 Dict with path, title, folder, frontmatter, `modified_at`, backlinks,
 outlinks, similar, `folder_notes`, and tags; see '`get_context`' for
-field details. Returns `{"error": "..."}` if the note is not found.
+field details. On an active OKF bundle it also carries the same
+'okf' annotation as '`get_context`'. Returns `{"error": "..."}` if
+the note is not found.
 
 <!-- DOMAIN-EXAMPLE-vault_context-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -228,7 +230,8 @@ Not visible to the LLM.
 
 Dict with path, title, frontmatter, content (the full raw file,
 including the frontmatter block), and `modified_at` (Unix timestamp),
-or null if the note is not found.
+plus, on an active OKF bundle, the same 'okf' annotation as a
+whole-note 'read'; or null if the note is not found.
 
 <!-- DOMAIN-EXAMPLE-vault_read-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
