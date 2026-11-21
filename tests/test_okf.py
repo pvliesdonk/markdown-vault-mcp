@@ -228,6 +228,11 @@ class TestVaultIntegration:
             {"verified": [{"by": "human:alice", "at": "2026-01-01T09:00"}]},
             TRUST_UNVERIFIED,
         ),
+        # OKF 0.3 §7: a team: verifier is machine-confirmed (#2407).
+        (
+            {"verified": [{"by": "team:finance-fpa", "at": "2026-01-01T00:00:00Z"}]},
+            TRUST_MACHINE,
+        ),
         (
             {"verified": [{"by": "human:alice", "at": "2026-01-01T00:00:00Z"}]},
             TRUST_HUMAN,

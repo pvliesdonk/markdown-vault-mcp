@@ -72,7 +72,8 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   `id`/`title`/`author`/`usage_count`/`last_modified`/`usage_window`);
   per-claim attribution via markdown footnotes `[^source-id]`.
 - **Trust:** `generated: {by, at}` and `verified: [{by, at}, ...]`.
-  Actor convention `human:<id>` / `process:<id>` / `<tool>/<version>`.
+  Actor convention `<scheme>:<id>` (`human:`, `team:`, `process:` defined,
+  others accepted as non-human) / `<tool>/<version>`.
   Derived tiers: **unverified → machine-confirmed → human-reviewed**.
 - **Lifecycle:** `status: draft|stable|deprecated` (default `stable`),
   `stale_after`: a timestamp. Every timestamp key (`generated.at`,
@@ -212,12 +213,19 @@ frontmatter blob; not persisted):
   Null, an empty string and an empty list are an absent key (§5.5, §11.2),
   not unparseable, so they stay `stale: false`.
 - `trust_tier`: a compatibility label for recorded claims, not server
-  certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
-  or `<producer>/<version>`; a `human:`/`process:` id is nonempty and may
-  contain internal spaces but no other whitespace (#2393), and producer and
-  version are whitespace-free)
-  and an `at` timestamp (a date-time with an offset, or a date, #2400)
-  counts. A usable human record yields
+  certification. Only a mapping with an actor and an `at` timestamp (a
+  date-time with an offset, or a date, #2400) counts. An actor is `<scheme>:<id>` or `<producer>/<version>`
+  (OKF 0.3 §7, #2407): the id is opaque, and "Consumers MUST accept other
+  schemes and treat them as non-human". §7 defines no grammar for a scheme,
+  id, producer or version, so the server invents none: any string
+  containing a `:` or `/` is an actor, whitespace, empty parts (`human:`,
+  `:x`, `agent/`) and further separators included. A string with neither,
+  such as `codex` or `Jane Doe`, fits no form and is malformed; an empty
+  `by` is absent (§11.2). Only the `human:` scheme, matched exactly at the
+  start, is human, so `human:` with an empty id is human-reviewed (the spec
+  is silent on an empty id), while `Human:x`, `team:x` and every other
+  scheme or `<producer>/<version>` actor are machine-confirmed. A usable
+  human record yields
   `human-reviewed`; otherwise a usable record yields `machine-confirmed`;
   otherwise `unverified`. A bare mapping is still one record. Malformed
   siblings do not erase usable records. This deliberately changes the
@@ -274,8 +282,8 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
   counts. `generation` is `{state, basis}` with `state` `missing`,
   `malformed` or `recorded` and `basis: supplied_metadata_only`, judged as
   the [format reference](reference/okf-v0.2.md) states §5.2: `by` is
-  required and is an actor (including internal-space `human:`/`process:`
-  ids, #2394); `at` is optional, and when present it is an OKF §5
+  required and is an actor in the sense above (any `<scheme>:<id>` or
+  `<producer>/<version>`, #2407); `at` is optional, and when present it is an OKF §5
   timestamp: a date-time with an explicit offset or a date only (#2400). A
   `generated` with `by` and no `at` is therefore `recorded`, a date-only
   `at` is `recorded`, and an offset-less date-time `at` is `malformed`. A `verified`

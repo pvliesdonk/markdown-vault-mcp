@@ -287,7 +287,7 @@ are named where they exist; a fix rewrites them.
 | # | Rule | 0.2 July | 0.2 Aug | 0.3 | Server | Level | Issue |
 |---|------|----------|---------|-----|--------|-------|-------|
 | 1 | Trust tier from current events only (§5.3) | every event counts | every event counts | required | counts every event: a human event older than `generated.at` gives human-reviewed | MUST | none |
-| 2 | Actor schemes (§7) | 2 schemes | 2 schemes | any `<scheme>:<id>`, id opaque | only `human:`/`process:`; `team:x`, `svc:x` and an id with a tab are malformed, so the tier is unverified | MUST | #2407 (narrower) |
+| 2 | Actor schemes (§7) | 2 schemes | 2 schemes | any `<scheme>:<id>`, id opaque | fixed: any string with a `:` or `/` is an actor; `team:x`, `svc:x` and an id with a tab are machine-confirmed, only `human:` gives human-reviewed | MUST | #2407 (fixed) |
 | 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | fixed by #2410: `stale: true`, so `stale=false` excludes it and it is downweighted | MUST NOT | #2410 (fixed) |
 | 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | fixed by #2404: read as 00:00 UTC (was the server-local day, stale an hour early at 00:30+01:00) | defined (no keyword) | #2404 (inverted) |
 | 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | fixed by #2404: recorded, read as 00:00 UTC (was malformed, the event ignored and the tier unverified) | valid form (no keyword) | #2400 (inverted) |
@@ -323,8 +323,10 @@ Notes on the table:
   any file, for a `type`, so the exemption #2406 calls a departure is what
   §3.1 and §11.1 now say. The departure that remains is the audit treating
   a typeless file as non-conformant instead of a non-concept with a warning.
-- **#2 widens #2407.** The fix is any scheme, any opaque id, non-`human:`
-  as non-human. Tabs and spaces are only part of it.
+- **#2 widened #2407.** The fix is any scheme, any opaque id, non-`human:`
+  as non-human. Tabs and spaces were only part of it. §7 defines no
+  grammar for a scheme, producer or version, so the server reads any
+  string with a `:` or `/` as an actor, empty parts included.
 - **#16 rests on §5.3's reasoning, not a keyword.** No 0.3 sentence forbids
   a producer from clearing `verified`; the case is that §5.3 keeps earlier
   events as history and makes clearing unnecessary.
