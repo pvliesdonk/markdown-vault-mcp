@@ -546,7 +546,22 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: ``citations`` table, and ``documents.citations_derived`` records which
 #: citation rules derived them. Still one bump: no tag contains the commit
 #: that set 13 (``AGENTS.md``, once per release).
+#:
+#: Version 13 also covers #2416: a markdown, reference or ``./``/``../``
+#: wikilink target whose ``..`` climbs above the vault root is external
+#: (OKF 0.3 §6), where the resolver used to clamp it onto a note at the
+#: root. Its row keeps the surplus ``..`` in front (``../x.md``), so it is
+#: reported broken but is never an outlink, backlink or graph edge. Still one bump: no tag contains the commit that
+#: set 13 (``AGENTS.md``, once per release).
 INDEX_SEMANTICS_VERSION = 13
+
+
+#: A link row whose target climbs above the vault root (#2416). The row is
+#: kept so the broken-link queries list it, but it is external: the outlink
+#: and orphan queries leave it out, and no note can match its ``..`` path,
+#: so it is never a backlink or a graph edge. Mirrors
+#: :func:`~markdown_vault_mcp.scanner.is_out_of_root_target`.
+_ABOVE_ROOT_SQL = "(l.target_path = '..' OR l.target_path LIKE '../%')"
 
 
 class ChunkingMeta(NamedTuple):
@@ -714,14 +729,26 @@ def _match_vault_path(
 
 def _markdown_link_target(
     raw: str, source: str, path_set: set[str], by_name: dict[str, list[str]]
-) -> str:
-    """Resolve a markdown destination, keeping explicit and existing local paths."""
+) -> str | None:
+    """Resolve a markdown destination, keeping explicit and existing local paths.
+
+    Returns ``None`` only for a destination above the vault root, which
+    extraction never stores (#2416).
+    """
     parsed = parse_markdown_destination(raw)
     decoded = parsed.path
     baseline, _ = _resolve_link_path(decoded, source)
-    if parsed.refused or baseline in path_set or decoded.startswith(("/", "./", "../")):
+    if (
+        baseline is None
+        or parsed.refused
+        or baseline in path_set
+        or decoded.startswith(("/", "./", "../"))
+    ):
         return baseline
     target, _ = _resolve_link_path(decoded, "")
+    if target is None:
+        # In the vault from the source's folder, above it from the root.
+        return baseline
     return _match_vault_path(target, source, path_set, by_name) or baseline
 
 
@@ -2636,7 +2663,7 @@ class FTSIndex:
 
     @_retry_on_locked
     def get_outlinks(
-        self, path: str, *, limit: int | None = None
+        self, path: str, *, limit: int | None = None, include_external: bool = False
     ) -> list[dict[str, Any]]:
         """Return all links FROM the given document.
 
@@ -2650,12 +2677,16 @@ class FTSIndex:
             path: Relative document path that is the link source
                 (e.g. ``"notes/topic.md"``).
             limit: If provided, return at most this many results.
+            include_external: Also return links whose target lies above the
+                vault root (#2416). They are external, so an outlink listing
+                leaves them out; a broken-link check of one note wants them.
 
         Returns:
             List of dicts with keys ``target_path``, ``link_text``,
             ``link_type``, ``fragment``, ``raw_target``, ``exists`` (bool).
         """
         limit_clause = "" if limit is None else "LIMIT ?"
+        external_clause = "" if include_external else f"AND NOT {_ABOVE_ROOT_SQL}"
         params: tuple[str | int, ...] = (path,) if limit is None else (path, limit)
         cur = self._conn().execute(
             f"""
@@ -2668,7 +2699,7 @@ class FTSIndex:
             FROM links l
             JOIN documents d ON d.id = l.source_id
             LEFT JOIN documents_live t ON t.path = l.target_path
-            WHERE d.path = ?
+            WHERE d.path = ? {external_clause}
             ORDER BY l.rowid
             {limit_clause}
             """,
@@ -2803,7 +2834,7 @@ class FTSIndex:
             new_path = _markdown_link_target(
                 row["raw_target"], row["source_path"], doc_paths_set, by_name
             )
-            if new_path != row["target_path"]:
+            if new_path is not None and new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
         with conn:
@@ -2908,10 +2939,12 @@ class FTSIndex:
             ordered by path.
         """
         cur = self._conn().execute(
-            """
+            f"""
             SELECT path, title, folder, frontmatter_json, modified_at, content_chars
             FROM documents_live d
-            WHERE NOT EXISTS (SELECT 1 FROM links WHERE source_id = d.id)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM links l WHERE l.source_id = d.id AND NOT {_ABOVE_ROOT_SQL}
+            )
               AND NOT EXISTS (SELECT 1 FROM links WHERE target_path = d.path)
             ORDER BY path
             """
@@ -3086,10 +3119,12 @@ class FTSIndex:
             Orphan count, or 0 if the links table does not exist.
         """
         return self._count_links_query(
-            """
+            f"""
             SELECT COUNT(*)
             FROM documents_live d
-            WHERE NOT EXISTS (SELECT 1 FROM links WHERE source_id = d.id)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM links l WHERE l.source_id = d.id AND NOT {_ABOVE_ROOT_SQL}
+            )
               AND NOT EXISTS (SELECT 1 FROM links WHERE target_path = d.path)
             """
         )

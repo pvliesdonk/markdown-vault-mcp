@@ -1219,14 +1219,63 @@ def _strip_inline_code(region: str) -> str:
     return _RE_INLINE_CODE.sub("", region)
 
 
+def is_out_of_root_target(path: str) -> bool:
+    """Tell whether a stored link target lies above the vault root.
+
+    Such a target is what :func:`_link_row_target` keeps for a link whose
+    ``..`` climbs past the root (#2416): external for resolution, so never
+    a note, an edge or a rename candidate, but kept as a link row so the
+    broken-link report lists it.
+
+    Args:
+        path: A link row's ``target_path``.
+
+    Returns:
+        True when *path* is ``..`` or begins with ``../``.
+    """
+    return path == ".." or path.startswith("../")
+
+
 def _resolve_link_path(
+    target: str, source_rel: str, *, decode_markdown: bool = False
+) -> tuple[str | None, str | None]:
+    """Resolve a raw link target to a vault path, or ``None`` if it is external.
+
+    The resolution is :func:`_link_row_target`'s; a target whose ``..``
+    segments climb above the vault root is external, as OKF 0.3 §6 defines
+    it ("A value that resolves to a location outside the bundle root is
+    external"), and resolves to ``None`` rather than to a path inside the
+    vault (#2416).
+
+    Args:
+        target: Raw target string from the link (may include ``#fragment``).
+        source_rel: Relative POSIX path of the source document.
+        decode_markdown: Whether *target* is a markdown destination as
+            written (see :func:`_link_row_target`).
+
+    Returns:
+        A ``(resolved_path, fragment)`` tuple; ``resolved_path`` is ``None``
+        when the target lies outside the vault root.
+    """
+    resolved, fragment = _link_row_target(
+        target, source_rel, decode_markdown=decode_markdown
+    )
+    if is_out_of_root_target(resolved):
+        return None, fragment
+    return resolved, fragment
+
+
+def _link_row_target(
     target: str, source_rel: str, *, decode_markdown: bool = False
 ) -> tuple[str, str | None]:
     """Resolve a raw link target against the source document's directory.
 
-    Splits off any fragment identifier (``#heading``), resolves the path
-    relative to the source document using POSIX semantics, and clamps any
-    traversal above the vault root to the root.
+    Splits off any fragment identifier (``#heading``) and resolves the path
+    relative to the source document using POSIX semantics. A target whose
+    ``..`` segments climb above the vault root keeps the surplus ``..``
+    segments in front (``../../x.md`` from ``a/n.md`` gives ``../x.md``):
+    that names its location relative to the root, and no indexed note can
+    have such a path, so the link row is reported broken (#2416).
 
     Args:
         target: Raw target string from the link (may include ``#fragment``).
@@ -1239,7 +1288,8 @@ def _resolve_link_path(
 
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
-        vault-relative POSIX path with forward slashes and ``fragment`` is the
+        root-relative POSIX path with forward slashes, led by ``..`` segments
+        when the target lies above the vault root, and ``fragment`` is the
         heading identifier or ``None``.
     """
     # Split fragment BEFORE decoding: an encoded ``%23`` or an escaped
@@ -1251,9 +1301,9 @@ def _resolve_link_path(
     fragment: str | None = None
     if decode_markdown:
         # A refused percent-escape leaves that layer as written, so it never
-        # invents a resolvable name; the traversal clamp below still runs on
-        # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
-        # root. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
+        # invents a resolvable name; the root check below still runs on
+        # whatever comes out, so a decoded ``%2E%2E`` that climbs above the
+        # root is external like a literal ``..``. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
         parsed = parse_markdown_destination(target)
         target, fragment = parsed.path, parsed.fragment
 
@@ -1274,18 +1324,22 @@ def _resolve_link_path(
         # Resolve relative to the source document's directory.
         resolved = PurePosixPath(source_rel).parent / target
 
-    # Normalise (collapse /../ and /./) without going above root.
-    parts = resolved.parts
+    # Normalise (collapse /../ and /./). A ``..`` with nothing left to pop
+    # leaves the vault root: the target is external (OKF 0.3 §6), and
+    # dropping the segment instead would land on an unrelated in-vault note,
+    # so it is counted and kept in front of what remains.
+    above = 0
     normalised: list[str] = []
-    for part in parts:
+    for part in resolved.parts:
         if part == "..":
             if normalised:
                 normalised.pop()
-            # else: clamp — traversal above root is dropped silently
+            else:
+                above += 1
         elif part != ".":
             normalised.append(part)
 
-    resolved_str = "/".join(normalised)
+    resolved_str = "/".join([".."] * above + normalised)
 
     return resolved_str, fragment
 
@@ -1309,7 +1363,9 @@ def extract_links(
     ``mailto:``, ``file:``, ``obsidian:``, and so on, by shape rather than
     by allowlist, #1335) and protocol-relative ``//host`` targets. So are
     same-document anchors in every spelling — ``[text](#heading)``,
-    ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``.
+    ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``. A target whose
+    ``..`` climbs above the vault root is external too (OKF 0.3 §6) but is
+    kept, led by ``..``, so it is reported as a broken link (#2416).
 
     The link graph is notes-only (#1333): a target whose extension is on the
     attachment allowlist names a file the index never holds, so recording
@@ -1367,7 +1423,8 @@ def _extract_inline_links(
     exist (#1521). This function decides only which of those links the
     index holds: external URLs, pure anchor links (``#section`` within the
     same document) and destinations naming an attachment (#1333) are not
-    vault links and are skipped here.
+    vault links and are skipped here. A target above the vault root is kept,
+    led by ``..``, as a broken link (#2416).
     """
     links: list[LinkInfo] = []
     for link in _iter_inline_links(region):
@@ -1380,7 +1437,9 @@ def _extract_inline_links(
         if is_anchor_destination(raw_target):
             # Pure anchor link — skip (points to a section in the same doc).
             continue
-        resolved, fragment = _resolve_link_path(
+        # A target above the vault root keeps its row, led by ``..``, so the
+        # broken-link report lists it; it can never be a note (#2416).
+        resolved, fragment = _link_row_target(
             raw_target, source_path, decode_markdown=True
         )
         if names_attachment(resolved, attachment_extensions):
@@ -1726,7 +1785,9 @@ def _extract_reference_links(
     reference. That half is still a live check below.
 
     What is decided here is only which resolved targets the index holds:
-    external URLs, pure anchors and attachments (#1333) are skipped.
+    external URLs, pure anchors and attachments (#1333) are skipped; a
+    target above the vault root is kept, led by ``..``, as a broken link
+    (#2416).
     """
     links: list[LinkInfo] = []
     usable = _blank_wikilinks(_blank_reference_definitions(region))
@@ -1746,7 +1807,7 @@ def _extract_reference_links(
             continue
         if is_anchor_destination(raw_target):
             continue
-        resolved, fragment = _resolve_link_path(
+        resolved, fragment = _link_row_target(
             raw_target, source_path, decode_markdown=True
         )
         if names_attachment(resolved, attachment_extensions):
@@ -1923,7 +1984,9 @@ def _extract_wikilinks(
         # FTSIndex.resolve_vault_wikilinks() can resolve them vault-wide
         # against the full indexed document set.
         if raw_path.startswith("./") or raw_path.startswith("../"):
-            resolved, path_fragment = _resolve_link_path(raw_path, source_path)
+            # Above the vault root it keeps its ``..`` lead and reads as
+            # broken (#2416).
+            resolved, path_fragment = _link_row_target(raw_path, source_path)
             fragment = fragment or path_fragment
         else:
             resolved = raw_path

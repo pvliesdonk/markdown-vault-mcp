@@ -117,10 +117,12 @@ class TestPercentEncodedTargets:
         links = extract_links("[x](dir%2Fno%20te.md)", "hub.md")
         assert links[0].target_path == "dir%2Fno%20te.md"
 
-    def test_a_decoded_traversal_is_still_clamped(self) -> None:
-        """``%2E%2E`` decodes to ``..`` and meets the same root clamp."""
-        links = extract_links("[x](%2E%2E/%2E%2E/up.md)", "sub/hub.md")
+    def test_a_decoded_traversal_meets_the_same_root_check(self) -> None:
+        """``%2E%2E`` decodes to ``..``: to the root resolves, past it stays above."""
+        links = extract_links("[x](%2E%2E/up.md)", "sub/hub.md")
         assert links[0].target_path == "up.md"
+        links = extract_links("[x](%2E%2E/%2E%2E/up.md)", "sub/hub.md")
+        assert links[0].target_path == "../up.md"
 
     def test_wikilinks_are_not_decoded(self) -> None:
         """Obsidian writes wikilink targets literally; it never encodes them.

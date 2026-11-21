@@ -456,6 +456,11 @@ Each entry names the function and the design section that decides it.
   Not modelled; the help defines embeds as a distinct syntax.
 - `_extract_wikilinks`: `./` and `../` resolve against the source note, as
   observed (`[[../y]]`, above); the help shows no relative wikilink form.
+  A `../` that climbs above the vault root is external and reported broken
+  (#2416, from OKF 0.3 §6; `reference/okf-v0.3.md`). Obsidian's resolution
+  of such a target was not observed [unverified]; a fixture with
+  `[[../../y]]` in `a/x.md` and `y.md` at the root would settle it.
+  [pins: tests/test_links_out_of_root.py::test_extraction_keeps_an_out_of_root_target_above_the_root]
 - `FTSIndex.resolve_vault_wikilinks`: suffix match "ends with `/stem.md`"
   matches what was observed (`[[b/Note]]` → `a/b/Note.md`).
 - `FTSIndex.resolve_vault_wikilinks`: the tie-break is the observed

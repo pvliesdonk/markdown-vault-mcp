@@ -139,7 +139,9 @@ class UnresolvedLinkReporter:
             return None
         broken = {
             (row["link_type"], row["raw_target"])
-            for row in self._fts.get_outlinks(self._index_path(path))
+            for row in self._fts.get_outlinks(
+                self._index_path(path), include_external=True
+            )
             if not row["target_exists"]
         }
         existing = set(before)

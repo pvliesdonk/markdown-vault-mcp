@@ -145,12 +145,17 @@ class TestExtractInlineLinks:
         assert len(links) == 1
         assert links[0].target_path == "guides/playbook.md"
 
-    def test_traversal_above_root_clamped(self) -> None:
-        """Path traversal above vault root is clamped to root level."""
+    def test_traversal_to_root_resolved(self) -> None:
+        """Climbing exactly to the vault root stays in the vault."""
         links = extract_links("[Note](../../escape.md)", "a/b/c.md")
         assert len(links) == 1
         # a/b/../../escape.md -> escape.md (root level)
         assert links[0].target_path == "escape.md"
+
+    def test_traversal_above_root_is_external(self) -> None:
+        """Climbing past the vault root keeps the surplus ``..`` (#2416)."""
+        links = extract_links("[Note](../../../escape.md)", "a/b/c.md")
+        assert [link.target_path for link in links] == ["../escape.md"]
 
     def test_multiple_inline_links(self) -> None:
         """Multiple links in one document are all extracted."""
