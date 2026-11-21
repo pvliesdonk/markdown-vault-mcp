@@ -1,0 +1,566 @@
+"""Local versioning with libgit2; see docs/design/reference/git-libgit2.md."""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import stat
+import sys
+import tempfile
+import threading
+import unicodedata
+from contextlib import contextmanager, suppress
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.git.health import SyncHealthTracker
+from markdown_vault_mcp.git.strategy import (
+    GitWriteStrategy,
+    _batch_subject,
+    _sanitize_git_identity,
+)
+from markdown_vault_mcp.git.types import (
+    PULL_REASON_PULL_DISABLED,
+    PUSH_REASON_DRY_RUN_UNSUPPORTED,
+    PUSH_REASON_NO_REMOTE,
+    PUSH_REASON_PUSH_FAILED,
+    PullResult,
+    PushResult,
+)
+from markdown_vault_mcp.utils.fs import is_regular_file, path_exists
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Sequence
+    from contextlib import AbstractContextManager
+
+    from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.git.health import SyncHealth
+    from markdown_vault_mcp.git.types import RevisionQuery
+    from markdown_vault_mcp.types import (
+        CommitDiff,
+        HistoryEntry,
+        RevisionContent,
+        WriteBatchItem,
+        WriteOperation,
+    )
+
+
+def _unsupported(shape: str) -> ConfigurationError:
+    return ConfigurationError(
+        f"libgit2 cannot serve {shape}; use GitWriteStrategy (the CLI layer)."
+    )
+
+
+def _pygit2() -> Any:
+    try:
+        import pygit2
+    except ImportError as exc:
+        raise ConfigurationError(
+            'Install "markdown-vault-mcp[libgit2]" or use GitWriteStrategy (the CLI layer).'
+        ) from exc
+    return pygit2
+
+
+def _config_bool(config: Any, key: str, default: bool = False) -> bool:
+    try:
+        return bool(config.get_bool(key))
+    except KeyError:
+        return default
+
+
+def _rel(repo: Any, path: Path) -> str:
+    root = Path(repo.workdir).resolve()
+    rel = (path.parent.resolve() / path.name).relative_to(root).as_posix()
+    if sys.platform == "darwin" and _config_bool(repo.config, "core.precomposeunicode"):
+        rel = unicodedata.normalize("NFC", rel)
+    return rel
+
+
+def _common(gitdir: Path) -> Path:
+    common = gitdir / "commondir"
+    if is_regular_file(common):
+        return (gitdir / common.read_text().strip()).resolve()
+    return gitdir
+
+
+def _probe_config(gitdir: Path, pg: Any) -> None:
+    try:
+        config = pg.Config(str(_common(gitdir) / "config"))
+        keys = {entry.name.lower(): entry.value for entry in config}
+    except (OSError, pg.GitError) as exc:
+        raise _unsupported("an unreadable repository configuration") from exc
+    if keys.get("extensions.objectformat", "").lower() == "sha256":
+        raise _unsupported("SHA-256 repositories")
+    if keys.get("extensions.refstorage", "").lower() == "reftable":
+        raise _unsupported("reftable repositories")
+
+
+def _checked(repo: Any) -> Any:
+    keys = [e.name for e in repo.config] if repo else []
+    if any(
+        k == "extensions.partialclone"
+        or (re.fullmatch(r"remote\..+\.promisor", k) and repo.config.get_bool(k))
+        for k in keys
+    ):
+        raise _unsupported("partial clones")
+    return repo
+
+
+_DRIVERS = ("clean", "process")
+_HOOKS = (  # noqa: SIM905
+    "pre-commit prepare-commit-msg commit-msg post-commit "
+    "reference-transaction post-index-change"
+).split()
+_OFF = {"", "false", "umask", "0", "no", "off"}
+_CLEANUPS = {None, "default", "whitespace", "verbatim", "scissors"}
+
+
+def _probe_config_hooks(repo: Any, hooks: Sequence[str] = _HOOKS) -> None:
+    config = repo.config
+    for entry in config:
+        name = entry.name.removesuffix(".event")
+        events = list(config.get_multivar(entry.name)) if name != entry.name else []
+        while "" in events:  # an empty event resets the earlier list
+            del events[: events.index("") + 1]
+        for event in set(events).intersection(hooks):
+            if (
+                name.startswith("hook.")
+                and _tree_entry(config, f"{name}.command")
+                and _config_bool(config, f"{name}.enabled", True)
+                and _config_bool(config, f"hook.{event}.enabled", True)
+            ):
+                raise _unsupported(f"configured {event} hooks")
+
+
+def _probe_policy(repo: Any) -> None:
+    if _config_bool(repo.config, "commit.gpgsign"):
+        raise _unsupported("signed commits")
+    if not _config_bool(repo.config, "core.symlinks", True):
+        raise _unsupported("core.symlinks=false repositories")
+    if _tree_entry(repo.config, "commit.cleanup") not in _CLEANUPS:
+        raise _unsupported("commit.cleanup=strip")
+    shared = _tree_entry(repo.config, "core.sharedrepository")
+    if "core.sharedrepository" in repo.config and str(shared).lower() not in _OFF:
+        raise _unsupported("core.sharedRepository repositories")
+    configured = _tree_entry(repo.config, "core.hookspath")
+    hooks = Path(
+        repo.workdir,
+        Path(configured or _common(Path(repo.path)) / "hooks").expanduser(),
+    )
+    for name in _HOOKS:
+        if os.access(hooks / name, os.X_OK):
+            raise _unsupported(f"executable {name} hooks")
+    _probe_config_hooks(repo)
+
+
+def _open(path: Path, pg: Any) -> Any | None:
+    existing = next((p for p in (path, *path.parents) if path_exists(p)), path)
+    if is_regular_file(existing):
+        existing = existing.parent
+    gitdir = pg.discover_repository(str(existing))
+    if gitdir is None:
+        return None
+    _probe_config(Path(gitdir), pg)
+    repo = _fresh(gitdir, pg)
+    for entry in repo.index:
+        _filter_guard(repo, entry.path)
+    return repo
+
+
+def _fresh(gitdir: str, pg: Any, *, policy: bool = True) -> Any:
+    try:
+        repo = pg.Repository(gitdir)
+        if repo.is_bare or repo.workdir is None:
+            raise _unsupported("bare repositories")
+        if policy:
+            _probe_policy(repo)
+        repo.index.read(force=True)
+    except pg.GitError as exc:
+        split = "unsupported mandatory extension: 'link'" in str(exc)
+        raise _unsupported(
+            "a split index" if split else f"an unopenable repository ({exc})"
+        ) from exc
+    return _checked(repo)
+
+
+def _filter_guard(repo: Any, path: str) -> None:
+    encoding = repo.get_attr(path, "working-tree-encoding")
+    if isinstance(encoding, str) and encoding:
+        raise _unsupported(f"working-tree-encoding on {path!r}")
+    name = repo.get_attr(path, "filter")
+    if isinstance(name, str) and (
+        _config_bool(repo.config, f"filter.{name}.required")
+        or any(_tree_entry(repo.config, f"filter.{name}.{k}") for k in _DRIVERS)
+    ):
+        raise _unsupported(f"the effective {name!r} filter on {path!r}")
+
+
+def _tree_entry(index: Any, path: str) -> Any | None:
+    try:
+        return index[path]
+    except KeyError:
+        return None
+
+
+def _index_path(repo: Any, index: Any, relative: str, pg: Any) -> bool:
+    absolute = Path(repo.workdir) / relative
+    existing = _tree_entry(index, relative)
+    try:
+        mode = absolute.lstat().st_mode
+    except FileNotFoundError:
+        if existing:
+            index.remove(relative)
+        return bool(existing) or relative in repo.index
+    if not existing:
+        if _config_bool(repo.config, "core.ignorecase") and any(
+            e.path.lower() == relative.lower() for e in index
+        ):
+            raise _unsupported("case-variant paths")
+        if repo.path_is_ignored(relative) and relative not in pg.Index(
+            Path(repo.path) / "index"
+        ):
+            return False
+    _filter_guard(repo, relative)
+    modes = (pg.GIT_FILEMODE_BLOB, pg.GIT_FILEMODE_BLOB_EXECUTABLE)
+    if stat.S_ISLNK(mode):
+        oid = repo.create_blob(os.fsencode(absolute.readlink()))
+        filemode = pg.GIT_FILEMODE_LINK
+    elif stat.S_ISREG(mode):
+        oid = repo.create_blob_fromworkdir(relative)
+        filemode = modes[bool(mode & stat.S_IXUSR)]
+    else:
+        return False
+    if stat.S_ISREG(mode) and not _config_bool(repo.config, "core.filemode", True):
+        filemode = existing.mode if existing and existing.mode in modes else modes[0]
+    index.add(pg.IndexEntry(relative, oid, filemode))
+    return True
+
+
+def _stage_items(
+    repo: Any, index: Any, items: Sequence[WriteBatchItem], pg: Any
+) -> tuple[set[str], list[tuple[Path, WriteOperation, Path | None]]]:
+    paths: set[str] = set()
+    staged = []
+    for path, operation, old_path, _ in items:
+        rels = [_rel(repo, item) for item in (path, old_path) if item is not None]
+        done = [rel for rel in rels if _index_path(repo, index, rel, pg)]
+        paths.update(done)
+        if done:
+            staged.append((path, operation, old_path))
+    return paths, staged
+
+
+@contextmanager
+def _locked_index(repo: Any, pg: Any) -> Iterator[tuple[Any, Path, Path]]:
+    gitdir = Path(repo.path)
+    lock = gitdir / "index.lock"
+    lock.touch(mode=0o666, exist_ok=False)
+    try:
+        with tempfile.TemporaryDirectory(dir=gitdir) as directory:
+            source, temporary = gitdir / "index", Path(directory) / "index"
+            if path_exists(source):
+                shutil.copyfile(source, temporary)
+            yield pg.Index(temporary), temporary, source
+    finally:
+        lock.unlink()
+
+
+def _clean(message: str) -> str:
+    lines = "\n".join(line.rstrip(" \t\r") for line in message.split("\n"))
+    return re.sub(r"\n{3,}", "\n\n", lines).strip("\n")
+
+
+def _update_index(real: Any, index: Any, paths: set[str]) -> None:
+    for rel in paths:
+        entry = _tree_entry(index, rel)
+        if entry is not None:
+            real.add(entry)
+        elif rel in real:
+            real.remove(rel)
+
+
+class Libgit2Store:
+    """Provide local versioning without invoking Git's command line.
+
+    Args:
+        repo_path: Vault directory, optionally inside a Git working tree.
+        commit_name: Committer name; defaults to the CLI store's identity.
+        commit_email: Committer email; defaults to the CLI store's identity.
+    """
+
+    accepts_principal = True
+    accepts_batch = True
+    accepts_old_path = True
+    accepts_primary_paths = True
+
+    def __init__(
+        self,
+        repo_path: Path | None = None,
+        commit_name: str | None = None,
+        commit_email: str | None = None,
+    ) -> None:
+        self._pg = _pygit2()
+        from markdown_vault_mcp.git import libgit2_history
+
+        self._history = libgit2_history
+        self._repo_path = repo_path
+        self._repo = _open(repo_path, self._pg) if repo_path is not None else None
+        self._name = _sanitize_git_identity(
+            commit_name or GitWriteStrategy.DEFAULT_COMMIT_NAME
+        )
+        self._email = _sanitize_git_identity(
+            commit_email or GitWriteStrategy.DEFAULT_COMMIT_EMAIL
+        )
+        self._lock = threading.Lock()
+        self._health = SyncHealthTracker()
+        self._observer: Callable[[str, str], None] | None = None
+        self._closed = False
+        self._observe()
+
+    def _observe(self) -> None:
+        if self._repo is not None:
+            submodules = set(self._repo.listall_submodules())
+            self._health.worktree_observed(
+                dirty=any(p not in submodules for p in self._repo.status())
+            )
+
+    def _repository(self, path: Path) -> Any | None:
+        if self._repo is None and self._repo_path is None:
+            self._repo = _open(path, self._pg)
+        return self._repo
+
+    def _committed(self, before: str = "", after: str = "") -> None:
+        if self._health.worktree_dirty():
+            self._observe()
+        if self._observer is not None and before and before != after:
+            self._observer(before, after)
+
+    def __call__(
+        self,
+        path: Path,
+        content: str,  # noqa: ARG002
+        operation: WriteOperation,
+        *,
+        old_path: Path | None = None,
+        principal: Principal | None = None,
+    ) -> None:
+        """Commit the paths touched by one write, preserving unrelated staging."""
+        self.on_write_batch([(path, operation, old_path, principal)], operation)
+
+    def on_write_batch(  # noqa: C901, RUF100 -- locked publication and no-op reconciliation share one transaction.
+        self,
+        items: Sequence[WriteBatchItem],
+        tool_name: str,
+        *,
+        primary_paths: frozenset[Path] | None = None,
+    ) -> None:
+        """Commit a tool call's writes together with their principal's identity."""
+        if self._closed or not items:
+            return
+        primary_paths = frozenset({items[0][0]}) if len(items) == 1 else primary_paths
+        try:
+            with self._lock:
+                repo = self._repository(items[0][0])
+                if repo is None:
+                    return
+                repo = self._repo = _fresh(repo.path, self._pg)
+                repo.set_ident(self._name, self._email)
+                with (
+                    _locked_index(repo, self._pg) as (real, temporary, destination),
+                    repo.transaction() as transaction,
+                ):
+                    transaction.lock_ref("HEAD")
+                    head = repo.lookup_reference("HEAD")
+                    refname = head.target if isinstance(head.target, str) else "HEAD"
+                    if refname != "HEAD":
+                        transaction.lock_ref(refname)
+                    if repo.state():
+                        raise _unsupported("in-progress Git operations")
+                    root = Path(repo.workdir)
+                    index = self._pg.Index()
+                    parent = (
+                        None if repo.head_is_unborn else repo.head.peel(self._pg.Commit)
+                    )
+                    if parent is not None:
+                        index.read_tree(parent.tree)
+                    paths, staged = _stage_items(repo, index, items, self._pg)
+                    if not paths:
+                        return self._committed()
+                    tree = index.write_tree(repo)
+                    noop = parent is not None and tree == parent.tree_id
+                    primary: dict[Path, Any] = {}
+                    for item in staged:
+                        if primary_paths and item[0] in primary_paths:
+                            primary.setdefault(item[0], item)
+                    subject = _batch_subject(
+                        root, len(staged), tool_name, primary_paths, [*primary.values()]
+                    )
+                    principal = items[0][3]
+                    author = self._pg.Signature(
+                        _sanitize_git_identity(
+                            (principal and principal.display_name) or self._name
+                        ),
+                        _sanitize_git_identity(
+                            (principal and principal.email) or self._email
+                        ),
+                    )
+                    committer = self._pg.Signature(self._name, self._email)
+                    if _tree_entry(repo.config, "commit.cleanup") != "verbatim":
+                        subject = _clean(subject)
+                    parents = [] if parent is None else [parent.id]
+                    after = (
+                        parent.id
+                        if parent is not None and noop
+                        else repo.create_commit(
+                            None, author, committer, subject + "\n", tree, parents
+                        )
+                    )
+                    _update_index(real, index, paths)
+                    real.write()
+                    if not noop:
+                        kind = "commit" if parents else "commit (initial)"
+                        transaction.set_target(
+                            refname, after, message=kind + ": " + subject.split("\n")[0]
+                        )
+                    temporary.replace(destination)
+                self._committed(str(parent.id) if parent else "", str(after))
+        except Exception:
+            with suppress(Exception):
+                self._observe()
+            raise
+
+    @property
+    def is_managed(self) -> bool:
+        """Return whether this local store owns a managed clone."""
+        return False
+
+    def resolve_force_repo(self) -> Path:
+        """Return the configured vault, or raise when none was configured."""
+        if self._repo_path is None:
+            raise RuntimeError(
+                "Libgit2Store.force_* requires repo_path at construction."
+            )
+        return self._repo_path
+
+    def _born(self, git_root: Path) -> Any:
+        repo = self._repository(git_root)
+        if repo is None or repo.head_is_unborn:
+            raise OSError("No Git HEAD")
+        return repo
+
+    def head_sha(self, git_root: Path) -> str:
+        """Return the current commit ID."""
+        return str(self._born(git_root).head.target)
+
+    def branch_name(self, git_root: Path) -> str:
+        """Return the branch name, or HEAD for a detached checkout."""
+        repo = self._born(git_root)
+        return "HEAD" if repo.head_is_detached else repo.head.shorthand
+
+    def force_pull(self, *, dry_run: bool = False) -> PullResult:  # noqa: ARG002
+        """Report that this local store does not pull."""
+        self.resolve_force_repo()
+        return PullResult.head_unchanged_failure("", PULL_REASON_PULL_DISABLED)
+
+    def force_push(self, *, dry_run: bool = False) -> PushResult:
+        """Report that this local store does not push."""
+        repo = self._born(self.resolve_force_repo())
+        branch = self.branch_name(self.resolve_force_repo())
+        refs = (f"refs/remotes/origin/{branch}", "refs/remotes/origin/HEAD")
+        ref = next(filter(None, map(repo.references.get, refs)), None)
+        remote = str(ref.resolve().target) if ref else ""
+        if remote and not dry_run and remote == str(repo.head.target):
+            return PushResult(True, 0, remote, remote)
+        return PushResult(
+            False,
+            0,
+            remote,
+            remote,
+            (PUSH_REASON_DRY_RUN_UNSUPPORTED if dry_run else PUSH_REASON_PUSH_FAILED)
+            if remote
+            else PUSH_REASON_NO_REMOTE,
+            "This local store does not push; use GitWriteStrategy or the Git CLI.",
+        )
+
+    def sync_once(self, repo_path: Path) -> bool:  # noqa: ARG002
+        """Perform no synchronization and report no change."""
+        return False
+
+    def sync_health(self) -> SyncHealth | None:
+        """Return the latest observed uncommitted-work condition."""
+        return self._health.snapshot()
+
+    def set_commit_observer(self, observer: Callable[[str, str], None]) -> None:
+        """Set the callback for successful HEAD moves."""
+        self._observer = observer
+
+    def set_write_quiescer(
+        self,
+        pause_writes: Callable[[], AbstractContextManager[None]],
+        drain_writes: Callable[[], bool],
+    ) -> None:
+        """Accept the synchronization interface; the local store does not sync."""
+
+    def start(
+        self,
+        *,
+        repo_path: Path,
+        pull_interval_s: int,  # noqa: ARG002
+        on_pull: Callable[[], object] | None = None,  # noqa: ARG002
+        on_tick: Callable[[], object] | None = None,  # noqa: ARG002
+    ) -> None:
+        """Start the local store, which needs no background loop."""
+        self._repository(repo_path)
+
+    def stop(self) -> None:
+        """Stop the local store's nonexistent background loop."""
+
+    def flush(self) -> None:
+        """Flush local work, which is already committed synchronously."""
+
+    def close(self) -> None:
+        """Close the local store; repeated calls are safe."""
+        self._closed = True
+
+    def get_file_history(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protocol.
+        self,
+        repo_path: Path,
+        path: Path | None,
+        since: str | None,
+        limit: int,
+        until: str | None = None,
+        *,
+        is_dir: bool = False,
+    ) -> list[HistoryEntry]:
+        """Return local commit history, optionally scoped to a path."""
+        repo = _checked(self._repository(repo_path))
+        return self._history.get_file_history(
+            repo, repo_path, path, since, limit, until, is_dir=is_dir
+        )
+
+    def get_file_diff(  # noqa: PLR0913, RUF100 -- mirrors the HistorySource protocol.
+        self,
+        repo_path: Path,
+        path: Path,
+        ref: str | None,
+        per_commit: bool,
+        since_timestamp: str | None = None,
+        limit: int | None = None,
+        *,
+        summarize_binary: bool = False,
+    ) -> str | list[CommitDiff]:
+        """Return aggregate or individual diffs for a note."""
+        repo = _checked(self._repository(repo_path))
+        return self._history.get_file_diff(
+            repo, path, ref, per_commit, since_timestamp, limit, summarize_binary
+        )
+
+    def get_file_at_ref(self, query: RevisionQuery) -> RevisionContent:
+        """Return the note's content at an ancestral revision."""
+        return self._history.get_file_at_ref(self._repository(query.repo_path), query)
+
+    def committed_revision(self, repo_path: Path, path: Path) -> str | None:
+        """Return the latest matching committed content, if any."""
+        return self._history.committed_revision(self._repository(repo_path), path)

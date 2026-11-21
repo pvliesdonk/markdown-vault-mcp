@@ -1,8 +1,8 @@
 """Rebase-conflict resolution mechanics.
 
-Contract: every function here assumes the CALLER already holds
+Contract: CLI rebase orchestration assumes the CALLER already holds
 ``GitWriteStrategy._lock`` and that a rebase is in progress (or being driven) on
-``git_root``. These functions take no lock of their own -- serialization is the
+``git_root``. Those functions take no lock of their own -- serialization is the
 strategy's responsibility. Subprocess calls are module-qualified
 (``subprocess.run``, or ``run_git_capturing`` from ``git/_run.py``) so the test
 suite's global ``subprocess.run`` monkeypatch still intercepts them.
@@ -32,6 +32,29 @@ if TYPE_CHECKING:
     import collections.abc
 
 logger = logging.getLogger(__name__)
+
+
+def conflict_sibling_name(original: Path, stamp: str, counter: int = 0) -> Path:
+    """Return the relative name for a conflict sibling."""
+    suffix = f"-{counter}" if counter else ""
+    return original.with_name(
+        f"{original.stem}.conflict-mcp-{stamp}{suffix}{original.suffix}"
+    )
+
+
+def parse_conflict_note(content: str) -> tuple[frontmatter.Post, Exception | None]:
+    """Parse a note, returning the original parsing error on fallback."""
+    try:
+        return parse_frontmatter(content), None
+    except Exception as exc:
+        return frontmatter.Post(content), exc
+
+
+def with_conflict_metadata(post: frontmatter.Post, other: str, date: str) -> str:
+    """Serialize a parsed note with its conflict metadata."""
+    post.metadata["conflict_with"] = other
+    post.metadata["conflict_date"] = date
+    return frontmatter.dumps(post, sort_keys=False)
 
 
 def resolve_rebase_conflicts(
@@ -411,28 +434,21 @@ def write_conflict_files(
 
     for rel_path, mcp_content in saved:
         original = Path(rel_path)
-        conflict_name = f"{original.stem}.conflict-mcp-{timestamp}{original.suffix}"
-        conflict_rel = str(original.parent / conflict_name)
+        conflict_rel = str(conflict_sibling_name(original, timestamp))
 
         # --- Write conflict file (MCP version) ---
-        try:
-            post = parse_frontmatter(mcp_content)
-        except Exception:
-            # If frontmatter parsing fails, treat as plain content.
+        post, parse_error = parse_conflict_note(mcp_content)
+        if parse_error is not None:
             logger.warning(
                 "git_conflict_frontmatter_parse_failed path=%s fallback=plain_content",
                 conflict_rel,
-                exc_info=True,
+                exc_info=parse_error,
             )
-            post = frontmatter.Post(mcp_content)
-
-        post.metadata["conflict_with"] = rel_path
-        post.metadata["conflict_date"] = conflict_date
 
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
         conflict_abs.write_text(
-            frontmatter.dumps(post, sort_keys=False), encoding="utf-8"
+            with_conflict_metadata(post, rel_path, conflict_date), encoding="utf-8"
         )
 
         # --- Update original file with conflict_with frontmatter ---
@@ -453,20 +469,17 @@ def write_conflict_files(
                 # and skips just this original's update instead of crashing the
                 # whole pull.
                 content = read_text_utf8(original_abs)
-                try:
-                    orig_post = parse_frontmatter(content)
-                except Exception:
+                orig_post, parse_error = parse_conflict_note(content)
+                if parse_error is not None:
                     logger.warning(
                         "git_conflict_original_frontmatter_parse_failed "
                         "path=%s fallback=plain_content",
                         rel_path,
-                        exc_info=True,
+                        exc_info=parse_error,
                     )
-                    orig_post = frontmatter.Post(content)
-                orig_post.metadata["conflict_with"] = conflict_rel
-                orig_post.metadata["conflict_date"] = conflict_date
                 original_abs.write_text(
-                    frontmatter.dumps(orig_post, sort_keys=False), encoding="utf-8"
+                    with_conflict_metadata(orig_post, conflict_rel, conflict_date),
+                    encoding="utf-8",
                 )
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):

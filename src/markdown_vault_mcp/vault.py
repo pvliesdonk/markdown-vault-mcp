@@ -729,6 +729,9 @@ class Vault:
             pause_writes=self.pause_writes,
         )
         self._git_strategy.set_commit_observer(reconciler.note_own_commit)
+        checkout_observer = getattr(self._git_strategy, "set_checkout_observer", None)
+        if checkout_observer is not None:
+            checkout_observer(lambda: reconciler.mark_reconciled(None))
         return reconciler
 
     def _build_facets(self, settings: VaultSettings) -> None:
@@ -957,7 +960,7 @@ class Vault:
             yield
 
     def sync_from_remote_before_index(self) -> None:
-        """One-time git fetch + ff-only update before build_index().
+        """One-time git fetch and backend reconciliation before build_index().
 
         Intended to run during server startup before the initial index build.
         No reindex is triggered here: on a cold start build_index() will scan

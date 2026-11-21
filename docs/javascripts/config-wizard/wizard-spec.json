@@ -897,6 +897,14 @@
       "advancedGroup": "Embeddings"
     },
     {
+      "id": "git_backend",
+      "label": "Git Backend",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_BACKEND",
+      "help": "Git backend: `cli` (default) or `libgit2`.",
+      "advancedGroup": "Git sync"
+    },
+    {
       "id": "git_token",
       "label": "Git Token",
       "type": "text",

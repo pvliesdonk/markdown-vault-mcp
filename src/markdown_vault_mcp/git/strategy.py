@@ -2531,6 +2531,19 @@ class _CommitIdentity:
     author_email: str | None = None
 
 
+def _batch_subject(
+    root: Path,
+    staged: int,
+    tool_name: str,
+    primary_paths: frozenset[Path] | None,
+    primary: Sequence[tuple[Path, WriteOperation, Path | None]],
+) -> str:
+    if primary_paths is not None and len(primary_paths) == len(primary) == 1:
+        path, operation, old_path = primary[0]
+        return _write_subject(root, path, operation, old_path)
+    return f"{tool_name}: {staged} {'file' if staged == 1 else 'files'}"
+
+
 def _stage_and_commit_batch(
     git_root: Path,
     items: Sequence[WriteBatchItem],
@@ -2620,16 +2633,12 @@ def _stage_and_commit_batch(
         logger.debug("git_batch_no_diff tool=%s", tool_name)
         return
 
-    noun = "file" if staged == 1 else "files"
-    subject = f"{tool_name}: {staged} {noun}"
+    subject = _batch_subject(git_root, staged, tool_name, primary_paths, primary)
     if folder_move is not None:
         old_dir, new_dir = folder_move
         old_name = _folder_subject_path(old_dir, git_root)
         new_name = _folder_subject_path(new_dir, git_root)
         subject = f"{tool_name}: {old_name} -> {new_name}"
-    elif primary_paths is not None and len(primary_paths) == len(primary) == 1:
-        path, operation, old_path = primary[0]
-        subject = _write_subject(git_root, path, operation, old_path)
     _commit_staged(root, subject, identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 

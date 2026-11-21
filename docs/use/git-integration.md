@@ -17,6 +17,57 @@ Use this guide to choose and configure the right git mode for your deployment.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
 
+## Native Git backend
+
+The default backend invokes the Git CLI. To select the optional native backend,
+install `"markdown-vault-mcp[libgit2]"` and set
+`MARKDOWN_VAULT_MCP_GIT_BACKEND=libgit2`. The setting applies to managed,
+token-unmanaged and commit-only modes. Set it to `cli` to return to the default.
+
+The native backend does not execute Git hooks, external clean filters, Git LFS,
+or signing commands. It refuses unsupported repository settings and executable
+hooks at startup. It refuses effective external filters and encoding attributes
+at startup and before checkout. Native sync refuses existing or incoming Git LFS
+filters even if the local LFS driver is absent. Shallow and sparse repositories
+are refused for native sync. Incoming attributes are evaluated from the fetched
+index. If an incoming change to a checked-out `.gitattributes` coincides with a
+file conflict, native sync refuses with the CLI fallback because the native merge
+driver can still see checkout rules. Unchanged and conflict-free attribute edits
+remain supported. During the initial fetch, a detected unsupported incoming
+capability aborts startup with guidance to use the CLI backend. Later background
+pulls report the refusal in sync health instead. Transient fetch failures remain
+sync outcomes rather than startup configuration errors.
+`GIT_LFS` does not enable LFS in this backend. SSH remotes are
+refused because native host key verification is unavailable; use the CLI backend
+for SSH. A configured `core.sshCommand` is also refused for native sync.
+Local-path remotes with executable server hooks are refused for push because
+libgit2's local transport does not execute them. When a branch has no remote-tracking
+ref, an interactive push reports `no_remote` with setup guidance; automatic
+publication can still push the first commit to an empty remote. For an empty
+HTTPS remote, native clone cannot read the remote default branch before its first
+commit, so its initial branch follows the local Git default.
+
+A divergent pull replays local commits onto the fetched branch in memory. Conflicting local notes
+are saved as `.conflict-mcp-*` siblings, while the original keeps remote content
+and cleanly replayed local edits. A clean replay reports the `rebased` result
+reason. Local-only merge commits are refused before replay because their
+resolutions cannot safely be preserved; use the CLI backend for those. A local
+deletion that conflicts with a remote edit is also refused; reconcile that
+conflict manually before retrying. If a later local rename or deletion leaves a
+conflicted path absent from the final local tree, native sync refuses rather than
+save an earlier version as the sibling. Reconcile manually or use the CLI backend.
+Repeated conflicts on one path retain the final local version in one sibling.
+If the remote deleted the original, the saved local sibling's `conflict_with`
+names that now-missing path; there is no original file to link back to it.
+The `conflict_resolution_failed` pull reason also covers refusals such as
+overlapping local changes and unsupported capabilities; read `detail` for the
+specific cause and recovery guidance.
+Checkout refuses overlapping uncommitted changes and preserves unrelated work.
+If checkout or reference publication fails, the store restores the affected paths
+and invalidates search for reindexing. If restoration also fails, HEAD remains
+unchanged and the working tree may need manual cleanup; search refreshes from disk. See the [local store API](../reference/api/git.md#local-libgit2-store)
+for native history and revision-query limitations.
+
 ## Runtime Git version
 
 For a Git-backed vault, startup logs `git_runtime_version` at INFO with the
@@ -384,7 +435,7 @@ anything new on origin?") without risking an in-conversation conflict.
 The preview classifies the clone against the remote before predicting. A
 history that has moved on both locally and on the remote reports
 `fast_forward=false` with `reason="diverged"`, which is the signal that the
-real pull would rebase and may end in sibling resolution or fail outright.
+real pull would reconcile and may end in sibling resolution or fail outright.
 A clone with nothing to pull (up to date, or carrying only unpushed local
 commits) reports `would_apply=false`. The push leg has no safe local
 "would this be accepted" probe, so a dry-run push always returns
@@ -403,9 +454,8 @@ commits) reports `would_apply=false`. The push leg has no safe local
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
       path; their vault-relative paths are listed in
       `pull.conflict_files`.
-    - `pull.commits_pulled` is `0` on this path because the rebase
-      replays your local commits *on top of* the remote tip — the
-      counting model only reports linear-history catch-ups.
+    - `pull.commits_pulled` is `0` on this path; the counting model only
+      reports linear-history catch-ups.
 
     The LLM (or a downstream agent) is expected to read the listed
     sibling(s), reconcile the local content against the remote, and
@@ -463,10 +513,8 @@ it for a shared vault. The server does not add this attribute for you.
 
 ### Where merge drivers apply
 
-In managed mode, a diverged pull first runs native `git rebase`, and Git
-applies the repository's merge attributes during that rebase as it does in
-any other merge. A conflict that Git resolves there never reaches the
-server's sibling resolver.
+The CLI backend rebases a diverged pull; the native backend replays local commits
+in memory. Both apply supported merge attributes before the sibling resolver.
 
 If Git still reports paths with unresolved conflicts, the server's resolver
 does not call merge drivers again: it preserves the local versions as siblings

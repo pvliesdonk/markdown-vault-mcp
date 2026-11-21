@@ -503,6 +503,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
+| `MARKDOWN_VAULT_MCP_GIT_BACKEND` | `cli` | No | Git backend: `cli` (default) or `libgit2`. |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | (none) | No | Token/password for HTTPS git auth; remotes must be HTTPS when set. |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
