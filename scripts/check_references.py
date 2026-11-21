@@ -5,7 +5,7 @@ A reference records how something outside the repository behaves (a markdown
 dialect, git, a file format, a vendor API) so an agent reads it instead of
 re-deriving it from parametric memory.  The ``researching-references`` skill
 describes how one is written; the directory is an Open Knowledge Format
-(OKF v0.2) bundle, and this script enforces the part of that contract which
+(OKF v0.3) bundle, and this script enforces the part of that contract which
 can be checked mechanically:
 
 * the YAML frontmatter carries every key in ``REQUIRED_KEYS``; ``type`` is
@@ -52,7 +52,7 @@ import yaml
 DEFAULT_ROOT = Path("docs/design/reference")
 SKIPPED_NAMES = frozenset({"README.md", "index.md", "log.md"})
 REFERENCE_TYPE = "Reference"
-OKF_VERSION = "0.2"
+OKF_VERSION = "0.3"
 REQUIRED_KEYS: tuple[str, ...] = (
     "type",
     "title",
@@ -77,8 +77,17 @@ _PIN_RE = re.compile(
     r"^(?P<file>tests/[^:\s]+\.py)::(?P<name>(?:Test[A-Za-z0-9_]*::)*test[A-Za-z0-9_]*)$"
 )
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-# OKF actor convention: `human:<id>`, `process:<id>`, or `<producer>/<version>`.
-_ACTOR_RE = re.compile(r"^(?:human:\S+|process:\S+|[^\s/]+/[^\s/]+)$")
+# OKF 0.3 §7: an actor is `<scheme>:<id>` with an opaque id, or
+# `<producer>/<version>`; it defines no grammar for either part, so any
+# string with a `:` or `/` is one (#2430, as the server reads it since #2407).
+_ACTOR_SEPARATORS = (":", "/")
+
+
+def _is_actor(by: str) -> bool:
+    """Whether *by* has either OKF actor form."""
+    return any(separator in by for separator in _ACTOR_SEPARATORS)
+
+
 # The date is stripped where it is read: a trailing `\s*` after a lazy capture
 # backtracks quadratically on a long run of spaces.
 _LOG_HEADING_RE = re.compile(r"^## (?P<date>.*)$", re.MULTILINE)
@@ -117,11 +126,31 @@ class Reference:
 
     @property
     def trust_tier(self) -> str:
-        """OKF trust tier derived from ``verified``: unverified, machine-confirmed, human-reviewed."""
-        entries = _verified_entries(self.meta)
-        if any(str(e.get("by", "")).startswith("human:") for e in entries):
+        """OKF 0.3 §5.3 trust tier: unverified, machine-confirmed, human-reviewed.
+
+        Only current events count: an ``at`` equal to or later than
+        ``generated.at``, or any event when ``generated`` is absent. When
+        ``generated`` is present without a usable ``at``, no event is current,
+        as the server reads it (#2409, #2430).
+        """
+        entries = [
+            e
+            for e in _verified_entries(self.meta)
+            if _is_actor(str(e.get("by") or "")) and _is_current(self.meta, e)
+        ]
+        if any(str(e["by"]).startswith("human:") for e in entries):
             return "human-reviewed"
         return "machine-confirmed" if entries else "unverified"
+
+
+def _is_current(meta: dict[str, Any], entry: dict[str, Any]) -> bool:
+    """Whether a ``verified`` event is current under OKF 0.3 §5.3."""
+    generated = meta.get("generated")
+    if generated is None or generated in ("", []):
+        return True
+    since = _as_instant(generated.get("at")) if isinstance(generated, dict) else None
+    at = _as_instant(entry.get("at"))
+    return since is not None and at is not None and at >= since
 
 
 def parse_reference(path: Path, text: str) -> Reference:
@@ -265,11 +294,11 @@ def _check_actor_entry(label: str, entry: object) -> list[str]:
     if not isinstance(entry, dict):
         return [f"`{label}` must be a mapping with `by` and `at`"]
     problems: list[str] = []
-    by = str(entry.get("by") or "").strip()
-    if not _ACTOR_RE.match(by):
+    by = str(entry.get("by") or "")
+    if not _is_actor(by):
         problems.append(
             f"`{label}.by` must follow the OKF actor convention "
-            f"(human:<id>, process:<id> or <producer>/<version>), got {by!r}"
+            f"(<scheme>:<id> or <producer>/<version>), got {by!r}"
         )
     if _as_instant(entry.get("at")) is None:
         problems.append(

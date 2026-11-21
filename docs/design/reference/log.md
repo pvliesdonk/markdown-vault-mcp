@@ -2,6 +2,12 @@
 
 ## 2026-11-21
 
+- The bundle now declares `okf_version: "0.3"` (#2439), and
+  `scripts/check_references.py` reads it by OKF 0.3: any `<scheme>:<id>`
+  actor, and only current reviews in the trust tier (#2430). [Negative
+  outcomes and faults](negative-outcomes-and-faults.md) now reads as
+  unverified: its refute pass (15:20) predates its `generated.at` (15:30).
+  No page claim changed.
 - [Open Knowledge Format v0.3](okf-v0.3.md): departure 17 fixed by #2418
   with the account holder's definition of a trivial edit. No spec claim
   changed.

@@ -49,8 +49,8 @@ history covers refusals, identity, and credentials, not branching strategy.
 Copy `reference-template.md` from this skill's directory to
 `docs/design/reference/<slug>.md`. The directory is an [Open Knowledge
 Format](https://github.com/pvliesdonk/claude-plugins/tree/main/plugins/open-knowledge-format)
-v0.2 bundle: every page is a concept of `type: Reference`, the root `index.md`
-declares `okf_version: "0.2"` and lists the pages, and `log.md` records each
+v0.3 bundle: every page is a concept of `type: Reference`, the root `index.md`
+declares `okf_version: "0.3"` and lists the pages, and `log.md` records each
 research pass under a `## YYYY-MM-DD` heading, newest first. Any OKF consumer
 (a vault server, the plugin's `validate_okf.py`) therefore reads trust and
 staleness from the same fields the checker enforces. The frontmatter is the
@@ -119,7 +119,7 @@ Nothing below requires a particular agent or a workflow engine.
    claim and link the design-doc section that decides it.
 7. **Date and wire in.** Fill `generated`, `subject_version`, `valid_for`,
    `stale_after`; add a `verified` entry for the refute pass. Add the page
-   to the root `index.md` (create it with `okf_version: "0.2"` on the first
+   to the root `index.md` (create it with `okf_version: "0.3"` on the first
    page) and a `## YYYY-MM-DD` entry to `log.md`. Point at the reference
    from the module docstring of the code that depends on it and from the
    design-doc section it informs; an agent fixing that code reads the
