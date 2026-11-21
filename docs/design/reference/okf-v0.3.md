@@ -96,6 +96,10 @@ where the account holder ruled that a departure from the standard is a bug.
   Producers MUST NOT write duplicate keys; consumers MAY reject them.
   Producers SHOULD quote values that look like numbers or booleans.
   [source: spec] (§4)
+  [pins: tests/test_scanner.py::TestParseFrontmatterYaml12CoreSchema::test_okf_03_example_block, tests/test_yaml12.py::TestCoreSchemaScalars::test_plain_scalar_resolution]
+  Read by the YAML 1.2 core schema since #2415: `parse_frontmatter` swaps
+  python-frontmatter's handler for one loading with
+  `utils/yaml12.Yaml12CoreLoader` (PyYAML's SafeLoader resolves by YAML 1.1).
 - "A producer that modifies an existing file SHOULD NOT re-serialize
   values that it did not change." [source: spec] (§4)
 - `type` is "the only key that is always required". "Consumers MUST accept
@@ -305,7 +309,7 @@ are named where they exist; a fix rewrites them.
 | 10 | Root `index.md` keys (§8.1) | `okf_version` | `okf_version` | + title, description, license, extensions | fixed: the root may carry any keys; only a folder index's block is `index_frontmatter` | stricter | #2414 (fixed) |
 | 11 | `log.md` frontmatter (§9) | silent | silent | none | audit fixed (`log_frontmatter`, #2413); generators seed it under `required_frontmatter` | lenient / producer | #2413 (audit), #1438 (032) |
 | 12 | Log heading shape (§9, §11.1 rule 2) | MUST + conformance | MUST + conformance | MUST + conformance | fixed: `log_heading_shape` is a conformance finding | lenient | #2413 (fixed) |
-| 13 | YAML 1.2 core schema (§4) | silent | silent | MUST | PyYAML 1.1: `yes`/`on` → `True`, `1_000` → 1000, `0o17` → string | MUST | none |
+| 13 | YAML 1.2 core schema (§4) | silent | silent | MUST | fixed by #2415: `parse_frontmatter` resolves plain scalars by the 1.2 core schema (`yes`/`on` stay strings, `1_000` a string, `0o17` 15, `012` 12, `1:30` a string, date-times strings, a leap second no longer fails the block); was PyYAML 1.1 | MUST | #2415 (fixed) |
 | 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | fixed: external and reported broken (account holder, 2026-11-21); stored as `../x.md`, never resolved or read. It was clamped, so `../../x.md` from `a/n.md` resolved to `x.md` | MUST NOT | #2416 (fixed) |
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | fixed: `50%25%20done/a%23b%20(c).md` (was `50%%20done/a\#b%20(c).md`) | MUST | #2417 (fixed) |
 | 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |

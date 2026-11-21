@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
+from frontmatter.default_handlers import YAMLHandler as _FrontmatterYAMLHandler
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import (
@@ -62,6 +63,7 @@ from markdown_vault_mcp.utils.links import (
     iter_reference_targets as _iter_reference_targets,
 )
 from markdown_vault_mcp.utils.text import decode_utf8
+from markdown_vault_mcp.utils.yaml12 import Yaml12CoreLoader
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -798,6 +800,27 @@ class MalformedFrontmatterError(yaml.YAMLError):
     """
 
 
+class _Yaml12CoreHandler(_FrontmatterYAMLHandler):
+    """python-frontmatter's YAML handler loading under the YAML 1.2 core schema.
+
+    OKF 0.3 §4: "The frontmatter MUST parse as a YAML 1.2 mapping with the
+    core schema." The stock handler calls ``yaml.load(fm, Loader=SafeLoader)``,
+    and SafeLoader resolves plain scalars by YAML 1.1 — ``yes``/``on`` become
+    booleans, ``012`` octal, ``1:30`` sexagesimal, and a leap-second timestamp
+    fails the whole block (#2415). Only ``load`` differs: ``split`` and
+    ``export`` are inherited unchanged, so detection and the write path keep
+    their exact current behaviour.
+    """
+
+    def load(self, fm: str, **kwargs: object) -> Any:
+        """Parse the block with :class:`Yaml12CoreLoader` instead of SafeLoader."""
+        kwargs["Loader"] = Yaml12CoreLoader
+        return super().load(fm, **kwargs)
+
+
+_YAML_12_CORE_HANDLER = _Yaml12CoreHandler()
+
+
 def parse_frontmatter(text: str) -> frontmatter.Post:
     """Parse *text* as markdown-with-frontmatter, one error for one failure.
 
@@ -806,6 +829,11 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     YAML failure propagates as the ``yaml.YAMLError`` it already was; every
     other handler's failure — all of them ``ValueError`` subclasses — is
     re-raised as :class:`MalformedFrontmatterError`, which is one.
+
+    A ``---``-delimited block is read by the YAML 1.2 core schema, as OKF 0.3
+    §4 requires (#2415): the handler detected for the block is swapped for
+    one whose loader resolves plain scalars by YAML 1.2, not PyYAML's default
+    YAML 1.1. JSON and TOML blocks are untouched.
 
     Args:
         text: Raw markdown text, frontmatter block included.
@@ -817,8 +845,15 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
+    # detect_format works on the stripped text, exactly like the re-detection
+    # frontmatter.parse does internally, so leading whitespace before a `---`
+    # block is covered too.
+    candidate = text.decode("utf-8") if isinstance(text, bytes) else text
+    handler = frontmatter.detect_format(candidate.strip(), frontmatter.handlers)
+    if isinstance(handler, _FrontmatterYAMLHandler):
+        handler = _YAML_12_CORE_HANDLER
     try:
-        return frontmatter.loads(text)
+        return frontmatter.loads(text, handler=handler)
     except ValueError as exc:
         # yaml.YAMLError is not a ValueError, so it is never caught here and
         # reaches the caller unchanged.
