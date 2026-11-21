@@ -25,7 +25,7 @@ server follows one OKF version only.
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
 transition. Conflicting policies below, including the exact three switches,
-write stamping, verification deletion and reserved-file admission exceptions,
+write stamping, verification deletion (since removed, #2405) and reserved-file admission exceptions,
 are historical decisions rather than requirements for new implementation.
 Descriptions of shipped behavior remain evidence, not a claim of north-star
 completion.
@@ -508,7 +508,7 @@ what else they can collide with:
 
 | Write | Touches | Can collide with |
 |---|---|---|
-| Stamp the notes it writes itself (`generated`, cleared `verified`) | bytes the server is writing anyway | nothing beyond the write |
+| Stamp the notes it writes itself (`generated`; `verified` kept) | bytes the server is writing anyway | nothing beyond the write |
 | Maintain `index.md` / `log.md` | two files per folder that another party may also maintain | a second maintainer, on every folder |
 | Repair provenance on notes it did not write | any note in the vault | the note's author |
 
@@ -524,7 +524,7 @@ them.
 
 | Question | Switch | Yes | No |
 |---|---|---|---|
-| Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
+| Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set on own `write`/`edit`/`append`, `verified` kept as history; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
 | Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change to a non-reserved note (#1392; a reserved-file change never triggers its own regeneration, #1414), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
 | May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
 
@@ -585,8 +585,8 @@ Tool tags following switches: #1412.
 
   Content writes and verification preserve surviving frontmatter fields in
   order, including nested mappings and mappings inside lists. Replacing
-  `generated` or `verified` retains its slot; an absent field appends, and
-  content writes still remove `verified`. Order and values survive, while
+  `generated` or `verified` retains its slot, and an absent field appends.
+  Order and values survive, while
   comments, quoting and whitespace may change. The serializer boundary is
   recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
@@ -600,11 +600,25 @@ Tool tags following switches: #1412.
   told which note and why rather than being handed the parser's own exception.
   With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
   indexer records the file as a `parse_error` skip (#1408).
-- **Verification clearing** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
-  carrying `verified` clears the `verified` list. Frontmatter-only edits that
-  do not touch the body also clear it; rename does not. This existing write
-  behavior does not establish that a prior review is invalid or that it applies
-  to the current content. The preservation transition is separate work (#1443).
+- **Verification kept as history** (`OKF_WRITE`): a content write leaves
+  `verified` as it was. OKF 0.3 §5.3: "Earlier events stay in the file as
+  history." The write moves `generated.at`, and a reader counts only the
+  events at or after it toward the tier, so a review recorded before the
+  write stops counting without being erased (#2405). Clearing on write was
+  the earlier decision; it removed evidence the spec keeps, and it is
+  unnecessary once the tier reads only current events. Recording what a
+  kept review applies to is separate work (#1443).
+
+  The kept value is the **stored** note's, never the written text's: the
+  write path reads the file it replaces under the same write lock (`edit`
+  and `append` already hold that text), and the stamp sets `verified` to
+  the stored value exactly, or removes the key when the stored note has
+  none, does not parse, is not UTF-8 or does not exist yet. A content write
+  therefore cannot add, alter or drop a review, and `okf_verify`, behind
+  its `OKF_VERIFY` gate, stays the only path that records one. Taking the
+  text's value instead would let any caller of `write` forge a
+  `human-reviewed` event. Before #2405 the layer removed `verified` on every
+  stamped write, so client-supplied events never landed then either.
 - **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
@@ -925,7 +939,7 @@ so new vaults are conformant from note one.
 | 2 | Query filters (`type`/`status`/`stale`/`trust_tier`), graph `type` field | 1 |
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
-| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification clearing, `okf_verify` | 1 |
+| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification clearing (removed by #2405), `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only startup diagnostic (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |

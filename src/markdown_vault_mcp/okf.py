@@ -1419,16 +1419,52 @@ def okf_timestamp(now: _dt.datetime) -> str:
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
-def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
-    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
+#: Marks a stored note that carries no readable ``verified`` key, as distinct
+#: from one whose stored value is ``None``.
+_NO_STORED_VERIFIED = object()
+
+
+def _stored_verified(stored: str | None) -> object:
+    """Return the ``verified`` value of the stored note, as stored.
+
+    Args:
+        stored: The note's text on disk before this write, or ``None`` for a
+            new note.
+
+    Returns:
+        The stored value, kept exactly (malformed values included: they are
+        the note's history, not this write's to judge), or
+        ``_NO_STORED_VERIFIED`` when there is none to keep: a new note, a
+        stored note without the key, or one whose block does not parse.
+    """
+    if stored is None:
+        return _NO_STORED_VERIFIED
+    try:
+        meta = parse_frontmatter(stored).metadata
+    except (yaml.YAMLError, ValueError) as exc:
+        # The write itself parsed, so it lands; the history that cannot be
+        # read cannot be carried across, and that loss is worth a line.
+        logger.warning("okf_write_stored_verified_unreadable error=%s", exc)
+        return _NO_STORED_VERIFIED
+    return meta.get("verified", _NO_STORED_VERIFIED)
+
+
+def apply_okf_write_stamp(
+    text: str, *, actor: str, now: _dt.datetime, stored: str | None = None
+) -> str:
+    """Stamp ``generated: {by, at}`` and carry the stored ``verified`` across.
 
     The enforced-write layer's core transform (design §6). Operates on the final
     file text (frontmatter plus body), so it is uniform across the ``write``
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write; ``verified`` is dropped without assessing whether a prior review
-    applies; ``sources`` and every other field are untouched.
+    write. ``verified`` is history: OKF 0.3 §5.3 leaves earlier events in the
+    file, and a reader compares each event's ``at`` with ``generated.at`` to
+    decide which are current (#2405). It is taken from *stored*, never from
+    *text*, so a write neither erases recorded reviews nor adds one of its
+    own; ``okf_verify`` is the only path that records a review. ``sources``
+    and every other field are untouched.
     Surviving fields retain their mapping order, including nested mappings;
     a new ``generated`` field appends, while replacing it retains its slot.
     YAML comments and formatting are not retained on serialization.
@@ -1440,17 +1476,24 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
             ``markdown-vault-mcp/<version>``.
         now: The instant of the write, timezone-aware (spelled by
             :func:`okf_timestamp`).
+        stored: The note's text on disk before this write, read under the
+            same write lock; ``None`` for a new note, which leaves the result
+            without ``verified``.
 
     Returns:
         The stamped file text, or *text* unchanged when the resulting frontmatter
-        is identical (the same actor and instant, no ``verified``) — so a
-        repeated stamp keeps the note's exact bytes and YAML formatting.
+        is identical (the same actor and instant, the stored ``verified``) — so
+        a repeated stamp keeps the note's exact bytes and YAML formatting.
     """
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
     new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
-    new_meta.pop("verified", None)
+    kept = _stored_verified(stored)
+    if kept is _NO_STORED_VERIFIED:
+        new_meta.pop("verified", None)
+    else:
+        new_meta["verified"] = kept
     if new_meta == meta:
         return text
     return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)

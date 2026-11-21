@@ -26,7 +26,7 @@ before reading their inputs (#1464); a refresh error refuses the transform.
 Every write they issue is entered under
 :func:`~markdown_vault_mcp._okf_write.okf_write_suppressed`, so on a vault
 that *does* run the enforced-write layer a mechanical rewrite neither stamps
-``generated`` nor clears ``verified``. That belongs here rather than in the
+``generated`` nor otherwise changes provenance. That belongs here rather than in the
 MCP tool handlers, where it used to live: being mechanical is a property of
 the transform, and a library caller of ``vault.writer.okf_*`` gets the same
 rewrite the tool does (#1401).
