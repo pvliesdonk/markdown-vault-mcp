@@ -288,7 +288,7 @@ are named where they exist; a fix rewrites them.
 |---|------|----------|---------|-----|--------|-------|-------|
 | 1 | Trust tier from current events only (§5.3) | every event counts | every event counts | required | counts every event: a human event older than `generated.at` gives human-reviewed | MUST | none |
 | 2 | Actor schemes (§7) | 2 schemes | 2 schemes | any `<scheme>:<id>`, id opaque | only `human:`/`process:`; `team:x`, `svc:x` and an id with a tab are malformed, so the tier is unverified | MUST | #2407 (narrower) |
-| 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | `stale: false`, and `stale=false` matches it | MUST NOT | none |
+| 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | fixed by #2410: `stale: true`, so `stale=false` excludes it and it is downweighted | MUST NOT | #2410 (fixed) |
 | 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | fixed by #2404: read as 00:00 UTC (was the server-local day, stale an hour early at 00:30+01:00) | defined (no keyword) | #2404 (inverted) |
 | 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | fixed by #2404: recorded, read as 00:00 UTC (was malformed, the event ignored and the tier unverified) | valid form (no keyword) | #2400 (inverted) |
 | 6 | Null/empty = absent (§11.2) | silent | silent | required | null `stale_after` / `generated` reported malformed; empty `verified` reported `empty` | stated (no keyword) | none |

@@ -194,7 +194,23 @@ frontmatter blob; not persisted):
   in UTC, so `2026-12-31` is stale from `2026-12-31T00:00:00Z` whatever the
   server's zone (#2404; it was the server-local day before); a date-time
   with an offset is that instant; a date-time *without* an offset is not a
-  valid timestamp and reads not stale; absent field → not stale.
+  valid timestamp and is unparseable (next bullet); absent field → not
+  stale.
+- Unparseable `stale_after` → `stale: true` (#2410). OKF 0.3 §5.5: "A
+  consumer MUST NOT treat a `stale_after` value that it cannot parse as
+  fresh. It SHOULD show the value as malformed." The spec defines stale only
+  as `now >= stale_after` and forbids only "fresh", so three readings fit:
+  `stale: true`; a third `stale` value; or leaving `stale: false` and
+  excluding the note from `stale=false`. A third value or a filter-only
+  exclusion still has to act stale in the ranking downweight and the stats
+  `stale_count`, and `false` there is exactly the fresh treatment the MUST
+  NOT forbids. The boolean has one not-fresh value, so the server reports
+  `stale: true` where the definition is silent, consistently in the
+  annotation, the `stale` filter (`stale=true` matches, `stale=false` does
+  not), the ranking downweight and `stale_count`. The SHOULD is met by
+  `freshness.state: malformed`, which keeps malformed apart from expired.
+  Null, an empty string and an empty list are an absent key (§5.5, §11.2),
+  not unparseable, so they stay `stale: false`.
 - `trust_tier`: a compatibility label for recorded claims, not server
   certification. Only a mapping with an actor (`human:<id>`, `process:<id>`,
   or `<producer>/<version>`; a `human:`/`process:` id is nonempty and may
@@ -210,7 +226,8 @@ frontmatter blob; not persisted):
   `basis` is `no_expiry_supplied`, `unsupported_expiry`, `offset_instant`
   (a date-time with an offset), or `utc_day_start` (a date only, read as
   00:00 UTC). The compatibility `stale: false` includes missing
-  and malformed expiry and therefore does not mean fresh or true.
+  expiry and therefore does not mean fresh or true; unparseable expiry is
+  `stale: true` (#2410).
 - `review`: `state` is `missing`, `empty`, `malformed`, or `recorded`, with
   `recorded_entries`, `malformed_entries`, and `basis: supplied_metadata_only`.
   Mixed lists retain both counts; `recorded` never means applicability to
@@ -332,7 +349,8 @@ existing `filters` → `document_tags` subquery path (AND semantics unchanged):
   absent-or-stable; this is the one filter that cannot be a pure tag lookup
   and needs a NOT-EXISTS branch).
 - `stale=true|false` — `stale_after` is indexed as a tag value;
-  staleness is a date comparison against it at query time.
+  staleness is a date comparison against it at query time, and an
+  unparseable value counts as stale (#2410).
 - `trust_tier=<tier>` — derived from blob fields, so **post-filter** applied
   after candidate retrieval (documented as such; acceptable because trust
   filtering is a triage operation, not a hot search path).
