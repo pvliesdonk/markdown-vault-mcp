@@ -678,7 +678,8 @@ class BrokenLinkInfo:
     Attributes:
         source_path: Relative path of the document containing the broken link.
         source_title: Title of the linking document.
-        target_path: Resolved path the link points to (does not exist).
+        target_path: Resolved path the link points to (does not exist);
+            led by ``..`` when it lies above the vault root (``../x.md``, #2416).
         link_text: Display text of the link.
         link_type: Link syntax: ``"markdown"``, ``"wikilink"``, or ``"reference"``.
         fragment: Heading anchor if present.

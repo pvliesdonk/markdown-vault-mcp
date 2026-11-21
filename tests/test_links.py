@@ -153,8 +153,9 @@ class TestExtractInlineLinks:
         assert links[0].target_path == "escape.md"
 
     def test_traversal_above_root_is_external(self) -> None:
-        """Climbing past the vault root is external, not a link (#2416)."""
-        assert extract_links("[Note](../../../escape.md)", "a/b/c.md") == []
+        """Climbing past the vault root keeps the surplus ``..`` (#2416)."""
+        links = extract_links("[Note](../../../escape.md)", "a/b/c.md")
+        assert [link.target_path for link in links] == ["../escape.md"]
 
     def test_multiple_inline_links(self) -> None:
         """Multiple links in one document are all extracted."""

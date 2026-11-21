@@ -296,7 +296,9 @@ class TestIntroduced:
     def test_queries_the_indexers_spelling_of_the_path(self, tmp_path: Path) -> None:
         reporter = self._reporter(tmp_path, [])
         reporter.introduced("./notes//n.md", [], [])
-        reporter._fts.get_outlinks.assert_called_once_with("notes/n.md")  # type: ignore[attr-defined]
+        reporter._fts.get_outlinks.assert_called_once_with(
+            "notes/n.md", include_external=True
+        )  # type: ignore[attr-defined]
 
     def test_missing_note_has_no_links(self, tmp_path: Path) -> None:
         assert self._reporter(tmp_path, []).note_links("absent.md") == []

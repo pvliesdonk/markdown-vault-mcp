@@ -93,9 +93,10 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
 - **Extension keys:** arbitrary extra frontmatter keys are allowed and MUST
   be preserved on round-trip.
 - **Out-of-root targets:** a link target that climbs above the bundle root
-  is external (§6 of 0.3), so the server keeps no link row for it: no
-  backlink, outlink, broken link or graph edge, and no rename rewrite
-  (#2416; design.md § Link Extraction, path resolution).
+  is external (§6 of 0.3) and broken (account holder, 2026-11-21): never
+  read from disk, never an outlink, backlink or graph edge, never rewritten
+  by a rename, but listed by `get_broken_links` and counted in
+  `broken_link_count` (#2416; design.md § Link Extraction, path resolution).
 - **Out of scope for this server:** Attested Computations (sanctioned
   SQL/Python with executor/attester machinery) — data-warehouse territory.
 

@@ -3,9 +3,10 @@
 OKF 0.3 §6: "A value that resolves to a location outside the bundle root
 is external. Consumers MUST NOT read it from the local file system." The
 resolver used to drop the surplus ``..`` and land on an in-vault note, so
-``../../x.md`` from ``a/n.md`` became an edge to ``x.md``. An external
-target is now what a URL already is: no link row, so no backlink, outlink,
-broken-link entry, graph edge or rename rewrite.
+``../../x.md`` from ``a/n.md`` became an edge to ``x.md``. The account
+holder ruled such a target "External and broken" (2026-11-21): it is never
+a note, an outlink, a backlink, a graph edge or a rename candidate, but its
+row is kept, led by ``..`` (``../x.md``), so the broken-link report lists it.
 """
 
 from __future__ import annotations
@@ -15,7 +16,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.fts_index import FTSIndex
-from markdown_vault_mcp.scanner import _resolve_link_path, extract_links
+from markdown_vault_mcp.scanner import (
+    _resolve_link_path,
+    extract_links,
+    is_out_of_root_target,
+)
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.test_links import make_note
 
@@ -66,13 +71,24 @@ def test_resolver_keeps_a_target_that_reaches_the_root(
         "[[../../x]]",
     ],
 )
-def test_extraction_skips_an_out_of_root_target(body: str) -> None:
-    assert extract_links(body, "a/n.md") == []
+def test_extraction_keeps_an_out_of_root_target_above_the_root(body: str) -> None:
+    """The row names where the target lies relative to the root: ``../x.md``."""
+    [link] = extract_links(body, "a/n.md")
+    assert link.target_path == "../x.md"
+    assert is_out_of_root_target(link.target_path)
 
 
-def test_an_in_root_neighbour_is_still_extracted() -> None:
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [("..", True), ("../x.md", True), ("x.md", False), ("..x.md", False)],
+)
+def test_is_out_of_root_target(path: str, expected: bool) -> None:
+    assert is_out_of_root_target(path) is expected
+
+
+def test_an_in_root_neighbour_resolves_beside_it() -> None:
     links = extract_links("[x](../../x.md) and [y](../y.md)", "a/n.md")
-    assert [link.target_path for link in links] == ["y.md"]
+    assert [link.target_path for link in links] == ["../x.md", "y.md"]
 
 
 def test_vault_wide_lookup_does_not_climb_out() -> None:
@@ -99,7 +115,7 @@ def test_vault_wide_lookup_does_not_climb_out() -> None:
 
 
 class TestThroughAVault:
-    """Every link surface agrees: the external target is not a link."""
+    """External for every link surface, except the broken-link report."""
 
     @staticmethod
     def _vault(tmp_path: Path) -> Vault:
@@ -113,11 +129,29 @@ class TestThroughAVault:
         vault.index.build_index()
         return vault
 
-    def test_no_edge_backlink_or_broken_link(self, tmp_path: Path) -> None:
+    def test_no_outlink_backlink_or_edge(self, tmp_path: Path) -> None:
         vault = self._vault(tmp_path)
         assert vault.graph.get_outlinks("a/n.md") == []
         assert vault.graph.get_backlinks("x.md") == []
-        assert vault.graph.get_broken_links() == []
+        assert vault.graph.get_most_linked() == []
+        assert vault.graph.get_connection_path("a/n.md", "x.md") is None
+
+    def test_reported_as_broken_links(self, tmp_path: Path) -> None:
+        vault = self._vault(tmp_path)
+        broken = vault.graph.get_broken_links()
+        assert [
+            (b.source_path, b.target_path, b.link_type, b.raw_target) for b in broken
+        ] == [
+            ("a/n.md", "../x.md", "markdown", "../../x.md"),
+            ("a/n.md", "../x.md", "wikilink", "../../x"),
+        ]
+        assert vault._fts.count_broken_links() == 2
+
+    def test_its_source_is_an_orphan(self, tmp_path: Path) -> None:
+        """An external target is no outgoing edge, so ``a/n.md`` links nowhere."""
+        vault = self._vault(tmp_path)
+        orphans = {note.path for note in vault.graph.get_orphan_notes()}
+        assert orphans == {"a/n.md", "x.md"}
 
     def test_rename_leaves_the_external_link_alone(self, tmp_path: Path) -> None:
         vault = self._vault(tmp_path)
@@ -126,3 +160,24 @@ class TestThroughAVault:
         result = vault.writer.rename("x.md", "y.md", update_links=True)
         assert result.updated_links == 0
         assert source.read_bytes() == before
+        assert [b.target_path for b in vault.graph.get_broken_links()] == [
+            "../x.md",
+            "../x.md",
+        ]
+
+    def test_refresh_keeps_the_row_above_the_root(self, tmp_path: Path) -> None:
+        """A rescan's vault-wide pass never re-points it onto ``x.md``."""
+        vault = self._vault(tmp_path)
+        vault._fts.resolve_vault_wikilinks()
+        assert len(vault.graph.get_broken_links()) == 2
+
+
+def test_a_write_reports_it_unresolved(tmp_path: Path) -> None:
+    """The write-time check counts it with the broken links, not the outlinks."""
+    (tmp_path / "x.md").write_text("# X\n", encoding="utf-8")
+    vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    vault.index.build_index()
+    result = vault.writer.write(
+        "a/n.md", "[x](../../x.md)\n", report_unresolved_links=True
+    )
+    assert result.unresolved_links == ["../../x.md"]

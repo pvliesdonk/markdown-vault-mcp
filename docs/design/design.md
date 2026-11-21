@@ -2913,7 +2913,7 @@ made:
 - **What is not an escape passes through**: a `%` not followed by two hex
   digits, and `+`, which is a space only in form encoding. A decoded `%2E%2E`
   meets the same root check as a literal `..`, since the decode runs first:
-  one that climbs above the root is external (#2416).
+  one that climbs above the root is external and broken (#2416).
 - **`raw_target` keeps the spelling as written**, because it is what
   `apply_link_replacement` searches for in the file. Only `target_path` is
   decoded.
@@ -3530,8 +3530,8 @@ no scheme to detect. Two or more characters are required before the colon so a
 Windows drive (`C:/notes/x.md`) stays a path; the known cost is that a file
 name shaped like `draft:v2.md` reads as a scheme. The test applies at all three
 extraction sites, wikilinks included. A relative or root-relative target whose
-`..` climbs above the vault root is external too (#2416; Path resolution,
-below). "Pure anchor" covers every spelling of a same-document reference:
+`..` climbs above the vault root is external too, but it is reported broken
+rather than skipped (#2416; Path resolution, below). "Pure anchor" covers every spelling of a same-document reference:
 a markdown destination whose *written* path part — brackets off, fragment
 split before any decoding — is empty (`#heading`, `<#heading>`, in an inline
 link or a reference definition), and the wikilink form `[[#heading]]` (issue
@@ -3604,13 +3604,23 @@ source document's directory. `../sibling.md` from `Journal/2024/today.md` resolv
 to `Journal/sibling.md`. A leading slash makes the target vault-root-relative
 (#969): `/guides/note.md` resolves to `guides/note.md` regardless of the source
 document's location — this is OKF's recommended link style. A target whose
-`..` segments climb above the vault root is external (#2416), as OKF 0.3 §6
-defines it: "A value that resolves to a location outside the bundle root is
-external." It gets no link row, exactly like a URL (Exclusions, above), so it
-is no backlink, outlink, broken link or graph edge, and a rename never
-rewrites it. `../../x.md` from `a/n.md` is external; `../x.md` from `a/n.md`,
-which reaches the root without passing it, resolves to `x.md`. The rule covers
-markdown, reference and `./`/`../` wikilink targets alike. Before #2416 the
+`..` segments climb above the vault root is external and broken (#2416; the
+account holder's ruling, 2026-11-21). External is OKF 0.3 §6's word: "A value
+that resolves to a location outside the bundle root is external. Consumers MUST
+NOT read it from the local file system." Its link row keeps the surplus `..`
+in front of what remains, so `../../x.md` from `a/n.md` is stored as
+`target_path` `../x.md`, with `raw_target` as written. No note can have that
+path, so the row never resolves, is never read from disk, and is no backlink,
+graph edge or rename candidate; the vault-wide fallback never re-points it.
+`get_outlinks` and the orphan queries leave such rows out
+(`_ABOVE_ROOT_SQL` in `fts_index.py`, mirrored by
+`scanner.is_out_of_root_target`), so a note whose only link climbs out is an
+orphan. The broken-link queries keep them: `get_broken_links`,
+`broken_link_count` in `stats`, and the write-time unresolved-link report all
+list the link, so a mistyped destination stays visible. `../x.md` from
+`a/n.md`, which reaches the root without passing it, resolves to `x.md`. The
+rule covers markdown, reference and `./`/`../` wikilink targets alike. Before
+#2416 the
 surplus `..` was dropped, which landed the link on an unrelated note at the
 root; no recorded reason backed that clamp (it arrived with link extraction
 in #185).

@@ -303,7 +303,7 @@ are named where they exist; a fix rewrites them.
 | 11 | `log.md` frontmatter (§9) | silent | silent | none | audit fixed (`log_frontmatter`, #2413); generators seed it under `required_frontmatter` | lenient / producer | #2413 (audit), #1438 (032) |
 | 12 | Log heading shape (§9, §11.1 rule 2) | MUST + conformance | MUST + conformance | MUST + conformance | fixed: `log_heading_shape` is a conformance finding | lenient | #2413 (fixed) |
 | 13 | YAML 1.2 core schema (§4) | silent | silent | MUST | PyYAML 1.1: `yes`/`on` → `True`, `1_000` → 1000, `0o17` → string | MUST | none |
-| 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | fixed: `..` above the root is external and stores no link row; it was clamped, so `../../x.md` from `a/n.md` resolved to `x.md` | MUST NOT | #2416 (fixed) |
+| 14 | Out-of-root targets are external (§6) | silent | silent | MUST NOT read locally | fixed: external and reported broken (account holder, 2026-11-21); stored as `../x.md`, never resolved or read. It was clamped, so `../../x.md` from `a/n.md` resolved to `x.md` | MUST NOT | #2416 (fixed) |
 | 15 | Written targets are RFC 3986 URI references (§6) | silent | silent | MUST (space, reserved chars); RFC 3986 for `%` | `%` is left literal and `#` is backslash-escaped: `50%%20done/a\#b%20(c).md` | MUST | none |
 | 16 | `verified` kept as history (§5.2, §5.3) | "independent" | "independent" | "stay in the file" | fixed: kept on the server's own `write`/`edit`; the write moves `generated.at` | stated (no keyword) | #2405 (fixed) |
 | 17 | Trivial edit keeps `generated.at` (§5.2) | silent | silent | stated | every `write`/`edit` restamps | producer rule | none |

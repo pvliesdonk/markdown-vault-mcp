@@ -309,7 +309,7 @@ class GraphStore(Protocol):
         ...
 
     def get_outlinks(
-        self, path: str, *, limit: int | None = None
+        self, path: str, *, limit: int | None = None, include_external: bool = False
     ) -> list[dict[str, Any]]:
         """Return the notes *path* links to."""
         ...
