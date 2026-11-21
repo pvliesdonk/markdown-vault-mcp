@@ -178,12 +178,21 @@ def _agent_records(
 
 
 def _recorded_review_text(data: dict[str, Any]) -> str:
-    """Label the existing metadata classification without certifying content."""
+    """Label the existing metadata classification without certifying content.
+
+    A note whose ``review_applicability.state`` is ``none`` (no ``verified``
+    field, or an empty one) has no review to label. Malformed and recorded
+    reviews report ``unknown`` and keep the notice; so does a payload that
+    omits the field, since it cannot rule a review out.
+    """
     annotation = data.get("okf")
     if not isinstance(annotation, dict):
         return ""
     tier = annotation.get("trust_tier")
     if not isinstance(tier, str) or not tier:
+        return ""
+    applicability = annotation.get("review_applicability")
+    if isinstance(applicability, dict) and applicability.get("state") == "none":
         return ""
     return (
         f"Recorded review metadata: {terminal_text(tier)}. "

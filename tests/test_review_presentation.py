@@ -13,11 +13,17 @@ import pytest
 
 from markdown_vault_mcp._cli_output import render_reply
 from markdown_vault_mcp._cli_remote import RemoteReply
+from markdown_vault_mcp.okf import derive_annotation
 
 _NOTICE = "Applicability to current content: unknown."
 _APP_NOTICE = (
     "Supplied verified field. Review applicability to current content: unknown."
 )
+
+
+_NO_REVIEW = {"state": "none", "basis": "no_review_supplied"}
+_MALFORMED = {"state": "unknown", "basis": "malformed_review"}
+_RECORDED = {"state": "unknown", "basis": "no_snapshot_binding"}
 
 
 @pytest.mark.parametrize("tier", ["human-reviewed", "machine-confirmed", "unverified"])
@@ -27,7 +33,7 @@ def test_read_text_labels_recorded_review_without_changing_content(
     data = {
         "path": "note.md",
         "content": "# Changed content\nUnreviewed replacement.",
-        "okf": {"trust_tier": tier},
+        "okf": {"trust_tier": tier, "review_applicability": _RECORDED},
     }
     render_reply("read", RemoteReply(data), "text")
     output = capsys.readouterr()
@@ -39,7 +45,8 @@ def test_read_text_labels_recorded_review_without_changing_content(
 def test_search_text_labels_recorded_review(
     capsys: pytest.CaptureFixture[str], tier: str
 ) -> None:
-    data = [{"path": "note.md", "score": 1.0, "okf": {"trust_tier": tier}}]
+    okf = {"trust_tier": tier, "review_applicability": _RECORDED}
+    data = [{"path": "note.md", "score": 1.0, "okf": okf}]
     render_reply("search", RemoteReply(data), "text")
     output = capsys.readouterr()
     assert output.out == (
@@ -49,7 +56,41 @@ def test_search_text_labels_recorded_review(
 
 
 @pytest.mark.parametrize(
-    "annotation", [None, [], {}, {"trust_tier": None}, {"trust_tier": ""}]
+    ("tier", "applicability"),
+    [
+        ("unverified", _MALFORMED),
+        ("human-reviewed", _RECORDED),
+        ("unverified", _RECORDED),
+        # A payload that cannot rule a review out keeps the notice.
+        ("unverified", None),
+        ("unverified", {}),
+        ("unverified", {"state": "other"}),
+    ],
+)
+def test_supplied_review_keeps_notice(
+    capsys: pytest.CaptureFixture[str], tier: str, applicability: Any
+) -> None:
+    okf: dict[str, Any] = {"trust_tier": tier}
+    if applicability is not None:
+        okf["review_applicability"] = applicability
+    data = {"path": "note.md", "content": "body", "score": 1.0, "okf": okf}
+    notice = f"Recorded review metadata: {tier}. {_NOTICE}"
+    render_reply("read", RemoteReply(data), "text")
+    assert capsys.readouterr().err == notice + "\n"
+    render_reply("search", RemoteReply([data]), "text")
+    assert capsys.readouterr().out == f"  note.md (1.0000)\n    {notice}\n"
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        None,
+        [],
+        {},
+        {"trust_tier": None},
+        {"trust_tier": ""},
+        {"trust_tier": "unverified", "review_applicability": _NO_REVIEW},
+    ],
 )
 def test_absent_review_classification_keeps_text_unchanged(
     capsys: pytest.CaptureFixture[str], annotation: Any
@@ -63,6 +104,26 @@ def test_absent_review_classification_keeps_text_unchanged(
     output = capsys.readouterr()
     assert output.out == "  note.md (1.0000)\n"
     assert not output.err
+
+
+@pytest.mark.parametrize(
+    ("metadata", "notice"),
+    [
+        ({}, False),
+        ({"verified": []}, False),
+        ({"verified": "yes"}, True),
+        ({"verified": [{"by": "human:a"}]}, True),
+        ({"verified": [{"by": "human:a", "at": "2026-01-01"}]}, True),
+    ],
+)
+def test_server_annotation_decides_read_notice(
+    capsys: pytest.CaptureFixture[str], metadata: dict[str, Any], notice: bool
+) -> None:
+    okf = derive_annotation(metadata, include_sources=True)
+    render_reply(
+        "read", RemoteReply({"path": "n.md", "content": "b", "okf": okf}), "text"
+    )
+    assert (_NOTICE in capsys.readouterr().err) is notice
 
 
 def test_review_label_escapes_terminal_controls(
