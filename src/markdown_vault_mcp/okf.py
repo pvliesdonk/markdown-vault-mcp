@@ -27,6 +27,7 @@ Write serialization: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import logging
 import re
 from collections.abc import Callable, Mapping
@@ -296,6 +297,34 @@ def source_entries(metadata: dict[str, Any]) -> list[Any]:
         The ``sources`` entries, empty when the field is absent.
     """
     return _as_list(metadata.get("sources"))
+
+
+def derive_status(metadata: dict[str, Any]) -> str:
+    """Return a note's lifecycle ``status`` as OKF 0.3 §5.4 reads it.
+
+    Absent, null, ``""`` and ``[]`` are the same (§11.2 rule 1) and read as
+    ``stable``. Any other value is kept as written (§11.2 rule 4), and only
+    the exact tokens ``draft``, ``stable`` and ``deprecated`` are the
+    vocabulary: ``Stable`` or a quoted ``" stable "`` is outside it, so it
+    is not ``stable``. A value that is not a string is shown as its JSON
+    text (``3`` → ``"3"``, ``true`` → ``"true"``, a list as a JSON array; a
+    date as its ISO form) so the annotation stays a JSON-safe string a
+    ``status`` filter can match.
+
+    Args:
+        metadata: The note's frontmatter dict.
+
+    Returns:
+        The derived status string.
+    """
+    raw = metadata.get("status")
+    if _is_absent(raw):
+        return OKF_STATUS_DEFAULT
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, _dt.date):
+        return raw.isoformat()
+    return json.dumps(raw, default=str, ensure_ascii=False)
 
 
 def derive_trust_tier(metadata: dict[str, Any]) -> str:
@@ -630,7 +659,8 @@ def derive_annotation(
             ``sources_count``, and only when non-zero.
 
     Returns:
-        The annotation dict: ``status`` (defaulted to ``"stable"``),
+        The annotation dict: ``status`` (per :func:`derive_status`:
+        ``"stable"`` when absent, otherwise the raw value as a string),
         ``stale``, and ``trust_tier`` always; ``type`` only when present
         and non-empty; sources per *include_sources*. ``freshness`` and
         ``review`` describe the supplied evidence and its parsing basis, not
@@ -652,12 +682,7 @@ def derive_annotation(
     note_type = metadata.get("type")
     if isinstance(note_type, str) and note_type.strip():
         annotation["type"] = note_type.strip()
-    status = metadata.get("status")
-    annotation["status"] = (
-        status.strip()
-        if isinstance(status, str) and status.strip()
-        else OKF_STATUS_DEFAULT
-    )
+    annotation["status"] = derive_status(metadata)
     annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)
@@ -736,7 +761,8 @@ def matches_okf_filters(
 
     Semantics (design §4): ``status`` matches the derived lifecycle value,
     so ``status=stable`` matches notes with *absent* ``status`` (the spec
-    default); ``stale`` compares the derived staleness; ``trust_tier``
+    default) and never a value outside the vocabulary, which matches its
+    raw text instead (:func:`derive_status`); ``stale`` compares the derived staleness; ``trust_tier``
     compares the derived tier. Filters compose with AND.
 
     Args:
@@ -943,12 +969,7 @@ def _evaluate_note(
         acc.conformant += 1
     else:
         acc.missing_type.add(rel)
-    status = metadata.get("status")
-    if (
-        isinstance(status, str)
-        and status.strip()
-        and status.strip() not in OKF_STATUS_VALUES
-    ):
+    if derive_status(metadata) not in OKF_STATUS_VALUES:
         acc.unknown_status.add(rel)
     if "[[" in body:
         acc.wikilinks.add(rel)

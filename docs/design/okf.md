@@ -297,6 +297,15 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
 
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
+  OKF 0.3 §5.4: "A value that is not in this list is not `stable`" and
+  consumers "SHOULD show the raw value" (#2420). Absent, null, `""` and
+  `[]` read as `stable` (§11.2 rule 1). The vocabulary is the exact tokens
+  `draft`, `stable`, `deprecated`: no trimming or case folding, so a quoted
+  `" stable "` or `Stable` is outside it. A non-string value is shown as
+  its JSON text (`3` → `"3"`, `true` → `"true"`, a list as a JSON array, a
+  YAML date in ISO form), so `okf.status` is always a string, a `status`
+  filter matches that text, `status=stable` never matches it, and the
+  audit counts it under `unknown_status`.
 - `attribution` and `generation` (#2386, replacing #2069's true-only
   `malformed_sources`/`malformed_generated` flags before release): the
   provenance fields reported in the evidence objects' vocabulary, shared by
