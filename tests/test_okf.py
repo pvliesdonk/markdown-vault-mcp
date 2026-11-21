@@ -273,8 +273,17 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
         ({"stale_after": dt.date(2027, 1, 1)}, False),
         ({"stale_after": "2026-01-01"}, True),
         ({"stale_after": " 2026-01-01 "}, True),
-        ({"stale_after": "not-a-date"}, False),
-        ({"stale_after": 20260101}, False),
+        # A value the server cannot parse is never fresh (OKF 0.3 §5.5,
+        # #2410): it reads as stale.
+        ({"stale_after": "not-a-date"}, True),
+        ({"stale_after": "soon"}, True),
+        ({"stale_after": 20260101}, True),
+        # Null, an empty string and an empty list are an absent key
+        # (§5.5, §11.2), not unparseable; an empty mapping is unparseable.
+        ({"stale_after": None}, False),
+        ({"stale_after": ""}, False),
+        ({"stale_after": []}, False),
+        ({"stale_after": {}}, True),
         # An instant with an offset is compared as one (OKF v0.2 as amended
         # 2026-08-21: "stale when now >= stale_after"; #1373). NOW is
         # 2026-08-07T08:00:00Z.
@@ -287,10 +296,12 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
         # The offset decides, not the calendar day: 2026-08-07T02:00-08:00 is
         # 10:00Z, two hours after NOW.
         ({"stale_after": "2026-08-07T02:00:00-08:00"}, False),
-        # A time with no offset is allowed by neither text of v0.2 and the
-        # amendment says to ignore such a value: treated as absent.
-        ({"stale_after": dt.datetime(2026, 1, 1, 12, 0)}, False),
-        ({"stale_after": "2026-01-01T12:00:00"}, False),
+        # A time with no offset is not a valid OKF timestamp (§5), so it
+        # cannot be parsed and is never fresh (§5.5, #2410), even when it
+        # lies in the future.
+        ({"stale_after": dt.datetime(2026, 1, 1, 12, 0)}, True),
+        ({"stale_after": "2026-01-01T12:00:00"}, True),
+        ({"stale_after": "2099-01-01T00:00:00"}, True),
     ],
 )
 def test_derive_stale(metadata: dict, expected: bool) -> None:
@@ -604,6 +615,10 @@ def test_parse_stale_filter_rejects_garbage() -> None:
         ({}, {"stale": "false"}, True),
         ({"stale_after": "2000-01-01"}, {"stale": "true"}, True),
         ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
+        # An unparseable value is never fresh (§5.5, #2410).
+        ({"stale_after": "soon"}, {"stale": "false"}, False),
+        ({"stale_after": "soon"}, {"stale": "true"}, True),
+        ({"stale_after": "2026-01-01T00:00:00"}, {"stale": "false"}, False),
         ({}, {"trust_tier": "unverified"}, True),
         (
             {"verified": [{"by": "human:a", "at": "2026-01-01T00:00:00Z"}]},

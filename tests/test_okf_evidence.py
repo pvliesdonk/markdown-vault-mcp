@@ -61,7 +61,8 @@ def test_malformed_expiry_never_means_unexpired(value: Any) -> None:
         "state": "malformed",
         "basis": "unsupported_expiry",
     }
-    assert annotation["stale"] is False
+    # Never fresh (OKF 0.3 §5.5, #2410); null, "" and [] are absent (§11.2).
+    assert annotation["stale"] is (value not in (None, "", []))
     assert annotation["recorded"] == {"stale_after": value}
 
 
@@ -174,7 +175,8 @@ def test_timezone_object_without_offset_is_naive() -> None:
     assert result["review"]["state"] == "malformed"
     assert result["freshness"]["state"] == "malformed"
     assert derive_trust_tier(metadata) == "unverified"
-    assert derive_stale(metadata, now=NOW) is False
+    assert derive_stale(metadata, now=NOW) is True
+    assert result["stale"] is True
     assert result["recorded"] == metadata
 
 

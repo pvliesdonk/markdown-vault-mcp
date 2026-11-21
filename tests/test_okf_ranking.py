@@ -23,6 +23,7 @@ from markdown_vault_mcp.okf import (
     OKF_DEPRECATED_WEIGHT,
     OKF_RESERVED_WEIGHT,
     OKF_STALE_WEIGHT,
+    derive_annotation,
     okf_downweight_factor,
 )
 from markdown_vault_mcp.vault import VaultSettings
@@ -52,6 +53,12 @@ class TestOkfDownweightFactor:
     def test_stale(self) -> None:
         f = okf_downweight_factor({"status": "stable", "stale": True}, "n.md")
         assert f == OKF_STALE_WEIGHT
+
+    @pytest.mark.parametrize("value", ["soon", "2026-01-01T00:00:00"])
+    def test_unparseable_stale_after_is_downweighted(self, value: str) -> None:
+        # Never fresh (OKF 0.3 §5.5, #2410), so it ranks as stale.
+        annotation = derive_annotation({"stale_after": value})
+        assert okf_downweight_factor(annotation, "n.md") == OKF_STALE_WEIGHT
 
     @pytest.mark.parametrize("name", ["index.md", "log.md", "guides/log.md"])
     def test_reserved_file(self, name: str) -> None:
