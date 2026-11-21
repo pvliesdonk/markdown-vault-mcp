@@ -99,6 +99,23 @@ A resource may describe a scope rather than a location. URLs and paths are also
 accepted. The inspector does not open resources or check whether they exist. It
 does not assess whether a source supports a claim or whether the claim is true.
 
+### Find notes citing a source
+
+Call `find_citing_notes(resource="https://example.org/source")` to find indexed
+notes with literal footnote labels matching a source record for that
+exact resource. The result includes label occurrence counts and unresolved or
+ambiguous labels, plus labels whose matched source has no valid resource, in notes
+declaring the resource. Results are unbounded. When OKF is active, reserved
+`index.md` and `log.md` files are excluded. Body links alone do not count.
+On the first writer startup after upgrading from index semantics version 12, the
+index rebuilds. `unconverted_notes` counts indexed notes whose citation rows were
+not derived with the current rules, such as a note that could not be re-read
+during that rebuild; they are left out of the result. An ordinary reindex skips
+unchanged notes, so if the count stays above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild.
+The lookup does not fetch resources or assess whether they support a claim.
+
 ### Syntax coverage
 
 The reader uses CommonMark block and inline parsing with a small literal marker

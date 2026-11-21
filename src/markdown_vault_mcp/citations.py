@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from markdown_it.rules_block import StateBlock
     from markdown_it.rules_inline import StateInline
 
+CITATION_SYNTAX = "commonmark-literal-footnote-markers-v1"
+CITATION_MARKER_SCOPE = (
+    "Only single-line labels without whitespace, brackets or backslashes are "
+    "inspected, outside code, HTML blocks, links, images, wikilinks and footnote "
+    "definitions. Other dialect extensions are not interpreted; absence is not "
+    "an exhaustive citation audit."
+)
+
 # Labels are deliberately literal: no CommonMark reference-label normalization.
 _MARKER = re.compile(r"\[\^([^\s\[\]\\]+)\]")
 _OWN_TOKENS = frozenset({"citation_marker", "citation_wikilink"})
@@ -31,6 +39,20 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class CitationEdge:
+    """A resource declared by a note, or one of its labels.
+
+    A matched label carries its resource; every other label carries ``""`` and
+    belongs to each ``declared`` resource of the same note.
+    """
+
+    resource: str
+    label: str
+    status: Literal["matched", "unmatched", "ambiguous", "invalid_resource", "declared"]
+    occurrences: int
+
+
+@dataclass(frozen=True)
 class CitationReport:
     """Literal source metadata joined without fetching or evaluating evidence."""
 
@@ -41,13 +63,10 @@ class CitationReport:
     source_issues: list[str]
     duplicate_ids: list[str]
     unkeyed_source_indices: list[int]
-    syntax: str = "commonmark-literal-footnote-markers-v1"
+    syntax: str = CITATION_SYNTAX
     scope: str = (
         "One returned note text, LF-normalized then UTF-8 hashed; not a raw-file "
-        "etag or portable file identity. Only single-line labels without whitespace, "
-        "brackets or backslashes are inspected, outside code, HTML blocks, links, "
-        "images, wikilinks and footnote definitions. Other dialect extensions "
-        "are not interpreted; absence is not an exhaustive citation audit. "
+        "etag or portable file identity. " + CITATION_MARKER_SCOPE + " "
         "Matches are literal attribution, "
         "not support or truth; unmatched markers may be ordinary footnotes. "
         "Source indices are zero-based, not stable keys; IDs are stable exact strings. "
@@ -180,13 +199,7 @@ def inspect_citation_text(path: str, content: str) -> CitationReport:
         _source_ids(sources) if "sources" in post.metadata else ({}, [], [])
     )
     markers = _markers(strip_frontmatter_block(text))
-    citations = []
-    for label, occurrences in markers.items():
-        indices = ids.get(label, [])
-        status: Literal["matched", "unmatched", "ambiguous"] = "unmatched"
-        if indices:
-            status = "matched" if len(indices) == 1 else "ambiguous"
-        citations.append(Citation(label, status, occurrences, indices))
+    citations = _join(markers, ids)
     return CitationReport(
         path=path,
         returned_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -196,3 +209,56 @@ def inspect_citation_text(path: str, content: str) -> CitationReport:
         duplicate_ids=[label for label, indices in ids.items() if len(indices) > 1],
         unkeyed_source_indices=unkeyed,
     )
+
+
+def _join(markers: dict[str, int], ids: dict[str, list[int]]) -> list[Citation]:
+    citations = []
+    for label, occurrences in markers.items():
+        indices = ids.get(label, [])
+        status: Literal["matched", "unmatched", "ambiguous"] = "unmatched"
+        if indices:
+            status = "matched" if len(indices) == 1 else "ambiguous"
+        citations.append(Citation(label, status, occurrences, indices))
+    return citations
+
+
+def citation_edges(text: str) -> list[CitationEdge]:
+    """Extract indexed citation edges from a single note snapshot.
+
+    Args:
+        text: Full decoded note text.
+
+    Returns:
+        One ``declared`` edge per distinct valid resource, then one edge per
+        label: a matched label under its resource, any other under ``""``.
+    """
+    if "[^" not in text:
+        return []
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    sources = parse_frontmatter(text).metadata.get("sources")
+    if not isinstance(sources, list):
+        return []
+    ids, _, _ = _source_ids(sources)
+    declared = dict.fromkeys(
+        source["resource"]
+        for source in sources
+        if isinstance(source, dict)
+        and isinstance(source.get("resource"), str)
+        and source["resource"].strip()
+    )
+    if not declared:
+        return []
+    edges = [CitationEdge(resource, "", "declared", 0) for resource in declared]
+    for citation in _join(_markers(strip_frontmatter_block(text)), ids):
+        resource = ""
+        if citation.status == "matched":
+            value = sources[citation.source_indices[0]].get("resource")
+            if isinstance(value, str) and value.strip():
+                resource = value
+        status: Literal[
+            "matched", "unmatched", "ambiguous", "invalid_resource", "declared"
+        ] = citation.status
+        if status == "matched" and not resource:
+            status = "invalid_resource"
+        edges.append(CitationEdge(resource, citation.id, status, citation.occurrences))
+    return edges

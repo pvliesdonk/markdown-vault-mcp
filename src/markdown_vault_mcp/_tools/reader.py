@@ -270,6 +270,50 @@ def register(mcp: FastMCP) -> None:
         return asdict(report)
 
     @mcp.tool(
+        icons=_TOOL_ICONS["find_citing_notes"],
+        annotations={
+            "title": "Find Citing Notes",
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    @needs_queryable()
+    async def find_citing_notes(
+        resource: str,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Find indexed notes whose footnote labels cite an exact source resource.
+
+        Use inspect_citations for the sources one known note cites. The resource
+        matches exactly, with no URL normalization; plain body links do not count.
+
+        Args:
+            resource: Exact resource string of a source record in a note's sources.
+            wait_for_pending_writes: Wait for recent index writes before answering.
+
+        Returns:
+            Citing notes with their titles, labels and occurrence counts;
+            diagnostics for unmatched, ambiguous and invalid-resource labels in
+            notes that declare the resource; unconverted_notes, the count of
+            indexed notes not yet re-read under the current citation rules and so
+            left out until a forced reindex; and the syntax and scope fields describing coverage. A
+            matched label is attribution, not evidence that the source supports a
+            claim.
+        """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "find_citing_notes"
+        )
+        gen_before = vault.index.write_generation()
+        result = await asyncio.to_thread(vault.reader.find_citing_notes, resource)
+        return _staleness_result(
+            vault, result, drained_on_request=drained, gen_before=gen_before
+        )
+
+    @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",

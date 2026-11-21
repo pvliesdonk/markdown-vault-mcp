@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -257,3 +258,270 @@ def test_definition_interrupts_paragraph_without_becoming_a_marker() -> None:
         "one.md", "Claim[^a]\n[^definition]: prose[^hidden]\n"
     )
     assert [citation.id for citation in report.citations] == ["a"]
+
+
+def test_unresolved_labels_are_stored_once_per_note() -> None:
+    from markdown_vault_mcp.citations import citation_edges
+
+    multi = _note(
+        [
+            {"id": "a", "resource": "urn:one"},
+            {"id": "b", "resource": "urn:two"},
+            {"resource": "urn:one"},
+        ],
+        "[^a] [^missing]",
+    )
+    assert [(e.label, e.status, e.resource) for e in citation_edges(multi)] == [
+        ("", "declared", "urn:one"),
+        ("", "declared", "urn:two"),
+        ("a", "matched", "urn:one"),
+        ("missing", "unmatched", ""),
+    ]
+
+    # Invalid source entries declare nothing; unresolved labels keep no resource.
+    sources = [
+        False,
+        {"id": "a", "resource": "urn:s"},
+        {"id": "a", "resource": "urn:s"},
+        {"id": "missing"},
+        {"id": "blank", "resource": "   "},
+    ]
+    edges = citation_edges(_note(sources, "[^a] [^unknown] [^missing] [^blank]"))
+    assert [(e.label, e.status, e.resource) for e in edges] == [
+        ("", "declared", "urn:s"),
+        ("a", "ambiguous", ""),
+        ("unknown", "unmatched", ""),
+        ("missing", "invalid_resource", ""),
+        ("blank", "invalid_resource", ""),
+    ]
+    assert (
+        citation_edges(_note({"bad": {"id": "a", "resource": "urn:s"}}, "[^a]")) == []
+    )
+    text = "---\nsources:\n  - id: a\n    resource: urn:s\n---\n[^a]\n"
+    for newline in ("\r", "\r\n"):
+        assert citation_edges(text.replace("\n", newline))[1].resource == "urn:s"
+
+
+def test_unresolved_rows_are_linear_and_reach_each_declared_resource(
+    tmp_path: Path,
+) -> None:
+    resources = [f"urn:source:{n}" for n in range(250)]
+    sources = [
+        {"id": f"source{n}", "resource": resource}
+        for n, resource in enumerate(resources)
+    ]
+    sources[1]["id"] = "a"
+    body = "[^a] " + " ".join(f"[^{n}]" for n in range(250))
+    (tmp_path / "one.md").write_text(_note(sources, body), encoding="utf-8")
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        first = vault.reader.find_citing_notes(resources[0])
+        second = vault.reader.find_citing_notes(resources[1])
+        assert [r["path"] for r in first["citing"]] == []
+        assert len(first["diagnostics"]) == len(second["diagnostics"]) == 250
+        assert [(r["path"], r["labels"][0]["label"]) for r in second["citing"]] == [
+            ("one.md", "a")
+        ]
+        count = vault._fts._conn().execute("SELECT count(*) FROM citations")
+        assert count.fetchone()[0] == len(resources) + 251
+    finally:
+        vault.close()
+
+
+def test_reverse_citations_are_distinct_from_links(tmp_path: Path) -> None:
+    resource = "https://example.invalid/source"
+    for name in ("one", "two", "three"):
+        (tmp_path / f"{name}.md").write_text(
+            _note(
+                [{"id": "a", "resource": resource}],
+                "Claim[^a] and again[^a] and [^missing]",
+            ),
+            encoding="utf-8",
+        )
+    (tmp_path / "link.md").write_text(f"[link]({resource})", encoding="utf-8")
+    (tmp_path / "unused.md").write_text(
+        _note([{"id": "a", "resource": resource}], "unused"), encoding="utf-8"
+    )
+    vault = Vault(source_dir=tmp_path)
+    try:
+        vault.index.build_index()
+        result = vault.reader.find_citing_notes(resource)
+        assert [row["path"] for row in result["citing"]] == [
+            "one.md",
+            "three.md",
+            "two.md",
+        ]
+        assert all(
+            row["labels"] == [{"label": "a", "occurrences": 2}]
+            for row in result["citing"]
+        )
+        assert result["unconverted_notes"] == 0
+        assert [
+            (r["path"], r["label"], r["status"]) for r in result["diagnostics"]
+        ] == [
+            (name, "missing", "unmatched") for name in ("one.md", "three.md", "two.md")
+        ]
+        with pytest.raises(InvalidRequestError):
+            vault.reader.find_citing_notes("  ")
+    finally:
+        vault.close()
+
+
+def test_citation_rows_follow_replacement_and_deletion(tmp_path: Path) -> None:
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.scanner import parse_note
+
+    path = tmp_path / "one.md"
+    path.write_text(
+        _note([{"id": "a", "resource": "urn:one"}], "[^a]"), encoding="utf-8"
+    )
+    index = FTSIndex(":memory:")
+    try:
+        index.upsert_note(parse_note(path, tmp_path))
+        index.set_chunking_meta(model=None, max_chunk_chars_override=None)
+        assert len(index.get_citation_rows("urn:one")[0]) == 1
+        path.write_text(
+            _note([{"id": "b", "resource": "urn:two"}], "[^b]"), encoding="utf-8"
+        )
+        index.upsert_note(parse_note(path, tmp_path))
+        assert index.get_citation_rows("urn:one")[0] == []
+        assert len(index.get_citation_rows("urn:two")[0]) == 1
+        index.delete_by_path("one.md")
+        assert index.get_citation_rows("urn:two")[0] == []
+    finally:
+        index.close()
+
+
+async def test_reverse_lookup_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "one.md").write_text(
+        _note([{"id": "a", "resource": "urn:source"}], "[^a]"), encoding="utf-8"
+    )
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    async with Client(make_server()) as client:
+        reply = await client.call_tool("find_citing_notes", {"resource": "urn:source"})
+        assert reply.structured_content["citing"][0]["path"] == "one.md"
+        assert reply.meta is not None and "index_stale" in reply.meta
+
+
+def test_reserved_paths_follow_effective_okf_mode(tmp_path: Path) -> None:
+    for name in ("index.md", "log.md"):
+        (tmp_path / name).write_text(
+            _note([{"id": "a", "resource": "urn:s"}], "[^a] [^x]"), encoding="utf-8"
+        )
+    for mode, expected in (("off", ["index.md", "log.md"]), ("on", [])):
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings(okf_mode=mode))
+        try:
+            vault.index.build_index()
+            result = vault.reader.find_citing_notes("urn:s")
+            assert [r["path"] for r in result["citing"]] == expected
+            assert [r["path"] for r in result["diagnostics"]] == expected
+        finally:
+            vault.close()
+
+
+@pytest.mark.parametrize("version", ["12", "14", "missing_table", "missing_column"])
+def test_citation_lookup_refuses_incompatible_semantics(
+    tmp_path: Path, version: str
+) -> None:
+    import sqlite3
+
+    from markdown_vault_mcp.exceptions import IndexUnavailableError
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    db = tmp_path / "old.db"
+    index = FTSIndex(db)
+    # Sibling A6 (8d9f823a) and B2 (9f6d3870) stamp 13 without this schema.
+    if version in ("missing_table", "missing_column"):
+        index.set_chunking_meta(model=None, max_chunk_chars_override=None)
+        if version == "missing_table":
+            index._conn().execute("DROP TABLE citations")
+        else:
+            index._conn().execute(
+                "INSERT INTO documents(path, title, content_hash, modified_at) VALUES('old.md', 'Old', 'hash', 0)"
+            )
+            index._conn().execute("ALTER TABLE documents DROP COLUMN citations_derived")
+            index._conn().commit()
+    index.close()
+    if version not in ("missing_table", "missing_column"):
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES('index_semantics_version', ?)",
+                (version,),
+            )
+    reader = FTSIndex(db, read_only=True)
+    try:
+        with pytest.raises(IndexUnavailableError) as exc:
+            reader.get_citation_rows("urn:s")
+        assert exc.value.reason == "never_built"
+    finally:
+        reader.close()
+    if version == "missing_column":
+        writer = FTSIndex(db)
+        try:
+            assert writer.get_citation_rows("urn:s")[1] == 1
+        finally:
+            writer.close()
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root bypasses directory permissions",
+)
+@pytest.mark.parametrize("version", [12, 14])
+def test_upgrade_reports_unconverted_after_unreadable_walk(
+    tmp_path: Path, version: int
+) -> None:
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    root = tmp_path / "notes"
+    root.mkdir()
+    hidden = root / "hidden"
+    hidden.mkdir()
+    for path in (hidden / "one.md", root / "two.md", root / "three.md"):
+        path.write_text(
+            _note([{"id": "a", "resource": "urn:s"}], "[^a]"), encoding="utf-8"
+        )
+    db = tmp_path / "index.db"
+    vault = Vault(
+        source_dir=root,
+        settings=VaultSettings(index_path=db, state_path=tmp_path / "state.json"),
+    )
+    try:
+        vault.index.build_index()
+        conn = vault._fts._conn()
+        conn.execute("UPDATE documents SET citations_derived=?", (version,))
+        conn.execute(
+            "UPDATE meta SET value=? WHERE key='index_semantics_version'",
+            (str(version),),
+        )
+        hidden.chmod(0)
+        try:
+            assert not vault.index.build_index().walk_complete
+            result = vault.reader.find_citing_notes("urn:s")
+            assert result["unconverted_notes"] == 1
+            assert [r["path"] for r in result["citing"]] == ["three.md", "two.md"]
+            reader = FTSIndex(db, read_only=True)
+            try:
+                assert reader.get_citation_rows("urn:s")[1] == 1
+            finally:
+                reader.close()
+        finally:
+            hidden.chmod(0o755)
+        vault.index.reindex()
+        result = vault.reader.find_citing_notes("urn:s")
+        assert result["unconverted_notes"] == 0
+        assert [r["path"] for r in result["citing"]] == [
+            "hidden/one.md",
+            "three.md",
+            "two.md",
+        ]
+    finally:
+        vault.close()
+    reader = FTSIndex(db, read_only=True)
+    try:
+        assert reader.get_citation_rows("urn:s")[1] == 0
+    finally:
+        reader.close()

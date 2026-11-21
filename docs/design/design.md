@@ -1967,14 +1967,29 @@ ones).
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 
+### Reverse citation lookup (#1446)
+
+`find_citing_notes(resource)` reads persisted citation edges derived from one
+normalized note snapshot. Exact resource matches return indexed notes and label
+counts; unmatched, ambiguous and invalid-resource labels are diagnostics under
+each distinct resource declared by that note. The result is unbounded. Reserved
+files are excluded only while OKF is active. Navigation links do not create edges.
+On the first writer startup after upgrading from index semantics version 12,
+the index rebuilds. A lookup reports `unconverted_notes` for retained indexed
+notes not yet re-read with compatible citation rules; they are omitted until
+re-read. Change detection is hash-based, so an ordinary reindex re-reads only
+changed or previously unreadable notes. If the count stays above zero, call the MCP tool
+`reindex(force=True)` or the library method `build_index(force=True)` for a full
+rebuild. Incompatible or missing schema is unavailable rather than empty. No resource is fetched and attribution
+does not establish support.
+
 ### Exact-note citation inspection (#1446, bounded slice)
 
 `ReaderFacet.inspect_citations(path)` and the additive `inspect_citations` MCP
 tool inspect one explicitly selected `.md` note through the existing whole-note
 reader. There is no index-readiness requirement, bundle declaration gate or
-change to OKF annotations. `okf.py`, link scanning, graph navigation and index
-semantics are unchanged. This is a partial implementation of #1446, not a
-vault-wide evidence audit or reverse dependency engine.
+change to OKF annotations. `okf.py`, link scanning and graph navigation are
+unchanged. This is not a vault-wide evidence audit.
 
 `citations.inspect_citation_text` takes only the returned content string. It
 parses its metadata and body together, never using `NoteContent.frontmatter` or
@@ -1994,7 +2009,7 @@ stable under source reordering; response-local list indices do not.
 
 Scope and syntax limits accompany every result. Nothing fetches sources,
 traverses another note, infers evidentiary support or truth, writes metadata,
-redefines index rows, or widens access. Source strings are data, not instructions.
+or widens access. Source strings are data, not instructions.
 The [user guide](../use/okf.md#inspect-citations-in-one-note) states the supported
 syntax and the [OKF reference](reference/okf-v0.2.md#citation-joins-checked-2026-11-15)
 records the current source/footnote distinction.
@@ -2737,6 +2752,7 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
     modified_at REAL NOT NULL,        -- file mtime
+    citations_derived INTEGER NOT NULL DEFAULT 0, -- producer semantics for citation rows
     skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
     skip_detail TEXT NOT NULL DEFAULT ''
 );
@@ -2785,6 +2801,21 @@ CREATE INDEX IF NOT EXISTS idx_tags_kv
 
 CREATE INDEX IF NOT EXISTS idx_tags_docid
     ON document_tags(document_id);
+
+-- Citation attribution rows are separate from navigation links (#1446).
+-- This additive table keeps schema_version at 1. Per note: one status
+-- 'declared' row per valid source resource, one row per matched label under
+-- its resource, and one row per other label under resource '' (diagnostic for
+-- each declared resource of that note), so rows grow linearly with the note.
+CREATE TABLE IF NOT EXISTS citations (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    resource TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_resource ON citations(resource);
+CREATE INDEX IF NOT EXISTS idx_citations_docid ON citations(document_id);
 
 -- Links: inter-document references extracted from markdown content
 CREATE TABLE IF NOT EXISTS links (
