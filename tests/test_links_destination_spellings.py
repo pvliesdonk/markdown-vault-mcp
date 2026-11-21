@@ -323,7 +323,7 @@ class TestRenameKeepsTheSpelling:
                 "sub/src.md",
                 "old name.md",
             )
-            == "</new name.md>"
+            == "</new%20name.md>"
         )
 
     def test_pointy_relative_with_fragment_stays_pointy(self) -> None:
@@ -336,25 +336,25 @@ class TestRenameKeepsTheSpelling:
                 "sub/src.md",
                 "sub/old name.md",
             )
-            == "<new name.md#Top>"
+            == "<new%20name.md#Top>"
         )
 
-    def test_a_new_name_with_a_hash_is_escaped_so_it_stays_a_file(self) -> None:
+    def test_a_new_name_with_a_hash_is_encoded_so_it_stays_a_file(self) -> None:
         # Written literally, ``#y.md`` would re-parse as an anchor and the
-        # backlink would vanish; the one escape a rename does introduce.
+        # backlink would vanish; RFC 3986 spells the name's ``#`` ``%23``.
         new_raw = compute_new_raw_target(
             "markdown", "x.md", None, "#y.md", "src.md", "x.md"
         )
-        assert new_raw == "\\#y.md"
+        assert new_raw == "%23y.md"
         assert one(f"[a]({new_raw})")[0] == "sub/#y.md"
 
-    def test_a_new_name_with_an_angle_bracket_is_escaped_in_the_pointy_form(
+    def test_a_new_name_with_an_angle_bracket_is_encoded_in_the_pointy_form(
         self,
     ) -> None:
         new_raw = compute_new_raw_target(
             "markdown", "<old.md>", None, "new>x.md", "src.md", "old.md"
         )
-        assert new_raw == "<new\\>x.md>"
+        assert new_raw == "<new%3Ex.md>"
         assert one(f"[a]({new_raw})")[0] == "sub/new>x.md"
 
     def test_end_to_end_rename_rewrites_a_pointy_link(self, tmp_path: Path) -> None:
@@ -365,6 +365,8 @@ class TestRenameKeepsTheSpelling:
         try:
             result = vault.writer.rename("my note.md", "new name.md", update_links=True)
             assert result.updated_links == 1
-            assert (tmp_path / "src.md").read_text() == "See [it](<new name.md> 'T').\n"
+            assert (tmp_path / "src.md").read_text() == (
+                "See [it](<new%20name.md> 'T').\n"
+            )
         finally:
             vault.close()

@@ -87,9 +87,11 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
 - **Links:** standard markdown links, untyped; bundle-root-absolute
   (`/path/x.md`) recommended, relative allowed. Wikilinks are not part of
   the spec — but link style is *convention*, not conformance. "Standard
-  markdown link" is the binding half: a destination the transforms write is
-  percent-encoded where a vault path would not parse as one
-  (`/Project%20Notes/x.md`, #1494).
+  markdown link" is the binding half: a destination the server writes is an
+  RFC 3986 URI reference, as OKF 0.3 §6 requires — a space, `%`, `#`, `?`,
+  `[`, `]`, the characters outside the URI set and non-ASCII are
+  percent-encoded, sub-delims stay literal (`/50%25%20done/a%23b%20(c).md`,
+  #1494, #2417).
 - **Extension keys:** arbitrary extra frontmatter keys are allowed and MUST
   be preserved on round-trip.
 - **Out-of-root targets:** a link target that climbs above the bundle root

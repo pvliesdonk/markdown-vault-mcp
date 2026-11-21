@@ -1267,7 +1267,7 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
             # verbatim, a space ends the destination (#1494), a ``#`` or an
             # unbalanced paren re-points it, and a bracket in the alias ends
             # the link text (#1513).
-            return f"[{escape_link_text(display)}](/{build_plain_destination(tp, fg)})"
+            return f"[{escape_link_text(display)}]({build_plain_destination('/' + tp, fg)})"
 
         pattern = re.compile(r"\[\[" + re.escape(raw_target) + r"(?:\|([^\]]*))?\]\]")
         content, n = pattern.subn(_replace, content)

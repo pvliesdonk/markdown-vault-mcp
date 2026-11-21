@@ -23,6 +23,14 @@
 - [Open Knowledge Format v0.3](okf-v0.3.md) and [v0.2](okf-v0.2.md): marked
   the `verified`-kept-as-history departure (row 16) fixed by #2405 and
   repointed its pins. No spec claim changed. Review dates unchanged.
+- [Obsidian markdown dialect and link resolution](obsidian-markdown.md): added
+  "Percent-escapes other than `%20`" under "Markdown links Obsidian writes".
+  Reread the help sources (obsidian-help at ced32050), the API typings
+  (obsidian-api at 737629a5) and the developer docs, and searched the desktop
+  changelog through 1.15.1. Only `%20` decoding is documented. The
+  write-side history is 0.8.5, 0.10.12 and 0.12.4, and the angle-bracket
+  rename fix is 1.7.4. Each other escape is marked unverified with a
+  fixture. Review date unchanged.
 
 ## 2026-11-20
 
