@@ -4,7 +4,8 @@ OKF (`GoogleCloudPlatform/knowledge-catalog`, ``okf/SPEC.md``) is a bundle
 convention over markdown-with-frontmatter. What the spec says — in both texts
 of "Version 0.2", since it was amended in place on 2026-08-21 — is recorded
 with sources and dates in ``docs/design/reference/okf-v0.2.md``; read it
-before changing a rule here. This module implements phase 1 of
+before changing a rule here, together with ``docs/design/reference/okf-v0.3.md``
+(the current spec and the server's departures from it). This module implements phase 1 of
 `docs/design/okf.md`: the vault-side detection probe (``okf_version`` declared
 in the bundle-root ``index.md``) and the pure derivation of per-note read
 annotations (``type`` / ``status`` / staleness / trust tier).

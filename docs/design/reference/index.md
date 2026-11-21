@@ -111,6 +111,12 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   pathspec magic, `add`/`check-ignore`, `commit --only` and identity, ancestry
   and fast-forward, rebase state on disk and conflict markers. Read before
   `git/strategy.py`, `git/conflict.py`, or the pathspec part of `git/_run.py`.
+- [Open Knowledge Format v0.3](okf-v0.3.md) — the current spec (moved to
+  `open-knowledge-format/open-knowledge-format`): date-only timestamps at
+  00:00 UTC, trust from current verification events only, any actor scheme,
+  typeless files as non-concepts, root `index.md` metadata; the 0.2 → 0.3
+  changes and the table of server departures (#2403). Read before `okf.py`,
+  `_okf_write.py`, `_okf_convention.py`, `okf_bundle.py` or link resolution.
 - [Open Knowledge Format v0.2](okf-v0.2.md) — frontmatter families, trust
   tiers, `stale_after` in both texts of v0.2 (date in July, instant with offset
   since 2026-08-21), reserved files, links, conformance; the timestamp
