@@ -611,7 +611,20 @@ Tool tags following switches: #1412.
   the token's usable `sub` when the principal is human (`human:<subject>`), else
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
   values are overwritten (it describes the current bytes); `sources` are
-  never touched. Client-ID-only identities, including static and mapped
+  never touched. A trivial edit keeps the stored `generated` instead (OKF
+  0.3 §5.2: "A trivial edit (format, whitespace, link repair) does not
+  change `generated.at`", #2418). Trivial means a reader provably cannot
+  see the change: the frontmatter is equal apart from `generated` and
+  `verified`, and the body parses to the same CommonMark tokens (markdown-it,
+  GFM tables; compared on what renders, not on positions or markup
+  characters, so `*a*`/`_a_`, bullet and fence markers and blank lines are
+  format). A reworded line, a hard break, a changed link destination or a
+  reflowed paragraph is meaningful. There is no caller flag. The error runs
+  one way on purpose: calling a real change trivial would keep an older
+  review counting, while calling a trivial change meaningful only lowers
+  the tier. Link repair by the server never reaches the stamp
+  (`_trivial_edit.py`; definition chosen by the account holder,
+  21 November 2026). Client-ID-only identities, including static and mapped
   bearer credentials, use the tool actor (#1463). So does an OAuth token the
   issuer marks as an application's (`sub` equal to the client ID, `idtyp: app`
   or `gty: client-credentials`; #1480), and so does a token whose `sub` the

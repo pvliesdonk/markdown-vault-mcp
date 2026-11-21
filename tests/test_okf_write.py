@@ -91,7 +91,12 @@ class TestApplyOkfWriteStamp:
         )
         before = fm.loads(text)
         post = fm.loads(
-            apply_okf_write_stamp(text, actor="human:writer", now=_NOW, stored=text)
+            apply_okf_write_stamp(
+                text,
+                actor="human:writer",
+                now=_NOW,
+                stored=text.replace("Text.", "Older text."),
+            )
         )
         expected = (
             ["zeta", "type", "generated", "verified", "sources", "x_custom", "alpha"]
@@ -134,7 +139,8 @@ class TestApplyOkfWriteStamp:
             "---\n"
             "# T\n"
         )
-        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW, stored=text)
+        stored = text.replace("# T\n", "# Older T\n")
+        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW, stored=stored)
         # The verified lines are kept byte for byte (#2419), so read them the
         # way the server does (YAML 1.2: the date stays a string).
         meta = parse_frontmatter(out).metadata
@@ -750,6 +756,9 @@ class TestWriteToolThreadsActor:
             "    at: 2026-01-01\n",
             "    at: 2026-01-01\n  - by: human:alice\n    at: '2099-01-01T00:00:00Z'\n",
         )
+        # A real content change, so the stamp moves (a verified-only change
+        # is a trivial edit that keeps generated, #2418).
+        forged += "\nA new paragraph.\n"
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             etag = compute_etag(_VERIFIED_NOTE.encode())

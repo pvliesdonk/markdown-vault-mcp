@@ -45,7 +45,8 @@ def _lines_other_than(text: str, key: str) -> list[str]:
 
 
 def test_a_stamp_keeps_every_other_byte() -> None:
-    out = apply_okf_write_stamp(NOTE, actor="x/1", now=NOW, stored=NOTE)
+    stored = NOTE.replace("# Body", "# Older body")
+    out = apply_okf_write_stamp(NOTE, actor="x/1", now=NOW, stored=stored)
     assert _lines_other_than(out, "generated") == _lines_other_than(NOTE, "generated")
     assert parse_frontmatter(out).metadata["generated"] == STAMP
     # The key keeps its slot between tags and stale_after.

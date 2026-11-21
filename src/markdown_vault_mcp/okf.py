@@ -43,6 +43,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp._frontmatter_splice import REMOVE, splice_keys
+from markdown_vault_mcp._trivial_edit import is_trivial_edit
 from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
@@ -1514,6 +1515,15 @@ def okf_timestamp(now: _dt.datetime) -> str:
 _NO_STORED_VERIFIED = object()
 
 
+def _stored_generated(stored: str) -> Any:
+    """The stored note's ``generated``, or :data:`REMOVE` when it has none.
+
+    Only reached once :func:`is_trivial_edit` has parsed *stored*.
+    """
+    meta = parse_frontmatter(stored).metadata
+    return meta.get("generated", REMOVE)
+
+
 def _stored_verified(stored: str | None) -> object:
     """Return the ``verified`` value of the stored note, as stored.
 
@@ -1549,7 +1559,10 @@ def apply_okf_write_stamp(
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
     the current bytes and is overwritten with the instant of this write —
     "the content's last meaningful change" — so it moves on every content
-    write. ``verified`` is history: OKF 0.3 §5.3 leaves earlier events in the
+    write, except a trivial edit (format or whitespace only: the frontmatter
+    equal apart from ``generated`` and ``verified`` and the body parsing to
+    the same CommonMark tokens), which keeps the stored ``generated`` (OKF 0.3
+    §5.2, #2418). ``verified`` is history: OKF 0.3 §5.3 leaves earlier events in the
     file, and a reader compares each event's ``at`` with ``generated.at`` to
     decide which are current (#2405). It is taken from *stored*, never from
     *text*, so a write neither erases recorded reviews nor adds one of its
@@ -1581,7 +1594,13 @@ def apply_okf_write_stamp(
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
     updates: dict[str, Any] = {"generated": {"by": actor, "at": okf_timestamp(now)}}
-    new_meta["generated"] = updates["generated"]
+    if stored is not None and is_trivial_edit(stored, text):
+        # OKF 0.3 §5.2: a trivial edit does not change generated.at (#2418).
+        updates["generated"] = _stored_generated(stored)
+    if updates["generated"] is REMOVE:
+        new_meta.pop("generated", None)
+    else:
+        new_meta["generated"] = updates["generated"]
     kept = _stored_verified(stored)
     if kept is _NO_STORED_VERIFIED:
         if "verified" in meta:
