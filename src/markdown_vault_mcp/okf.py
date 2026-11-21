@@ -1,11 +1,12 @@
 """OKF (Open Knowledge Format) support: detection and read-side annotations.
 
-OKF (`GoogleCloudPlatform/knowledge-catalog`, ``okf/SPEC.md``) is a bundle
-convention over markdown-with-frontmatter. What the spec says — in both texts
-of "Version 0.2", since it was amended in place on 2026-08-21 — is recorded
-with sources and dates in ``docs/design/reference/okf-v0.2.md``; read it
-before changing a rule here, together with ``docs/design/reference/okf-v0.3.md``
-(the current spec and the server's departures from it). This module implements phase 1 of
+OKF (``open-knowledge-format/open-knowledge-format``, ``SPEC.md``) is a bundle
+convention over markdown-with-frontmatter. What the current spec, v0.3, says
+is recorded with sources and dates in ``docs/design/reference/okf-v0.3.md``,
+together with every place this server departs from it; read it before
+changing a rule here. The server follows one OKF version only, so the
+deprecated ``okf-v0.2.md`` explains the shipped 0.2-era rules, not a target.
+This module implements phase 1 of
 `docs/design/okf.md`: the vault-side detection probe (``okf_version`` declared
 in the bundle-root ``index.md``) and the pure derivation of per-note read
 annotations (``type`` / ``status`` / staleness / trust tier).

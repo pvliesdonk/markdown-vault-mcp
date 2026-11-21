@@ -16,9 +16,10 @@ Apache 2.0; announced 2026-06-12 on the
 What the spec actually says, with sources, dates and the in-place amendment
 of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 `stale_after` an instant), is the reference page
-[`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
-document decides are listed there. OKF v0.3 (2026-11-18) and the server's departures
-from it are in [`reference/okf-v0.3.md`](reference/okf-v0.3.md).
+[`reference/okf-v0.2.md`](reference/okf-v0.2.md), now deprecated. The
+current spec, OKF v0.3 (2026-11-18), and every place the server departs from
+it are in [`reference/okf-v0.3.md`](reference/okf-v0.3.md); until OKF 1.0 the
+server follows one OKF version only.
 
 **Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
