@@ -4170,7 +4170,7 @@ from queries that select a narrower column set.</p>
 
 
 <h2 id="markdown_vault_mcp.types.ParsedNote" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">headings</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">headings</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">citations</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -4278,6 +4278,17 @@ from queries that select a narrower column set.</p>
             <td>
               <div class="doc-md-description">
                 <p>All links extracted from the document body.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ParsedNote.citations">citations</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="markdown_vault_mcp.citations.CitationEdge">CitationEdge</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Literal citation edges extracted from this note snapshot.</p>
               </div>
             </td>
           </tr>

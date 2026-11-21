@@ -3995,7 +3995,7 @@ on the next startup.</p>
 <h4 id="content-and-transfer">Content<a class="headerlink" href="#content-and-transfer" title="Permanent link">&para;</a></h4>
 <p>Folder convention files guide clients before writes. OKF read semantics can be
 auto-detected from a root <code>index.md</code>; the separately gated OKF write layer adds
-provenance, invalidates stale verification, and maintains <code>log.md</code> and
+provenance, clears recorded verification, and maintains <code>log.md</code> and
 <code>index.md</code>. See the <a href="../../use/okf/">OKF guide</a> for the trust and verification
 model.</p>
 <p>Attachments in hidden or excluded directories are never listed. Full note
@@ -4006,7 +4006,9 @@ avoid loading an oversized note into the client context.</p>
 and FTS weights take effect without reindexing. Chunk-size and overlap settings
 change the stored index and require <code>reindex</code>. Changing the embedding model or
 an explicit character cap rejects the warm-start shortcut and rebuilds
-automatically.</p>
+automatically. SearchConfig rejects a map in which all six effective FTS column weights are 0.
+Omitted columns keep a weight of 1. Repeated folder or FTS weight keys that normalise to
+the same key must have equal weights.</p>
 <h4 id="synchronization">Git sync<a class="headerlink" href="#synchronization" title="Permanent link">&para;</a></h4>
 <p>Git has three modes: managed clone/pull/push with <code>GIT_REPO_URL</code>, commit-only
 when the source directory is already a repository, and plain filesystem mode.
@@ -4534,13 +4536,13 @@ explains how <code>READ_ONLY</code> and <code>WRITE_PROTECT_EXISTING</code> comb
 <td><code>MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS</code></td>
 <td>(none)</td>
 <td>No</td>
-<td>Folder-prefix score multipliers (<code>prefix:weight</code> pairs, comma-separated, weights &gt; 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**).</td>
+<td>Folder-prefix score multipliers (<code>prefix:weight</code> pairs, comma-separated, weights &gt; 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). Repeated keys that normalize to the same prefix must have equal weights.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code></td>
 <td>(none)</td>
 <td>No</td>
-<td>Per-column BM25 weights (<code>column:weight</code> pairs, comma-separated, weights &gt;= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary.</td>
+<td>Per-column BM25 weights (<code>column:weight</code> pairs, comma-separated, weights &gt;= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. Rejected when all six columns resolve to 0 (omitted columns weigh 1). Repeated keys must have equal weights.</td>
 </tr>
 </tbody>
 </table>

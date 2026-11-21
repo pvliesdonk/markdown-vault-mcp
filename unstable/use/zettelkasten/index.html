@@ -3456,6 +3456,9 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 - <code>[[wikilinks]]</code>: shortest, preferred for internal links
 - <code>[Markdown links](path.md)</code>: standard markdown
 - <code>[Reference-style][1]\n\n[1]: path.md</code>: separates link text from destination</p>
+<p>Markdown and reference destinations first resolve relative to the source note. If that path is missing, the index searches for the destination across the vault. An explicit <code>/</code>, <code>./</code>, or <code>../</code> prefix keeps its stated location.
+When a rename or move updates a vault-path link in a nested note, it writes a source-relative path so the link keeps pointing to the intended note. With link updates enabled, moving a source note also preserves its resolved fallback destinations.
+Destinations with refused percent escapes do not use the vault-wide search. After a rename with link updates, read the moved note before a guarded write because its etag may have changed.</p>
 <p><strong>Rename safely with link updates:</strong></p>
 <p>When a note title changes, rename it and update all backlinks automatically:</p>
 <div class="fragment highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>

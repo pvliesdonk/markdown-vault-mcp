@@ -2983,7 +2983,9 @@ Not visible to the LLM.</p>
 <p><strong>Returns</strong></p>
 <p>Dict with path, title, folder, frontmatter, <code>modified_at</code>, backlinks,
 outlinks, similar, <code>folder_notes</code>, and tags; see '<code>get_context</code>' for
-field details. Returns <code>{"error": "..."}</code> if the note is not found.</p>
+field details. On an active OKF bundle it also carries the same
+'okf' annotation as '<code>get_context</code>'. Returns <code>{"error": "..."}</code> if
+the note is not found.</p>
 <!-- DOMAIN-EXAMPLE-vault_context-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-vault_context-END -->
@@ -3225,7 +3227,8 @@ Not visible to the LLM.</p>
 <p><strong>Returns</strong></p>
 <p>Dict with path, title, frontmatter, content (the full raw file,
 including the frontmatter block), and <code>modified_at</code> (Unix timestamp),
-or null if the note is not found.</p>
+plus, on an active OKF bundle, the same 'okf' annotation as a
+whole-note 'read'; or null if the note is not found.</p>
 <!-- DOMAIN-EXAMPLE-vault_read-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-vault_read-END -->

@@ -50,7 +50,7 @@ Exact paths rank first. Literal prefix matches rank ahead of matches within a pa
 
 Invalid indexed fields raise `InvalidRequestError`. Existing ranked search continues to support computed OKF filters.
 
-## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None, okf_write_state=None)`
+## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, citation_mgr=None, okf_audit=None, okf_write_state=None)`
 
 Read-only queries over the shared managers.
 
@@ -64,6 +64,7 @@ Parameters:
 | `doc_mgr`         | `DocumentManager`                   | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
 | `git_query_mgr`   | `GitQueryManager`                   | Git history / diff / revision reads.                           | *required*                                                                                  |
 | `require_built`   | `Callable[[], None]`                | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
+| `citation_mgr`    | \`CitationManager                   | None\`                                                         | Reverse citation lookup manager, when wired.                                                |
 | `okf_audit`       | \`Callable\[[], OkfAuditReport\]    | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
 | `okf_write_state` | \`Callable\[[], tuple[bool, bool]\] | None\`                                                         | Configured and effective write-layer projection.                                            |
 
@@ -204,6 +205,47 @@ Raises:
 | ------------------------- | -------------------------------------------------------------------------- |
 | `DocumentUnreadableError` | If the file exists but cannot be read or parsed (#1608).                   |
 | `InvalidRequestError`     | If path holds a NUL byte (#1636), or section is empty or names no heading. |
+
+### `find_citing_notes(resource)`
+
+Find indexed notes citing an exact resource.
+
+Parameters:
+
+| Name       | Type  | Description                   | Default    |
+| ---------- | ----- | ----------------------------- | ---------- |
+| `resource` | `str` | Exact source resource string. | *required* |
+
+Returns:
+
+| Type             | Description                                    |
+| ---------------- | ---------------------------------------------- |
+| `dict[str, Any]` | Citing notes and unresolved label diagnostics. |
+
+### `inspect_citations(path)`
+
+Inspect exact source attribution in one whole-note text snapshot.
+
+Parameters:
+
+| Name   | Type  | Description                         | Default    |
+| ------ | ----- | ----------------------------------- | ---------- |
+| `path` | `str` | Exact vault-relative .md note path. | *required* |
+
+Returns:
+
+| Type             | Description                                                         |
+| ---------------- | ------------------------------------------------------------------- |
+| `CitationReport` | Literal sources, label joins and explicit syntax limits. This reads |
+| `CitationReport` | no source resources and makes no claim about evidentiary support.   |
+
+Raises:
+
+| Type                      | Description                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `InvalidRequestError`     | If the path is not a .md note or exceeds the existing whole-note read limit. |
+| `DocumentNotFoundError`   | If the existing reader finds no note.                                        |
+| `DocumentUnreadableError` | If the existing reader cannot read it.                                       |
 
 ### `read_revision(path, revision, *, section=None)`
 
@@ -427,12 +469,12 @@ When *path* is `None`, queries the full vault history. Returns an empty list for
 
 Parameters:
 
-| Name    | Type  | Description                                                               | Default                                                                                                                                                                                                                                 |
-| ------- | ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`  | \`str | None\`                                                                    | A .md note or a configured attachment (e.g. assets/x.png) scopes to that file; an existing directory (e.g. "guides") scopes to its subtree; None returns vault-wide history.                                                            |
-| `since` | \`str | None\`                                                                    | ISO 8601 datetime string or git date expression (e.g. "1 week ago"). Passed as --since to git log. None disables the filter.                                                                                                            |
-| `until` | \`str | None\`                                                                    | ISO 8601 datetime string or git date expression, passed as --until to git log. None disables the filter. Both since and until boundaries are inclusive: a commit whose committer date equals either endpoint is included in the result. |
-| `limit` | `int` | Maximum number of commits to return. Clamped to [1, 100]. Defaults to 20. | `20`                                                                                                                                                                                                                                    |
+| Name    | Type  | Description                                                               | Default                                                                                                                                                                                                                                                                                                                      |
+| ------- | ----- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`  | \`str | None\`                                                                    | A .md note or a configured attachment (e.g. assets/x.png) scopes to that file; an existing directory (e.g. "guides") scopes to its subtree; None returns vault-wide history.                                                                                                                                                 |
+| `since` | \`str | None\`                                                                    | ISO calendar date/time within 1970-2099, now, today, yesterday, or integer second/minute/hour/day/week/month/year quantities ending in ago (e.g. "1 week ago"). Quantities use at most eight digits without leading zeros and must stay after 1970. today means local midnight. Passed as --since. None disables the filter. |
+| `until` | \`str | None\`                                                                    | A supported date in the same forms as since, passed as --until to git log. None disables the filter. Both since and until boundaries are inclusive: a commit whose committer date equals either endpoint is included in the result.                                                                                          |
+| `limit` | `int` | Maximum number of commits to return. Clamped to [1, 100]. Defaults to 20. | `20`                                                                                                                                                                                                                                                                                                                         |
 
 Returns:
 
@@ -450,9 +492,9 @@ Returns:
 
 Raises:
 
-| Type                  | Description                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| `InvalidRequestError` | If path is provided but fails path validation (unsupported extension or path traversal). |
+| Type                  | Description                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `InvalidRequestError` | If path is provided but fails path validation (unsupported extension or path traversal), or a date is unsupported. |
 
 ### `get_diff(path, since_sha=None, since_timestamp=None, per_commit=False, limit=None)`
 
@@ -462,13 +504,13 @@ Exactly one of *since_sha* or *since_timestamp* must be supplied.
 
 Parameters:
 
-| Name              | Type   | Description                                                                                                                                                                           | Default                                                                                                                                                                                                                                                            |
-| ----------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`            | `str`  | A .md note or a configured attachment (e.g. assets/x.png) to diff. Unsupported extensions raise ValueError.                                                                           | *required*                                                                                                                                                                                                                                                         |
-| `since_sha`       | \`str  | None\`                                                                                                                                                                                | A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with since_timestamp.                                                                                                                                                   |
-| `since_timestamp` | \`str  | None\`                                                                                                                                                                                | ISO 8601 datetime string, resolved via git rev-list --before=<ts> -1 HEAD to the most recent commit at or before that instant. Boundary is inclusive: a commit whose committer date equals since_timestamp IS the resolved ref. Mutually exclusive with since_sha. |
-| `per_commit`      | `bool` | When False (default), return a single unified diff string from the reference point to HEAD. When True, return one :class:~markdown_vault_mcp.types.CommitDiff per intervening commit. | `False`                                                                                                                                                                                                                                                            |
-| `limit`           | \`int  | None\`                                                                                                                                                                                | When per_commit is True, cap the number of intervening commits returned to the limit most recent ones. Clamped to [1, 100]. None (the default) means unbounded (still bounded by the underlying since..HEAD range). Silently ignored when per_commit is False.     |
+| Name              | Type   | Description                                                                                                                                                                           | Default                                                                                                                                                                                                                                                                                                    |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | `str`  | A .md note or a configured attachment (e.g. assets/x.png) to diff. Unsupported extensions raise ValueError.                                                                           | *required*                                                                                                                                                                                                                                                                                                 |
+| `since_sha`       | \`str  | None\`                                                                                                                                                                                | A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with since_timestamp.                                                                                                                                                                                           |
+| `since_timestamp` | \`str  | None\`                                                                                                                                                                                | A supported date in the same forms as since in :meth:get_history, resolved via git rev-list --before=<ts> -1 HEAD to the most recent commit at or before that instant. Boundary is inclusive: a commit whose committer date equals since_timestamp IS the resolved ref. Mutually exclusive with since_sha. |
+| `per_commit`      | `bool` | When False (default), return a single unified diff string from the reference point to HEAD. When True, return one :class:~markdown_vault_mcp.types.CommitDiff per intervening commit. | `False`                                                                                                                                                                                                                                                                                                    |
+| `limit`           | \`int  | None\`                                                                                                                                                                                | When per_commit is True, cap the number of intervening commits returned to the limit most recent ones. Clamped to [1, 100]. None (the default) means unbounded (still bounded by the underlying since..HEAD range). Silently ignored when per_commit is False.                                             |
 
 Returns:
 

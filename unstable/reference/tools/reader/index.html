@@ -1740,6 +1740,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inspect_citations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inspect_citations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find_citing_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        find_citing_notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#list_documents" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2909,6 +2931,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inspect_citations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inspect_citations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find_citing_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        find_citing_notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#list_documents" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3170,8 +3214,12 @@ its best-matching sections as snippets.</p>
   the vault is an active OKF bundle. Carries <code>type</code> (when
   declared), <code>status</code> (defaults to <code>"stable"</code>), <code>stale</code>
   (bool, <code>stale_after</code> reached), <code>trust_tier</code> (<code>"unverified"</code> /
-  <code>"machine-confirmed"</code> / <code>"human-reviewed"</code>), and
-  <code>sources_count</code> (when the note cites sources).</li>
+  <code>"machine-confirmed"</code> / <code>"human-reviewed"</code>, classifying recorded
+  metadata rather than applicability to current content),
+  <code>freshness</code>, <code>review</code>, <code>review_applicability</code>, <code>attribution</code>
+  (<code>sources</code> in the shape of <code>review</code>), <code>generation</code>
+  (<code>generated</code> as <code>{state, basis}</code>), and <code>sources_count</code> (when
+  the note cites sources).</li>
 <li>
 <p>sections (list[dict]): Up to <code>chunks_per_file</code> best-matching
   sections, each with:</p>
@@ -3247,9 +3295,15 @@ empty {} when section= is provided; call read(path) without
 section= to get the full document's frontmatter),
 <code>modified_at</code> (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
-an 'okf' dict (type, status, stale, <code>trust_tier</code>, and the note's
-'sources' list when present); section reads omit it because they
-carry no frontmatter to derive it from.
+an 'okf' dict (type, status, stale, <code>trust_tier</code> for recorded review
+metadata, freshness, review, <code>review_applicability</code>, recorded, and the
+note's 'sources' list when present). <code>review_applicability</code>.state is
+"unknown" when verified has entries or is malformed (no snapshot
+binding) and "none" when it is absent or an empty list.
+attribution reports <code>sources</code> in the shape of review, and
+generation reports <code>generated</code> as {state, basis}, judged like a
+verified entry (recorded actor, offset-aware <code>at</code>). Section reads
+omit the annotation because they carry no frontmatter to derive it from.
 For attachments: dict with path, <code>mime_type</code> (str or null),
 <code>size_bytes</code> (int), <code>content_base64</code> (str), <code>modified_at</code> (Unix timestamp),
 etag (SHA-256 hex str or null).
@@ -3282,6 +3336,89 @@ no 'okf' block for the same reason.</p>
 </code></pre></div>
 <p><code>content</code> is the raw file, frontmatter included. Pass <code>etag</code> as <code>if_match</code> to <code>write</code>, <code>edit</code>, <code>delete</code> or <code>rename</code> to change the note you read.</p>
 <!-- DOMAIN-EXAMPLE-read-END -->
+
+<h2 id="inspect_citations"><code>inspect_citations</code><a class="headerlink" href="#inspect_citations" title="Permanent link">&para;</a></h2>
+<p><strong>Inspect Note Citations.</strong> Read-only. Idempotent.</p>
+<p>Join a note's literal footnote labels to its source records.</p>
+<p>Use this for attribution in one known note, not navigation or evidence
+verification. Reports unmatched labels and duplicate-ID ambiguity without
+opening source resources; syntax coverage is limited and reported.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Exact case-sensitive .md note path from search or <code>list_documents</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Literal sources, citation IDs with occurrence counts and zero-based
+source indices, source-shape issues, duplicate IDs, and indices of source
+entries without IDs. Matched means one exact ID, not that the source supports a
+claim. Unmatched labels may be ordinary footnotes. The scope and syntax
+fields describe coverage. <code>returned_text_sha256</code> hashes the LF-normalized
+returned text encoded as UTF-8; it is not a raw-file etag, a portable
+identity or a value to use for <code>if_match</code>.</p>
+<!-- DOMAIN-EXAMPLE-inspect_citations-START -->
+
+<p>Inspect one known note: <code>inspect_citations(path="research/note.md")</code>.
+For <code>Claim[^handbook]</code> and <code>sources: [{id: handbook, resource: team handbook}]</code>,
+the result reports <code>matched</code> with <code>source_indices: [0]</code>. The match records an
+exact ID join. Source support remains unchecked. See <a href="../../../use/okf/#syntax-coverage">syntax coverage</a>.</p>
+<!-- DOMAIN-EXAMPLE-inspect_citations-END -->
+
+<h2 id="find_citing_notes"><code>find_citing_notes</code><a class="headerlink" href="#find_citing_notes" title="Permanent link">&para;</a></h2>
+<p><strong>Find Citing Notes.</strong> Read-only. Idempotent.</p>
+<p>Find indexed notes whose footnote labels cite an exact source resource.</p>
+<p>Use <code>inspect_citations</code> for the sources one known note cites. The resource
+matches exactly, with no URL normalization; plain body links do not count.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resource</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Exact resource string of a source record in a note's sources.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Citing notes with their titles, labels and occurrence counts;
+diagnostics for unmatched, ambiguous and invalid-resource labels in
+notes that declare the resource; <code>unconverted_notes</code>, the count of
+indexed notes not yet re-read under the current citation rules and so
+left out until a forced reindex; and the syntax and scope fields describing coverage. A
+matched label is attribution, not evidence that the source supports a
+claim.</p>
+<!-- DOMAIN-EXAMPLE-find_citing_notes-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-find_citing_notes-END -->
 
 <h2 id="list_documents"><code>list_documents</code><a class="headerlink" href="#list_documents" title="Permanent link">&para;</a></h2>
 <p><strong>List Documents.</strong> Read-only. Idempotent.</p>
@@ -3475,8 +3612,10 @@ serves and the frontmatter fields search can filter on.</p>
 <li>okf (dict, optional): Present only when the vault is an active
   OKF (Open Knowledge Format) bundle. Carries mode,
   <code>declared_version</code>, a per-<code>type</code> histogram plus <code>untyped_count</code>,
-  status and trust-tier breakdowns, and <code>stale_count</code>. Those cover
-  the note population '<code>okf_validate</code>' audits; the reserved
+  status and recorded-review trust-tier breakdowns, and <code>stale_count</code>.
+  These counts cover the note population '<code>okf_validate</code>' audits;
+  the classifications do not establish review applicability to
+  current content. The reserved
   <code>index.md</code> / <code>log.md</code> files are counted apart as
   <code>reserved_count</code>. <code>write_configured</code> is the configured OKF write
   flag; <code>write_effective</code> is true when that flag is enabled, OKF
@@ -3807,8 +3946,10 @@ than one of them.</p>
   them when writing to or proposing links involving this note;
   some folders are self-contained by design.</li>
 <li>okf (dict, optional): OKF read annotation for this note
-  (type, status, stale, <code>trust_tier</code>, <code>sources_count</code>). Present
-  only when the vault is an active OKF bundle.</li>
+  (type, status, stale, <code>trust_tier</code> for recorded review metadata,
+  freshness, review, <code>review_applicability</code>, attribution,
+  generation, <code>sources_count</code>). Present only when the vault is an
+  active OKF bundle.</li>
 </ul>
 <p>Index freshness is reported out-of-band in the response's
 <code>_meta.index_stale</code> field: True when the IndexWriter had
@@ -3918,7 +4059,22 @@ up to 20 <code>examples</code> (list[str] of paths).</p>
   exporting.</li>
 <li><code>missing_recommended</code>: notes without the recommended <code>title</code> or
   <code>description</code>.</li>
+<li><code>missing_freshness</code>: assessed notes with no expiry supplied.</li>
 </ul>
+<p>Evidence observations leave <code>conformant_notes</code> unchanged:</p>
+<ul>
+<li><code>malformed_freshness</code>, <code>malformed_review</code>: assessed notes with
+  unsupported expiry or malformed review records.</li>
+<li><code>malformed_sources</code>: assessed notes whose <code>sources</code> is not a list
+  or has an entry that is not a mapping. An empty list is valid.</li>
+<li><code>malformed_generated</code>: assessed notes whose <code>generated</code> lacks a
+  recognized actor or an offset-aware <code>at</code>, the rule <code>verified</code>
+  entries follow.</li>
+<li><code>evidence_unavailable</code>: discovered notes not assessed for evidence
+  because reading/parsing failed or the read cap was exceeded.</li>
+</ul>
+<p>Evidence findings cover discovered, non-excluded concepts, not
+complete traversal, truth, or editorial-policy compliance.</p>
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-okf_validate-END -->

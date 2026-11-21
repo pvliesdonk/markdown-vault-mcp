@@ -43,7 +43,7 @@ Called by the SPA context card view via `app.callServerTool()`. Not visible to t
 
 **Returns**
 
-Dict with path, title, folder, frontmatter, `modified_at`, backlinks, outlinks, similar, `folder_notes`, and tags; see '`get_context`' for field details. Returns `{"error": "..."}` if the note is not found.
+Dict with path, title, folder, frontmatter, `modified_at`, backlinks, outlinks, similar, `folder_notes`, and tags; see '`get_context`' for field details. On an active OKF bundle it also carries the same 'okf' annotation as '`get_context`'. Returns `{"error": "..."}` if the note is not found.
 
 ## `show_context`
 
@@ -169,7 +169,7 @@ Called by the SPA browser view via `app.callServerTool()`. Not visible to the LL
 
 **Returns**
 
-Dict with path, title, frontmatter, content (the full raw file, including the frontmatter block), and `modified_at` (Unix timestamp), or null if the note is not found.
+Dict with path, title, frontmatter, content (the full raw file, including the frontmatter block), and `modified_at` (Unix timestamp), plus, on an active OKF bundle, the same 'okf' annotation as a whole-note 'read'; or null if the note is not found.
 
 ## `vault_search`
 

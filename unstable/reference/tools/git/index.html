@@ -2829,7 +2829,7 @@ vault, newest first.</p>
 <td><code>since</code></td>
 <td><code>string \| null</code></td>
 <td><code>null</code></td>
-<td>Earliest commit date, inclusive: an ISO 8601 time such as <code>"2026-04-01T00:00:00"</code> or a relative date such as <code>"1 week ago"</code>; omit for all history.</td>
+<td>Earliest commit date, inclusive: an ISO date or date-time within 1970-2099, such as <code>"2026-04-01T00:00:00Z"</code>; <code>"now"</code>, <code>"today"</code> or <code>"yesterday"</code>; or whole numbers of seconds, minutes, hours, days, weeks, months or years followed by <code>"ago"</code>, such as <code>"1 week ago"</code> or <code>"2 days 3 hours ago"</code>. Omit for all history.</td>
 </tr>
 <tr>
 <td><code>until</code></td>
@@ -2870,7 +2870,7 @@ vault, newest first.</p>
 </ul>
 <p><strong>Outcomes and errors</strong></p>
 <ul>
-<li>ToolError: If the path is invalid or uses an unsupported extension.</li>
+<li>ToolError: If the path or date filter is invalid, or the path uses an unsupported extension.</li>
 </ul>
 <!-- DOMAIN-EXAMPLE-get_history-START -->
 <div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"notes/alpha.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1 week ago"</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">}</span>
@@ -2911,7 +2911,7 @@ unified diff or one per commit.</p>
 <td><code>since_timestamp</code></td>
 <td><code>string \| null</code></td>
 <td><code>null</code></td>
-<td>An ISO 8601 time; diffs from the latest commit at or before it.</td>
+<td>An ISO date or date-time within 1970-2099, such as <code>"2026-04-01T00:00:00Z"</code>; <code>"now"</code>, <code>"today"</code> or <code>"yesterday"</code>; or whole numbers of seconds, minutes, hours, days, weeks, months or years followed by <code>"ago"</code>, such as <code>"1 week ago"</code>. Diffs from the latest commit at or before that time.</td>
 </tr>
 <tr>
 <td><code>per_commit</code></td>
@@ -2954,7 +2954,7 @@ unified diff or one per commit.</p>
 </ul>
 <p><strong>Outcomes and errors</strong></p>
 <ul>
-<li>ToolError: If neither or both reference parameters are supplied, the SHA is invalid, the reference commit is not found, or the path uses an unsupported extension.</li>
+<li>ToolError: If the call does not give exactly one reference parameter or names a path with an unsupported extension, and when its SHA or date is invalid or matches no commit.</li>
 </ul>
 <!-- DOMAIN-EXAMPLE-get_diff-START -->
 <div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"notes/alpha.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"since_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9f2c1ab"</span><span class="p">,</span><span class="w"> </span><span class="nt">"per_commit"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}</span>

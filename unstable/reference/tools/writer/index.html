@@ -3310,15 +3310,15 @@ notes follow it.</p>
 <td><code>update_links</code></td>
 <td><code>boolean</code></td>
 <td><code>false</code></td>
-<td>Rewrite links to <code>old_path</code> in other notes so they point at <code>new_path</code>; attachment references are not tracked. Default false; pass true for every note.</td>
+<td>Rewrite links to <code>old_path</code> in other notes so they point at <code>new_path</code>; attachment references are not tracked. Default false; pass true for every note. The moved note's own links may change; read <code>new_path</code> for its current etag before a guarded write.</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Returns</strong></p>
 <p>Dict with <code>old_path</code> (str), <code>new_path</code> (str), and <code>updated_links</code> (int)
 counting the number of source documents whose links were updated.
-Carries hint (str) only when <code>update_links</code> was requested for an
-attachment, saying why nothing was rewritten.</p>
+Carries hint (str) when <code>update_links</code> was requested for an attachment
+or when the moved note's links could not be rewritten.</p>
 <ul>
 <li>
 <p><code>link_rewrites_since_etag</code> (int, optional): present only when

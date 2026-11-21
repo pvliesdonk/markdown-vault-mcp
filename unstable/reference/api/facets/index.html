@@ -2275,6 +2275,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.find_citing_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        find_citing_notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.inspect_citations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inspect_citations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3572,6 +3594,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.find_citing_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        find_citing_notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.inspect_citations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inspect_citations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4310,7 +4354,7 @@ continues to support computed OKF filters.</p>
 
 
 <h2 id="markdown_vault_mcp.facets.reader.ReaderFacet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ReaderFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">search_mgr</span><span class="p">,</span> <span class="n">doc_mgr</span><span class="p">,</span> <span class="n">git_query_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">,</span> <span class="n">okf_audit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">okf_write_state</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">ReaderFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">search_mgr</span><span class="p">,</span> <span class="n">doc_mgr</span><span class="p">,</span> <span class="n">git_query_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">,</span> <span class="n">citation_mgr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">okf_audit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">okf_write_state</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.reader.ReaderFacet" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -4398,6 +4442,22 @@ queries.</p>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>citation_mgr</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.managers.citations.CitationManager">CitationManager</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Reverse citation lookup manager, when wired.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -5212,7 +5272,7 @@ a <code>search</code> result unchanged for guaranteed match. <code>None</code>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code>DocumentUnreadableError</code>
+                  <code><a class="autorefs autorefs-internal" title="DocumentUnreadableError(path, reason) (markdown_vault_mcp.exceptions.DocumentUnreadableError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentUnreadableError">DocumentUnreadableError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5223,12 +5283,210 @@ parsed (#1608).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
                 <p>If <em>path</em> holds a NUL byte (#1636), or
 <em>section</em> is empty or names no heading.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.find_citing_notes" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">find_citing_notes</span><span class="p">(</span><span class="n">resource</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.find_citing_notes" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Find indexed notes citing an exact resource.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>resource</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact source resource string.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Citing notes and unresolved label diagnostics.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.inspect_citations" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">inspect_citations</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.inspect_citations" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Inspect exact source attribution in one whole-note text snapshot.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Exact vault-relative .md note path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.citations.CitationReport">CitationReport</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Literal sources, label joins and explicit syntax limits. This reads</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.citations.CitationReport">CitationReport</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>no source resources and makes no claim about evidentiary support.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the path is not a .md note or exceeds the
+existing whole-note read limit.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the existing reader finds no note.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="DocumentUnreadableError(path, reason) (markdown_vault_mcp.exceptions.DocumentUnreadableError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentUnreadableError">DocumentUnreadableError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the existing reader cannot read it.</p>
               </div>
             </td>
           </tr>
@@ -5406,7 +5664,7 @@ content, matched as :meth:<code>read</code> matches it on disk.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5419,7 +5677,7 @@ traced to that revision, the content is over the read cap, or
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code>DocumentUnreadableError</code>
+                  <code><a class="autorefs autorefs-internal" title="DocumentUnreadableError(path, reason) (markdown_vault_mcp.exceptions.DocumentUnreadableError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentUnreadableError">DocumentUnreadableError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5824,7 +6082,7 @@ excludes attachments (they carry no frontmatter).</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5978,7 +6236,7 @@ first (bucket 3).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code>DocumentNotFoundError</code>
+                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5988,7 +6246,7 @@ first (bucket 3).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6474,7 +6732,7 @@ multiple round trips.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code>DocumentNotFoundError</code>
+                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6546,8 +6804,12 @@ vault-wide history.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>ISO 8601 datetime string or git date expression (e.g.
-<code>"1 week ago"</code>).  Passed as <code>--since</code> to <code>git log</code>.
+                <p>ISO calendar date/time within 1970-2099, <code>now</code>, <code>today</code>,
+<code>yesterday</code>, or integer second/minute/hour/day/week/month/year
+quantities ending in <code>ago</code> (e.g. <code>"1 week ago"</code>). Quantities
+use at most eight digits without leading zeros and must stay
+after 1970. <code>today</code> means local midnight. Passed as
+<code>--since</code>.
 <code>None</code> disables the filter.</p>
               </div>
             </td>
@@ -6564,7 +6826,7 @@ vault-wide history.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>ISO 8601 datetime string or git date expression, passed as
+                <p>A supported date in the same forms as <em>since</em>, passed as
 <code>--until</code> to <code>git log</code>.  <code>None</code> disables the filter.
 Both <code>since</code> and <code>until</code> boundaries are <strong>inclusive</strong>: a
 commit whose committer date equals either endpoint is included
@@ -6746,12 +7008,12 @@ in the result.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
                 <p>If <em>path</em> is provided but fails path validation
-(unsupported extension or path traversal).</p>
+(unsupported extension or path traversal), or a date is unsupported.</p>
               </div>
             </td>
           </tr>
@@ -6834,7 +7096,8 @@ digits) to diff from.  Mutually exclusive with
             </td>
             <td>
               <div class="doc-md-description">
-                <p>ISO 8601 datetime string, resolved via
+                <p>A supported date in the same forms as <code>since</code> in
+:meth:<code>get_history</code>, resolved via
 <code>git rev-list --before=&lt;ts&gt; -1 HEAD</code> to the most recent
 commit at or before that instant.  Boundary is
 <strong>inclusive</strong>: a commit whose committer date equals
@@ -7053,7 +7316,7 @@ range).  Silently ignored when <em>per_commit</em> is <code>False</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code>InvalidRequestError</code>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
