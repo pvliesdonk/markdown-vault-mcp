@@ -314,7 +314,7 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
         :data:`TRUST_HUMAN`.
     """
     entries = [entry for entry in verified_entries(metadata) if _review_recorded(entry)]
-    if any(entry["by"].strip().startswith(_HUMAN_ACTOR_PREFIX) for entry in entries):
+    if any(_is_human_actor(entry["by"]) for entry in entries):
         return TRUST_HUMAN
     if entries:
         return TRUST_MACHINE
@@ -326,15 +326,28 @@ _INSTANT_RE = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ](?:[01][0-9]|2[0-3]):[0-5][0-9]"
     r"(?::[0-5][0-9](?:[.,][0-9]+)?)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
 )
-# A human:/process: id may contain internal spaces, so a subject such as
-# "Jane Doe" that okf_verify writes reads back as recorded (#2393); tabs and
-# line breaks stay malformed, and <producer>/<version> stays space-free.
-_ACTOR_RE = re.compile(r"(?:(?:human|process):\S(?:[ \S]*\S)?|[^\s/:]+/[^\s/]+)")
 
 
 def _is_actor(value: Any) -> bool:
-    """Whether a ``by`` value is an actor in the OKF convention (§7)."""
-    return isinstance(value, str) and _ACTOR_RE.fullmatch(value.strip()) is not None
+    """Whether a ``by`` value is an actor in the OKF convention (§7).
+
+    OKF 0.3 §7 gives two forms, ``<producer>/<version>`` and
+    ``<scheme>:<id>`` with an opaque id, and says consumers "MUST accept
+    other schemes". It defines no grammar for a scheme, producer or version,
+    so any string with a ``:`` or ``/`` is an actor (#2407); only a value
+    with neither separator fits no form. An empty string is the same as an
+    absent key (§11.2), and it has no separator either.
+    """
+    return isinstance(value, str) and (":" in value or "/" in value)
+
+
+def _is_human_actor(value: Any) -> bool:
+    """Whether an actor gives the human-reviewed tier (OKF 0.3 §7).
+
+    Only the ``human:`` scheme does, matched exactly: every other scheme,
+    ``team:`` included, and the ``<producer>/<version>`` form are non-human.
+    """
+    return _is_actor(value) and value.startswith(_HUMAN_ACTOR_PREFIX)
 
 
 def _is_instant(value: Any) -> bool:

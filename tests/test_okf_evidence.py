@@ -89,16 +89,10 @@ def test_freshness_basis(value: Any, state: str, basis: str) -> None:
         {"by": "human:alice"},
         {"by": None, "at": AT},
         {"by": 42, "at": AT},
-        {"by": "human:", "at": AT},
-        {"by": "process:", "at": AT},
-        {"by": "human: alice", "at": AT},
-        {"by": "human:alice\nbob", "at": AT},
-        {"by": "process:build\tci", "at": AT},
-        {"by": "agent/", "at": AT},
-        {"by": "/1.0", "at": AT},
-        {"by": "agent/1.0/extra", "at": AT},
-        {"by": "agent/one two", "at": AT},
+        {"by": "", "at": AT},
         {"by": " ", "at": AT},
+        {"by": "codex", "at": AT},
+        {"by": "Jane Doe", "at": AT},
         {"by": "human:alice", "at": "2026-11-14T10:00:00"},
         {"by": "human:alice", "at": "2026-11-31"},
         "human:alice",
@@ -130,6 +124,26 @@ def test_malformed_review_never_promotes(entry: Any) -> None:
         ("human:user alice", "human-reviewed"),
         ("process:nightly build", "machine-confirmed"),
         ("agent/1.0", "machine-confirmed"),
+        # OKF 0.3 §7: the id is opaque, and consumers MUST accept other
+        # schemes and treat them as non-human (#2407).
+        ("team:finance-fpa", "machine-confirmed"),
+        ("svc:indexer", "machine-confirmed"),
+        ("Human:alice", "machine-confirmed"),
+        (" human:alice", "machine-confirmed"),
+        (":anonymous", "machine-confirmed"),
+        ("process:", "machine-confirmed"),
+        ("process:build\tci", "machine-confirmed"),
+        ("reference_agent/gemini-2.5-pro", "machine-confirmed"),
+        ("agent/llama3:8b", "machine-confirmed"),
+        ("agent/human:alice", "machine-confirmed"),
+        ("agent/", "machine-confirmed"),
+        ("/1.0", "machine-confirmed"),
+        ("agent/1.0/extra", "machine-confirmed"),
+        ("agent/one two", "machine-confirmed"),
+        ("human:", "human-reviewed"),
+        ("human: alice", "human-reviewed"),
+        ("human:alice\nbob", "human-reviewed"),
+        ("human:alice\tsmith", "human-reviewed"),
     ],
 )
 def test_recorded_claim_survives_malformed_sibling(actor: str, tier: str) -> None:
@@ -400,7 +414,7 @@ def test_absent_provenance_is_missing() -> None:
         {"at": AT},
         {"by": "codex/1.0", "at": "2026-11-14T09:00:00"},
         {"by": "codex/1.0", "at": "2026-02-30"},
-        {"by": "human:alice\tsmith", "at": AT},
+        {"by": "Jane Doe", "at": AT},
         [{"by": "codex/1.0", "at": AT}],
         "codex at a date",
     ],
@@ -416,7 +430,15 @@ def test_generated_malformed_under_okf_5_2(generated: Any) -> None:
 
 @pytest.mark.parametrize(
     "actor",
-    ["markdown-vault-mcp/1.4.0", "human:alice", "human:Jane Doe", "process:ci"],
+    [
+        "markdown-vault-mcp/1.4.0",
+        "human:alice",
+        "human:Jane Doe",
+        "process:ci",
+        "team:finance-fpa",
+        "svc:indexer",
+        "human:alice\tsmith",
+    ],
 )
 def test_generated_recorded_for_a_usable_actor(actor: str) -> None:
     result = derive_annotation({"generated": {"by": actor, "at": AT}}, now=NOW)
