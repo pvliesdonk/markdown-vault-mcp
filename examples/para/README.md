@@ -99,7 +99,7 @@ The server does not enforce this layout. The prompts suggest these paths when th
 These templates work as-is inside an [OKF](../okf/README.md) bundle. Two things to know:
 
 - The inbox template now carries `type: Capture`, so quick captures are OKF-conformant from the start; triage assigns the real type. The other templates already set a `type` (`project` / `area` / `resource`).
-- PARA uses `status` for workflow state (`active`, `archived`); OKF uses `status` for lifecycle (`draft`, `stable`, `deprecated`). If you declare the vault an OKF bundle — add `okf_version: "0.2"` to the root `index.md` — move PARA's workflow state to its own key so the two meanings don't collide. See [Using PARA with OKF](../../docs/use/para.md#using-para-with-okf).
+- PARA uses `status` for workflow state (`active`, `archived`); OKF uses `status` for lifecycle (`draft`, `stable`, `deprecated`). If you declare the vault an OKF bundle — add `okf_version: "0.3"` to the root `index.md` — move PARA's workflow state to its own key so the two meanings don't collide. See [Using PARA with OKF](../../docs/use/para.md#using-para-with-okf).
 
 ## See Also
 

@@ -52,12 +52,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# --- OKF v0.2 field-mapping table (data, not code) --------------------------
+# --- OKF field-mapping table (data, not code) -------------------------------
 
-#: Spec revisions this implementation knows; anything else logs a warning
-#: and is still treated as detected (permissive-consumer behavior extends
-#: to the marker itself).
-KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2")
+#: Declared versions that log no warning: 0.3, the one version every bundle
+#: is read as (#2422), plus the earlier versions the 0.3 text names and says
+#: how to read (§12.1, §13). A declared value only turns detection on; it
+#: selects no rules, so a ``0.2`` bundle is read by 0.3's rules. Anything
+#: else logs ``okf_unknown_version`` and is still treated as detected (§12:
+#: best-effort, never refused).
+KNOWN_OKF_VERSIONS: tuple[str, ...] = ("0.1", "0.2", "0.3")
 
 #: Scalar frontmatter keys promoted into ``document_tags`` when detection
 #: is on (feeds the phase-2 filters; harmless to index ahead of them).
@@ -209,7 +212,7 @@ class OkfDetector:
 
         Returns:
             The declared version as a string (YAML scalars are normalized,
-            so an unquoted ``0.2`` still reads as ``"0.2"``), or ``None``
+            so an unquoted ``0.3`` still reads as ``"0.3"``), or ``None``
             when the file is missing, unreadable, has no parseable
             frontmatter, or carries no usable ``okf_version``.
         """

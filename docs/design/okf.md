@@ -9,11 +9,12 @@ ref) implemented; their design has
 graduated into `design.md` ("OKF Read Semantics"). Later phases remain
 proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
-**Spec targeted:** OKF v0.2
+**Spec targeted:** OKF v0.3, the one version the server reads every bundle
+as, whatever its `okf_version` declares (#2422). OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
-Apache 2.0; announced 2026-06-12 on the
-[Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)).
-What the spec actually says, with sources, dates and the in-place amendment
+Apache 2.0) was announced 2026-06-12 on the
+[Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing).
+What the v0.2 text says, with sources, dates and the in-place amendment
 of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 `stale_after` an instant), is the reference page
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md), now deprecated. The
@@ -77,7 +78,7 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   `stale_after`: a `YYYY-MM-DD` date (the July 2026 text) or an ISO 8601
   instant with an offset (the text since 2026-08-21).
 - **Bundle marker:** `okf_version: "0.2"` allowed only in the bundle-root
-  `index.md` frontmatter.
+  `index.md` frontmatter. Under 0.3 a bundle declares `"0.3"`; see Detection.
 - **Reserved files:** `index.md` (progressive-disclosure directory listing)
   and `log.md` (change history, newest-first `## YYYY-MM-DD` headings).
 - **Links:** standard markdown links, untyped; bundle-root-absolute
@@ -167,9 +168,13 @@ absent when detection is inactive. Effective means `OKF_WRITE` is enabled,
 OKF is active, and the vault is not read-only. Independent services remain
 the subject of #1412.
 
-Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
-treated as detected — permissive-consumer behavior extends to the marker
-itself.
+The declared value turns detection on and selects no rules: every bundle is
+read by OKF 0.3's rules, with none of §12.1's optional fallbacks (#2422). The
+known versions are `0.3` and the `0.1` and `0.2` that the 0.3 text names and
+says how to read (§12.1, §13); they log nothing. Any other value (e.g. a
+future `"0.4"`) logs `okf_unknown_version` at `WARNING`, once per value per
+process, and is treated as detected: OKF §12 asks a consumer to try
+best-effort consumption and not refuse the bundle.
 
 ---
 

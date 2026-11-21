@@ -124,6 +124,29 @@ class TestOkfDetector:
         warnings = [r for r in caplog.records if "okf_unknown_version" in r.message]
         assert len(warnings) == 1
 
+    def test_current_version_detects_without_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # OKF 0.3 is the version the server reads every bundle as (#2422).
+        _write_root_index(tmp_path, '---\nokf_version: "0.3"\n---\n')
+        with caplog.at_level(logging.WARNING):
+            state = OkfDetector(tmp_path, mode="auto").state()
+        assert state.active is True
+        assert state.declared_version == "0.3"
+        assert not [r for r in caplog.records if "okf_unknown_version" in r.message]
+
+    @pytest.mark.parametrize("version", ["0.1", "0.2"])
+    def test_earlier_version_detects_without_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, version: str
+    ) -> None:
+        # 0.3 names these versions (§12.1, §13) and says how to read their
+        # values, so they are known; the declaration selects no rules.
+        _write_root_index(tmp_path, f'---\nokf_version: "{version}"\n---\n')
+        with caplog.at_level(logging.WARNING):
+            state = OkfDetector(tmp_path, mode="auto").state()
+        assert state.active is True
+        assert not [r for r in caplog.records if "okf_unknown_version" in r.message]
+
     def test_invalid_frontmatter_is_not_detected(self, tmp_path: Path) -> None:
         _write_root_index(tmp_path, "---\n: [broken\n---\n")
         assert OkfDetector(tmp_path, mode="auto").state().active is False
