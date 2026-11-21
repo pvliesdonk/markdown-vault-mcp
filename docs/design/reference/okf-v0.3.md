@@ -291,8 +291,8 @@ are named where they exist; a fix rewrites them.
 | 3 | Unparseable `stale_after` (§5.5) | silent | silent (PR #323: the reference agent ignores offset-less values) | never fresh | fixed by #2410: `stale: true`, so `stale=false` excludes it and it is downweighted | MUST NOT | #2410 (fixed) |
 | 4 | Date-only `stale_after` (§5) | date, no time zone | invalid | 00:00 UTC | fixed by #2404: read as 00:00 UTC (was the server-local day, stale an hour early at 00:30+01:00) | defined (no keyword) | #2404 (inverted) |
 | 5 | Date-only `verified[].at`, `generated.at` (§5) | datetime (offset unstated) | invalid | valid, 00:00 UTC | fixed by #2404: recorded, read as 00:00 UTC (was malformed, the event ignored and the tier unverified) | valid form (no keyword) | #2400 (inverted) |
-| 6 | Null/empty = absent (§11.2) | silent | silent | required | null `stale_after` / `generated` reported malformed; empty `verified` reported `empty` | stated (no keyword) | none |
-| 7 | One item as a list (§11.2) | `verified` only | `verified` only | every list field | a `sources` mapping is malformed | MUST | none |
+| 6 | Null/empty = absent (§11.2) | silent | silent | required | fixed: null, `""` and `[]` read as absent in the annotation and the audit (was: null `stale_after` / `generated` malformed; empty `verified` reported `empty`) | stated (no keyword) | #2411 (fixed) |
+| 7 | One item as a list (§11.2) | `verified` only | `verified` only | every list field | fixed: one `sources` item is a one-item list (was: a `sources` mapping is malformed) | MUST | #2412 (fixed) |
 | 8 | `type` not a conformance rule (§3.2, §11.1) | required | required | not required; SHOULD warn | `missing_type` is a conformance finding; README.md counts in `total_notes` | stricter | #2406 (dissolves) |
 | 9 | Reserved files under rule 1 (§11.1) | n/a | n/a | every `.md` | an unparseable `log.md` block is not reported | lenient | none |
 | 10 | Root `index.md` keys (§8.1) | `okf_version` | `okf_version` | + title, description, license, extensions | anything but a lone `okf_version` is `index_frontmatter` | stricter | none |

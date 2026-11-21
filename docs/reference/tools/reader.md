@@ -120,7 +120,7 @@ an 'okf' dict (type, status, stale, `trust_tier` for recorded review
 metadata, freshness, review, `review_applicability`, recorded, and the
 note's 'sources' list when present). `review_applicability`.state is
 "unknown" when verified has entries or is malformed (no snapshot
-binding) and "none" when it is absent or an empty list.
+binding) and "none" when it is absent, null, empty or an empty list.
 attribution reports `sources` in the shape of review, and
 generation reports `generated` as {state, basis}, judged like a
 verified entry (recorded actor; `at` a date or an offset
@@ -729,8 +729,8 @@ Evidence observations leave `conformant_notes` unchanged:
 
 - `malformed_freshness`, `malformed_review`: assessed notes with
   unsupported expiry or malformed review records.
-- `malformed_sources`: assessed notes whose `sources` is not a list
-  or has an entry that is not a mapping. An empty list is valid.
+- `malformed_sources`: assessed notes whose `sources` has an entry
+  without a `resource`; one entry may be written without a list.
 - `malformed_generated`: assessed notes whose `generated` lacks a
   recognized actor or an `at` that is a date or an offset
   date-time, the rule `verified` entries follow.

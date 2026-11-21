@@ -39,11 +39,8 @@ AT = "2026-11-14T09:00:00Z"
 @pytest.mark.parametrize(
     "value",
     [
-        None,
-        "",
         0,
         True,
-        [],
         {},
         "2026-13-01",
         "2026-11-15T12:00:00",
@@ -148,19 +145,50 @@ def test_recorded_claim_survives_malformed_sibling(actor: str, tier: str) -> Non
         assert result["recorded"]["verified"] == value
 
 
-def test_absent_empty_null_and_malformed_outer_review() -> None:
+def test_absent_null_empty_and_scalar_review() -> None:
+    # OKF 0.3 §11.2 rule 1: null, "" and [] are the same as an absent key;
+    # rule 2: one item is a one-item list, so a scalar is one malformed entry.
     for metadata, state, malformed in [
         ({}, "missing", 0),
-        ({"verified": []}, "empty", 0),
-        ({"verified": None}, "malformed", 1),
+        ({"verified": []}, "missing", 0),
+        ({"verified": None}, "missing", 0),
+        ({"verified": ""}, "missing", 0),
         ({"verified": "yes"}, "malformed", 1),
     ]:
         result = derive_annotation(metadata, now=NOW, include_sources=True)
         assert result["freshness"]["state"] == "missing"
         assert result["review"]["state"] == state
         assert result["review"]["malformed_entries"] == malformed
-        assert result["recorded"] == metadata
+        assert result["recorded"] == ({"verified": "yes"} if malformed else {})
         assert "recorded" not in derive_annotation(metadata, now=NOW)
+
+
+@pytest.mark.parametrize("value", [None, "", []])
+def test_null_or_empty_fields_are_absent(value: Any) -> None:
+    # OKF 0.3 §11.2 rule 1; §5.5: "An empty or null `stale_after` is the
+    # same as an absent key."
+    metadata = {"stale_after": value, "generated": value, "sources": value}
+    result = derive_annotation(metadata, now=NOW, include_sources=True)
+    assert result["freshness"] == {"state": "missing", "basis": "no_expiry_supplied"}
+    assert result["generation"] == _generation("missing")
+    assert result["attribution"] == _attribution("missing")
+    assert result["stale"] is False
+    assert result["recorded"] == {}
+    assert "sources" not in result
+
+
+@pytest.mark.parametrize("value", ["null", "''", "[]"])
+def test_audit_reads_null_or_empty_fields_as_absent(tmp_path: Path, value: str) -> None:
+    (tmp_path / "a.md").write_text(
+        f"---\ntype: Concept\nstale_after: {value}\ngenerated: {value}\n"
+        f"verified: {value}\nsources: {value}\n---\nbody"
+    )
+    report = audit_bundle(tmp_path)
+    assert report.missing_freshness == OkfFinding(1, ("a.md",))
+    assert report.malformed_freshness.count == 0
+    assert report.malformed_generated.count == 0
+    assert report.malformed_review.count == 0
+    assert report.malformed_sources.count == 0
 
 
 class _NaiveZone(dt.tzinfo):
@@ -228,7 +256,7 @@ def test_audit_limit_withholds_only_new_evidence_findings(tmp_path: Path) -> Non
 def test_audit_evidence_examples_capped_sorted(tmp_path: Path) -> None:
     for name in ("z.md", "b.md", "a.md"):
         (tmp_path / name).write_text(
-            "---\ntype: Concept\nstale_after: null\nverified: nope\n---"
+            "---\ntype: Concept\nstale_after: nonsense\nverified: nope\n---"
         )
     report = audit_bundle(tmp_path, example_cap=1)
     assert report.malformed_freshness == OkfFinding(3, ("a.md",))
@@ -248,15 +276,15 @@ def test_report_old_positional_constructor() -> None:
     ("metadata", "applicability", "review_state"),
     [
         ({}, {"state": "none", "basis": "no_review_supplied"}, "missing"),
-        ({"verified": []}, {"state": "none", "basis": "no_review_supplied"}, "empty"),
+        ({"verified": []}, {"state": "none", "basis": "no_review_supplied"}, "missing"),
         (
             {"verified": None},
-            {"state": "unknown", "basis": "malformed_review"},
-            "malformed",
+            {"state": "none", "basis": "no_review_supplied"},
+            "missing",
         ),
         (
             {"verified": True},
-            {"state": "unknown", "basis": "malformed_review"},
+            {"state": "unknown", "basis": "no_snapshot_binding"},
             "malformed",
         ),
         (
@@ -319,7 +347,10 @@ def _generation(state: str) -> dict[str, str]:
 @pytest.mark.parametrize(
     ("sources", "expected"),
     [
-        ([], _attribution("empty")),
+        ([], _attribution("missing")),
+        ({"resource": "https://a"}, _attribution("recorded", recorded=1)),
+        ({"resource": None}, _attribution("malformed", malformed=1)),
+        ([{"resource": ""}], _attribution("malformed", malformed=1)),
         ([{"id": "a", "resource": "https://a"}], _attribution("recorded", recorded=1)),
         ([{"id": "a"}], _attribution("malformed", malformed=1)),
         (
@@ -329,7 +360,8 @@ def _generation(state: str) -> dict[str, str]:
         (["https://x"], _attribution("malformed", malformed=1)),
         ("https://x", _attribution("malformed", malformed=1)),
         ({"id": "a"}, _attribution("malformed", malformed=1)),
-        (None, _attribution("malformed", malformed=1)),
+        (None, _attribution("missing")),
+        ("", _attribution("missing")),
     ],
 )
 def test_sources_reported_like_review(sources: Any, expected: dict[str, Any]) -> None:
@@ -339,6 +371,17 @@ def test_sources_reported_like_review(sources: Any, expected: dict[str, Any]) ->
         )
         assert result["attribution"] == expected
         assert "malformed_sources" not in result
+
+
+def test_one_source_mapping_is_a_one_item_list() -> None:
+    # OKF 0.3 §11.2 rule 2: "Where a field is a list (`tags`, `sources`,
+    # `verified`, `parameters`), consumers MUST accept one item as a list
+    # with one item."
+    source = {"id": "a", "resource": "https://a"}
+    full = derive_annotation({"sources": source}, now=NOW, include_sources=True)
+    assert full["sources"] == [source]
+    compact = derive_annotation({"sources": source}, now=NOW)
+    assert compact["sources_count"] == 1
 
 
 def test_absent_provenance_is_missing() -> None:
@@ -355,13 +398,11 @@ def test_absent_provenance_is_missing() -> None:
         {"by": "", "at": AT},
         {"by": "codex"},
         {"at": AT},
-        {"by": "codex/1.0", "at": None},
         {"by": "codex/1.0", "at": "2026-11-14T09:00:00"},
         {"by": "codex/1.0", "at": "2026-02-30"},
         {"by": "human:alice\tsmith", "at": AT},
         [{"by": "codex/1.0", "at": AT}],
         "codex at a date",
-        None,
     ],
 )
 def test_generated_malformed_under_okf_5_2(generated: Any) -> None:
@@ -397,6 +438,15 @@ def test_date_only_at_is_recorded(at: str) -> None:
     assert result["generation"] == _generation("recorded")
     assert result["review"]["state"] == "recorded"
     assert result["trust_tier"] == "human-reviewed"
+
+
+@pytest.mark.parametrize("at", [None, ""])
+def test_generated_null_or_empty_at_is_absent(at: str | None) -> None:
+    # OKF 0.3 §11.2 rule 1 applies inside a family too.
+    result = derive_annotation({"generated": {"by": "codex/1.0", "at": at}}, now=NOW)
+    assert result["generation"] == _generation("recorded")
+    review = derive_annotation({"verified": {"by": "codex/1.0", "at": at}}, now=NOW)
+    assert review["review"]["state"] == "malformed"
 
 
 def test_generated_at_is_optional_but_verified_at_is_not() -> None:
