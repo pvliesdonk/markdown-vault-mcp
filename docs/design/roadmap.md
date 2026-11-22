@@ -220,6 +220,35 @@ not complete this outcome. Establishing that contract before broader capability
 work exposes which assumptions belong to the vault and which belong to its MCP
 integration, reducing uncertainty for later OKF and other consumers.
 
+### Subsystems governed by an adopted north star
+
+`stated` — A complex subsystem needs "a consistent vision over the whole
+project/repo/lifetime, and not an in-session thought or mini-design. That is
+true for OKF by actually for many subsystems, this is the acute problem"; the
+north star "is that document", and "If that document is wrong or outdated then
+it needs to be reopened and rediscussed holistically, with an audit of where it
+touches existing code" (owner, 22 November 2026).
+
+`derived` — [Epic #2460][2460]'s **Done when**: a change to a complex
+subsystem is always made against its adopted north star, a decision the north
+star does not support reopens it instead of being settled in one session or
+pull request, and any contributor or agent working from a clone meets that
+rule in the repository. Only OKF has an adopted north star; the release vision
+was never adopted, and storage, git, the library and submodules have direction
+paragraphs here but no governing document. [Refinement #2461][2461] decides
+which subsystems need one, in what order, and how the rule is enforced. Each
+candidate gets a review first: OKF ([#2459][2459], which reopens the existing
+one), git integration ([#2462][2462]), storage and search ([#2463][2463]), the
+library and its public surface ([#2464][2464]), the release system
+([#2465][2465], whose vision document was never adopted), vault views
+([#2466][2466]) and the documentation system ([#2467][2467]).
+
+`derived` — The OKF north star comes first because 025 was built against it
+without it being consulted, and it is demonstrably out of date: it names OKF
+0.2 as current, describes pre-025 behaviour, and lacks the 21–22 November
+decisions. [#2459][2459] reopens it against OKF 0.3 and those decisions, with
+an audit of where it touches the code.
+
 ### Faithful OKF bundles and explicit curation
 
 `evidenced` — [Epic #1425][1425], whose **Done when** preserves its adopted
@@ -689,6 +718,11 @@ that statement (§ Revisions); the OKF entries no longer have their 18 November
 membership. Since 21 November 2026 every ordinal from `025` to `041`
 is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
 
+- **[020 north-star-governance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/43)**:
+  epic [#2460][2460], refinement [#2461][2461] and the OKF north star's
+  reopening [#2459][2459]. Mostly docs and process, which cut no release on
+  their own, like `010 template-detach`; its kind follows whatever code fix the
+  reopening's audit brings.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
   (major): epic [#2401][2401]: research [#2403][2403] first, then one bug per
   departure from the spec.
@@ -1351,6 +1385,19 @@ reference bundle). Generated reserved-file frontmatter stays [#1438][1438] in
 `027` to `042`. Each milestone keeps its identity and membership; three
 descriptions that named stale ordinals now name the current ones.
 
+### 22 November 2026 — put north-star governance at `020`, ahead of `025`
+
+`stated` — "That means a new high-priority milestone first. 020 or something"
+(owner, 22 November 2026), after the owner found 025's scoping drifting from
+the OKF north star and `okf.md` §6.0 because they were not consulted, and ruled
+that the fix belongs in the repository, not in any one agent's memory.
+
+`derived` — `020 north-star-governance` holds epic [#2460][2460]. Its first
+application, [#2459][2459], reopens the OKF north star; the `025` work that
+depends on the outcome is blocked by it: [#2402][2402], [#2421][2421],
+[#2423][2423] and [#2453][2453] to [#2455][2455]. #2457 and #2458, which
+framed the problem as getting documents read, were closed as superseded.
+
 `evidenced` — While aligning `generated` with `verified` for [#2386][2386], the
 recommendation omitted that OKF 0.2 §5.2 requires only `by` within
 `generated`. The owner rejected the resulting stricter rule. The open pull
@@ -1569,3 +1616,18 @@ optional, and each `sources` entry needs `resource`.
 [2405]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2405
 [2406]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2406
 [2407]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2407
+[2402]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2402
+[2421]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2421
+[2423]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2423
+[2453]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2453
+[2454]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2454
+[2455]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2455
+[2459]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459
+[2460]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2460
+[2461]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2461
+[2462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462
+[2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
+[2464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464
+[2465]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465
+[2466]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466
+[2467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467
