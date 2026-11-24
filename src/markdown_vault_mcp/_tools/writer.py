@@ -1053,10 +1053,10 @@ def register(mcp: FastMCP) -> None:
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Write a folder's Open Knowledge Format index.md: a link to each note directly
-        in it with its description, and one to each subfolder's index.md, replacing
-        the old listing and keeping its frontmatter.
+        in it with its description, and one to each subfolder's index.md (a skill
+        folder's SKILL.md), replacing the old listing and keeping its frontmatter.
 
-        Subfolders without an index.md get one too.
+        Subfolders without an index.md get one too, except skill folders.
 
         Args:
             folder: Folder to index, such as `"guides"`; omit for the bundle root.

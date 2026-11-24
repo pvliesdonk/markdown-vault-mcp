@@ -754,6 +754,27 @@ Tool tags following switches: #1412.
   left to the log design. A rename to or from a reserved name triggers
   nothing, both because a reserved-file change never triggers itself (#1414)
   and because regenerating would overwrite the note just renamed onto it.
+- **Skill folders are left as the skill format has them** (#2478, #2479).
+  A skill folder is a non-root folder holding a `SKILL.md`, with
+  everything below it. Membership is decided by any ancestor: a `SKILL.md`
+  nested inside a skill (a template skill it ships) is a resource of the
+  outermost one, so it gets no stamp either. The
+  [Agent Skills specification](https://agentskills.io/specification)
+  defines frontmatter only for `SKILL.md` and fixes the folder's layout
+  (`SKILL.md` plus `scripts/`, `references/`, `assets/`), so inside one the
+  layer adds no top-level OKF keys to any file but `SKILL.md`, and creates,
+  refreshes or appends no `index.md` / `log.md`, for a write, edit, delete,
+  rename or move. The file itself is written as given. A `SKILL.md` write
+  refreshes only the listing of the skill's parent folder, outside the
+  skill, and only for the outermost skill's own `SKILL.md`. `generate_index` lists a
+  skill subfolder as `- [<name>/](/<path>/SKILL.md) - <description>`, taking
+  `description` from the `SKILL.md`, and never gives it an `index.md`: the
+  skill's own entry point is its navigation, and a pointer to an
+  `index.md` the folder may not carry would be broken. The check is one
+  helper, `okf.skill_folder_of`, used by the enricher, the maintainer and
+  `generate_index`; an explicit `okf_generate_index` on a folder inside a
+  skill is the caller's request and still runs. Which `SKILL.md` owns a
+  file is not recorded. Where the outermost `SKILL.md`'s own stamp lands (top level today, `metadata` under #2062) is #2095's.
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
   proposed): designed separately with the provenance evidence it depends
   on (#1420); named here so the switch has an owner in this section.

@@ -39,10 +39,12 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 
 from markdown_vault_mcp._identity import current_principal, resolve_mcp_principal
-from markdown_vault_mcp.okf import apply_okf_write_stamp
+from markdown_vault_mcp.okf import SKILL_FILE, apply_okf_write_stamp, skill_folder_of
+from markdown_vault_mcp.utils import folder_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -64,7 +66,12 @@ class OkfWriteEnrich(Protocol):
     """The ``DocumentManager`` write-enrichment hook's call shape."""
 
     def __call__(
-        self, text: str, operation: WriteOperation, *, stored: str | None = None
+        self,
+        text: str,
+        operation: WriteOperation,
+        *,
+        stored: str | None = None,
+        path: str | None = None,
     ) -> str:
         """Return *text* as it should land.
 
@@ -73,6 +80,7 @@ class OkfWriteEnrich(Protocol):
             operation: The write operation.
             stored: The note's text on disk before the write, or ``None``
                 for a new note.
+            path: The note's vault-relative path, or ``None`` when unknown.
         """
         ...
 
@@ -182,7 +190,10 @@ def build_okf_write_enrich(
     disabled. Otherwise returns a callable that, for ``write`` / ``edit`` on an
     OKF-active vault, stamps ``generated`` provenance and carries the stored
     note's ``verified`` across in place of the written text's — unless the
-    current request carries a suppressing :class:`OkfWriteIntent` (``okf_verify``).
+    current request carries a suppressing :class:`OkfWriteIntent` (``okf_verify``),
+    or the note is a resource inside a skill folder (#2478): the Agent Skills
+    specification defines frontmatter only for ``SKILL.md``, so the skill's
+    other files are written as given.
 
     Args:
         okf_write: The ``OKF_WRITE`` operator flag.
@@ -197,7 +208,11 @@ def build_okf_write_enrich(
     default_actor = tool_actor(version)
 
     def enrich(
-        text: str, operation: WriteOperation, *, stored: str | None = None
+        text: str,
+        operation: WriteOperation,
+        *,
+        stored: str | None = None,
+        path: str | None = None,
     ) -> str:
         if operation not in ("write", "edit"):
             return text
@@ -206,9 +221,24 @@ def build_okf_write_enrich(
             return text
         if not detector.state().active:
             return text
+        if path is not None and _is_skill_resource(detector, path):
+            return text
         actor = intent.actor if intent is not None else default_actor
         return apply_okf_write_stamp(
             text, actor=actor, now=datetime.now(UTC), stored=stored
         )
 
     return enrich
+
+
+def _is_skill_resource(detector: OkfDetector, path: str) -> bool:
+    """Whether *path* lies in a skill folder and is not that skill's ``SKILL.md``.
+
+    The outermost skill's own ``SKILL.md`` keeps the stamp, where it lands is
+    #2095's; a ``SKILL.md`` nested inside it is one of its resources.
+    """
+    folder = PurePosixPath(folder_of(path).strip("/")).as_posix()
+    skill = skill_folder_of(detector.source_dir, folder)
+    if skill is None:
+        return False
+    return not (path.rsplit("/", 1)[-1] == SKILL_FILE and skill == folder)

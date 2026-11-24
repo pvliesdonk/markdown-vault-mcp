@@ -16,6 +16,11 @@ enricher's gating), and it re-checks ``detector.state().active`` on every call
 because an OKF declaration can flip mid-session. The secondary writes are done
 under :func:`okf_write_suppressed` so the reserved files are not themselves
 provenance-stamped.
+
+Nothing is maintained inside a skill folder (a folder holding ``SKILL.md``,
+#2479): the Agent Skills layout has no ``index.md`` or ``log.md``, so a write
+there appends no log bullet and creates or refreshes no listing inside the
+folder. The parent's listing, outside it, names the skill.
 """
 
 from __future__ import annotations
@@ -24,16 +29,18 @@ import logging
 import os
 from contextlib import nullcontext
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._commit_scope import auxiliary_commit_writes
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
+    SKILL_FILE,
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
     is_okf_reserved_file,
+    skill_folder_of,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
 from markdown_vault_mcp.utils import folder_of
@@ -117,8 +124,10 @@ class ConventionMaintainer:
         A no-op unless *operation* is a content write (``write`` / ``edit``)
         on an OKF-active vault, and never for a write whose target is itself a
         reserved file (that would recurse and is not a maintenance trigger).
-        Never raises — each secondary write is isolated so one failure neither
-        blocks the other nor rolls back the primary write.
+        A write inside a skill folder touches nothing inside it (#2479); see
+        :meth:`_list_skill`. Never raises — each secondary write is isolated
+        so one failure neither blocks the other nor rolls back the primary
+        write.
 
         Args:
             path: Vault-relative path of the note the primary write landed on.
@@ -136,6 +145,10 @@ class ConventionMaintainer:
         if not self._detector.state().active:
             return
         folder = folder_of(path)
+        skill = self._skill_folder_of(folder)
+        if skill is not None:
+            self._list_skill(path, skill)
+            return
         with okf_write_suppressed(), auxiliary_commit_writes():
             self._append_log(folder, path, operation)
             # A note in a folder without an index is listed from the nearest
@@ -158,7 +171,8 @@ class ConventionMaintainer:
         nothing on an inactive vault or under a suppressed intent, and nothing
         when every *trigger_paths* entry is a reserved file, whose change never
         triggers its own regeneration (#1414). ``log.md`` is left to the log
-        design; only the listings are kept current here. Never raises.
+        design; only the listings are kept current here. A folder inside a
+        skill folder is never refreshed or created (#2479). Never raises.
 
         Args:
             folders: Folders whose existing listing may be stale.
@@ -171,7 +185,8 @@ class ConventionMaintainer:
         wanted = [f for f in folders if self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys([*wanted, *create]):
-                self._refresh_index(folder)
+                if self._skill_folder_of(folder) is None:
+                    self._refresh_index(folder)
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -225,6 +240,28 @@ class ConventionMaintainer:
         while current != "" and not self._has_index(current):
             current = folder_of(current)
         return current
+
+    def _skill_folder_of(self, folder: str) -> str | None:
+        """The skill folder *folder* lies in, or ``None`` (always without a root)."""
+        if self._source_dir is None:
+            return None
+        return skill_folder_of(self._source_dir, folder)
+
+    def _list_skill(self, path: str, skill: str) -> None:
+        """Refresh the listing that names *skill* after its ``SKILL.md`` changed.
+
+        Only the skill's own ``SKILL.md`` can change the entry the parent
+        folder's listing shows for it, so every other write in the folder,
+        a nested ``SKILL.md`` included, refreshes nothing.
+
+        Args:
+            path: Vault-relative path of the written note.
+            skill: The outermost skill folder *path* lies in.
+        """
+        if PurePosixPath(path.strip("/")).as_posix() != f"{skill}/{SKILL_FILE}":
+            return
+        with okf_write_suppressed(), auxiliary_commit_writes():
+            self._refresh_index(self.indexed_anchor(folder_of(skill)))
 
     def _maintains_after(self, trigger_paths: Iterable[str]) -> bool:
         """Whether a structural change should refresh listings at all."""

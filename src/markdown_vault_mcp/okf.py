@@ -47,7 +47,7 @@ from markdown_vault_mcp._trivial_edit import is_trivial_edit
 from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
-from markdown_vault_mcp.utils.fs import is_directory
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
 
@@ -102,6 +102,44 @@ def is_okf_reserved_file(path: str) -> bool:
         Whether its basename is an exact-case reserved OKF filename.
     """
     return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
+
+
+#: The file that makes its folder an Agent Skills skill
+#: (https://agentskills.io/specification).
+SKILL_FILE = "SKILL.md"
+
+
+def skill_folder_of(source_dir: Path, folder: str) -> str | None:
+    """Return the outermost skill folder at or above *folder*, or ``None``.
+
+    A skill folder is a folder holding a ``SKILL.md`` regular file, and
+    everything below it belongs to it, including a ``SKILL.md`` nested
+    deeper (a template skill is a resource of the skill that ships it), so
+    the outermost one wins. The Agent Skills specification defines
+    frontmatter only for ``SKILL.md`` and fixes the folder's layout, so the
+    enforced-write layer adds no OKF keys and no ``index.md`` / ``log.md``
+    inside one (#2478, #2479). The vault root is never a skill folder: it is
+    the OKF bundle root.
+
+    Args:
+        source_dir: The vault root.
+        folder: Vault-relative folder (``""`` for the root).
+
+    Returns:
+        The outermost skill folder, vault-relative, or ``None`` when
+        *folder* lies in none. A refused stat counts as no ``SKILL.md``.
+    """
+    current = PurePosixPath(folder.strip("/"))
+    for candidate in reversed((current, *current.parents)):
+        rel = candidate.as_posix()
+        if rel == ".":
+            continue
+        try:
+            if is_regular_file(source_dir / rel / SKILL_FILE):
+                return rel
+        except OSError:
+            continue
+    return None
 
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
@@ -182,6 +220,11 @@ class OkfDetector:
     def mode(self) -> str:
         """The configured OKF mode."""
         return self._mode
+
+    @property
+    def source_dir(self) -> Path:
+        """The vault root the detector probes."""
+        return self._source_dir
 
     def state(self) -> OkfState:
         """Return the current detection snapshot.

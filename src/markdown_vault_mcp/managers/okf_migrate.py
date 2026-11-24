@@ -42,6 +42,7 @@ from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     OKF_ROOT_INDEX_TITLE,
+    SKILL_FILE,
     OkfConvertResult,
     OkfIndexResult,
     OkfLogResult,
@@ -50,11 +51,12 @@ from markdown_vault_mcp.okf import (
     build_log_markdown,
     convert_wikilinks_to_markdown,
     is_okf_reserved_file,
+    skill_folder_of,
 )
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -183,7 +185,10 @@ class OkfMigrationManager:
         is not itself excluded from the index that produced it (#1175). A
         subfolder inside a git submodule is never given an index, since a
         write there would never be committed (#1564); it gets a pointer only
-        when it ships its own ``index.md``.
+        when it ships its own ``index.md``. A skill folder (one holding
+        ``SKILL.md``) is listed by a pointer to its ``SKILL.md``, with that
+        file's ``description``, and is never given an index (#2479): the
+        Agent Skills layout has no ``index.md``.
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -213,23 +218,23 @@ class OkfMigrationManager:
         prefix = f"{folder}/" if folder else ""
         note_entries: list[tuple[str, str, str | None]] = []
         subfolders: set[str] = set()
+        skill_descriptions: dict[str, str | None] = {}
         for note in self._search_mgr.list(folder=folder or None):
             if not isinstance(note, NoteInfo):  # pragma: no cover - mypy narrowing
                 continue
             rel = note.path[len(prefix) :]
             if "/" in rel:
                 # A deeper note: record its immediate subfolder, don't list it.
-                subfolders.add(rel.split("/", 1)[0])
+                sub, rest = rel.split("/", 1)
+                subfolders.add(sub)
+                if rest == SKILL_FILE:
+                    skill_descriptions[sub] = _description(note.frontmatter)
                 continue
             if is_okf_reserved_file(rel):
                 continue
-            raw_desc = note.frontmatter.get("description")
-            description = (
-                raw_desc.strip()
-                if isinstance(raw_desc, str) and raw_desc.strip()
-                else None
+            note_entries.append(
+                (note.title, f"/{note.path}", _description(note.frontmatter))
             )
-            note_entries.append((note.title, f"/{note.path}", description))
 
         subfolders = {
             sub
@@ -237,12 +242,22 @@ class OkfMigrationManager:
             if not self._doc_mgr.in_submodule(prefix + sub)
             or self._has_index(prefix + sub)
         }
-        # Immediate notes first, then a pointer into each subfolder's index.
+        source_dir = self._doc_mgr.source_dir
+        skills = {
+            sub
+            for sub in subfolders
+            if skill_folder_of(source_dir, prefix + sub) == prefix + sub
+        }
+        # Immediate notes first, then a pointer into each subfolder's index,
+        # or a skill's SKILL.md.
         entries = note_entries + [
-            (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
+            (f"{sub}/", f"/{prefix}{sub}/{SKILL_FILE}", skill_descriptions.get(sub))
+            if sub in skills
+            else (f"{sub}/", f"/{prefix}{sub}/index.md", None)
+            for sub in sorted(subfolders)
         ]
         created: list[str] = []
-        for sub in sorted(subfolders):
+        for sub in sorted(subfolders - skills):
             # A kept submodule subfolder has an index, so it is never generated.
             if not self._has_index(f"{prefix}{sub}"):
                 child = self.generate_index(folder=f"{prefix}{sub}")
@@ -333,3 +348,9 @@ class OkfMigrationManager:
                 frontmatter=self._reserved_frontmatter.build(None, title=OKF_LOG_TITLE),
             )
         return OkfLogResult(path=log_path, commits=commits, dates=dates)
+
+
+def _description(frontmatter: Mapping[str, object]) -> str | None:
+    """A listing entry's description: the note's nonblank ``description``."""
+    raw = frontmatter.get("description")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else None

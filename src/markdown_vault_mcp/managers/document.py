@@ -253,6 +253,11 @@ class DocumentManager:
     # Validation helpers
     # ------------------------------------------------------------------
 
+    @property
+    def source_dir(self) -> Path:
+        """The vault root this manager reads and writes under."""
+        return self._source_dir
+
     def ensure_index_current(self) -> None:
         """Refresh queued index writes before deriving a file mutation from them.
 
@@ -990,7 +995,9 @@ class DocumentManager:
         """
         if self._okf_write_enrich is not None:
             try:
-                content = self._okf_write_enrich(content, operation, stored=stored)
+                content = self._okf_write_enrich(
+                    content, operation, stored=stored, path=path
+                )
             except yaml.YAMLError as exc:
                 # The stamp is written *into* the note's frontmatter, so a
                 # block the parser cannot read leaves the enforced-write layer
