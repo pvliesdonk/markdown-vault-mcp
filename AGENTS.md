@@ -6,7 +6,7 @@ Generic markdown vault MCP with hybrid search
 <!-- DOMAIN-START -->
 [`docs/design/design.md`](docs/design/design.md) is the specification of the system as built. Make every implementation change conform to it, or change it in the same pull request; when in doubt it wins, except over a north star.
 
-Before changing a subsystem listed in [`docs/design/north-stars.md`](docs/design/north-stars.md), read its adopted north star in full and name the passages that govern the change; where the north star and `design.md` differ, the north star wins. Use the `working-under-a-north-star` skill to classify each decision the change needs: where the north star is silent, decide it and state the choice in the pull request; where the change would contradict the north star, or shows it is wrong or outdated, stop and reopen it, never settling that decision in the session or the pull request.
+Before changing a subsystem listed in [`docs/design/north-stars.md`](docs/design/north-stars.md), read its adopted north star in full and name the passages that govern the change; where the north star and `design.md` differ, the north star wins. Use the `working-under-a-north-star` skill to classify each decision the change needs: where the north star is silent, decide it and state the choice in the pull request; where the change would contradict the north star, or the road ahead it sets is unclear, stop and reopen it, never settling that decision in the session or the pull request.
 <!-- DOMAIN-END -->
 
 ## Project Structure

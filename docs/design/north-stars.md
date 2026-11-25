@@ -1,6 +1,8 @@
 # Subsystems governed by a north star
 
-A north star is the adopted, whole-lifetime vision for one complex subsystem.
+A north star is the adopted, whole-lifetime vision for one complex subsystem:
+where it is going and the major road there, in as much detail as that needs.
+It does not settle every decision.
 A change to a subsystem listed here is made against its north star. Where the
 north star and `design.md` differ, the north star says where the subsystem is
 going and `design.md` says what is built today.
@@ -56,6 +58,6 @@ classifies each decision a change needs:
 - **Silent:** the north star does not cover the question. Decide it as an
   implementation choice and state it in the pull request.
 - **Settled:** follow the north star.
-- **Ruled out:** the change would contradict the north star, or shows it is
-  wrong or outdated. Stop and reopen it as a whole, by the method of
+- **Ruled out:** the change would contradict the north star, or the road
+  ahead it sets is unclear. Stop and reopen it as a whole, by the method of
   [#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459).

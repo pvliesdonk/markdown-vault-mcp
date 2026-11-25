@@ -9,9 +9,11 @@ description: >-
 
 # Working under a north star
 
-A governed subsystem's adopted north star is its direction for the whole
-lifetime of the project. Every change is made against it, and only the
-account holder changes it, by adopting a revision as a whole.
+A governed subsystem's adopted north star says where the subsystem is going
+and the major road there, in as much detail as that needs. It is not a design
+that settles every decision, so most questions a change raises are not in it.
+Every change is made against it. Only the account holder changes it, by
+adopting a revision as a whole.
 
 ## 1. Read before planning
 
@@ -27,7 +29,7 @@ account holder changes it, by adopting a revision as a whole.
 |---|---|---|
 | **settles it** | A passage, or a decision recorded on its reopening issue, states the rule. | Follow it and cite the passage. |
 | **is silent** | No passage or recorded decision covers the question, and no option you would pick is ruled out by one. | Decide it yourself as an implementation choice. Pick the option most consistent with the north star and the external spec. In the pull request, write "The north star is silent on X; I chose Y because Z", and continue. Review checks the choice. |
-| **rules it out, or is wrong or outdated** | The change needs behaviour a passage rules out; or a passage no longer matches the spec it cites, the code it describes, or a later decision. | Stop the change and reopen the north star (section 3). |
+| **rules it out, or leaves the road unclear** | The change needs behaviour a passage or recorded decision rules out; or the direction itself is in doubt, for example because the external spec it rests on has moved or two passages point different ways. | Stop the change and reopen the north star (section 3). |
 
 Before calling a question silent, map it onto what the north star already
 settles. Asking a settled question in other terms counts as ruling it out,
@@ -35,8 +37,9 @@ not as silence: for example, splitting OKF by reading versus writing, where
 the north star splits it by managed versus unmanaged. Where the external
 spec states a rule, the spec decides, and a departure from it is a bug.
 
-Silence never stops the work. A reviewer's "pick something sensible" never
-overrides a passage that rules the choice out.
+Silence never stops the work. Code that departs from the north star is a bug
+to file, not a reason to reopen it. A reviewer's "pick something sensible"
+never overrides a passage that rules the choice out.
 
 ## 3. Reopen the north star
 
