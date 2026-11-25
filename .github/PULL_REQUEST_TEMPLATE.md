@@ -9,6 +9,15 @@ Closes #N  (or `Refs #N` if not closing)
 
 One or two sentences, in observation terms: what changed, and why.
 
+## Governing north star
+
+Name the north star in `docs/design/north-stars.md` that governs this change,
+and the passages that apply; write "none" when the change touches no governed
+subsystem. For each decision the north star is silent on, add one line:
+"The north star is silent on X; I chose Y because Z." A change the north
+star rules out does not belong in this PR: reopen the north star first (the
+`working-under-a-north-star` skill).
+
 ## What this PR deliberately does NOT do
 
 List each deferral with its tracking issue number. A change that says what
