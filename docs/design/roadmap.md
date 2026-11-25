@@ -238,7 +238,8 @@ was never adopted, and storage, the library, vault views and the documentation
 system have direction paragraphs here but no governing document. [Refinement #2461][2461] decides
 which subsystems need one, in what order, and how the rule is enforced. Each
 candidate gets a review first: OKF ([#2459][2459], which reopens the existing
-one), git integration ([#2462][2462]), storage and search ([#2463][2463]), the
+one), git integration ([#2462][2462], which led to the version-control north
+star), storage and search ([#2463][2463]), the
 library and its public surface ([#2464][2464]), the release system
 ([#2465][2465], whose vision document was never adopted), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).

@@ -5,7 +5,7 @@
 
 **A vault's history is served by one generalized version-control model, and git through libgit2 is one implementation of it.** The account holder's words: "a generalized version control, with libgit2 as one implementation" (25 November 2026). Everything that uses history works in terms of the model: the tools, the library, OKF and the command line. Which engine records that history is chosen per vault. It is not something every consumer has to know.
 
-Two motivations meet here, both the account holder's, as the [roadmap](roadmap.md#reliable-git-integration-with-an-optional-backend) records their 13 September 2026 clarification. First, "libgit2 addresses the fragile CLI integration, with eventual retirement of that integration as the longer-term ambition". Second, "database-backed MCP-only/library-only operation is a distinct use case and an original reason for the abstraction". One model serves both, so neither motivation has to wait for the other.
+Two motivations meet here, both the account holder's. The [roadmap](roadmap.md#reliable-git-integration-with-an-optional-backend) records their 13 September 2026 clarification, in its own words rather than theirs. First, libgit2 is to address the fragile command-line integration, with eventual retirement of that integration as the longer-term ambition. Second, database-backed operation for MCP-only and library-only use is a distinct use case and an original reason for the abstraction. One model serves both, so neither motivation has to wait for the other.
 
 ## The model
 
@@ -38,7 +38,7 @@ An engine supplies the mechanism: storing content and states, comparing them, me
 
 ## Repository shapes
 
-One policy holds for every instance: "a vault is a vault", as #1313 records the account holder's constraint. The product decides which shapes it supports. Each engine either serves a shape or refuses, at startup, with a message naming what to change. An engine's refusals are product decisions recorded here or on the engine's issue, never introduced by a pull request.
+One policy holds for every instance: a vault is a vault, as #1313 records the account holder's constraint in its own words. The product decides which shapes it supports. Each engine either serves a shape or refuses, at startup, with a message naming what to change. An engine's refusals are product decisions recorded here or on the engine's issue, never introduced by a pull request.
 
 ## Writers
 
