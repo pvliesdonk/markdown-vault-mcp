@@ -4,7 +4,9 @@ Generic markdown vault MCP with hybrid search
 
 ## Design
 <!-- DOMAIN-START -->
-The authoritative design specification lives at [`docs/design/design.md`](docs/design/design.md). All implementation must conform to this spec. When in doubt, the design doc wins.
+[`docs/design/design.md`](docs/design/design.md) is the specification of the system as built. Make every implementation change conform to it, or change it in the same pull request; when in doubt it wins, except over a north star.
+
+Before changing a subsystem listed in [`docs/design/north-stars.md`](docs/design/north-stars.md), read its adopted north star in full and name the passages that govern the change; where the north star and `design.md` differ, the north star wins. When the change needs a decision the north star does not support, stop and reopen the north star as that file describes; never settle the decision in the session or the pull request.
 <!-- DOMAIN-END -->
 
 ## Project Structure
