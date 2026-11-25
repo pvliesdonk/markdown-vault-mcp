@@ -1,8 +1,6 @@
 # Version control in markdown-vault-mcp: a north star
 
-> **Proposed, not adopted ([#2500](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2500)).** The account holder rediscusses this draft and adopts it as a whole. Questions only the account holder can settle are marked **Open**. The research behind it is on [#2462](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462).
-
-- **Status:** proposed north star.
+- **Status:** adopted north star. The account holder settled its open questions on 25 November 2026 and adopted it as a whole by merging [#2501](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2501). It follows spike [#2462](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462).
 - **Relates to:** the libgit2 backend (epic [#1313](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1313)); database-backed history ([#1474](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1474)); submodules ([#1561](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1561), [#1562](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1562)); the decoupling study on [#1152](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1152); the [OKF north star](okf-north-star.md), whose multi-author rules this one must honour.
 
 **A vault's history is served by one generalized version-control model, and git through libgit2 is one implementation of it.** The account holder's words: "a generalized version control, with libgit2 as one implementation" (25 November 2026). Everything that uses history works in terms of the model: the tools, the library, OKF and the command line. Which engine records that history is chosen per vault. It is not something every consumer has to know.
@@ -50,7 +48,7 @@ The server is one writer among several: Obsidian with its git plugin, other clon
 
 Integration is computed away from the served files and applied in one step. A reader never sees a half-integrated vault, and a failed integration leaves the vault as it was ([#1313](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1313)'s "reconciliation without a half-finished rebase").
 
-> **Open (shape of history).** When two copies diverge, does integration produce a merge revision that keeps both lines, or rebase this copy's revisions onto the other's? Rebasing keeps history linear, but rewrites revisions a caller may already hold. They do leave the server: an overwriting write returns the revision that held the replaced content, so the caller can read it back later (#1137), and the history tools return revisions. A merge never rewrites, but every divergence adds a revision with two parents. A middle course rewrites only revisions that have not left this copy and have not been returned to any caller, and merges otherwise. Every option suits the model.
+Integration never rewrites a recorded revision. When two copies diverge, it records a merge revision that keeps both lines (account holder, 25 November 2026: "never rewrite"). A revision a caller holds therefore stays valid: an overwriting write returns the revision of the content it replaced (#1137), and the history tools return revisions too. History follows each line through its parents. Linearity is not promised.
 
 ## Conflicts
 

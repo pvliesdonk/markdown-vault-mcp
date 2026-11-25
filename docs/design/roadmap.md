@@ -233,9 +233,9 @@ touches existing code" (owner, 22 November 2026).
 subsystem is always made against its adopted north star, a decision the north
 star does not support reopens it instead of being settled in one session or
 pull request, and any contributor or agent working from a clone meets that
-rule in the repository. Only OKF has an adopted north star; the release vision
-was never adopted, and storage, git, the library and submodules have direction
-paragraphs here but no governing document. [Refinement #2461][2461] decides
+rule in the repository. OKF and version control have adopted north stars; the release vision
+was never adopted, and storage, the library, vault views and the documentation
+system have direction paragraphs here but no governing document. [Refinement #2461][2461] decides
 which subsystems need one, in what order, and how the rule is enforced. Each
 candidate gets a review first: OKF ([#2459][2459], which reopens the existing
 one), git integration ([#2462][2462]), storage and search ([#2463][2463]), the
@@ -1477,6 +1477,24 @@ disjoint bundles within a vault. `032`'s [#2423][2423] becomes the upgrade of a
 managed bundle, and [#1443][1443] carries the adopted stamping rule. `041` gains
 two retrieval departures ([#2489][2489], [#2490][2490]). The `025` items blocked
 on #2459 are free to continue against the adopted text.
+
+### 25 November 2026 — adopt the version-control north star
+
+`stated` — On spike [#2462][2462]'s verdict: "The point is not 'how far are
+we', but where do we want to go. And I think that is clear enough: a
+generalized version control, with libgit2 as one implementation". Rediscussing
+the draft: submodules belong "In this one"; storage and version control are
+"Different"; on what callers see, "Probably the less exposed the better. An llm
+will make assumptions about behaviour that may not be true"; on the shape of
+integrated history, "never rewrite" (owner, 25 November 2026).
+
+`derived` — [The version-control north star](version-control-north-star.md)
+now governs git integration and its alternatives. Epic [#1313][1313] keeps its
+frozen outcome, and its refinement [#1468][1468] is shaped against the north
+star: policy above the engines, primitives below. The parked libgit2 pull
+requests wait on that refinement, as before. Departures from the north star are
+filed as issues once it is adopted, for example git's output reaching tool
+results.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
