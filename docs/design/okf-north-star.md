@@ -1,8 +1,6 @@
 # OKF in markdown-vault-mcp: a north star
 
-> **Proposed revision, not adopted (#2459).** This draft brings the north star up to OKF 0.3 and records the account holder's 21–22 November 2026 decisions. The three questions only the account holder could settle (the root `okf_version`, what governs the write side, and supplied authorship and reviews) were rediscussed on 24–25 November 2026 and are written in. The north star changes only when the account holder adopts the revision as a whole. The audit behind this draft is on [#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459).
-
-- **Status:** adopted north star, 11 September 2026. The owner selected this as the intended OKF end state. The [sequenced roadmap](okf-roadmap.md) and [tracking epic #1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) track the transition; the research narrative below retains its proposal-time wording.
+- **Status:** adopted north star, 11 September 2026; revised and adopted again on 25 November 2026, after the account holder reopened and rediscussed it as a whole with an audit of the code it touches ([#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459), [#2476](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2476)). The owner selected this as the intended OKF end state. The [sequenced roadmap](okf-roadmap.md) and [tracking epic #1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) track the transition; the research narrative below retains its proposal-time wording.
 - **Relates to:** OKF support (#959), multi-author administration (#1425), and the existing OKF design and backlog, considered as evidence rather than constraints.
 - **Scope:** the desired end state, reconsidered from first principles. Adoption, backlog reconciliation, migration, and implementation sequencing are separate work.
 
