@@ -68,6 +68,8 @@ That distinction resolves the required-frontmatter problem at its source. A conc
 
 No synthetic `type: null` should be needed to make a navigation file visible. Operator policy can limit which concepts appear in ordinary search, but a search filter must not redefine which files exist in a bundle. Maintain an inventory capable of reporting excluded, malformed, and untyped content. Otherwise the server cannot honestly audit or export what its search index omitted. This is an architectural change: note enumeration for `list_documents`, generated navigation, and export currently relies on FTS. Those features need access to an inventory independent of search admission, even if their public APIs remain familiar. The cost includes preserving distinctions between absent, inaccessible, malformed, excluded, and searchable content—not simply adding a reserved-file exception.[^21]
 
+**Local exclusion is not OKF** (account holder, 25 November 2026, #2459: OKF consumers do not know about it, "So we cannot and should not rely on it"). The server's exclude settings are retrieval policy: they decide what the index and search admit, and never what a bundle contains. OKF consumers cannot see them, so nothing about the bundle may rest on them. That covers its membership, its conformance audit, its export, its generated listings, and which concepts the server stamps. All of these follow OKF's own rules only: the bundle root, the dot prefix (§3.2 rule 4), and the concept rule (§3.2 rules 1–2). A file that should not be part of a bundle goes outside its root or behind a name starting with `.`.
+
 | Question | Recommended meaning |
 |---|---|
 | Does this file exist in the selected scope? | Inventory and access-policy question. |
