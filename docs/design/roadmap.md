@@ -253,8 +253,8 @@ blocks a merge: the always-loaded instructions say which subsystems are
 governed and carry a registry of each north star and what it governs
 ([#2493][2493]); a skill says how to work against a north star and how to
 reopen one, the way [#2459][2459] did ([#2494][2494]); and review asks each
-change to name its north star and flags one that settles what the north star
-does not ([#2495][2495]). The registry comes first because the other two need
+change to name its north star, and flags a choice the north star rules out or
+a choice it is silent on that the change does not state ([#2495][2495]). The registry comes first because the other two need
 it to tell whether a change is governed. A deterministic CI gate was
 considered and is not planned: it can check that a north star is named, not
 that the change fits it. Known unknown: how precisely the registry must name
@@ -270,6 +270,22 @@ it; storage and search next, where the PostgreSQL vector work is on `main` with
 deferred work remaining; then the library, which `029` builds on; then the
 release system, whose unadopted vision document may make its spike short;
 vault views and documentation last, with the least queued work.
+
+`stated` — On what a north star is and when it is reopened: "It should not
+be reopened as long as there is no contradiction, or confusion about the major
+road ahead"; asked what an agent does where the north star is silent, the
+owner chose "Implementation detail" (owner, 25 November 2026, while designing
+[#2494][2494]).
+
+`derived` — This narrows how the frozen **Done when** of [#2460][2460] is read
+without editing it: a decision the north star "does not support" is one it
+rules out, or one that leaves the road ahead unclear. Where the north star is
+silent, the change decides the question, states the choice, and review checks
+it. A north star sets the destination and the major road, in as much detail
+as that needs; it is not a design that settles every decision, so treating
+silence as a stop would reopen it for questions it was never meant to answer.
+The baseline run for [#2494][2494] showed the cost: given the earlier wording,
+two of three agents stopped on a gap.
 
 `derived` — The OKF north star came first because 025 was built against it
 without it being consulted, and it was demonstrably out of date: it named OKF
