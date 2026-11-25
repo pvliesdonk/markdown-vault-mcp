@@ -50,7 +50,7 @@ The server is one writer among several: Obsidian with its git plugin, other clon
 
 Integration is computed away from the served files and applied in one step. A reader never sees a half-integrated vault, and a failed integration leaves the vault as it was ([#1313](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1313)'s "reconciliation without a half-finished rebase").
 
-> **Open (shape of history).** When two copies diverge, does integration produce a merge revision that keeps both lines, or rebase this copy's revisions onto the other's? Rebasing keeps history linear, but rewrites revisions the server may already have reported to a caller. A merge never rewrites, but its history has two parents. Both options suit the model.
+> **Open (shape of history).** When two copies diverge, does integration produce a merge revision that keeps both lines, or rebase this copy's revisions onto the other's? Rebasing keeps history linear, but rewrites revisions a caller may already hold. They do leave the server: an overwriting write returns the revision that held the replaced content, so the caller can read it back later (#1137), and the history tools return revisions. A merge never rewrites, but every divergence adds a revision with two parents. A middle course rewrites only revisions that have not left this copy and have not been returned to any caller, and merges otherwise. Every option suits the model.
 
 ## Conflicts
 
@@ -58,22 +58,12 @@ When both sides changed the same content, version control keeps both sides and r
 
 ## What callers see
 
-Tools and the library speak of revisions, history, comparisons and synchronisation, not of git internals. Git terms appear where an operator configures git, and in evidence an engine reports as git evidence.
+Callers get the model's behaviour and nothing of the engine behind it. A caller relies on what the model promises: a revision identifies a vault state, a past document can be read back, and history follows renames. It is not told which engine keeps the history, and nothing invites it to infer one. An engine's own terms, output and configuration stay inside the server, including git's command output, remote addresses and branch names. The account holder: "Probably the less exposed the better. An llm will make assumptions about behaviour that may not be true" (25 November 2026). A revision identifier is opaque to the caller: on a git-backed vault it may be a commit identifier, but the caller is not told so and does not need to know. Git appearing in a result is tolerated, never required, and an engine that is not git never imitates git's terms.
 
-> **Open (git terms in tool results).** History tools return commit identifiers today. Should a caller see an opaque revision identifier that any engine can supply, with git identifiers carried as evidence? Or are git identifiers part of the model, because git-backed vaults are the main case?
+## Nested histories
 
-## Open questions the account holder raised
+A vault may contain nested repositories, such as git submodules. Each one is a history of its own inside the vault, and this north star covers them (account holder, 25 November 2026). Each path belongs to exactly one history, and the model answers which one. Reading, following history and comparing work on a nested history as on the vault's own. The destination includes writing into a nested history, as epic [#1562](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1562) plans: the change is recorded in the nested history, that history is published, and the outer history records the nested one's new state. A change that crosses both is applied completely or reported as incomplete, and never left half-recorded without a report. Until writes are designed, a write into a nested history is refused rather than lost, as it is today.
 
-> **Open (submodules).** Do submodules belong to this north star or to another one?
->
-> - **(a) This one.** A submodule is a second history inside the vault, so the model would answer which history a path belongs to. It would also cover recording, reading and exchanging across several histories, and how far the server keeps a nested history current.
-> - **(b) Another one,** about composing a vault from parts. Submodules would sit there beside other ways of bringing in content, such as the OKF north star's disjoint bundles.
->
-> *Recommendation:* (a). The questions a submodule raises (who records a change to a path, how it is exchanged, what its history is) are version-control questions. Composition from separate bundles needs no second history.
+## Version control and storage
 
-> **Open (storage and version control).** Are storage and version control different things?
->
-> - **(a) Yes, with a boundary.** Storage decides where content and derived data live, and how the server reaches them: files, indexes, vector stores, and database-owned content. Version control decides history and exchange, whatever holds the bytes. A database-owned vault is then a storage choice paired with a version-control engine, and each has its own north star ([#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463) for storage).
-> - **(b) No:** one north star for where content lives and how its history is kept.
->
-> *Recommendation:* (a). The two change for different reasons and are replaced independently. A git-backed vault on plain files and a database-backed vault share the version-control model but not the storage.
+Version control and storage are different things (account holder, 25 November 2026). Storage decides where content and derived data live and how the server reaches them: files, indexes, vector stores, and database-owned content. It is the subject of its own north star ([#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463)). Version control decides history and exchange, whatever holds the bytes. A database-owned vault is a storage choice paired with a version-control engine. A git-backed vault on plain files and a database-backed vault share this model, not their storage.
