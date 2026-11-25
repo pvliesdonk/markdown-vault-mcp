@@ -243,6 +243,34 @@ library and its public surface ([#2464][2464]), the release system
 ([#2465][2465], whose vision document was never adopted), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).
 
+`stated` — On which subsystems need a north star: "All likely deserve a North
+Star"; on a CI check that a pull request touching a governed subsystem names
+its north star: "F4 likely never" (owner, 25 November 2026, refining
+[#2460][2460]).
+
+`derived` — The rule reaches a clone through three features, none of which
+blocks a merge: the always-loaded instructions say which subsystems are
+governed and carry a registry of each north star and what it governs
+([#2493][2493]); a skill says how to work against a north star and how to
+reopen one, the way [#2459][2459] did ([#2494][2494]); and review asks each
+change to name its north star and flags one that settles what the north star
+does not ([#2495][2495]). The registry comes first because the other two need
+it to tell whether a change is governed. A deterministic CI gate was
+considered and is not planned: it can check that a north star is named, not
+that the change fits it. Known unknown: how precisely the registry must name
+governed code for a reviewer to apply it; resolved by [#2493][2493].
+
+`derived` — The spikes now expect "yes", so each reports the decisions a north
+star for its area would have to make, and writing those north stars stays
+outside [#2460][2460]. The spikes are independent and may run in parallel;
+taken one at a time, they go in the order that areas would otherwise change
+unguided: git first, because its decisions are made piece by piece across the
+most fix history and four queued packages (`028`, `030`, `033`, `060`) change
+it; storage and search next, where the PostgreSQL vector work is on `main` with
+deferred work remaining; then the library, which `029` builds on; then the
+release system, whose unadopted vision document may make its spike short;
+vault views and documentation last, with the least queued work.
+
 `derived` — The OKF north star came first because 025 was built against it
 without it being consulted, and it was demonstrably out of date: it named OKF
 0.2 as current, described pre-025 behaviour, and lacked the 21–22 November
@@ -727,8 +755,10 @@ membership. Since 21 November 2026 every ordinal from `025` to `041`
 is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
 
 - **[020 north-star-governance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/43)**:
-  epic [#2460][2460], refinement [#2461][2461] and the OKF north star's
-  reopening [#2459][2459]. Docs and process, which cut no release on their own,
+  epic [#2460][2460], refinement [#2461][2461], the OKF north star's
+  reopening [#2459][2459], the three features that carry the rule
+  ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
+  for the other subsystems ([#2462][2462] to [#2467][2467]). Docs and process, which cut no release on their own,
   like `010 template-detach`: the reopening's code departures went to the OKF
   packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
@@ -1667,3 +1697,6 @@ on #2459 are free to continue against the adopted text.
 [2488]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2488
 [2489]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2489
 [2490]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2490
+[2493]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2493
+[2494]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2494
+[2495]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2495
