@@ -243,11 +243,19 @@ library and its public surface ([#2464][2464]), the release system
 ([#2465][2465], whose vision document was never adopted), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).
 
-`derived` — The OKF north star comes first because 025 was built against it
-without it being consulted, and it is demonstrably out of date: it names OKF
-0.2 as current, describes pre-025 behaviour, and lacks the 21–22 November
-decisions. [#2459][2459] reopens it against OKF 0.3 and those decisions, with
-an audit of where it touches the code.
+`derived` — The OKF north star came first because 025 was built against it
+without it being consulted, and it was demonstrably out of date: it named OKF
+0.2 as current, described pre-025 behaviour, and lacked the 21–22 November
+decisions.
+
+`evidenced` — [#2459][2459] reopened it. Three independent auditors, who saw
+only the documents and the code, found 49 places where it was outdated, silent,
+contradicted by the code or by another design document; the account holder
+rediscussed the questions only they could settle; and the revision was adopted
+as a whole on 25 November 2026 ([#2476][2476], with `okf.md` and the OKF
+roadmap aligned in [#2483][2483]). The record of each decision, in the account
+holder's words, is on #2459. Departures from the adopted text were filed into
+the OKF packages, not into `020`.
 
 ### Faithful OKF bundles and explicit curation
 
@@ -720,12 +728,13 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
 
 - **[020 north-star-governance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/43)**:
   epic [#2460][2460], refinement [#2461][2461] and the OKF north star's
-  reopening [#2459][2459]. Mostly docs and process, which cut no release on
-  their own, like `010 template-detach`; its kind follows whatever code fix the
-  reopening's audit brings.
+  reopening [#2459][2459]. Docs and process, which cut no release on their own,
+  like `010 template-detach`: the reopening's code departures went to the OKF
+  packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
   (major): epic [#2401][2401]: research [#2403][2403] first, then one bug per
-  departure from the spec.
+  departure from the spec, including the three the north-star audit found
+  ([#2484][2484] to [#2486][2486]).
 - **[026 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**:
   the `025` of the sections above.
 - **[027 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
@@ -1404,6 +1413,25 @@ recommendation omitted that OKF 0.2 §5.2 requires only `by` within
 request for #2386 now follows §5.2 and §5.1 exactly: `generated.at` is
 optional, and each `sources` entry needs `resource`.
 
+### 25 November 2026 — re-adopt the OKF north star
+
+`stated` — On the root `okf_version`: "Changing 'okf_version' would basically
+mean upgrading the whole vault to a newer version and should not be seen
+independent from that"; on the server's exclude settings, which OKF consumers
+cannot see: "So we cannot and should not rely on it"; on a skill that follows
+another format: "I don't think smoothening conflicting specs is this servers
+task" (owner, 24–25 November 2026, rediscussing [#2459][2459]).
+
+`derived` — The adopted revision ([#2476][2476]) changes the direction of four
+packages without changing their order. `025` gains three spec departures
+([#2484][2484] to [#2486][2486]). `027` gains how an operator grant and the
+vault's declaration combine ([#2487][2487]) and the audit's reliance on local
+exclusion ([#2488][2488]), and its inventory work ([#1442][1442]) now means
+disjoint bundles within a vault. `032`'s [#2423][2423] becomes the upgrade of a
+managed bundle, and [#1443][1443] carries the adopted stamping rule. `041` gains
+two retrieval departures ([#2489][2489], [#2490][2490]). The `025` items blocked
+on #2459 are free to continue against the adopted text.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1631,3 +1659,11 @@ optional, and each `sources` entry needs `resource`.
 [2465]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465
 [2466]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466
 [2467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467
+[2476]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2476
+[2483]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2483
+[2484]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2484
+[2486]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2486
+[2487]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2487
+[2488]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2488
+[2489]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2489
+[2490]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2490
