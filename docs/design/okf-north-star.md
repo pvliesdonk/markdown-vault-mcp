@@ -1,6 +1,6 @@
 # OKF in markdown-vault-mcp: a north star
 
-> **Proposed revision, not adopted (#2459).** This draft brings the north star up to OKF 0.3 and records the account holder's 21–22 November 2026 decisions. Where the documents disagree and only the account holder can settle it, the adopted text stays as it was and an **Open (#2459, Qn)** marker names the question. The north star changes only when the account holder adopts the revision as a whole. The audit behind this draft is on [#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459).
+> **Proposed revision, not adopted (#2459).** This draft brings the north star up to OKF 0.3 and records the account holder's 21–22 November 2026 decisions. The three questions only the account holder could settle (the root `okf_version`, what governs the write side, and supplied authorship and reviews) were rediscussed on 24–25 November 2026 and are written in. The north star changes only when the account holder adopts the revision as a whole. The audit behind this draft is on [#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459).
 
 - **Status:** adopted north star, 11 September 2026. The owner selected this as the intended OKF end state. The [sequenced roadmap](okf-roadmap.md) and [tracking epic #1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) track the transition; the research narrative below retains its proposal-time wording.
 - **Relates to:** OKF support (#959), multi-author administration (#1425), and the existing OKF design and backlog, considered as evidence rather than constraints.
@@ -95,7 +95,20 @@ The same distinction matters for generation. An agent can use Alice's credential
 
 The north star should support truthful production records at the authoring boundary. If the server's own enrichment service produces a description, it can identify that service. If an agent supplies content and a producer claim, the server can preserve the claim and identify it as supplied. If authorship is unknown, leaving attribution absent is preferable to declaring the authenticated person its author. Request identity remains useful in operational audit information without being substituted into knowledge provenance.
 
-> **Open (#2459, Q2): supplied authorship and supplied reviews on write.** With `OKF_WRITE` on, the shipped stamp replaces a supplied `generated` with the request's identity or the server's tool actor, and keeps only the stored `verified`, so the reviews a written note carries are dropped. `okf.md` §6 gives the reason for the second: taking the written text's value "would let any caller of `write` forge a `human-reviewed` event". Under OKF 0.3 §5.3 a supplied `generated.at` can keep an old review current, so the two halves carry the same risk. With `OKF_WRITE` off, a write lands as given. This paragraph and the verification paragraphs below promise to preserve supplied claims and do not weigh that risk. The adopted revision has to reconcile them. One proposed invariant: in a mode where the server stamps, a client write cannot raise or hold the tier the server reports for the content it writes.
+OKF names the split this rests on. §5.2: "OKF keeps these two fields separate, because the actor that *wrote* a concept is not necessarily the actor that *confirmed* it." §7: "producers MUST use `human:` for content that a person wrote or confirmed". The person who asked an agent to write has no slot of their own. They appear when they confirm the result, as a `verified` event, and §5.3 says why that matters: "When an agent rewrites a concept after a human review, the human did not read the new text."
+
+**When the server stamps, it controls only what decides the trust tier** (account holder, 25 November 2026, #2459). With stamping off, a write lands as given and the tier follows the file. With it on, the operator has asked the server to vouch for what passes through it, so a client write must not be able to raise or hold the tier the server reports. Under §5.3 only `generated.at` and the `verified` events dated at or after it decide the tier. So:
+
+- The server sets `generated.at` itself: the time of the write, or the stored value on a trivial edit.
+- It keeps a supplied `generated.by` as the producer's claim, and keeps unknown keys inside `generated` (§4.1).
+- It keeps supplied `verified` events only when they are dated before the resulting `generated.at`, so they arrive as history and cannot count. It drops an event dated at or after that point and reports the drop in the write result. A review that should count goes through the review operation or external tooling.
+
+When no producer is supplied, `generated.by` names the writer as well as the server knows it:
+
+1. The MCP client's identity, as `<client-name>/<version>`.
+2. Otherwise, the server's tool actor, for writes with no client identity, such as an upload or the command line.
+
+`human:<subject>` is never a default, because only the client knows whether a person wrote the text. The authenticated requester stays in operational audit, such as the commit identity and the logs.
 
 This also separates file editing from concept authoring. A storage operation should preserve what it is given unless an explicit operation or workspace policy specifies a semantic transformation. A concept-authoring operation can deliberately update generation metadata, propose a type, maintain citations, and decide how prior reviews are represented. Automatic assistance remains possible; it becomes an identifiable producer with a defined remit.
 
@@ -207,7 +220,9 @@ Physical ZIP reproducibility is useful, but semantic fidelity comes first: membe
 | A YAML-native datetime without an offset stays invalid | "We follow okf here" | #2428 |
 | A link target above the bundle root is external and reported broken | "External and broken" | #2416; `okf.md` §1 |
 | Written link destinations are RFC 3986 URI references everywhere, after an Obsidian check | (recorded, not quoted) | #2417; reference/obsidian-markdown.md |
-| OKF rules are scoped by the managed/unmanaged split, not by reading versus writing | "In this case the split is not reading/writing, but managed/unmanaged" (said in a session; recorded unverified in #2457) | Open as #2459 Q3 |
+| OKF rules are scoped by the managed/unmanaged split, not by reading versus writing; `okf.md` §6.0's principles are settled, its switch names open | "In this case the split is not reading/writing, but managed/unmanaged" (said in a session; recorded unverified in #2457); "yes" (24 November) | #2459 |
+| Changing the root `okf_version` is upgrading a managed bundle, done on its own when lossless and otherwise paused; regeneration never changes it | "Changing 'okf_version' would basically mean upgrading the whole vault to a newer version and should not be seen independent from that"; "this sounds good" | #2459 |
+| When stamping, the server controls only the tier-relevant values; `generated.by` is the supplied producer, then the MCP client, then the tool actor, never the requester by default | "Yes" (25 November) | #2459 |
 
 The three-switch decision in #1433 is a useful recognition that capabilities are independent. It should not settle their eventual names, grouping, or implementation. In particular, `OKF_MAINTAIN` combines index regeneration, log curation, and refusal of client writes to reserved paths. `OKF_RECONCILE` is defined as removing demonstrably stale provenance; that definition presupposes a defensible applicability test, which the byte-change rule does not supply. Removing `verified` also runs against OKF 0.3 §5.3, under which earlier events "stay in the file as history" and stop counting without deletion. Independent toggles cannot make those assumptions true. The principles behind the switches are settled above; their names and grouping stay open, and repair is restated without deletion (#2459).
 
