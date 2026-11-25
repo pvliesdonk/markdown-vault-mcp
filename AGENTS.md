@@ -6,7 +6,7 @@ Generic markdown vault MCP with hybrid search
 <!-- DOMAIN-START -->
 [`docs/design/design.md`](docs/design/design.md) is the specification of the system as built. Make every implementation change conform to it, or change it in the same pull request; when in doubt it wins, except over a north star.
 
-Before changing a subsystem listed in [`docs/design/north-stars.md`](docs/design/north-stars.md), read its adopted north star in full and name the passages that govern the change; where the north star and `design.md` differ, the north star wins. When the change needs a decision the north star does not support, stop and reopen the north star as that file describes; never settle the decision in the session or the pull request.
+Before changing a subsystem listed in [`docs/design/north-stars.md`](docs/design/north-stars.md), read its adopted north star in full and name the passages that govern the change; where the north star and `design.md` differ, the north star wins. Use the `working-under-a-north-star` skill to classify each decision the change needs: where the north star is silent, decide it and state the choice in the pull request; where the change would contradict the north star, or shows it is wrong or outdated, stop and reopen it, never settling that decision in the session or the pull request.
 <!-- DOMAIN-END -->
 
 ## Project Structure
@@ -45,6 +45,7 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `writing-release-notes` — when drafting a `docs/releases/` page.
 - `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
 - `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
+- `working-under-a-north-star` — before planning, changing or reviewing a subsystem listed in `docs/design/north-stars.md`, and when such a change needs a decision its north star may not settle.
 
 Project-owned skills follow the same shape: a directory under `.agents/skills/` plus a relative symlink in `.claude/skills/`. Project-specific issue and PR conventions go inside the `authoring-issues-prs` skill's `DOMAIN-AUTHORING` block.
 

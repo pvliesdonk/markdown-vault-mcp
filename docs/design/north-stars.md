@@ -48,11 +48,14 @@ lists the decisions it would have to make:
 A subsystem moves into the governed list in the change that adopts its north
 star.
 
-## When the north star does not support a decision
+## Silent, settled or ruled out
 
-Stop the change; do not settle the decision in the session or the pull
-request. Reopen the north star instead: open a research issue, audit where the
-north star touches the code, and bring the findings and a proposed revision to
-the account holder, who adopts it as a whole.
-[#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459) is the
-worked example.
+The `working-under-a-north-star` skill
+([.agents/skills/working-under-a-north-star](../../.agents/skills/working-under-a-north-star/SKILL.md))
+classifies each decision a change needs:
+- **Silent:** the north star does not cover the question. Decide it as an
+  implementation choice and state it in the pull request.
+- **Settled:** follow the north star.
+- **Ruled out:** the change would contradict the north star, or shows it is
+  wrong or outdated. Stop and reopen it as a whole, by the method of
+  [#2459](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2459).
