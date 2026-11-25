@@ -33,6 +33,17 @@ going and `design.md` says what is built today.
     merged;
   - the user guide [docs/use/okf.md](../use/okf.md).
 
+### Version control
+
+- **North star:** [version-control-north-star.md](version-control-north-star.md), adopted on 25 November 2026 by merging [#2501](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2501), after spike [#2462](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462).
+- **Under it:** epic [#1313](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1313) (the libgit2 engine) and the roadmap's "Reliable Git integration" and "Vaults with git submodules" sections sequence the work.
+- **Governs these modules** in `src/markdown_vault_mcp/`: the `git/` package, `managers/git_query.py`, `_tools/git.py`, `write_callback.py`, `_commit_scope.py`, `_server_commit_scope.py` and `_webhooks.py`.
+- **Governs version-control behaviour anywhere else:**
+  - code that branches on whether a vault has version control, or on the git settings;
+  - the history, revision-read and sync tools;
+  - refusals of writes into nested repositories;
+  - the user guide's git pages.
+
 ## Not yet governed
 
 These subsystems are expected to get a north star. Each one's research issue
@@ -40,7 +51,6 @@ lists the decisions it would have to make:
 
 | Subsystem | Research |
 |---|---|
-| Git integration | [#2462](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462) |
 | Storage and search | [#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463) |
 | The library and its public surface | [#2464](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464) |
 | The release system | [#2465](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465) |
