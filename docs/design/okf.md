@@ -22,11 +22,14 @@ current spec, OKF v0.3 (2026-11-18), and every place the server departs from
 it are in [`reference/okf-v0.3.md`](reference/okf-v0.3.md); until OKF 1.0 the
 server follows one OKF version only.
 
-**Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
+**Authority update (11 September 2026, revised 25 November 2026):** the adopted [north star](okf-north-star.md)
 governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
-transition. Conflicting policies below, including the exact three switches,
-write stamping, verification deletion (since removed, #2405) and reserved-file admission exceptions,
-are historical decisions rather than requirements for new implementation.
+transition. The ownership principles of §6.0 are settled north-star direction
+(#2459); its switch names and grouping are not. Conflicting policies below, including
+those exact switch names, write stamping as §6 specifies it, verification deletion
+(since removed, #2405), reserved-file admission exceptions, the audit's use of
+exclude patterns and index-driven export, are historical decisions rather than
+requirements for new implementation.
 Descriptions of shipped behavior remain evidence, not a claim of north-star
 completion.
 
@@ -109,8 +112,10 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   read from disk, never an outlink, backlink or graph edge, never rewritten
   by a rename, but listed by `get_broken_links` and counted in
   `broken_link_count` (#2416; design.md § Link Extraction, path resolution).
-- **Out of scope for this server:** Attested Computations (sanctioned
-  SQL/Python with executor/attester machinery) — data-warehouse territory.
+- **Out of scope for this server:** executing Attested Computations
+  (sanctioned SQL/Python with executor/attester machinery) — data-warehouse
+  territory. They are stored, retrieved and linked through their path fields
+  as ordinary concepts (north star, #2459).
 
 ### Spec-stability caveat
 
@@ -480,7 +485,9 @@ during migration it is a progress meter:
   library construction keeps working.
 - Summary ratio ("N of M notes conformant") + the same exclude patterns as
   the index (convention files, configured excludes) so known-nonconforming
-  zones can be whitelisted via existing config.
+  zones can be whitelisted via existing config. The north star departs from
+  this: local exclusion never decides conformance, so excluded files may be
+  reported beside the result but not left out of it (#2459).
 - Registered per the Tool Registration Checklist (title, `readOnlyHint`,
   icon, docstring, docs row, enforcement-test coverage).
 
@@ -532,7 +539,11 @@ and each behaviour below names the switch that owns it. Until §6.0 lands,
 
 ### 6.0 Ownership: three independent switches (proposed, #1412)
 
-**Status:** design, 2026-09-09; not implemented. Supersedes the single
+**Status:** design, 2026-09-09; not implemented. Its principles (what the
+switches govern, explicit client operations, reserved-file refusal, read-side
+independence, advice not authority, independent capabilities) are settled
+north-star direction since 25 November 2026 (#2459); the switch names and
+grouping below are not, and repair never erases history. Supersedes the single
 `OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
 that both earlier ownership drafts (PR #1426, PR #1429) carried. This
 section says what to build; how to get there from the shipped code is
@@ -562,7 +573,7 @@ them.
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set on own `write`/`edit`/`append`, `verified` kept as history; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
 | Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change to a non-reserved note (#1392; a reserved-file change never triggers its own regeneration, #1414), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
-| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
+| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | repairs provenance on ingested external changes, per the provenance design (separate, #1420); it may add or correct and never erases history, since earlier events "stay in the file as history" (OKF 0.3 §5.3; north star, #2459) | no automatic repair |
 
 The switches govern what the server does **on its own**: stamping as a
 side effect of its write, maintenance and repair as reactions to changes.
@@ -605,7 +616,10 @@ reserved-file guard's admission of the server's own generators: #1419.
 A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
 
-- **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
+- **Provenance stamping** (`OKF_WRITE`; shipped behaviour, which the north star
+  changes: only concepts are stamped, a supplied `generated.by` and unknown keys
+  are kept, supplied reviews survive only as history, and the default actor is the
+  MCP client, then the tool actor, never `human:<subject>`; #2459): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
   the token's usable `sub` when the principal is human (`human:<subject>`), else
@@ -846,7 +860,8 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   — and, on a git vault, no commits.
 - **Existing keys win.** A hand-authored title and the root `index.md`'s
   `okf_version` declaration survive regeneration; only genuinely absent
-  required fields are added.
+  required fields are added. Regeneration never changes the declaration;
+  only upgrading a managed bundle does (north star, #2459).
 - **`title_field` gets the derived title** (the same H1 the body builders
   emit); any other required field is seeded as `null`, since the gate tests
   presence rather than value and the server has nothing truthful to put there.
@@ -859,8 +874,9 @@ folder `index.md` is an `index_frontmatter` finding like any hand-written
 one, and one seeded into a `log.md` a `log_frontmatter` finding (#1396,
 #2413); the root `index.md` may carry the keys (§8.1). The finding
 describes the file against §8 and §9, not who wrote it, and
-changes neither what the policy seeds nor what the gate admits. Whether the
-gate should reach generated reserved files at all is open (#1438).
+changes neither what the policy seeds nor what the gate admits. The north star
+settles whether the gate should reach reserved files at all: concept field
+requirements do not apply to navigation or history (#1438 carries the change).
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a
@@ -955,7 +971,8 @@ time via `okf_bundle.build_okf_bundle`. This is a domain use of the transfer
 primitives expressed without a new tool: a
 generated-bytes download the generic `create_download_link` serves unchanged.
 
-The bundle is a conformant *copy*: wikilinks rewritten to root-absolute links
+The bundle is a best-effort *copy*, not yet the publication contract the north
+star asks for (scope, snapshot, explicit root, conformance report; #1448): wikilinks rewritten to root-absolute links
 (reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
 convention files (`_conventions.md`) and the template folder excluded, the
 reserved `index.md` / `log.md` kept, non-conformant notes included as-is

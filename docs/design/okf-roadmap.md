@@ -51,13 +51,15 @@ neither requires forcing an event for every save.
 
 Before changing shipped defaults, #1412 records the operator and public-library
 compatibility decision against the then-current stable release. Independent
-capabilities remain the principle; the old three-switch names and grouping are
+capabilities remain the principle, and the north star now settles the ownership
+principles of `okf.md` §6.0 (#2459); the old three-switch names and grouping are
 not a prescribed target. No version or date is promised by this roadmap.
 
 Existing authored indexes and curated logs are preserved. Only operator policy
 outside writable bundle content can designate a listing for regeneration. That
 grant covers the listing body, preserves an existing root version declaration,
-and does not invent one. A fresh clone can use that explicit grant; a filename,
+and does not invent one. Only upgrading a managed bundle to the server's OKF
+version changes the declaration (#2459). A fresh clone can use that explicit grant; a filename,
 file marker, authenticated identity or Git trailer cannot grant it.
 
 Older server-produced placeholders, metadata and damaged logs need a reviewed
