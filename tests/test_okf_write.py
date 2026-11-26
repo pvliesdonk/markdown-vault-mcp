@@ -119,7 +119,8 @@ class TestApplyOkfWriteStamp:
         if slot is not None:
             assert post.metadata["name"] == "demo"
             assert post.metadata["type"] == "Literal"
-            assert set(authority) == {"generated"}
+            assert list(authority) == ["status", "generated"]
+            assert authority["status"] == "stable"
 
     @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md", "SKILL.md"])
     def test_clears_verified_on_content_change(self, path: str | None) -> None:
@@ -140,6 +141,57 @@ class TestApplyOkfWriteStamp:
             assert meta["verified"] == [
                 {"by": "human:peter", "at": _dt.date(2026, 1, 1)}
             ]
+
+    @pytest.mark.parametrize(
+        ("nested", "expected"),
+        [
+            (
+                "  type: Skill\n  owner: a\n",
+                ["type", "status", "owner", "generated"],
+            ),
+            ("  owner: a\n  type: Runbook\n", ["owner", "type", "status", "generated"]),
+            ("  owner: a\n", ["status", "owner", "generated"]),
+        ],
+    )
+    def test_skill_write_fills_status_after_type(
+        self, nested: str, expected: list[str]
+    ) -> None:
+        text = "---\nname: demo\nmetadata:\n" + nested + "---\nBody.\n"
+        post = fm.loads(
+            apply_okf_write_stamp(text, actor="a/1", now=_NOW, path="x/SKILL.md")
+        )
+        assert list(post.metadata["metadata"]) == expected
+        assert post.metadata["metadata"]["status"] == "stable"
+        assert "status" not in post.metadata
+
+    @pytest.mark.parametrize("status", ["draft", "deprecated", "experimental", ""])
+    def test_skill_write_keeps_a_present_status(self, status: str) -> None:
+        text = (
+            "---\nname: demo\nmetadata:\n  type: Skill\n"
+            f"  status: '{status}'\n---\nBody.\n"
+        )
+        post = fm.loads(
+            apply_okf_write_stamp(text, actor="a/1", now=_NOW, path="SKILL.md")
+        )
+        assert post.metadata["metadata"]["status"] == status
+        assert list(post.metadata["metadata"]) == ["type", "status", "generated"]
+
+    @pytest.mark.parametrize("path", [None, "ordinary.md", "skill.md"])
+    def test_ordinary_write_adds_no_status(self, path: str | None) -> None:
+        text = "---\ntype: Reference\nmetadata:\n  owner: a\n---\nBody.\n"
+        meta = fm.loads(
+            apply_okf_write_stamp(text, actor="a/1", now=_NOW, path=path)
+        ).metadata
+        assert "status" not in meta
+        assert meta["metadata"] == {"owner": "a"}
+
+    def test_skill_top_level_status_does_not_count(self) -> None:
+        text = "---\nname: demo\nstatus: draft\nmetadata:\n  type: Skill\n---\n"
+        meta = fm.loads(
+            apply_okf_write_stamp(text, actor="a/1", now=_NOW, path="SKILL.md")
+        ).metadata
+        assert meta["status"] == "draft"
+        assert meta["metadata"]["status"] == "stable"
 
     def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/instant stamp and no verified,

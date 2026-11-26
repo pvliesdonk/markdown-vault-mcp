@@ -77,6 +77,22 @@ stamp `metadata.generated` and clear `metadata.verified` on a skill.
 mutations preserve unrelated fields and literal top-level conflicts; they do
 not save an inferred `type: Skill` into your YAML.
 
+A content write also fills `metadata.status: stable` on a skill that has no
+`status`, right after `metadata.type`. A skill is instructions an agent
+follows, so its lifecycle state belongs in the file rather than in a default
+the reader has to know. The three values are:
+
+- `draft`: not reviewed yet and possibly incomplete; follow it with care.
+- `stable`: ready to use. Reads treat a skill without `status` this way, so
+  the fill changes no search, filter or audit result.
+- `deprecated`: kept for links and history, not current; don't follow it.
+  OKF v0.3's `superseded_by` can name the replacing skill; the server keeps it
+  as written and does not interpret it.
+
+A `status` you wrote is never changed, even a value outside these three.
+`status` is not staleness: `metadata.generated.at` says when the skill last
+changed, and `metadata.stale_after` marks one that expires on a date.
+
 After a native write, the existing index refresh updates all already indexed
 names for that target, including aliases. Use `wait_for_pending_writes` when a
 query must see that refresh. File replacement and index refresh are asynchronous
@@ -162,6 +178,8 @@ With the layer on, and only while the vault is an active OKF bundle, every `writ
 
 - **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the token carries a usable `sub` claim the issuer does not mark as an application's, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its `sub` equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries `gty: client-credentials` (Auth0) or `idtyp: app` (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' `sub` values in `MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS` so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing `generated` value is replaced, including one another tool wrote. The field tracks the last write this server saw rather than the note's history.
 - **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone. Clearing is one-way. The entries are removed rather than archived, and a write that changes nothing of substance clears them just the same.
+
+On a `SKILL.md`, both fields live under `metadata`, and a skill without `metadata.status` also gains `status: stable` (see [Reading skills](#reading-skills)).
 
 Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.
 

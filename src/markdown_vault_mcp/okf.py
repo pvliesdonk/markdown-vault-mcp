@@ -1183,6 +1183,25 @@ def _okf_write_slot(metadata: dict[str, Any], *, path: str | None) -> dict[str, 
     return slot
 
 
+def _with_default_skill_status(slot: dict[str, Any]) -> dict[str, Any]:
+    """Return *slot* with ``status: stable`` filled after ``type`` when absent.
+
+    A skill's lifecycle stays visible in its own file. ``stable`` is the value
+    OKF already reads for an absent ``status``, so filling it changes no reading.
+    A present value, including one outside the three lifecycle states, is kept.
+    """
+    if "status" in slot:
+        return slot
+    if "type" not in slot:
+        return {"status": "stable", **slot}
+    filled: dict[str, Any] = {}
+    for key, value in slot.items():
+        filled[key] = value
+        if key == "type":
+            filled["status"] = "stable"
+    return filled
+
+
 def apply_okf_write_stamp(
     text: str, *, actor: str, now: _dt.datetime, path: str | None = None
 ) -> str:
@@ -1194,6 +1213,8 @@ def apply_okf_write_stamp(
     write, and verification is removed because the old attestation no longer
     applies.
     Exact ``SKILL.md`` targets use nested ``metadata``; other paths use the root.
+    A skill slot without ``status`` also gains ``status: stable`` right after
+    ``type`` (or first, without ``type``); a present ``status`` is never changed.
     Unrelated fields and conflicting literal top-level families are untouched.
     Surviving fields retain their mapping order, including nested mappings;
     a new ``generated`` field appends, while replacing it retains its slot.
@@ -1219,6 +1240,8 @@ def apply_okf_write_stamp(
     slot = _okf_write_slot(new_meta, path=path)
     slot["generated"] = {"by": actor, "at": okf_timestamp(now)}
     slot.pop("verified", None)
+    if slot is not new_meta:
+        new_meta["metadata"] = _with_default_skill_status(slot)
     if new_meta == meta:
         return text
     return fm.dumps(fm.Post(post.content, **new_meta), sort_keys=False)

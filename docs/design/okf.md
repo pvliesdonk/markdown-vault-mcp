@@ -299,7 +299,11 @@ Native writes and `okf_verify` select authority by resolved note identity. With
 `verified`; verification appends there and reports its effective count. The
 mutation copies valid nested mappings, preserves unrelated members and literal
 top-level conflicts, and creates a mapping for absent/malformed slots. It never
-persists the inferred `Skill` type. Ordinary and lowercase targets retain root
+persists the inferred `Skill` type. A content write to a skill whose nested slot
+has no `status` also writes `status: stable`, after `type` when present, so the
+lifecycle state is visible in the file; it is the value already read for an
+absent `status`, so no reading changes. A present `status`, valid or not, is
+never rewritten, and `okf_verify` adds none. Ordinary and lowercase targets retain root
 mutations. The existing two-argument enrichment callback is unchanged: its
 native target travels through the existing request intent only during enrichment.
 Verification conditionally writes the resolved path and etag returned by its
