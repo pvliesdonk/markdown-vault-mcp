@@ -56,8 +56,9 @@ tool search.
   [FastMCP 4](fastmcp-4.md)), MCP Apps, OAuth.
 - Depended on by: `src/markdown_vault_mcp/_tasks.py` (task retention),
   `src/markdown_vault_mcp/_tools/writer.py` (the `okf_verify` elicitation),
-  `docs/design/design.md` § the task backend paragraph and § One-Time
-  Transfer Links.
+  `src/markdown_vault_mcp/_skills.py` (served skills),
+  `docs/design/design.md` § the task backend paragraph, § Skills served
+  over MCP and § One-Time Transfer Links.
 
 ## Claims
 
@@ -120,11 +121,11 @@ tool search.
 - The skills extension is `io.modelcontextprotocol/skills` (SEP-2640,
   Final). A server that declares it must implement `skills/list` and
   `skills/get`, and serves skill files through `resources/read`.
-  [source: ext-skills]
+  [source: ext-skills] [pins: tests/test_served_skills.py::test_skills_list_names_the_bundled_skills, tests/test_served_skills.py::test_skill_file_reads_back_byte_for_byte]
 - A `SKILL.md` must begin with YAML frontmatter holding `name` and
   `description`, and the last segment of its parent directory's path must
   match `name`. Servers should not exceed 512 files or 16 MiB per skill.
-  [source: ext-skills]
+  [source: ext-skills] [pins: tests/test_served_skills.py::test_skills_list_names_the_bundled_skills]
 - In Claude Code, MCP skills are in public beta and need v2.1.331 or later. A
   skill's name is `<server>:<skill>`; connector and plugin servers add a
   prefix, such as `claude_ai_Docs:pdf`. [source: cc-mcp]

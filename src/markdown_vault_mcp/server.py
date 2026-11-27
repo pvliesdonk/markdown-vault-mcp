@@ -30,6 +30,7 @@ from markdown_vault_mcp._server_deps import (
     server_lifespan,
 )
 from markdown_vault_mcp._server_info import register_server_info_tool
+from markdown_vault_mcp._skills import register_skills
 from markdown_vault_mcp._subject import get_current_auth_mode
 from markdown_vault_mcp._tasks import configure_task_backend
 from markdown_vault_mcp._tool_visibility import apply_tool_visibility
@@ -186,6 +187,7 @@ def make_server(
     register_resources(mcp)
     register_prompts(mcp)
     register_apps(mcp)
+    register_skills(mcp)
 
     register_server_info_tool(
         mcp,

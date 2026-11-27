@@ -6227,6 +6227,20 @@ Prompts are pure template functions with no vault dependency.
 Resources return JSON (``mime_type="application/json"``). The ToC resource
 queries the ``note_headings`` table (no file I/O; decision 38).
 
+**Skills served over MCP** (SEP-2640, #1552): `_skills.register_skills`
+serves every skill folder under the package's `skills/` directory through
+FastMCP's `SkillsDirectoryProvider`, which also registers the skills
+extension (`skills/list`, `skills/get`) and serves each file as a `skill://`
+resource. A host that implements the extension shows the model the skill's
+name and description and loads the body on demand
+([reference](reference/claude-mcp-client.md)). The folder holds
+`vault-workflow` only: `vault-setup` repairs a server that is down, so that
+server cannot serve it, and `vault-summarize` relies on the plugin's
+`vault-mapper` agent. Both stay in the Claude Code plugin, which drops its
+copy of `vault-workflow`: the plugin's own server now serves it. A skill
+carries long-form workflow guidance only; a fact a single call depends on
+stays in that tool's description or result.
+
 **TOC surface** (``get_toc`` tool and ``toc://vault/{path}`` resource): dispatch is by suffix. Paths ending in ``.md`` are note mode; all other paths are folder-prefix mode.
 
 - **Note mode** returns a flat ordered ``list[{heading, level}]``: every ATX heading of the note, in document order, a repeated heading once per occurrence, each one a heading ``read(path, section=...)`` accepts. The document title is included as a synthetic H1 entry.
