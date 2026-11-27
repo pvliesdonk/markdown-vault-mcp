@@ -974,8 +974,10 @@ generated-bytes download the generic `create_download_link` serves unchanged.
 The bundle is a best-effort *copy*, not yet the publication contract the north
 star asks for (scope, snapshot, explicit root, conformance report; #1448): wikilinks rewritten to root-absolute links
 (reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
-convention files (`_conventions.md`) and the template folder excluded, the
-reserved `index.md` / `log.md` kept, non-conformant notes included as-is
+convention files (`_conventions.md`), the template folder and files with a
+dot-prefixed vault-relative path component excluded (including under a selected
+dot-folder scope), the reserved `index.md` / `log.md` kept otherwise,
+non-conformant notes included as-is
 (permissive consumers tolerate them), and a fixed zip-entry timestamp so an
 unchanged vault re-exports to identical bytes. Notes are read raw from disk
 (uncapped), so a large note exports in full. Export never mutates the vault.

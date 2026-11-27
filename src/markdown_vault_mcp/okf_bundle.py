@@ -53,7 +53,7 @@ class OkfBundleResult:
         data: The zip archive bytes.
         notes: Number of notes written into the bundle.
         attachments: Number of attachments written into the bundle.
-        excluded: Number of in-scope files skipped (convention/template files).
+        excluded: Number of listed in-scope files skipped by export policy.
     """
 
     data: bytes
@@ -63,13 +63,16 @@ class OkfBundleResult:
 
 
 def _is_excluded(path: str, conventions_file: str | None, templates_root: str) -> bool:
-    """Return whether *path* is a convention or template file (excluded from export).
+    """Return whether *path* is excluded from export.
 
     Convention files (the per-folder ``_conventions.md``) are authoring guidance,
-    and the template folder holds note scaffolds — neither is bundle content. The
-    reserved ``index.md`` / ``log.md`` are navigation and are kept.
+    and the template folder holds note scaffolds — neither is bundle content.
+    Dot-prefixed path components are outside an OKF 0.3 bundle. The reserved
+    ``index.md`` / ``log.md`` are navigation and are kept otherwise.
     """
     name = path.rsplit("/", 1)[-1]
+    if any(part.startswith(".") for part in path.split("/")):
+        return True
     if conventions_file is not None and name == conventions_file:
         return True
     return bool(

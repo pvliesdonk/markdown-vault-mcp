@@ -115,6 +115,35 @@ def test_bundle_folder_scope(vault: Vault, config: ProjectConfig):
     assert members == {"guides/one.md"}
 
 
+def test_bundle_omits_dot_components(source_dir: Path) -> None:
+    (source_dir / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
+    for name in (".dot.md", "guides/.dot.md", ".hidden/x.md", "guides/.nested/x.md"):
+        path = source_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Note\n")
+    config = ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
+    vault = Vault(
+        source_dir=source_dir, settings=VaultSettings(attachment_extensions=["png"])
+    )
+    try:
+        vault.index.build_index()
+        result = build_okf_bundle(vault, config)
+        assert _members(result.data) == {
+            "index.md",
+            "log.md",
+            "a.md",
+            "b.md",
+            "guides/one.md",
+            "pic.png",
+        }
+        assert result.excluded == 5
+        scoped = build_okf_bundle(vault, config, folder=".hidden")
+        assert not _members(scoped.data)
+        assert scoped.excluded == 1
+    finally:
+        vault.close()
+
+
 def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):
     first = build_okf_bundle(vault, config, folder="").data
     second = build_okf_bundle(vault, config, folder="").data
