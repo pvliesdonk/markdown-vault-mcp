@@ -41,6 +41,10 @@ def source_dir(tmp_path: Path) -> Path:
     templates = root / "_templates"
     templates.mkdir()
     (templates / "t.md").write_text("# template\n")
+    for name in (".dot.md", ".hidden/x.md", "guides/.dot.md", "guides/.nested/x.md"):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Note\n")
     return root
 
 
@@ -84,6 +88,7 @@ def test_bundle_excludes_convention_and_template_files(
     assert "_conventions.md" not in members
     assert "_templates/t.md" not in members
     assert not any(m.startswith("_templates/") for m in members)
+    assert not any(part.startswith(".") for m in members for part in m.split("/"))
 
 
 def test_bundle_keeps_reserved_index_and_log(vault: Vault, config: ProjectConfig):
@@ -113,35 +118,9 @@ def test_bundle_preserves_frontmatter_and_nonconformant(
 def test_bundle_folder_scope(vault: Vault, config: ProjectConfig):
     members = _members(build_okf_bundle(vault, config, folder="guides").data)
     assert members == {"guides/one.md"}
-
-
-def test_bundle_omits_dot_components(source_dir: Path) -> None:
-    (source_dir / "index.md").write_text('---\nokf_version: "0.3"\n---\n')
-    for name in (".dot.md", "guides/.dot.md", ".hidden/x.md", "guides/.nested/x.md"):
-        path = source_dir / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("# Note\n")
-    config = ProjectConfig(source_dir=source_dir, attachment_extensions=("png",))
-    vault = Vault(
-        source_dir=source_dir, settings=VaultSettings(attachment_extensions=["png"])
-    )
-    try:
-        vault.index.build_index()
-        result = build_okf_bundle(vault, config)
-        assert _members(result.data) == {
-            "index.md",
-            "log.md",
-            "a.md",
-            "b.md",
-            "guides/one.md",
-            "pic.png",
-        }
-        assert result.excluded == 5
-        scoped = build_okf_bundle(vault, config, folder=".hidden")
-        assert not _members(scoped.data)
-        assert scoped.excluded == 1
-    finally:
-        vault.close()
+    scoped = build_okf_bundle(vault, config, folder=".hidden")
+    assert not _members(scoped.data)
+    assert scoped.excluded == 1
 
 
 def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):
