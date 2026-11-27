@@ -52,10 +52,15 @@ throughout.
    be a conventional commit: the squash commit carries it to `main` later,
    where the changelog reads it.
 
-    Write `Part of #<epic>` or `Refs #N` in a child's body, not `Closes #N`.
-    GitHub closes linked issues only when a pull request merges into the
-    default branch, so a closing keyword in a child does nothing. Collect the
-    `Closes` lines in the final pull request instead.
+    If the child completes an issue, you can put `Closes #N` in its body
+    and keep that line in the squash commit message. For partial work, use
+    `Refs #N` or `Part of #<epic>`. The child merge leaves the issue open
+    because its base is the integration branch.
+
+    After the squash merge, open the child pull request's merged commit on
+    GitHub and read its full message. A closing keyword there takes effect
+    when the final merge commit brings it onto `main`. If the line is
+    missing, add it to the final pull request's body.
 
 4. **Merge `main` in; never rebase.** Bring `main` into the integration
    branch after each release and whenever a conflict appears:
@@ -113,7 +118,10 @@ final review covers what those reviews could not see:
   docs, configuration and migration notes describe the finished result
   rather than an intermediate step.
 - **Release impact.** The breaking markers among the children, and the
-  `Closes` lines in the final pull request's body.
+  issues the merge will close. After a rebase, check the rewritten commit
+  messages. Use the final pull request's body for any completed issue
+  without a closing keyword in the incoming commits. This often includes
+  the epic itself.
 
 The automatic review, where enabled, sees the whole diff against `main`. Its
 findings on code a child review already accepted can be dismissed with a

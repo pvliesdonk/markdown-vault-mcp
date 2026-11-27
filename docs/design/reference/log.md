@@ -1,5 +1,11 @@
 # Reference research log
 
+## 2026-11-27
+
+- Checked the integration-branch closing keyword rule against GitHub's
+  documentation and the closing event for a child squash commit.
+  See [GitHub integration branches](github-integration-branches.md).
+
 ## 2026-11-21
 
 - The bundle now declares `okf_version: "0.3"` (#2439), and
