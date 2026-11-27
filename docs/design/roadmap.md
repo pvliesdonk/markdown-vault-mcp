@@ -1514,6 +1514,24 @@ implement: not intended; a deferred non-breaking gap, with a logged placeholder;
 and a deferred breaking gap, which fails at startup. This replaces the refusal
 set the parked libgit2 pull requests defined for themselves.
 
+### 27 November 2026 — refine the optional Git backend
+
+`derived` — Refinement [#1468][1468] shapes [#1313][1313] against the
+[version-control north star](version-control-north-star.md) without editing
+its frozen **Done when**. The north star puts the policy above the engines and
+the primitives below. So `028` first moves the CLI behind an engine port, in
+this order: reading ([#2513][2513]), recording ([#2514][2514]) and exchange
+([#2515][2515], which resolves [#1311][1311]). It then adds an engine setting
+([#2516][2516]) and runs the shared scenarios over every engine
+([#2517][2517]). `033` then implements the same three ports on libgit2
+([#2518][2518] to [#2520][2520]). It also classifies the engine's coverage of
+the four categories of need ([#2521][2521]) and documents it for operators
+([#2522][2522]). The port comes before the engine because a second engine
+implements primitives, so the primitives must exist first. The parked
+contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
+scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
+do 2517").
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1752,3 +1770,13 @@ set the parked libgit2 pull requests defined for themselves.
 [2493]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2493
 [2494]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2494
 [2495]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2495
+[1311]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1311
+[2513]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2513
+[2514]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2514
+[2515]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2515
+[2516]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2516
+[2517]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2517
+[2518]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2518
+[2520]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2520
+[2521]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2521
+[2522]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2522
