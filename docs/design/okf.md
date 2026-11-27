@@ -975,8 +975,9 @@ The bundle is a best-effort *copy*, not yet the publication contract the north
 star asks for (scope, snapshot, explicit root, conformance report; #1448): wikilinks rewritten to root-absolute links
 (reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
 convention files (`_conventions.md`), the template folder and files with a
-dot-prefixed vault-relative path component excluded (including under a selected
-dot-folder scope), the reserved `index.md` / `log.md` kept otherwise,
+dot-prefixed vault-relative path component excluded (OKF 0.3 §3.2), the reserved
+`index.md` / `log.md` kept except under a dot-prefixed component, where they
+are excluded too (so a selected dot-folder scope exports an empty zip),
 non-conformant notes included as-is
 (permissive consumers tolerate them), and a fixed zip-entry timestamp so an
 unchanged vault re-exports to identical bytes. Notes are read raw from disk
