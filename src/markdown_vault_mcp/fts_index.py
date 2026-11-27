@@ -797,7 +797,8 @@ class FTSIndex:
             ``path``, ``title``, ``folder``, ``heading``, ``content``,
             ``summary``; missing keys default to ``1.0``).  Persisted into
             the FTS5 rank configuration at init; ``None`` or all-``1.0``
-            resets to the default ``bm25()``.
+            resets to the default ``bm25()``. A writable index logs a warning
+            if every effective column weight is zero.
         read_only: Open an existing database file read-only, for a process
             that reads an index another one owns (#1758). SQLite refuses
             every write, so the schema setup, migrations and rank
@@ -847,6 +848,12 @@ class FTSIndex:
                 "fts_index_unknown_weights_ignored columns=%s valid_columns=%s",
                 sorted(unknown_weight_cols),
                 ", ".join(self._FTS_COLUMNS),
+            )
+        if not read_only and all(
+            self._fts_weights.get(col, 1.0) == 0 for col in self._FTS_COLUMNS
+        ):
+            logger.warning(
+                "fts_index_all_zero_weights columns=%s", ", ".join(self._FTS_COLUMNS)
             )
         # Thread-safety core (#519): per-thread connections, the strong-ref
         # close registry, and the BaseException-hardened bootstrap live in

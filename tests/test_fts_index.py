@@ -2026,6 +2026,39 @@ def test_fts_columns_match_live_table() -> None:
     assert live == FTS_COLUMNS
 
 
+def test_all_zero_fts_weights_warn_and_persist(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An ignored column cannot mask all-zero weights on the ranked columns."""
+    weights = dict.fromkeys(FTSIndex._FTS_COLUMNS, 0.0)
+    idx = FTSIndex(fts_weights={**weights, "titel": 2.0})
+    try:
+        rank = (
+            idx._conn()
+            .execute("SELECT v FROM notes_fts_config WHERE k='rank'")
+            .fetchone()
+        )
+        assert rank[0] == "bm25(0, 0, 0, 0, 0, 0)"
+    finally:
+        idx.close()
+    warnings = [
+        r for r in caplog.records if r.message.startswith("fts_index_all_zero_weights ")
+    ]
+    assert [r.levelname for r in warnings] == ["WARNING"]
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [{"title": 0.0}, dict.fromkeys(FTSIndex._FTS_COLUMNS, 0.0) | {"title": -1.0}],
+)
+def test_nonzero_effective_weight_skips_warning(
+    weights: dict[str, float], caplog: pytest.LogCaptureFixture
+) -> None:
+    """An omitted or explicitly nonzero column keeps the warning quiet."""
+    FTSIndex(fts_weights=weights).close()
+    assert "fts_index_all_zero_weights" not in caplog.text
+
+
 class TestPersistedRankConfig:
     @staticmethod
     def _populate(idx: FTSIndex) -> None:
@@ -2273,13 +2306,15 @@ class TestReadOnly:
         return str(row[0])
 
     def test_reads_with_the_stored_weights_and_refuses_writes(
-        self, tmp_path: Path
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         db = tmp_path / "a dir?#" / "index.db"
         db.parent.mkdir()
         self._built(db)
 
-        idx = FTSIndex(db, fts_weights={}, read_only=True)
+        idx = FTSIndex(
+            db, fts_weights=dict.fromkeys(FTSIndex._FTS_COLUMNS, 0.0), read_only=True
+        )
         try:
             assert [r.path for r in idx.search("dragons")] == ["dragons.md"]
             with pytest.raises(sqlite3.OperationalError, match="readonly"):
@@ -2287,6 +2322,7 @@ class TestReadOnly:
         finally:
             idx.close()
         assert self._rank(db) == "bm25(1, 5, 1, 1, 1, 1)"
+        assert "fts_index_all_zero_weights" not in caplog.text
 
     def test_missing_file_is_not_created(self, tmp_path: Path) -> None:
         db = tmp_path / "index.db"
