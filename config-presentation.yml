@@ -161,6 +161,14 @@ vars:
     tags: [tasks]
     wizard: {control: none}
 
+  - name: "FASTMCP_DOCKET_EXECUTION_TTL"
+    provenance: external
+    type_name: "str"
+    default: "PT2H"
+    help: "How long a task and its result are kept, from the task's creation, as an ISO 8601 duration; clients see it as the task's `ttlMs`."
+    tags: [tasks]
+    wizard: {control: none}
+
   - name: "FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL"
     provenance: external
     type_name: "str"

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 import pytest
 from fastmcp import FastMCP
 
-from markdown_vault_mcp._tasks import _resolve_url_override, configure_task_backend
+from markdown_vault_mcp._tasks import (
+    DEFAULT_TASK_RETENTION,
+    _resolve_url_override,
+    configure_task_backend,
+)
 from markdown_vault_mcp.config_sections.server import ServerConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -28,6 +33,7 @@ def _neutral_docket_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("FASTMCP_DOCKET_URL", raising=False)
     monkeypatch.delenv("FASTMCP_DOCKET_NAME", raising=False)
+    monkeypatch.delenv("FASTMCP_DOCKET_EXECUTION_TTL", raising=False)
 
 
 @pytest.fixture
@@ -214,6 +220,41 @@ class TestQueueName:
         config = ServerConfig(kv_store_url="file:///data/state")
         ext = configure_task_backend(mcp, "SCHOLAR_MCP", config)
         assert _settings(ext).name == "scholar-mcp"
+
+
+@pytest.mark.usefixtures("docket_installed")
+class TestRetention:
+    def test_default_outlasts_upstream_quarter_hour(self, mcp):
+        ext = configure_task_backend(mcp, "MY_APP", ServerConfig())
+        assert _settings(ext).execution_ttl == DEFAULT_TASK_RETENTION
+        assert timedelta(hours=1) <= DEFAULT_TASK_RETENTION
+
+    def test_native_retention_respected(self, mcp, monkeypatch):
+        monkeypatch.setenv("FASTMCP_DOCKET_EXECUTION_TTL", "PT10M")
+        ext = configure_task_backend(mcp, "MY_APP", ServerConfig())
+        assert _settings(ext).execution_ttl == timedelta(seconds=600)
+
+    def test_empty_native_retention_counts_as_unset(self, mcp, monkeypatch):
+        monkeypatch.setenv("FASTMCP_DOCKET_EXECUTION_TTL", " ")
+        ext = configure_task_backend(mcp, "MY_APP", ServerConfig())
+        assert _settings(ext).execution_ttl == DEFAULT_TASK_RETENTION
+
+    async def test_client_receives_retention_as_ttl_ms(self, mcp):
+        from fastmcp import Client
+        from fastmcp.utilities.tasks import TaskConfig
+        from fastmcp_tasks.client import call_tool_task
+
+        configure_task_backend(mcp, "MY_APP", ServerConfig())
+
+        @mcp.tool(task=TaskConfig(mode="optional"))
+        async def slow() -> str:
+            return "done"
+
+        async with Client(mcp) as client:
+            task = await call_tool_task(client, "slow")
+            await task.result()
+        expected_ms = int(DEFAULT_TASK_RETENTION.total_seconds() * 1000)
+        assert task.create_result.ttl_ms == expected_ms
 
 
 @pytest.mark.usefixtures("docket_installed")

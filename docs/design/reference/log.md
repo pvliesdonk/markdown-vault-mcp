@@ -1,5 +1,13 @@
 # Reference research log
 
+## 2026-11-27
+
+- New: [Claude as an MCP client](claude-mcp-client.md), for #2529. Read the
+  Claude Code MCP page, the Claude connector files page, the 24 November 2026
+  announcement and the MCP tasks, skills and files extension pages; a refute
+  pass re-checked all 23 claims against them and narrowed four. Next review:
+  2027-05-27.
+
 ## 2026-11-21
 
 - The bundle now declares `okf_version: "0.3"` (#2439), and

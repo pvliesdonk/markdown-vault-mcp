@@ -17,12 +17,20 @@ Worker tunables (``FASTMCP_DOCKET_CONCURRENCY``, ``..._WORKER_NAME``,
 ``..._REDELIVERY_TIMEOUT``, ``..._RECONNECTION_DELAY``,
 ``..._MINIMUM_CHECK_INTERVAL``) are deliberately not wrapped: the extension's
 own settings read them, with sensible upstream defaults.
+
+Task retention (``FASTMCP_DOCKET_EXECUTION_TTL``) is the exception: the
+upstream default of 15 minutes, counted from the task's creation, is shorter
+than a long index build and than Claude's advice to keep a finished result for
+at least an hour, so this server passes its own default unless the native
+variable is set. ``docs/design/reference/claude-mcp-client.md`` records what
+Claude expects of a task server.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._env import _resolve_key
@@ -39,6 +47,10 @@ logger = logging.getLogger(__name__)
 
 _DOCKET_SCHEMES = frozenset({"memory", "redis"})
 """URL schemes Docket accepts, the validation set for ``TASKS_URL``."""
+
+DEFAULT_TASK_RETENTION = timedelta(hours=2)
+"""How long a task and its result are kept, from creation, unless
+``FASTMCP_DOCKET_EXECUTION_TTL`` is set. Clients receive it as ``ttlMs``."""
 
 
 def _derive_queue_name(env_prefix: str) -> str:
@@ -151,6 +163,13 @@ def _resolve_name_override(env_prefix: str) -> str | None:
     return None
 
 
+def _resolve_retention_override() -> timedelta | None:
+    """Apply this server's retention unless ``FASTMCP_DOCKET_EXECUTION_TTL`` is set."""
+    if _env_override("FASTMCP_DOCKET_EXECUTION_TTL") is None:
+        return DEFAULT_TASK_RETENTION
+    return None
+
+
 def _log_unavailable(env_prefix: str, explicit_url: str | None) -> None:
     """Say why no extension was registered; louder if the operator set a URL."""
     if explicit_url is None:
@@ -220,7 +239,8 @@ def configure_task_backend(
     is invisible to these checks and is overridden.
 
     The queue name is derived from *env_prefix* unless ``FASTMCP_DOCKET_NAME``
-    is set.
+    is set, and tasks are kept for :data:`DEFAULT_TASK_RETENTION` unless
+    ``FASTMCP_DOCKET_EXECUTION_TTL`` is set.
 
     Without the tasks machinery nothing is registered and this returns
     ``None``, but an explicit ``TASKS_URL`` is still validated, and dropped
@@ -260,6 +280,7 @@ def configure_task_backend(
     extension = TasksExtension(
         url=_resolve_url_override(env_prefix, config, explicit_url),
         name=_resolve_name_override(env_prefix),
+        execution_ttl=_resolve_retention_override(),
     )
     mcp.add_extension(extension)
     _log_effective_backend(env_prefix, config, extension)

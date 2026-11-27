@@ -5788,6 +5788,13 @@ is vault-relative. The Vault reader remains responsible for root containment.
 The task backend is server-owned rather than process-global:
 `configure_task_backend(mcp, _ENV_PREFIX, config.server)` registers the tasks
 extension on the exact root server before task-enabled tools are registered.
+It keeps a task and its result for two hours from creation
+(`DEFAULT_TASK_RETENTION`, reported to the client as `ttlMs`) unless
+`FASTMCP_DOCKET_EXECUTION_TTL` is set: the upstream 15 minutes is shorter
+than a long index build, and Claude asks a task server to keep a finished
+result for at least an hour so a resumed session can still collect it
+([reference](reference/claude-mcp-client.md)). The `get_job_result` fallback
+keeps its own `JOBS_RESULT_TTL_S` (#2529).
 Python reads of MCP model fields use SDK v2 snake_case names; camelCase remains
 the wire representation only.
 
