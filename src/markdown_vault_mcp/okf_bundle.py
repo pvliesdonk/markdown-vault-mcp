@@ -1,8 +1,6 @@
 """OKF bundle export (#963): build a best-effort bundle zip from live vault state.
 
-The archive is a best-effort copy, not a certified conformant bundle: it
-carries no conformance report and does not run ``okf_validate``. The bundle
-rules it follows are recorded in ``docs/design/reference/okf-v0.3.md``.
+Bundle rules are recorded in ``docs/design/reference/okf-v0.3.md``.
 
 Phase 4 of ``docs/design/okf.md`` §7, and the export half of the migration
 story that :mod:`markdown_vault_mcp.managers.okf_migrate` began. The build
@@ -108,8 +106,7 @@ def build_okf_bundle(
         config: The project config — supplies the vault root and the
             convention-file / template-folder names to exclude.
         folder: Vault-relative folder to scope the bundle to; ``""`` is the whole
-            vault. A folder with a dot-prefixed component yields an empty zip,
-            because every file under it is omitted.
+            vault.
 
     Returns:
         An :class:`OkfBundleResult` with the zip bytes and per-kind counts.
