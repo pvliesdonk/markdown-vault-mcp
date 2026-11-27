@@ -168,11 +168,14 @@ Open the PR in the same repo as its issue (step 2), then follow
 
 Pick the base branch before creating the PR: when the epic the work
 belongs to runs on an integration branch (its body names
-`integration/<epic>`), pass `--base integration/<epic>` and write
-`Part of #<epic>` or `Refs #N` in the body instead of `Closes #N`, which
-does nothing on a non-default base. The final `integration/<epic>` →
-`main` PR carries every `Closes` line and is merged with a merge commit;
-`docs/contribute/integration-branches.md` has the whole workflow.
+`integration/<epic>`), pass `--base integration/<epic>`. Squash-merge a child
+as you would an issue PR into `main`. For an issue the child completes,
+you can carry `Closes #N` in the squash commit. Check the resulting commit
+message: the issue closes when the final merge commit brings that keyword
+onto `main`. Use `Refs #N` for partial work. In the final PR body, add
+`Closes #N` for each completed issue the child commits leave uncovered,
+including the epic. See `docs/contribute/integration-branches.md` for the
+verification step.
 
 ### 8. Identify yourself on every post
 

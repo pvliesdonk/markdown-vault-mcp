@@ -25,7 +25,19 @@ sources:
   - id: linking-issues
     title: Linking a pull request to an issue
     resource: https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue
-    accessed: 2026-09-26
+    accessed: 2026-11-27
+  - id: child-pr
+    title: Child pull request into integration/024-okf-evidence
+    resource: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2399
+    accessed: 2026-11-27
+  - id: final-pr
+    title: Final pull request merging the integration branch into main
+    resource: https://github.com/pvliesdonk/markdown-vault-mcp/pull/2392
+    accessed: 2026-11-27
+  - id: child-closure
+    title: GitHub issue timeline recording the child squash commit that closed issue 2386
+    resource: https://api.github.com/repos/pvliesdonk/markdown-vault-mcp/issues/2386/timeline
+    accessed: 2026-11-27
   - id: branch-deletion
     title: Creating and deleting branches within your repository
     resource: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-and-deleting-branches-within-your-repository
@@ -104,10 +116,15 @@ tools.
 
 ### Closing keywords and retargeting
 
-- Closing keywords in a pull request are interpreted only when the pull
-  request targets the repository's default branch; a pull request to any
-  other branch links the issue but merging it closes nothing.
+- GitHub interprets a closing keyword in a pull request description when
+  the base is the default branch. A closing keyword in a commit message
+  closes the issue when that commit reaches the default branch.
   [source: linking-issues]
+- [observed: child PR 2399 squash-merged into the integration branch at
+  09:18:53 UTC on 2026-11-21. Its commit `0bf7b864` carried `Closes #2386`.
+  Final PR 2392 merged into main at 09:46:54 UTC with that commit as its
+  second parent. The issue closed at 09:47:00 UTC with the child commit
+  as the closing SHA.] [source: child-pr] [source: final-pr] [source: child-closure]
 - When a merged pull request's head branch is deleted, GitHub retargets the
   open pull requests based on that branch to the merged pull request's
   base. [source: branch-deletion] [source: retarget-changelog]
