@@ -36,9 +36,32 @@ An engine supplies the mechanism: storing content and states, comparing them, me
 - **No version control.** It is an engine in its own right: it records nothing, has no history, and says so. It replaces the scattered "is there git?" checks.
 - **Database-backed history** ([#1474](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1474)) is another engine of the same model, if it is built. Git remains a likely fit wherever the vault is synchronised with Obsidian.
 
-## Repository shapes
+## What the server needs from version control
 
-One policy holds for every instance: a vault is a vault, as #1313 records the account holder's constraint in its own words. The product decides which shapes it supports. Each engine either serves a shape or refuses, at startup, with a message naming what to change. An engine's refusals are product decisions recorded here or on the engine's issue, never introduced by a pull request.
+A vault may have no version control at all. A folder of Markdown files served read-only, with no history, is supported, "and that is fine" (account holder, 26 November 2026). Its engine records nothing, has no history, and says so when asked.
+
+Where a vault does have version control, the product decides what the server needs from it, in four categories (account holder, 26 November 2026, [#1468](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1468)):
+
+1. **The server's own operation:** recording, reading a document at a revision, following history across renames, comparing, and the content Git LFS holds. These matter even for a vault that is never synchronised.
+2. **Because the vault synchronises:** fetching and publishing over the transports in use, integrating divergence, handling conflicts, and the triggers that start a synchronisation (a webhook, or `git_sync` where there is none).
+3. **Compatibility with others using the same repository:** what other writers' repositories contain, and would break without. That means Git LFS, nested repositories such as submodules, the repository's object and reference formats, and `.gitattributes` merge drivers and filters.
+4. **What the server could benefit from:** additional, possibly engine-specific features, such as running the repository's hooks, signing commits, and shallow, sparse or partial clones.
+
+One policy holds for every instance: a vault is a vault, as #1313 records the account holder's constraint in its own words.
+
+### When an engine does not implement something
+
+Something an engine does not implement is one of three cases, and each is handled differently:
+
+| Case | What it is | What the engine does |
+|---|---|---|
+| **Not intended** | Not implemented because it is not needed or not intended. Examples: history in the no-version-control engine, or a category-4 feature the engine does not offer. | Says so when asked. It is not a gap: nothing is logged as missing, and nothing is tracked as deferred. |
+| **Deferred gap, non-breaking** | Something the product needs that the engine cannot serve yet, where doing nothing loses nothing and writes nothing another copy would misread. | Uses a placeholder, an operation that does nothing. Its absence is logged clearly, and the gap is tracked as deferred work in its own issue. |
+| **Deferred gap, breaking** | Something the product needs that the engine cannot serve yet, where doing nothing would break the vault or other copies of it. Examples: an engine that cannot open the repository's format, or one that would commit LFS content as raw bytes where other clones expect a pointer. | Fails at startup, with a message saying what to change, taken from the error it actually hits. The gap is tracked as deferred work in its own issue. |
+
+No machinery probes whether an engine can serve a vault; the account holder: "I'm not in favor of building complex machinery to see if a engine can work or not." An engine meets a breaking gap through the error it hits, and its placeholders through the operations it does not implement.
+
+Which category something belongs to, and which case an engine's omission is, are product decisions recorded on the issue that tracks them. A pull request never introduces one.
 
 ## Writers
 

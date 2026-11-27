@@ -1497,6 +1497,23 @@ requests wait on that refinement, as before. Departures from the north star are
 filed as issues once it is adopted, for example git's output reaching tool
 results.
 
+### 26 November 2026 — what the server needs from version control
+
+`stated` — On the libgit2 engine's refusal set: "It is not what do we cover
+(and/or refuse), but what does the server *need*", in three categories (its own
+operation, synchronisation, and compatibility with others using the same
+repository), plus "additional (engine-specific?) features a server *could*
+benefit from"; on gaps, "a null/placeholder operation, as long as its absence is
+clearly logged and tracked as deferred"; and on a plain folder without git: "It
+would not have history *and that is fine*" (owner, 26 November 2026, refining
+[#1468][1468]).
+
+`derived` — The [version-control north star](version-control-north-star.md)
+now states those categories and three cases for what an engine does not
+implement: not intended; a deferred non-breaking gap, with a logged placeholder;
+and a deferred breaking gap, which fails at startup. This replaces the refusal
+set the parked libgit2 pull requests defined for themselves.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
