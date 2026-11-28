@@ -254,10 +254,13 @@ def test_two_clone_divergence(
             sibling = frontmatter.loads(siblings[0].read_text())
             assert original.content == "remote"
             assert sibling.content == "local"
-            assert original.metadata["conflict_with"] == siblings[0].name
-            assert sibling.metadata["conflict_with"] == "README.md"
-            assert "conflict_date" in original.metadata
-            assert "conflict_date" in sibling.metadata
+            assert (
+                original.metadata["x-markdown-vault-mcp-conflict-with"]
+                == siblings[0].name
+            )
+            assert sibling.metadata["x-markdown-vault-mcp-conflict-with"] == "README.md"
+            assert "x-markdown-vault-mcp-conflict-date" in original.metadata
+            assert "x-markdown-vault-mcp-conflict-date" in sibling.metadata
     assert not (local / ".git/rebase-merge").exists()
     assert not (local / ".git/rebase-apply").exists()
 
