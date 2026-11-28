@@ -1660,11 +1660,10 @@ class SearchManager:
         Iterates the same ``documents`` rows :meth:`stats` already counts
         and aggregates the OKF read annotations: a ``type`` histogram (plus
         an untyped count), lifecycle-``status`` and trust-tier breakdowns,
-        and the stale-note count. The aggregate reports over the OKF *note*
-        population — the same set :func:`~markdown_vault_mcp.okf.audit_bundle`
-        audits — so reserved bundle files (``index.md`` / ``log.md``), which
-        the spec exempts from the ``type`` rule, are excluded from every
-        histogram and reported on their own as ``reserved_count``.
+        and the stale-note count. These counts cover indexed notes; the OKF
+        audit also examines retrieval-excluded bundle members. Reserved bundle
+        files (``index.md`` / ``log.md``) are excluded from every histogram
+        and reported on their own as ``reserved_count``.
 
         Returns:
             The aggregate dict, or ``None`` when no OKF detector is wired

@@ -873,7 +873,7 @@ class OkfAuditReport:
     sources and generated records are format observations and do not change
     ``conformant_notes``. Unavailable
     evidence means no assessment, not absent metadata. These findings cover
-    only discovered, non-excluded concepts; they certify neither complete
+    only discovered concepts; they certify neither complete
     traversal nor truth nor review applicability.
 
     Attributes:
@@ -1149,7 +1149,6 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
 def audit_bundle(
     source_dir: Path,
     *,
-    exclude_patterns: list[str] | None = None,
     detector: OkfDetector | None = None,
     example_cap: int = 20,
 ) -> OkfAuditReport:
@@ -1162,17 +1161,13 @@ def audit_bundle(
     generated) are withheld for such files, which count as
     ``evidence_unavailable`` instead. Read or parse failures also make their
     evidence assessment unavailable.
-    These observations cover discovered, non-excluded concept files, not a
-    complete inventory or an editorial-policy assessment. A path that is not
-    part of the bundle (a component starting with ``.``, OKF 0.3 §3.2 rule 4)
-    is never audited (#2451). The index's effective exclude patterns double as the audit
-    whitelist, so known-nonconforming zones (convention files, configured
-    excludes) are skipped via existing config.
+    These observations cover discovered bundle concepts, not a complete
+    inventory or an editorial-policy assessment. A path with a component
+    starting with ``.`` is not a bundle member and is never audited (OKF 0.3
+    §3.2 rule 4, #2451). Retrieval exclusions do not affect the audit.
 
     Args:
         source_dir: Root directory of the markdown vault.
-        exclude_patterns: Effective vault exclude patterns (audit
-            whitelist).
         detector: Optional detection probe for reporting mode/version
             state; ``None`` reports an inactive, mode-``"off"``-like state.
         example_cap: Maximum example paths kept per finding.
@@ -1184,7 +1179,6 @@ def audit_bundle(
     Raises:
         OSError: If the vault directory cannot be statted (#1625).
     """
-    from markdown_vault_mcp.utils import is_path_excluded
     from markdown_vault_mcp.utils.fs import iter_markdown_files
 
     state = (
@@ -1192,18 +1186,19 @@ def audit_bundle(
         if detector is not None
         else OkfState(mode="off", declared_version=None, active=False)
     )
-    excludes = list(exclude_patterns or [])
     acc = _AuditCounters(example_cap)
     paths = (
         sorted(
             p.relative_to(source_dir).as_posix()
-            for p in iter_markdown_files(source_dir, excludes)
+            for p in iter_markdown_files(
+                source_dir, include_directory=is_bundle_member_path
+            )
         )
         if is_directory(source_dir)
         else []
     )
     for rel in paths:
-        if is_path_excluded(rel, excludes) or not is_bundle_member_path(rel):
+        if not is_bundle_member_path(rel):
             continue
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:

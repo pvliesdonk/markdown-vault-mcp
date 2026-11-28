@@ -238,6 +238,7 @@ def iter_markdown_files(
     exclude_patterns: Sequence[str] | None = None,
     *,
     on_error: Callable[[OSError], None] | None = None,
+    include_directory: Callable[[str], bool] | None = None,
 ) -> Iterator[Path]:
     """Yield ``*.md`` files under *source_dir*, pruning excluded subtrees.
 
@@ -267,10 +268,11 @@ def iter_markdown_files(
     Args:
         source_dir: Root directory of the markdown vault.
         exclude_patterns: Exclude glob patterns. Used only to derive directory
-            prune rules; ``None`` or empty prunes nothing (the walk still runs
-            and yields every ``*.md`` file).
+            prune rules; ``None`` or empty adds no pattern-based pruning.
         on_error: Optional callback invoked after an unreadable-directory error
             is logged. The walk continues after the callback returns.
+        include_directory: Optional predicate on a relative POSIX directory
+            path; false prevents descent into that directory.
 
     Yields:
         Absolute paths to ``*.md`` files, anchored at the unresolved
@@ -295,10 +297,12 @@ def iter_markdown_files(
     ):
         rel_dir = os.path.relpath(dirpath, source_str)
         rel_prefix = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
-        if anchored or anydepth:
+        if anchored or anydepth or include_directory is not None:
             kept: list[str] = []
             for name in dirnames:
                 child_rel = f"{rel_prefix}/{name}" if rel_prefix else name
+                if include_directory is not None and not include_directory(child_rel):
+                    continue
                 if not _should_prune_dir(child_rel, anchored, anydepth):
                     kept.append(name)
             # Mutate in place so os.walk does not descend the pruned dirs.

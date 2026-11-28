@@ -2102,8 +2102,8 @@ the spec itself says, dated and sourced, in
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
   `stats` already reads, minus the reserved files, which are counted
-  apart as `reserved_count` so the histograms cover the same note
-  population `okf_validate` audits). Its `write_configured` reports the
+  apart as `reserved_count`; retrieval-excluded files are absent from
+  these counts but included in `okf_validate`). Its `write_configured` reports the
   vault's configured `OKF_WRITE` flag and `write_effective` is true only
   when that flag is enabled, OKF detection is active, and the vault is not
   read-only. The section remains absent when OKF is inactive.
@@ -2150,8 +2150,8 @@ the spec itself says, dated and sourced, in
   (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
   index-independent, existing checks capped at the probe's read limit
   (content beyond the cap goes unexamined),
-  usable pre-index and pre-declaration. The vault's *effective* exclude
-  patterns double as the audit whitelist. Findings carry a count plus up
+  usable pre-index and pre-declaration. Retrieval exclusions do not affect
+  the audit. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance, by
   OKF 0.3 §11.1 (frontmatter in any ``.md`` file, reserved ones included,
   that does not parse as a mapping; a block on a folder ``index.md`` or on
@@ -2171,9 +2171,10 @@ the spec itself says, dated and sourced, in
   Additional evidence findings distinguish missing expiry (informational),
   malformed expiry/reviews (format observations), and evidence unavailable
   due to reading/parsing failures or overflow detected by one-character
-  lookahead. These leave `conformant_notes` unchanged and cover only discovered,
-  non-excluded concepts, not complete traversal or editorial-policy compliance.
-  Existing capped conformance checks and discovery rules are unchanged.
+  lookahead. These leave `conformant_notes` unchanged and cover only
+  discovered concepts regardless of retrieval exclusions, not complete
+  traversal or editorial-policy compliance.
+  Existing capped conformance checks remain unchanged.
   The provenance findings count parsed non-reserved notes once per field,
   leaving ``conformant_notes`` unchanged. The report's new fields are all
   defaulted and appended after ``index_frontmatter``: the provenance fields

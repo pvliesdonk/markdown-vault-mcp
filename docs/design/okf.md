@@ -27,9 +27,8 @@ governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
 transition. The ownership principles of §6.0 are settled north-star direction
 (#2459); its switch names and grouping are not. Conflicting policies below, including
 those exact switch names, write stamping as §6 specifies it, verification deletion
-(since removed, #2405), reserved-file admission exceptions, the audit's use of
-exclude patterns and index-driven export, are historical decisions rather than
-requirements for new implementation.
+(since removed, #2405), reserved-file admission exceptions and index-driven
+export, are historical decisions rather than requirements for new implementation.
 Descriptions of shipped behavior remain evidence, not a claim of north-star
 completion.
 
@@ -369,10 +368,9 @@ accepted; datetime awareness requires a non-None `utcoffset()`.
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
    `type` histogram, status/trust-tier breakdowns, stale count. The
-   histograms cover the note population — reserved files are excluded
-   from them and counted apart as `reserved_count` (#1251), so the
-   section reconciles with the `okf_validate` audit rather than
-   contradicting it on a conformant bundle.
+   histograms cover indexed notes; reserved files are counted apart as
+   `reserved_count` (#1251). Retrieval-excluded files are absent from these
+   counts but included in `okf_validate`.
 3. Default server instructions gain an OKF paragraph (composed in
    `_instructions.py`, wired through `_server_wiring`, which the DOMAIN-WIRING seam calls):
    what the tiers mean, that `log.md`/`index.md` conventions apply, and —
@@ -486,16 +484,14 @@ during migration it is a progress meter:
   the annotation's `freshness` and `review` rules), and
   `evidence_unavailable` for discovered concepts whose read or parse failed
   or whose content exceeds the read cap (detected by reading one character
-  past it). They leave `conformant_notes` unchanged and cover discovered,
-  non-excluded concepts, not complete traversal or editorial policy.
+  past it). They leave `conformant_notes` unchanged and cover discovered
+  concepts regardless of retrieval exclusions, not complete traversal or
+  editorial policy.
 - Every report field added after `index_frontmatter` is defaulted and
   appended, provenance fields first and then evidence fields, so positional
   library construction keeps working.
-- Summary ratio ("N of M notes conformant") + the same exclude patterns as
-  the index (convention files, configured excludes) so known-nonconforming
-  zones can be whitelisted via existing config. The north star departs from
-  this: local exclusion never decides conformance, so excluded files may be
-  reported beside the result but not left out of it (#2459).
+- Summary ratio ("N of M notes conformant"); retrieval exclusions, including
+  convention-file patterns, do not affect the audit (#2459, #2488).
 - Registered per the Tool Registration Checklist (title, `readOnlyHint`,
   icon, docstring, docs row, enforcement-test coverage).
 
@@ -1015,7 +1011,7 @@ onto `sources`. Three documented frictions, resolved at guide level:
 | Friction | Resolution |
 |---|---|
 | `status` vocabulary: PARA `active/archived` (workflow) vs OKF `draft/stable/deprecated` (lifecycle) | Different meanings — do **not** map (archived ≠ deprecated). PARA workflow state moves to its own extension key (OKF preserves unknown keys); `status` is reserved for OKF lifecycle. |
-| PARA `0-Inbox/` notes are deliberately untyped until triage | Captures get placeholder `type: Capture` (conformant immediately; triage overwrites). Fallback: audit-whitelist the inbox via exclude patterns. |
+| PARA `0-Inbox/` notes are deliberately untyped until triage | Captures get placeholder `type: Capture` (conformant immediately; triage overwrites). |
 | Zettelkasten/Obsidian wikilink dialect vs OKF standard-link convention | Not a conformance issue (conformance is frontmatter-only). Internal graph parses both dialects; conversion happens at export. Guides state: write either style, export converts. |
 
 Deliverables (docs phase): `docs/guides/okf.md`; "Using X with OKF" interop

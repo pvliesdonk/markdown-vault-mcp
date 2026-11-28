@@ -374,9 +374,9 @@ Dict with the following fields:
   OKF (Open Knowledge Format) bundle. Carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,
   status and recorded-review trust-tier breakdowns, and `stale_count`.
-  These counts cover the note population '`okf_validate`' audits;
-  the classifications do not establish review applicability to
-  current content. The reserved
+  These counts cover indexed notes. '`okf_validate`' also audits
+  retrieval-excluded files. The classifications do not establish
+  review applicability to current content. The reserved
   `index.md` / `log.md` files are counted apart as
   `reserved_count`. `write_configured` is the configured OKF write
   flag; `write_effective` is true when that flag is enabled, OKF
@@ -690,8 +690,8 @@ None.
 **Returns**
 
 Report dict. The audit reads the vault from disk, so it works before
-the index is built, and it skips the vault's excluded paths. Every
-rule except `root_index_missing` is a finding with `count` (int) and
+the index is built. Retrieval exclusions do not affect the audit.
+Every rule except `root_index_missing` is a finding with `count` (int) and
 up to 20 `examples` (list[str] of paths).
 
 - mode (str), `declared_version` (str | None), active (bool): the
@@ -740,7 +740,7 @@ Evidence observations leave `conformant_notes` unchanged:
 - `evidence_unavailable`: discovered notes not assessed for evidence
   because reading/parsing failed or the read cap was exceeded.
 
-Evidence findings cover discovered, non-excluded concepts, not
+Evidence findings cover discovered concepts, not
 complete traversal, truth, or editorial-policy compliance.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->

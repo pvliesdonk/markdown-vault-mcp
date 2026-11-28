@@ -894,13 +894,10 @@ class Vault:
     def _okf_audit(self) -> OkfAuditReport:
         """Run the OKF conformance audit over this vault (#962).
 
-        Bound into :class:`ReaderFacet` so the audit uses the vault's
-        effective exclude patterns as its whitelist and reports the live
-        detection state.
+        Bound into :class:`ReaderFacet` with the live detection state.
         """
         return audit_bundle(
             self._source_dir,
-            exclude_patterns=self._exclude_patterns,
             detector=self._okf,
         )
 
