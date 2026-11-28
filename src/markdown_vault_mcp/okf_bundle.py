@@ -22,7 +22,6 @@ a bespoke tool; residual conformance gaps are reported separately by
 
 from __future__ import annotations
 
-import base64
 import io
 import logging
 import zipfile
@@ -144,8 +143,7 @@ def build_okf_bundle(
                 _write(zf, path, new_content.encode("utf-8"))
                 notes += 1
             else:  # AttachmentInfo — list_documents yields only these two kinds
-                att = vault.reader.read_attachment(path)
-                _write(zf, path, base64.b64decode(att.content_base64))
+                _write(zf, path, vault.reader.read_attachment_bytes(path))
                 attachments += 1
 
     logger.info(

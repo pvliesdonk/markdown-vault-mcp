@@ -694,3 +694,23 @@ class ReaderFacet:
         Delegates to :meth:`DocumentManager.read_attachment`.
         """
         return self._doc_mgr.read_attachment(path)
+
+    def read_attachment_bytes(self, path: str) -> bytes:
+        """Read a non-.md attachment's raw bytes.
+
+        Unlike :meth:`read_attachment`, this returns the bytes alone, without
+        base64 encoding, an etag or other metadata. Like it, it applies no
+        size cap. Delegates to :meth:`DocumentManager.read_attachment_bytes`.
+
+        Args:
+            path: Relative attachment path.
+
+        Returns:
+            The attachment bytes.
+
+        Raises:
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the stat or read.
+        """
+        return self._doc_mgr.read_attachment_bytes(path)

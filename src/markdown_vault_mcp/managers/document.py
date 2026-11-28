@@ -844,6 +844,22 @@ class DocumentManager:
         """
         return self._artifacts.read(path)
 
+    def read_attachment_bytes(self, path: str) -> bytes:
+        """Read an attachment as raw bytes.
+
+        Args:
+            path: Relative attachment path.
+
+        Returns:
+            The attachment bytes.
+
+        Raises:
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the stat or read.
+        """
+        return self._artifacts.read_bytes(path)
+
     def get_toc(
         self,
         path: str,
