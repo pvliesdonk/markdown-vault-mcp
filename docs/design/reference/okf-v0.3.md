@@ -380,7 +380,11 @@ audit on main at c09dad02, 2026-11-28]
 - "Producers SHOULD name their own keys `x-<producer>-<name>`" (§4.1):
   departed in conflict marking; row 28, #2455.
 - "Producers MUST NOT use them for concepts" (§3.1), on a client write of
-  `index.md` or `log.md` that carries a `type`: #2453, open.
+  `index.md` or `log.md` that carries a `type`: not a departure. The bytes
+  of a client's write are the client's; the north star refuses a client
+  write to a reserved file only while the server maintains it, and the
+  server never treats a reserved file as a concept or stamps one (#2453,
+  closed by the account holder, 2026-11-28).
 - "Producers SHOULD NOT make two paths that differ only by case" (§6): #2454,
   open.
 - "Producers SHOULD NOT use custom YAML tags" (§4): conforms. Every value
