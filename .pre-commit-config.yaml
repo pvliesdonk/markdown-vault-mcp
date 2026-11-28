@@ -142,10 +142,8 @@ repos:
         # Upstream hook has `types: [text]`; this `files:` scopes to the
         # user-facing docs site plus the README. Net scope: any text file
         # under docs/ (minus the dev-reference subtrees — working specs,
-        # design notes, ADRs) plus README.md. Matches the CI step's
-        # `vale ... --glob='!docs/{superpowers,design,decisions}/**'
-        # docs README.md` exactly. Keep the dev-reference subtree set in
-        # sync with the CI step's `glob:` input.
+        # design notes, ADRs) plus README.md. Keep the excluded subtrees in
+        # sync with the Vale glob in .github/workflows/ci.yml.
         files: ^(docs/|README\.md$)
         exclude: ^docs/(superpowers|design|decisions)/
 

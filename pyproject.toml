@@ -156,8 +156,8 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # version it knows, and the publisher's twine refuses metadata it does not
 # know -- an invariant spanning this file and release.yml's
 # gh-action-pypi-publish pin.  Unpinned, this side moves on hatchling's
-# release schedule rather than on anyone's decision, and the break lands at
-# release time in every project at once (#479).
+# release schedule rather than on a deliberate update, and the break lands at
+# release time (#479).
 #
 # The ceiling has to bind at the minor, because that is where the metadata
 # version moves: 1.27 took it to 2.4 and 1.32 took it to 2.5.  A `<2` ceiling
@@ -221,9 +221,7 @@ dependency-groups = { docs = { requires-python = ">=3.11.5" } }
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
 # app.src.html is the input scripts/vendor_spa.py builds app.html from, so the
-# distribution carries the build and not the source (#580).  It is
-# `_skip_if_exists` precisely because it is yours to edit; that is not a reason
-# to ship it to installers.
+# wheel carries the bundled HTML and excludes its source (#580).
 exclude = ["src/markdown_vault_mcp/static/app.src.html"]
 
 [tool.ruff]
@@ -244,14 +242,14 @@ ignore = ["E501"]
 # DI resolution — TC001/TC002/TC003.
 
 # The structural diff-gate adds `S` (security) on the diff
-# pass, so the shipped structural-gate test would self-block: its asserts trip
+# pass, so the structural-gate test would self-block: its asserts trip
 # S101, and its bare-name `git` call trips S607 (a partial executable path —
 # the `sys.executable -m ...` calls are NOT flagged). S603 (subprocess use) is
 # included defensively: inert in current ruff but emitted by some versions.
 # Ignoring all three in tests keeps the gate from self-blocking on its own test
 # module; all three are safe in test code. No-op for the base whole-repo select
-# (which excludes S). If your project needs its own tests/** ignores, EXTEND
-# this list in place — do not add a second "tests/**" key (duplicate TOML key).
+# (which excludes S). Add further tests/** ignores to this list in place; do
+# not add a second "tests/**" key (duplicate TOML key).
 "tests/**" = ["S101", "S603", "S607"]
 # The release stamper stages its rewrites with a fixed-argv `git add`
 # (subprocess with a list, never a shell). S607 flags the bare `git` name
