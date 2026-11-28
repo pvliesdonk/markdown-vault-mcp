@@ -259,7 +259,8 @@ candidate gets a review first: OKF ([#2459][2459], which reopens the existing
 one), git integration ([#2462][2462], which led to the version-control north
 star), storage and search ([#2463][2463], which led to
 [#2538][2538], writing its north star), the
-library and its public surface ([#2464][2464]), the release system
+library and its public surface ([#2464][2464], which led to
+[#2540][2540]), the release system
 ([#2465][2465], whose vision document was never adopted), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).
 
@@ -795,7 +796,8 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
   reopening [#2459][2459], the three features that carry the rule
   ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
   for the other subsystems ([#2462][2462] to [#2467][2467]), and writing the
-  storage north star that followed ([#2538][2538]). Docs and process, which cut no release on their own,
+  storage and library north stars that followed ([#2538][2538],
+  [#2540][2540]). Docs and process, which cut no release on their own,
   like `010 template-detach`: the reopening's code departures went to the OKF
   packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
@@ -1552,7 +1554,7 @@ contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
 scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
-### 28 November 2026 — storage and search will get a north star
+### 28 November 2026 — storage and the library will get north stars
 
 `stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
 with what we are already doing." On the spike's questions, the owner chose
@@ -1585,6 +1587,38 @@ library spike overlaps its question of which storage protocols are a supported
 extension surface. The spike also corrected this index: [#1496][1496] is in
 `026`, not unpackaged, and [#1938][1938] is in `026` too, not `023` as the
 17 November entry left it.
+
+`stated` — For this and every later north star: "we prefer clean, decoupled,
+abstracted/generalized architecture if possible. That may not be how it is
+right now, but it is a preferred goal" (owner, 28 November 2026, framing spike
+[#2464][2464]). On that spike's scope question, the owner chose "Surfaces incl.
+MCP policy (Recommended)".
+
+`evidenced` — Spike [#2464][2464] found that epic [#1471][1471]'s premises
+have moved since refinement, and that the code draws the library/server
+boundary far from the plan:
+- **The template detach.** [#2019][2019] and [#2000][2000] are still blocked
+  by template#855. The verdict of [#1473][1473] moved the library to a new
+  import package because keeping `markdown_vault_mcp` "fights the template".
+- **Private reaches.** The server reads private `Vault` internals as "a
+  trusted consumer" (`_tools/git.py`), against [#2020][2020].
+- **No declared surface.** The import-surface guard checks an empty package
+  root (`tests/public_import_surface.txt`).
+- **One shape, two rules.** MCP payloads are the library's dataclasses, so
+  one edit changes two surfaces under two compatibility rules.
+
+`derived` — The library north star ([#2540][2540]) covers:
+- the Python caller surface;
+- packaging and distributions;
+- the CLI and client;
+- whether an extension surface exists;
+- one compatibility policy for every public surface, the MCP surface's
+  included.
+
+The content of the tools, the meaning of the storage and history protocols,
+and how lockstep releases are cut stay outside it. It is drafted after the
+remaining spikes, like the storage one. In § First-class library and the
+sections before it, `020` names the package now numbered `029`.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
@@ -1810,6 +1844,8 @@ extension surface. The spike also corrected this index: [#1496][1496] is in
 [2462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462
 [2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
 [2538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538
+[2540]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540
+[2020]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2020
 [1812]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1812
 [2464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464
 [2465]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465
