@@ -26,7 +26,7 @@ okf_version: "0.3"
 
 This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The server reads every bundle by the rules of OKF 0.3, whatever version it declares, so a bundle that still declares `0.2` is read as 0.3. For a version it does not know, such as a later release, the server logs an `okf_unknown_version` warning and reads the bundle anyway. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
 
-Files and folders whose names start with `.`, such as `.drafts/` or `.notes.md`, are not part of the bundle, as OKF 0.3 says. They remain vault files that search can find. The server never treats them as bundle content, though. `okf_validate` and the export pass over them. Generated `index.md` listings never link or create them, and the write layer neither stamps them nor keeps a `log.md` or `index.md` for them. To keep a file out of a bundle, give it, or a folder above it, a name starting with `.`.
+Files and folders whose names start with `.`, such as `.drafts/` or `.notes.md`, are not part of the bundle, as OKF 0.3 says. They remain vault files that search can find. The server never treats them as bundle content, though: their results carry no `okf` annotation and match no OKF filter, and the `stats` tool leaves them out of its `okf` counts. `okf_validate` and the export pass over them. Generated `index.md` listings never link or create them, and the write layer neither stamps them nor keeps a `log.md` or `index.md` for them. To keep a file out of a bundle, give it, or a folder above it, a name starting with `.`.
 
 | Value | Behaviour |
 |-------|-----------|

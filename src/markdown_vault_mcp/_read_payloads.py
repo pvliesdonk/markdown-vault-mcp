@@ -94,6 +94,9 @@ def annotate_hits(
 ) -> list[dict[str, Any]]:
     """Attach the native OKF hit annotation when a bundle is active.
 
+    A hit whose path is not part of the bundle (a dot path, OKF 0.3 §3.2
+    rule 4) gets none: it is a vault file, not bundle content (#2451).
+
     Args:
         results: Serialized hits, mutated in place.
         annotation: Native annotation function, or None for an inactive bundle.
@@ -102,8 +105,11 @@ def annotate_hits(
         Hits with native annotations; ordinary vaults remain unchanged.
     """
     if annotation is not None:
+        from markdown_vault_mcp.okf import is_bundle_member_path
+
         for hit in results:
-            hit["okf"] = annotation(hit.get("frontmatter") or {})
+            if is_bundle_member_path(str(hit.get("path", ""))):
+                hit["okf"] = annotation(hit.get("frontmatter") or {})
     return results
 
 
