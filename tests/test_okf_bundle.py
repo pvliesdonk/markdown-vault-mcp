@@ -41,6 +41,11 @@ def source_dir(tmp_path: Path) -> Path:
     templates = root / "_templates"
     templates.mkdir()
     (templates / "t.md").write_text("# template\n")
+    # Not part of the bundle (OKF 0.3 §3.2 rule 4); the fixtures follow #2525.
+    for name in (".dot.md", ".hidden/x.md", "guides/.dot.md", "guides/.nested/x.md"):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Note\n")
     return root
 
 
@@ -84,6 +89,7 @@ def test_bundle_excludes_convention_and_template_files(
     assert "_conventions.md" not in members
     assert "_templates/t.md" not in members
     assert not any(m.startswith("_templates/") for m in members)
+    assert not any(part.startswith(".") for m in members for part in m.split("/"))
 
 
 def test_bundle_keeps_reserved_index_and_log(vault: Vault, config: ProjectConfig):
@@ -113,6 +119,9 @@ def test_bundle_preserves_frontmatter_and_nonconformant(
 def test_bundle_folder_scope(vault: Vault, config: ProjectConfig):
     members = _members(build_okf_bundle(vault, config, folder="guides").data)
     assert members == {"guides/one.md"}
+    scoped = build_okf_bundle(vault, config, folder=".hidden")
+    assert not _members(scoped.data)
+    assert scoped.excluded == 1
 
 
 def test_bundle_is_byte_reproducible(vault: Vault, config: ProjectConfig):

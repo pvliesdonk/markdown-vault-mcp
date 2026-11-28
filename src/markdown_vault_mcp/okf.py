@@ -88,6 +88,26 @@ _HUMAN_ACTOR_PREFIX = "human:"
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 
 
+def is_bundle_member_path(path: str) -> bool:
+    """Whether a vault-relative path can be a member of an OKF bundle.
+
+    OKF 0.3 §3.2 rule 4: "Files and directories whose names start with
+    ``.`` are not part of the bundle." Such a file may sit in the vault,
+    the server's workspace, as ``.git/`` does in a git-distributed bundle,
+    but it is never a member of the bundle the server presents (#2451): no
+    audit, export, generated listing or stamp treats it as one. This
+    lexical check reads the path only; whether a member is a concept is
+    :func:`is_written_concept`'s question.
+
+    Args:
+        path: A vault-relative POSIX path.
+
+    Returns:
+        Whether no component of *path* starts with ``.``.
+    """
+    return not any(part.startswith(".") for part in PurePosixPath(path).parts)
+
+
 def is_okf_reserved_file(path: str) -> bool:
     """Classify an already scoped vault-relative POSIX path by its basename.
 
@@ -1006,7 +1026,8 @@ def is_written_concept(path: str, text: str) -> bool:
     """Whether a file written at *path* with *text* is an OKF concept (§3.2).
 
     The rule every consumer applies to find concepts: a non-reserved
-    ``.md`` file "that has frontmatter with a non-empty ``type``". The role
+    ``.md`` file "that has frontmatter with a non-empty ``type``", at a path
+    that is part of the bundle (:func:`is_bundle_member_path`). The role
     is read from the written content and the reserved names only, never
     from a folder or another file name. A block that does not parse carries
     no ``type``, so its file is not a concept.
@@ -1018,7 +1039,11 @@ def is_written_concept(path: str, text: str) -> bool:
     Returns:
         Whether the written file is a concept.
     """
-    if not path.endswith(".md") or is_okf_reserved_file(path):
+    if (
+        not path.endswith(".md")
+        or is_okf_reserved_file(path)
+        or not is_bundle_member_path(path)
+    ):
         return False
     try:
         metadata = dict(parse_frontmatter(text).metadata)
@@ -1138,7 +1163,9 @@ def audit_bundle(
     ``evidence_unavailable`` instead. Read or parse failures also make their
     evidence assessment unavailable.
     These observations cover discovered, non-excluded concept files, not a
-    complete inventory or an editorial-policy assessment. The index's effective exclude patterns double as the audit
+    complete inventory or an editorial-policy assessment. A path that is not
+    part of the bundle (a component starting with ``.``, OKF 0.3 §3.2 rule 4)
+    is never audited (#2451). The index's effective exclude patterns double as the audit
     whitelist, so known-nonconforming zones (convention files, configured
     excludes) are skipped via existing config.
 
@@ -1176,7 +1203,7 @@ def audit_bundle(
         else []
     )
     for rel in paths:
-        if is_path_excluded(rel, excludes):
+        if is_path_excluded(rel, excludes) or not is_bundle_member_path(rel):
             continue
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:

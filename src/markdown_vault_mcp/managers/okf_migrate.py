@@ -50,6 +50,7 @@ from markdown_vault_mcp.okf import (
     build_log_markdown,
     compose_regenerated_reserved,
     convert_wikilinks_to_markdown,
+    is_bundle_member_path,
     is_okf_reserved_file,
 )
 from markdown_vault_mcp.utils import normalize_folder
@@ -218,6 +219,10 @@ class OkfMigrationManager:
             if not isinstance(note, NoteInfo):  # pragma: no cover - mypy narrowing
                 continue
             rel = note.path[len(prefix) :]
+            if not is_bundle_member_path(rel):
+                # OKF 0.3 §3.2 rule 4: a dot path is not part of the bundle,
+                # so the listing neither links it nor descends into it (#2451).
+                continue
             if "/" in rel:
                 # A deeper note: record its immediate subfolder, don't list it.
                 subfolders.add(rel.split("/", 1)[0])

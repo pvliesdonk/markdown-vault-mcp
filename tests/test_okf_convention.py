@@ -313,6 +313,29 @@ class TestConventionMaintenanceIntegration:
         # The drain makes the just-written note appear in the refreshed listing.
         assert "[Playbook](/guides/playbook.md)" in index
 
+    def test_a_dot_path_write_gets_no_log_or_listing(
+        self, enforced_vault: Vault
+    ) -> None:
+        # OKF 0.3 §3.2 rule 4: a dot path is not part of the bundle (#2451).
+        enforced_vault.writer.write(".drafts/a.md", "# A\n")
+        enforced_vault.writer.write("guides/.wip/b.md", "# B\n")
+        wait_for_writer_drain(enforced_vault)
+        root = enforced_vault.source_dir
+        for folder in (".drafts", "guides/.wip", "guides"):
+            assert not (root / folder / "log.md").exists()
+            assert not (root / folder / "index.md").exists()
+
+    def test_moving_a_note_into_a_dot_folder_refreshes_no_dot_listing(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/a.md", "# A\n")
+        wait_for_writer_drain(enforced_vault)
+        enforced_vault.writer.rename("guides/a.md", ".drafts/a.md")
+        wait_for_writer_drain(enforced_vault)
+        assert not (enforced_vault.source_dir / ".drafts" / "index.md").exists()
+        listing = _content(enforced_vault, "guides/index.md")
+        assert listing is not None and "/guides/a.md" not in listing
+
     def test_log_and_index_upkeep_survive_write_protection(
         self, tmp_path: Path
     ) -> None:

@@ -1546,6 +1546,22 @@ class TestNonConceptAudit:
         assert report.missing_freshness.examples == ("concept.md",)
         assert report.evidence_unavailable.count == 0
 
+    def test_dot_paths_are_not_part_of_the_bundle(self, tmp_path: Path) -> None:
+        # OKF 0.3 §3.2 rule 4: "Files and directories whose names start with
+        # `.` are not part of the bundle" (#2451).
+        from markdown_vault_mcp.okf import audit_bundle
+
+        for rel in (".dot.md", ".hidden/x.md", "guides/.nested/log.md"):
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_text("---\ntype: Note\n---\n# X\n", encoding="utf-8")
+        (tmp_path / "concept.md").write_text(
+            "---\ntype: Playbook\n---\n# Concept\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.total_notes == 1
+        assert report.missing_recommended.examples == ("concept.md",)
+        assert report.log_frontmatter.count == 0
+
     def test_note_block_that_is_not_a_mapping_is_unparseable(
         self, tmp_path: Path
     ) -> None:

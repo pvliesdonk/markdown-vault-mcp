@@ -9,9 +9,10 @@ story that :mod:`markdown_vault_mcp.managers.okf_migrate` began. The build
 rewrites resolvable wikilinks to OKF's recommended root-absolute markdown links
 (reusing :func:`~markdown_vault_mcp.okf.convert_wikilinks_to_markdown` and the
 resolved outlink graph, so links are preserved edge-for-edge), excludes
-convention and template files, keeps the reserved navigation files
-(``index.md`` / ``log.md``), includes non-conformant notes as-is, and returns a
-deterministic zip.
+convention and template files and every path that is not part of the bundle
+(a component starting with ``.``, OKF 0.3 §3.2 rule 4), keeps the reserved
+navigation files (``index.md`` / ``log.md``), includes non-conformant notes
+as-is, and returns a deterministic zip.
 
 It is served through ``create_download_link`` (``_transfer_links``) via an
 ``okf-bundle`` download ref (:class:`~markdown_vault_mcp._transfer_sink.VaultTransferSink`), not
@@ -28,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+from markdown_vault_mcp.okf import convert_wikilinks_to_markdown, is_bundle_member_path
 from markdown_vault_mcp.types import NoteInfo
 from markdown_vault_mcp.utils.text import read_text_utf8
 
@@ -53,7 +54,8 @@ class OkfBundleResult:
         data: The zip archive bytes.
         notes: Number of notes written into the bundle.
         attachments: Number of attachments written into the bundle.
-        excluded: Number of in-scope files skipped (convention/template files).
+        excluded: Number of listed in-scope files skipped: convention and template
+            files, and paths that are not part of the bundle.
     """
 
     data: bytes
@@ -63,13 +65,18 @@ class OkfBundleResult:
 
 
 def _is_excluded(path: str, conventions_file: str | None, templates_root: str) -> bool:
-    """Return whether *path* is a convention or template file (excluded from export).
+    """Return whether *path* is excluded from export.
 
-    Convention files (the per-folder ``_conventions.md``) are authoring guidance,
-    and the template folder holds note scaffolds — neither is bundle content. The
+    A path with a component starting with ``.`` is not part of the bundle
+    (OKF 0.3 §3.2 rule 4, #2451), whatever its role, so a selected dot-folder
+    scope exports an empty zip (the rule as #2525 proposed it). Convention
+    files (the per-folder ``_conventions.md``) are authoring guidance, and the
+    template folder holds note scaffolds; neither is bundle content. The
     reserved ``index.md`` / ``log.md`` are navigation and are kept.
     """
     name = path.rsplit("/", 1)[-1]
+    if not is_bundle_member_path(path):
+        return True
     if conventions_file is not None and name == conventions_file:
         return True
     return bool(
