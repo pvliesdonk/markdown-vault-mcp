@@ -322,6 +322,7 @@ are named where they exist; a fix rewrites them.
 | 27 | Dot paths are not part of the bundle (§3.2 rule 4) | same rule | same rule | stated | fixed: the audit, export, generated listings, listing upkeep and the write stamp skip any path with a component starting with `.`, and its read and search results carry no `okf` annotation and match no OKF filter (was: counted, exported, listed, stamped and annotated). Index and search admission stay retrieval policy (account holder, 2026-11-28, #2451) | stated (no keyword) | #2451 (fixed) |
 | 28 | Producer keys named `x-<producer>-<name>` (§4.1) | silent | silent | SHOULD | fixed: conflict marking writes `x-markdown-vault-mcp-conflict-with` and `x-markdown-vault-mcp-conflict-date` (was `conflict_with`, `conflict_date`); the account holder chose the names and every-vault scope (2026-11-28, #2455) | SHOULD | #2455 (fixed) |
 | 29 | Exact `---` delimiter lines (§4) | `---` at the start | `---` at the start | "MUST start with a line that is exactly `---`"; ends at the next such line | fixed in every vault: a block opens only on an exact first line and closes on the next exact line (was: leading blank lines or spaces, `----` and `--- ` accepted). A leading UTF-8 BOM is an encoding signature, as OKF's own tooling reads it; the spec is silent (account holder, 2026-11-28, #2452; [bom-before-frontmatter.md](bom-before-frontmatter.md)) | MUST | #2452 (fixed) |
+| 30 | No two paths that differ only by case (§6) | silent | silent | SHOULD NOT | fixed for the server's own files: upkeep, `okf_generate_index` and `okf_seed_log` never create an `index.md` or `log.md` beside a case-only variant (was: `sub/index.md` created beside a user's `sub/Index.md`). A client's own write is the client's (account holder, 2026-11-28) | SHOULD NOT | #2454 (fixed) |
 
 Notes on the table:
 
@@ -385,8 +386,8 @@ audit on main at c09dad02, 2026-11-28]
   write to a reserved file only while the server maintains it, and the
   server never treats a reserved file as a concept or stamps one (#2453,
   closed by the account holder, 2026-11-28).
-- "Producers SHOULD NOT make two paths that differ only by case" (§6): #2454,
-  open.
+- "Producers SHOULD NOT make two paths that differ only by case" (§6):
+  departed in the server's own reserved-file writes; row 30, #2454.
 - "Producers SHOULD NOT use custom YAML tags" (§4): conforms. Every value
   the server writes is a plain string or null, dumped by `InteropDumper`,
   which quotes dates and date-times as strings (`_yaml12.py`). A tag a

@@ -286,6 +286,34 @@ class DocumentManager:
         if self._submodule_guard is not None:
             self._submodule_guard.refuse(abs_path, argument, path, holding=holding)
 
+    def case_only_sibling(self, path: str) -> str | None:
+        """Return the vault path of an entry that differs from *path* only by case.
+
+        OKF 0.3 §6: "Producers SHOULD NOT make two paths that differ only by
+        case." The server's own generators ask before creating a reserved
+        file, so a user's ``Index.md`` never gains an ``index.md`` beside it
+        (#2454). On a case-insensitive file system the same check stops the
+        generator writing over that note. An unreadable folder reports no
+        sibling; the write that follows meets the same error.
+
+        Args:
+            path: The vault-relative POSIX path the server is about to create.
+
+        Returns:
+            The colliding entry's vault-relative path, or ``None``.
+        """
+        folder, _, name = path.rpartition("/")
+        base = self._source_dir / folder if folder else self._source_dir
+        try:
+            entries = sorted(child.name for child in base.iterdir())
+        except OSError:
+            return None
+        lowered = name.lower()
+        for entry in entries:
+            if entry != name and entry.lower() == lowered:
+                return f"{folder}/{entry}" if folder else entry
+        return None
+
     def refuse_folder_in_submodule(self, folder: str, argument: str) -> None:
         """Refuse a folder inside a git submodule or nested repository.
 

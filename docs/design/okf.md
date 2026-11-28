@@ -884,6 +884,15 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   §8.1 "MUST keep the existing frontmatter", §4 "SHOULD NOT re-serialize",
   #2485; `okf.compose_regenerated_reserved`). Only a block the splice
   cannot handle is serialized whole.
+- **No case-only twins.** The server never creates an `index.md` or
+  `log.md` beside an entry whose name differs from it only by case (OKF 0.3
+  §6, "Producers SHOULD NOT make two paths that differ only by case",
+  #2454; `DocumentManager.case_only_sibling`). `okf_generate_index` and
+  `okf_seed_log` refuse that folder; a parent listing drops the subfolder's
+  pointer rather than link a missing file; automatic upkeep skips it with
+  an INFO `reason=case_collision` line. A client's own write or rename that
+  makes such a pair is the client's choice and lands (account holder,
+  28 November 2026, #2454).
 - **`title_field` gets the derived title** (the same H1 the body builders
   emit); any other required field is seeded as `null`, since the gate tests
   presence rather than value and the server has nothing truthful to put there.
