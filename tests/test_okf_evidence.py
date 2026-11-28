@@ -241,11 +241,10 @@ def test_audit_evidence_is_separate_from_conformance(tmp_path: Path) -> None:
         "b.md": "---\ntype: Concept\n---\nbody",
         "c.md": "---\n: [invalid\n---\n",
         "index.md": "---\nokf_version: '0.2'\n---\n",
-        "ignored.md": "---\nverified: {}\n---\n",
     }
     for name, raw in files.items():
         (tmp_path / name).write_text(raw)
-    report = audit_bundle(tmp_path, exclude_patterns=["ignored.md"])
+    report = audit_bundle(tmp_path)
     assert report.conformant_notes == 2
     assert report.missing_freshness == OkfFinding(1, ("b.md",))
     assert report.malformed_freshness == OkfFinding(1, ("a.md",))

@@ -1061,7 +1061,7 @@ class TestOkfAudit:
         malformed = (
             "---\ntype: Note\nsources: [{id: x}]\ngenerated: false\n---\n# Note\n"
         )
-        for path in ("z.md", "b.md", "a.md", "index.md", "log.md", "drop-excluded.md"):
+        for path in ("z.md", "b.md", "a.md", "index.md", "log.md", "extra.md"):
             (tmp_path / path).write_text(malformed, encoding="utf-8")
         (tmp_path / "b.md").write_text(
             "---\ntype: Note\nsources: https://example.com\n"
@@ -1085,35 +1085,18 @@ class TestOkfAudit:
         (tmp_path / "broken.md").write_text(
             "---\nsources: [\ngenerated: false\n---\n", encoding="utf-8"
         )
-        report = audit_bundle(tmp_path, exclude_patterns=["*excluded*"], example_cap=1)
-        assert report.malformed_sources == OkfFinding(5, ("a.md",))
-        assert report.malformed_generated == OkfFinding(4, ("a.md",))
+        report = audit_bundle(tmp_path, example_cap=1)
+        assert report.malformed_sources == OkfFinding(6, ("a.md",))
+        assert report.malformed_generated == OkfFinding(5, ("a.md",))
         assert report.unparseable_frontmatter == OkfFinding(1, ("broken.md",))
-        assert report.total_notes == 10
-        assert report.conformant_notes == 9
+        assert report.total_notes == 11
+        assert report.conformant_notes == 10
         assert report.missing_type.count == 0
         empty = audit_bundle(tmp_path / "missing")
         assert empty.malformed_sources == empty.malformed_generated == OkfFinding(0, ())
-        no_examples = audit_bundle(
-            tmp_path, exclude_patterns=["*excluded*"], example_cap=0
-        )
-        assert no_examples.malformed_sources == OkfFinding(5, ())
-        assert no_examples.malformed_generated == OkfFinding(4, ())
-        valid = audit_bundle(
-            tmp_path,
-            exclude_patterns=[
-                "a.md",
-                "b.md",
-                "z.md",
-                "sources-only*",
-                "generated-only.md",
-                "broken.md",
-                "*excluded*",
-            ],
-        )
-        assert valid.total_notes == valid.conformant_notes == 3
-        assert valid.unparseable_frontmatter.count == 0
-        assert valid.malformed_sources == valid.malformed_generated == OkfFinding(0, ())
+        no_examples = audit_bundle(tmp_path, example_cap=0)
+        assert no_examples.malformed_sources == OkfFinding(6, ())
+        assert no_examples.malformed_generated == OkfFinding(5, ())
 
     def test_mixed_vault_report(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import OkfDetector, audit_bundle
@@ -1170,26 +1153,6 @@ class TestOkfAudit:
             "case.md",
             "padded.md",
         }
-
-    def test_exclude_patterns_whitelist(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.okf import audit_bundle
-
-        _build_audit_vault(tmp_path)
-        report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
-        assert report.missing_type.count == 1  # junk/excluded.md skipped
-        assert report.log_heading_shape.count == 0  # junk/log.md skipped
-
-    def test_unprunable_exclude_pattern_filters_per_file(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.okf import audit_bundle
-
-        # A mid-name glob cannot be pruned at directory level by
-        # iter_markdown_files, so the per-file is_path_excluded check (the
-        # correctness layer) must fire.
-        (tmp_path / "keep.md").write_text("---\ntype: Note\n---\n# K\n")
-        (tmp_path / "drop-excluded.md").write_text("# untyped\n")
-        report = audit_bundle(tmp_path, exclude_patterns=["*excluded*"])
-        assert report.total_notes == 1
-        assert report.missing_type.count == 0
 
     def test_example_cap(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -1281,17 +1244,74 @@ class TestOkfAudit:
         with pytest.raises(RuntimeError, match="okf_validate"):
             facet.okf_validate()
 
+    def test_vault_audit_includes_retrieval_exclusions(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "excluded").mkdir()
+        (tmp_path / ".obsidian").mkdir()
+        (tmp_path / "excluded" / "index.md").write_text(
+            "---\ntitle: Excluded\n---\n# Excluded\n", encoding="utf-8"
+        )
+        paths = ("excluded/broken.md", "single.md", "_conventions.md")
+        for path in paths:
+            (tmp_path / path).write_text("---\n: [broken\n---\n", encoding="utf-8")
+        for path in (".obsidian/broken.md", ".hidden.md"):
+            (tmp_path / path).write_text("---\n: [broken\n---\n", encoding="utf-8")
+        for path in ("visible.md", "excluded/valid.md"):
+            (tmp_path / path).write_text(
+                "---\ntype: Note\n---\nuniqueterm\n", encoding="utf-8"
+            )
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(
+                exclude_patterns=["excluded/**", "single.md", ".obsidian/**"],
+            ),
+        )
+        try:
+            vault.index.build_index()
+            assert [
+                item.path for item in vault.reader.search("uniqueterm", mode="keyword")
+            ] == ["visible.md"]
+            assert vault.reader.stats().document_count == 1
+            report = vault.reader.okf_validate()
+            assert report.total_notes == 5
+            assert report.conformant_notes == 2
+            assert report.unparseable_frontmatter.examples == tuple(sorted(paths))
+            assert report.index_frontmatter.examples == ("excluded/index.md",)
+        finally:
+            vault.close()
+
+    def test_audit_does_not_walk_dot_subtrees(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import os
+
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / ".hidden" / "nested").mkdir(parents=True)
+        (tmp_path / ".hidden" / "nested" / "note.md").write_text("# Hidden\n")
+        (tmp_path / "visible").mkdir()
+        (tmp_path / "visible" / "note.md").write_text("# Visible\n")
+        visited: list[str] = []
+        scandir = os.scandir
+
+        def record_scandir(path: str) -> os.ScandirIterator[str]:
+            visited.append(path)
+            return scandir(path)
+
+        monkeypatch.setattr(os, "scandir", record_scandir)
+        audit_bundle(tmp_path)
+        assert str(tmp_path / "visible") in visited
+        assert str(tmp_path / ".hidden") not in visited
+
     def test_vault_facet_wiring(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
         _build_audit_vault(tmp_path)
-        vault = Vault(
-            source_dir=tmp_path, settings=VaultSettings(exclude_patterns=["junk/**"])
-        )
+        vault = Vault(source_dir=tmp_path)
         try:
             report = vault.reader.okf_validate()
             assert report.active is True
-            assert report.missing_type.count == 1
         finally:
             vault.close()
 
@@ -1451,16 +1471,6 @@ class TestIndexFrontmatterAudit:
         # one finding, not two (#2427).
         assert report.index_frontmatter.examples == ("guides/index.md",)
         assert report.unparseable_frontmatter.count == 0
-
-    def test_excluded_index_is_not_reported(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.okf import audit_bundle
-
-        (tmp_path / "junk").mkdir()
-        (tmp_path / "junk" / "index.md").write_text(
-            "---\ntitle: Junk\n---\n# Junk\n", encoding="utf-8"
-        )
-        report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
-        assert report.index_frontmatter.count == 0
 
     def test_folder_index_finding_behind_a_bom(self, tmp_path: Path) -> None:
         # The rule reads presence from the same string the reader does, so it
