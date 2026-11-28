@@ -644,7 +644,7 @@ structurally identically.
 
 **Carve-out — folder conventions:** the server may *transport* user-authored,
 free-form convention text stored in well-known in-vault files (default
-`_conventions.md`) to clients — see the "Folder Conventions" section. It never
+`.conventions.md`) to clients — see the "Folder Conventions" section. It never
 parses, ranks by, or special-cases the *content* of that text and imposes no
 taxonomy (PARA, `kind`, or otherwise); the non-goal above — no server-side
 interpretation of vault organisation — is unchanged.
@@ -1924,8 +1924,22 @@ it *transports* user-authored convention text without interpreting it.
 
 **Storage.** Conventions live in-vault as per-folder files with a well-known
 name (`ContentConfig.conventions_file`, env
-`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`, default `_conventions.md`; the sentinel
-`none` disables the feature). Semantics are CLAUDE.md-style accumulation: a
+`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`, default `.conventions.md`; the sentinel
+`none` disables the feature). The leading dot keeps the file out of an OKF
+bundle (OKF 0.3 §3.2 rule 4), which is how the OKF north star asks a file
+that is not bundle content to be kept out, rather than by an exclude
+setting (#1605).
+
+**Legacy fallback (deprecated).** With the default name, a folder without
+`.conventions.md` falls back to `_conventions.md`, the default before #1605.
+The fallback is decided per folder: a present `.conventions.md` wins even when
+empty, and a present but unreadable one does not fall back. A configured
+custom name, `_conventions.md` included, has no fallback. Reading a legacy
+file logs `conventions_legacy_filename_deprecated` at WARNING, once per folder
+for the life of the resolver, naming the file and the replacement. The
+fallback is removed in a later major release.
+
+Semantics are CLAUDE.md-style accumulation: a
 root-level file applies vault-wide and nested files *add to* (never replace)
 their ancestors. Content is free-form markdown; a YAML frontmatter block, if
 present, is stripped before transport (fallback to raw text on parse errors).
@@ -1939,16 +1953,18 @@ logs `conventions_truncated` at WARNING.
 
 **Resolution.** `conventions.py::ConventionsResolver` is pure disk I/O with
 zero index coupling: `for_path(path)` walks the ancestor chain root-first
-(one `is_file()` probe per level, no caching), and `list_folders()` walks the
-tree skipping dot-directories. A note path resolves to its parent folder; the
+(a read of the configured name per level, then of the legacy fallback when
+that is absent; no caching), and `list_folders()` walks the tree skipping
+dot-directories. A note path resolves to its parent folder; the
 same `is_relative_to` traversal guard as `validate_path` applies. Disk-read
 resolution means conventions work before the index is built (relevant in
 managed-git mode, where the clone happens inside the server lifespan).
 
 **Index exclusion.** Convention files are excluded from the index but stay
 readable via `read` (which reads from disk). `Vault.__init__` itself derives
-both fnmatch forms (`_conventions.md` and `**/_conventions.md` — the `**/`
-form alone does not match a root-level file) and merges them into its
+both fnmatch forms of each name it reads (`.conventions.md` and
+`**/.conventions.md`, and the same pair for the legacy `_conventions.md` —
+the `**/` form alone does not match a root-level file) and merges them into its
 effective `exclude_patterns`, so direct library construction behaves
 identically to the served path; the filename is validated against fnmatch
 metacharacters (which would invert the exclusion). Excluded paths are
@@ -1957,7 +1973,13 @@ enforced at the index choke points every dirty path flows through —
 (vectors) treat an excluded path as a purge — so any producer (write tools,
 future watchers) is covered, and an MCP `write` to a convention file takes
 effect on disk immediately without ever entering the index. The reconcile
-purge migrates vaults that already had such files indexed. `config://vault`
+purge migrates vaults that already had such files indexed: a
+`.conventions.md` indexed as a note before #1605 leaves the index at the next
+reindex, which by default is the boot reindex. With
+`MARKDOWN_VAULT_MCP_BOOT_REINDEX=false` it stays searchable until a reindex
+runs, as any offline change does. That needs no `INDEX_SEMANTICS_VERSION`
+bump, because it changes which files are admitted, not the rows a note's
+bytes produce. `config://vault`
 reports the vault's *effective* exclude patterns (including the derived
 ones).
 
@@ -1987,7 +2009,7 @@ ones).
    takes the folders it needs from it; where the conventions name none, it
    asks the user rather than assuming a folder name. A read-only prompt uses
    the conventions to interpret the notes it reports on. The example PARA
-   root `_conventions.md` names the layout so the pack has something to read.
+   root `.conventions.md` names the layout so the pack has something to read.
    `tests/test_prompts.py` fails a prompt file without `get_conventions`
    (`tests/test_server.py` pins `create_from_template`), and
    one that calls a write tool without the `write` tag that read-only mode

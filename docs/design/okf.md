@@ -146,7 +146,7 @@ git-synced vaults. Data that could enable byte-changing or write-refusing
 server behavior would be a self-modifying-config loop (the agent could enable
 its own write conventions by writing the marker). Therefore vault content may
 only ever buy *advice and annotations*, never *authority*. This mirrors the
-existing Folder Conventions design (`_conventions.md`): a vault-side channel
+existing Folder Conventions design (`.conventions.md`): a vault-side channel
 that shapes behavior advisorily while the server enforces nothing.
 
 Explicitly rejected alternatives:
@@ -410,7 +410,7 @@ detection first flips — an accepted, logged cost. Complex fields
 consumed at annotation time only.
 
 The advisory write layer needs **zero new server machinery** beyond the
-instructions paragraph: a bundle can already ship a `_conventions.md` saying
+instructions paragraph: a vault can already carry a `.conventions.md` saying
 "maintain log.md" today. Layer 1 makes that the documented default rather
 than a per-vault authoring task.
 
@@ -1016,7 +1016,7 @@ generated-bytes download the generic `create_download_link` serves unchanged.
 The bundle is a best-effort *copy*, not yet the publication contract the north
 star asks for (scope, snapshot, explicit root, conformance report; #1448): wikilinks rewritten to root-absolute links
 (reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
-convention files (`_conventions.md`), the template folder and every path
+convention files (by the configured name, a local exclusion tracked as #2568), the template folder and every path
 with a component starting with `.` excluded (OKF 0.3 §3.2 rule 4, #2451; a
 selected dot folder exports an empty zip, as #2525 proposed), the
 reserved `index.md` / `log.md` kept, non-conformant notes included as-is

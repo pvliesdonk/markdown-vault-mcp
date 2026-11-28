@@ -105,7 +105,7 @@ src/markdown_vault_mcp/
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
   types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766); EmbeddingIdentity/VectorRow/DocumentRows/ANY_TOKEN (#1767)
   exceptions.py        -- exception hierarchy; ConfigurationError, the canonical config error (#638, moved from pvl-core in #2283); StoreOpenError and its five outcomes (#1766)
-  conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
+  conventions.py       -- ConventionsResolver: per-folder .conventions.md authoring policy (deprecated _conventions.md fallback, #1605), accumulated root-first
   citations.py         -- literal footnote/source joins and indexed citation edges (#1446)
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)

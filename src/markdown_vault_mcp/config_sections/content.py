@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from markdown_vault_mcp.config_sections.vault_settings import DEFAULT_CONVENTIONS_FILE
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 
@@ -41,7 +42,7 @@ class ContentConfig:
     max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
-    conventions_file: str | None = "_conventions.md"
+    conventions_file: str | None = DEFAULT_CONVENTIONS_FILE
     okf_mode: str = "auto"
     okf_write: bool = False
     okf_verify: str = "elicit"
