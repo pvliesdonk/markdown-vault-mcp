@@ -3357,6 +3357,11 @@ class TestPromptAndResourceIcons:
             # added for AppConfig in template#248).
             if str(resource.uri) == "ui://markdown_vault_mcp/app.html":
                 continue
+            # Skill files (skill://, #1552) come from FastMCP's
+            # SkillsDirectoryProvider, which offers no icon seam; hosts list
+            # them through skills/list by name and description instead.
+            if str(resource.uri).startswith("skill://"):
+                continue
             assert resource.icons is not None
             assert len(resource.icons) > 0
             assert resource.icons[0].mime_type == "image/svg+xml"

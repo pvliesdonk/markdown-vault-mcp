@@ -182,6 +182,8 @@ src/markdown_vault_mcp/
     git.py             -- git sync/history/diff tool registrations
     summarize.py       -- dual-mode summarize job tool; registered from make_server's DOMAIN-WIRING (#1033)
   resources.py         -- register_resources: MCP resource registrations
+  _skills.py           -- register_skills: serves skills/<name>/SKILL.md over MCP (SEP-2640) via SkillsDirectoryProvider (#1552)
+  skills/              -- agent skills the server ships, one folder per skill (vault-workflow)
   prompts.py           -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
   _transfer_contract.py -- TransferSink / TransferValidator / TransferKind / TransferReadResult and the TransferSinkError family the sink raises (#2319)

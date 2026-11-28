@@ -65,8 +65,10 @@ dependencies = [
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
     # directly by _server_apps.py.  The [tasks] extra brings fastmcp-tasks and
     # pydocket, which _tasks.py imports to register the SEP-2663 tasks
-    # extension (#2292).
-    "fastmcp[tasks]>=4",
+    # extension (#2292). 4.2.6 is the floor for fastmcp.skills.provider, the
+    # SEP-2640 SkillsDirectoryProvider _skills.py serves the bundled skills
+    # with (#1552); it first shipped in 4.2.0, and 4.2.6 is the version tested.
+    "fastmcp[tasks]>=4.2.6",
     # _request_logging reads the ambient OpenTelemetry span to stamp trace_id /
     # span_id on its log lines (#2341). A guaranteed transitive through the mcp
     # SDK, declared because this project imports it directly; no floor, mcp

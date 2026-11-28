@@ -17,8 +17,8 @@ MCP_JSON=".claude-plugin/plugin/.mcp.json"
 
 [[ -f "$PLUGIN_JSON" ]] || fail "$PLUGIN_JSON missing"
 [[ -f "$MCP_JSON" ]] || fail "$MCP_JSON missing"
-[[ -f ".claude-plugin/plugin/skills/vault-workflow/SKILL.md" ]] \
-  || fail "vault-workflow skill missing from plugin"
+[[ -f "src/markdown_vault_mcp/skills/vault-workflow/SKILL.md" ]] \
+  || fail "vault-workflow skill missing from the package"
 [[ -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" ]] \
   || fail "vault-summarize skill missing from plugin"
 [[ -f ".claude-plugin/plugin/agents/vault-mapper.md" ]] \
