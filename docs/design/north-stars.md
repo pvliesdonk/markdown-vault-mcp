@@ -55,7 +55,7 @@ account holder chose:
 | Storage and search | [#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463) | [#2538](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538) |
 | The library and its public surfaces | [#2464](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464) | [#2540](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540) |
 | The release system | [#2465](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465) | [#2547](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2547) |
-| The documentation system | [#2467](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467) | to be decided |
+| The documentation system | [#2467](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467) | [#2557](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2557) |
 
 A subsystem moves into the governed list in the change that adopts its north
 star.
