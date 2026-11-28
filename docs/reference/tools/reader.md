@@ -345,7 +345,9 @@ otherwise.
 **Vault Stats.** Read-only. Idempotent.
 
 Report the vault's size, link health and capabilities: the search modes it
-serves and the frontmatter fields search can filter on.
+serves and the frontmatter fields search can filter on. Also reports known
+problems recording changes or exchanging them with other copies of the
+vault; their absence does not confirm that the copies agree.
 
 **Parameters**
 
@@ -372,6 +374,11 @@ Dict with the following fields:
   Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links.
   Call '`get_orphan_notes`' if non-zero.
+- remote (dict, optional): Present while the server knows of a
+  problem recording this vault's changes or exchanging them with
+  other copies of it. Carries state, reason, since and detail, a
+  sentence to act on. Absent means no problem is known, not that
+  the copies agree.
 - okf (dict, optional): Present only when the vault is an active
   OKF (Open Knowledge Format) bundle. Carries mode,
   `declared_version`, a per-`type` histogram plus `untyped_count`,

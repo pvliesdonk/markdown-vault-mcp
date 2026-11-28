@@ -23,6 +23,7 @@ from ._common import (
     attach_conventions,
     attach_okf,
     attach_okf_to_results,
+    attach_remote_health,
 )
 
 
@@ -528,7 +529,9 @@ def register(mcp: FastMCP) -> None:
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Report the vault's size, link health and capabilities: the search modes it
-        serves and the frontmatter fields search can filter on.
+        serves and the frontmatter fields search can filter on. Also reports known
+        problems recording changes or exchanging them with other copies of the
+        vault; their absence does not confirm that the copies agree.
 
         Args:
             wait_for_pending_writes: When True, wait until your recent
@@ -562,6 +565,11 @@ def register(mcp: FastMCP) -> None:
               Call 'get_broken_links' if non-zero.
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
+            - remote (dict, optional): Present while the server knows of a
+              problem recording this vault's changes or exchanging them with
+              other copies of it. Carries state, reason, since and detail, a
+              sentence to act on. Absent means no problem is known, not that
+              the copies agree.
             - okf (dict, optional): Present only when the vault is an active
               OKF (Open Knowledge Format) bundle. Carries mode,
               declared_version, a per-`type` histogram plus untyped_count,
@@ -586,6 +594,7 @@ def register(mcp: FastMCP) -> None:
         okf_section = await asyncio.to_thread(vault.reader.okf_stats)
         if okf_section is not None:
             payload["okf"] = okf_section
+        attach_remote_health(vault, payload)
         return _staleness_result(
             vault, payload, drained_on_request=drained, gen_before=gen_before
         )

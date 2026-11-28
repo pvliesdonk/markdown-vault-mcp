@@ -70,7 +70,8 @@ produced them.
 Startup inspects the repository's working tree and staging area in both git
 modes, even with periodic pulls disabled. If it finds changes, it logs
 `git_worktree_dirty`. `sync_health()` reports `reason=uncommitted_changes`,
-which also appears in the `remote` diagnostic on write-tool results.
+which also appears in the `remote` diagnostic on write-tool results and in
+`stats`.
 Ignored files do not trigger this warning; files Git reports as `untracked` do.
 Changes inside submodules and plain repositories nested in the vault do
 not, because the server never writes into them.
@@ -488,7 +489,7 @@ and the rejection stands, or the histories diverged in a way the conflict
 resolver gave up on. Writes keep working (the commit lands, `read` serves it
 back), but nothing reaches the remote.
 
-Two things make that visible.
+Three things make that visible.
 
 **Every write tool says so.** While the clone is not reaching its remote,
 each write result carries a `remote` object with `state`, `reason`, `since`,
@@ -510,6 +511,26 @@ after a break can still answer clean and the next one warns. `git_sync`
 carries no such key, because it reports the sync outcome directly. This is the signal for a client whose only route to the
 repository is this server: it says the content is committed locally only, so
 the client can keep its own copy instead of treating the note as saved.
+
+**`stats` says so without a write.** The read-only `stats` tool and the
+`stats://vault` resource carry the same `remote` object, so a monitor or a
+client can check for a problem without changing the vault. Reading it starts
+no sync of its own: it returns what the server last observed.
+That sets three limits:
+
+- An absent `remote` is not an all-clear. It means the server knows of no
+  problem it tracks, not that the other copies hold this vault's changes.
+  The server learns of a problem only when it tries to send or receive
+  changes, so nothing is known before the first such attempt.
+- What the server observed resets when it restarts, because it is held in
+  memory. Changes left unrecorded are checked again at startup. A problem sending
+  changes shows again only once a new attempt runs into it, typically the
+  next write or a `git_sync` call.
+- A failure to receive changes is reported only when the server cannot
+  integrate what the other copy holds (`conflict_resolution_failed`,
+  `non_fast_forward_with_conflicts`). A copy that cannot be reached to
+  receive from (`fetch_failed`) is not reported, so a vault that makes no
+  writes can lose contact with the other copies while `stats` shows nothing.
 
 **The log records the transition, not the cycle.** Entering that state logs
 once at `ERROR`:
