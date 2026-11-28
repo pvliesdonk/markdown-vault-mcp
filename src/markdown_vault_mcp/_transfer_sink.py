@@ -24,8 +24,8 @@ The error and retry contract the routes apply is recorded in
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -364,7 +364,7 @@ class VaultTransferSink:
             logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
             return TransferReadResult(body, _MARKDOWN_MEDIA_TYPE, filename)
         try:
-            att = await asyncio.to_thread(vault.reader.read_attachment, handle)
+            body = await asyncio.to_thread(vault.reader.read_attachment_bytes, handle)
         except DocumentNotFoundError as exc:
             # The file is gone; validate confirmed it at mint time, so this is a
             # 410 Gone, not a 500. A refused read is a plain ValueError and
@@ -373,8 +373,7 @@ class VaultTransferSink:
             raise TransferResourceGoneError(
                 f"attachment no longer available: {handle}"
             ) from exc
-        body = base64.b64decode(att.content_base64)
-        media_type = att.mime_type or _OCTET_STREAM
+        media_type = mimetypes.guess_type(handle)[0] or _OCTET_STREAM
         logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
         return TransferReadResult(body, media_type, filename)
 

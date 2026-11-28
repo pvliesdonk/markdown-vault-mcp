@@ -116,6 +116,20 @@ class TestReaderFacetAttachments:
         finally:
             col.close()
 
+    def test_read_attachment_bytes_returns_the_raw_bytes(
+        self, vault_path: Path
+    ) -> None:
+        col = Vault(
+            source_dir=vault_path,
+            settings=VaultSettings(read_only=False, attachment_extensions=["*"]),
+        )
+        col.index.build_index()
+        try:
+            col.writer.write_attachment("facet_raw.bin", b"\x00\xff\x01")
+            assert col.reader.read_attachment_bytes("facet_raw.bin") == b"\x00\xff\x01"
+        finally:
+            col.close()
+
 
 class TestReaderFacetReadinessGate:
     def test_bucket3_methods_raise_on_cold_index(self, vault_path: Path) -> None:

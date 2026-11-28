@@ -25,6 +25,7 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
     DocumentNotFoundError,
+    InvalidRequestError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.hashing import compute_etag
@@ -150,6 +151,40 @@ class TestSize:
 
 
 class TestRead:
+    def test_raw_bytes(self, tmp_path: Path) -> None:
+        store, _ = _store(tmp_path)
+        (tmp_path / "a.png").write_bytes(b"\x00\xffraw")
+        assert store.read_bytes("a.png") == b"\x00\xffraw"
+
+    @pytest.mark.parametrize(
+        ("path", "message"),
+        [
+            ("note.md", "use the note read/write methods"),
+            ("../escape.png", "traversal"),
+        ],
+    )
+    def test_raw_bytes_validates_the_path(
+        self, tmp_path: Path, path: str, message: str
+    ) -> None:
+        store, _ = _store(tmp_path)
+        with pytest.raises(InvalidRequestError, match=message):
+            store.read_bytes(path)
+
+    @pytest.mark.parametrize("method", ["read", "read_bytes"])
+    def test_read_refusal_is_not_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+    ) -> None:
+        store, _ = _store(tmp_path)
+        (tmp_path / "a.png").write_bytes(b"data")
+
+        def fail(_path: Path) -> bytes:
+            raise PermissionError("read failed")
+
+        monkeypatch.setattr(Path, "read_bytes", fail)
+        with pytest.raises(ValueError, match="cannot be read") as exc:
+            getattr(store, method)("a.png")
+        assert not isinstance(exc.value, DocumentNotFoundError)
+
     def test_returns_content_and_metadata(self, tmp_path: Path) -> None:
         import base64
 

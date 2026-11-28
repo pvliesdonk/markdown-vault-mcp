@@ -37,14 +37,14 @@ def test_disallowed_extension_is_an_invalid_request(tmp_path: Path) -> None:
     assert "MARKDOWN_VAULT_MCP" not in str(exc.value)
 
 
-@pytest.mark.parametrize("call", ["size", "read"])
+@pytest.mark.parametrize("call", ["size", "read", "read_bytes"])
 def test_missing_attachment_is_not_found(tmp_path: Path, call: str) -> None:
     store, _ = _store(tmp_path)
     with pytest.raises(DocumentNotFoundError):
         getattr(store, call)("gone.png")
 
 
-@pytest.mark.parametrize("call", ["size", "read"])
+@pytest.mark.parametrize("call", ["size", "read", "read_bytes"])
 def test_folder_named_like_an_attachment_is_not_found(
     tmp_path: Path, call: str
 ) -> None:
@@ -55,7 +55,7 @@ def test_folder_named_like_an_attachment_is_not_found(
 
 
 @pytest.mark.skipif(_ROOT, reason="root ignores permission bits")
-@pytest.mark.parametrize("call", ["size", "read"])
+@pytest.mark.parametrize("call", ["size", "read", "read_bytes"])
 def test_unreadable_attachment_is_a_fault_not_absence(
     tmp_path: Path, call: str
 ) -> None:
@@ -122,8 +122,9 @@ def test_summarize_does_not_skip_a_fault_as_a_bad_note(
         vault.summarizer.summarize(["a.md"])
 
 
+@pytest.mark.parametrize("call", ["read", "read_bytes"])
 def test_attachment_removed_before_its_read_is_not_found(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call: str
 ) -> None:
     store, _ = _store(tmp_path)
     (tmp_path / "a.png").write_bytes(b"x")
@@ -133,7 +134,7 @@ def test_attachment_removed_before_its_read_is_not_found(
 
     monkeypatch.setattr(type(tmp_path), "read_bytes", vanished)
     with pytest.raises(DocumentNotFoundError):
-        store.read("a.png")
+        getattr(store, call)("a.png")
 
 
 def test_summarize_skips_a_path_with_a_nul_byte(

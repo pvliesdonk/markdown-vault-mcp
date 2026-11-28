@@ -1329,7 +1329,7 @@ Two-layer model:
 | `IndexUnavailableError` | The server failed |
 | `StoreCorruptError`, `StoreIncompatibleError` | The server failed |
 
-For `read_attachment()` and `attachment_size()`, an attachment whose `stat` or
+For `read_attachment()`, `read_attachment_bytes()` and `attachment_size()`, an attachment whose `stat` or
 read the file system refuses is a plain `ValueError`, never "not found": absence is judged from `stat()`, not
 `Path.is_file()`, which reports a refused stat as absence (#1625). `summarize()`
 skips missing, oversized and unreadable notes one by one; when none is left, the
@@ -1373,7 +1373,7 @@ operator learns why the note was left out.
 | Exception | Raised by | When |
 |-|-|-|
 | `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads; attachment paths (a `.md` path, an extension off the allowlist); `summarize()` arguments, and paths that hold no note that exists within the read limit | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
-| `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
+| `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`read_attachment_bytes()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
 | `SubmodulePathError` | `write()`, `append()`, `edit()`, `delete()`, `rename()`, `move_folder()`, `write_attachment()`, `okf_convert_links()`, `okf_generate_index()`, `okf_seed_log()` | The path lies in a git submodule or plain nested repository, or the folder holds one, so git would never commit the change (#1564, #1949). A subclass of `InvalidRequestError` |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()`; `build_embeddings(force=True)` | `read_only=True`; for a forced rebuild, a vault built with `owns_index_files=False`, which never creates or replaces the embedding store's files (#1778) |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
@@ -2427,7 +2427,7 @@ upload, the fully-read (size-capped) body.
 
 - **Download** (`read(handle)`): the handle is a vault path. A `.md` note is
   read via `vault.reader.read()` and served as `text/markdown`; any other path
-  is read via `vault.reader.read_attachment()` and served with its MIME type.
+  is read via `vault.reader.read_attachment_bytes()` and served with its MIME type.
   The whole file is materialised in memory (no HTTP range support).
 - **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
   stripped; a body that does not decode answers 415) and written via `vault.writer.write()`; other extensions are
@@ -3894,7 +3894,7 @@ root already owns:
 
 | Facet | Surface | Collaborators |
 |-|-|-|
-| ``ReaderFacet`` | search, read, read_revision, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
+| ``ReaderFacet`` | search, read, read_revision, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment, read_attachment_bytes | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
 | ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager``, ``previous_revision`` resolver (#1137), ``UnresolvedLinkReporter`` (#1725) |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
@@ -6668,7 +6668,13 @@ the duplication this removed.
 
 Attachments are **not indexed or searched**: only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
-The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
+`ArtifactStore.read_bytes()` and `vault.reader.read_attachment_bytes()` return
+validated raw bytes for byte-oriented consumers, including transfer downloads
+and OKF bundles. The metadata-bearing `read_attachment()` retains its base64
+content, stat-derived size and modification time, MIME type, and etag. The
+separate stat-only size probe lets MCP reject oversized files before reading.
+
+The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()`, `read_attachment_bytes()`, and `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
 
 A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they return only the requested section, not the whole document.
 
