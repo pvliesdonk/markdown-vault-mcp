@@ -33,6 +33,7 @@ from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
+    is_bundle_member_path,
     is_okf_reserved_file,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
@@ -133,6 +134,10 @@ class ConventionMaintainer:
             return
         if is_okf_reserved_file(Path(path).as_posix()):
             return
+        if not is_bundle_member_path(Path(path).as_posix()):
+            # Not part of the bundle (OKF 0.3 §3.2 rule 4): the server keeps
+            # no log or listing for it on its own (#2451).
+            return
         if not self._detector.state().active:
             return
         folder = folder_of(path)
@@ -157,7 +162,9 @@ class ConventionMaintainer:
         written into is (#1609). The same guards as :meth:`maintain` apply:
         nothing on an inactive vault or under a suppressed intent, and nothing
         when every *trigger_paths* entry is a reserved file, whose change never
-        triggers its own regeneration (#1414). ``log.md`` is left to the log
+        triggers its own regeneration (#1414), or is not part of the bundle
+        (a dot path, OKF 0.3 §3.2 rule 4, #2451). A dot folder's listing is
+        never refreshed. ``log.md`` is left to the log
         design; only the listings are kept current here. Never raises.
 
         Args:
@@ -171,7 +178,9 @@ class ConventionMaintainer:
         wanted = [f for f in folders if self._has_index(f)]
         with okf_write_suppressed(), auxiliary_commit_writes():
             for folder in dict.fromkeys([*wanted, *create]):
-                self._refresh_index(folder)
+                # A folder outside the bundle keeps no server listing (#2451).
+                if is_bundle_member_path(folder):
+                    self._refresh_index(folder)
 
     def subtree_folders(self, root: str) -> list[str]:
         """Return vault-owned non-hidden folders under *root*, vault-relative.
@@ -231,7 +240,11 @@ class ConventionMaintainer:
         intent = current_okf_intent()
         if intent is not None and intent.suppress:
             return False
-        if all(is_okf_reserved_file(Path(p).as_posix()) for p in trigger_paths):
+        if all(
+            is_okf_reserved_file(Path(p).as_posix())
+            or not is_bundle_member_path(Path(p).as_posix())
+            for p in trigger_paths
+        ):
             return False
         return self._detector.state().active
 

@@ -432,6 +432,8 @@ class TestBuildOkfWriteEnrich:
             ("n.md", "---\ntype:\n---\n# N\n"),
             ("n.md", "---\ntitle: [unclosed\n---\n# N\n"),
             ("n.txt", _CONCEPT),
+            (".drafts/n.md", _CONCEPT),
+            ("notes/.wip.md", _CONCEPT),
         ],
     )
     def test_a_file_that_is_not_a_concept_lands_as_given(

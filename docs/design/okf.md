@@ -442,6 +442,14 @@ Graph surfaces (`GraphFacet`, SPA GraphView) may color/segment nodes by
 Read-only tool reporting bundle conformance **as a degree, not a verdict** —
 during migration it is a progress meter:
 
+- Only bundle members are audited. A path with a component starting with
+  `.` is not part of the bundle (OKF 0.3 §3.2 rule 4), so it is skipped
+  before any rule; the same predicate (`okf.is_bundle_member_path`) keeps
+  it out of export, generated listings, listing and log upkeep, and the
+  write stamp (#2451). This is the bundle as artifact; what the index and
+  search admit stays retrieval policy (account holder, 28 November 2026:
+  "This here is the difference between an okf bundle as interface and as an
+  artifact").
 - Conformance findings follow OKF 0.3 §11.1. Rule 1: a frontmatter block
   in any `.md` file, `index.md` and `log.md` included, that does not parse
   as a YAML mapping (`unparseable_frontmatter`; an empty or comment-only
@@ -984,7 +992,9 @@ generated-bytes download the generic `create_download_link` serves unchanged.
 The bundle is a best-effort *copy*, not yet the publication contract the north
 star asks for (scope, snapshot, explicit root, conformance report; #1448): wikilinks rewritten to root-absolute links
 (reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
-convention files (`_conventions.md`) and the template folder excluded, the
+convention files (`_conventions.md`), the template folder and every path
+with a component starting with `.` excluded (OKF 0.3 §3.2 rule 4, #2451; a
+selected dot folder exports an empty zip, as #2525 proposed), the
 reserved `index.md` / `log.md` kept, non-conformant notes included as-is
 (permissive consumers tolerate them), and a fixed zip-entry timestamp so an
 unchanged vault re-exports to identical bytes. Notes are read raw from disk

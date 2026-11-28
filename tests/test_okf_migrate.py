@@ -272,6 +272,19 @@ class TestGenerateIndex:
         assert "# Old body" not in raw
         assert "- [Plain Note](/plain.md)" in raw
 
+    def test_lists_no_dot_path(self, vault: Vault) -> None:
+        # OKF 0.3 §3.2 rule 4: a dot path is not part of the bundle (#2451).
+        for path in ("a.md", ".dot.md", ".hidden/x.md", "sub/b.md", "sub/.wip.md"):
+            _write(vault, path, "# Note\n")
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        raw = (vault.source_dir / "index.md").read_text(encoding="utf-8")
+        assert "/a.md)" in raw
+        assert "/." not in raw and ".hidden" not in raw
+        sub = (vault.source_dir / "sub" / "index.md").read_text(encoding="utf-8")
+        assert ".wip" not in sub
+        assert not (vault.source_dir / ".hidden" / "index.md").exists()
+
     def test_regenerates_under_write_protection(self, source_dir: Path) -> None:
         """Regeneration reads the existing index.md, so the guard exempts it."""
         col = Vault(

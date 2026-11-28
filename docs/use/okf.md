@@ -26,6 +26,8 @@ okf_version: "0.3"
 
 This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The server reads every bundle by the rules of OKF 0.3, whatever version it declares, so a bundle that still declares `0.2` is read as 0.3. For a version it does not know, such as a later release, the server logs an `okf_unknown_version` warning and reads the bundle anyway. The `MARKDOWN_VAULT_MCP_OKF_MODE` environment variable controls how the server responds to it:
 
+Files and folders whose names start with `.`, such as `.drafts/` or `.notes.md`, are not part of the bundle, as OKF 0.3 says. They remain vault files that search can find. The server never treats them as bundle content, though. `okf_validate` and the export pass over them. Generated `index.md` listings never link or create them, and the write layer neither stamps them nor keeps a `log.md` or `index.md` for them. To keep a file out of a bundle, give it, or a folder above it, a name starting with `.`.
+
 | Value | Behaviour |
 |-------|-----------|
 | `auto` (default) | Apply OKF read semantics when the root `index.md` declares `okf_version`. |
@@ -298,7 +300,7 @@ When you want a copy to share or hand to other OKF tooling, download one through
 - `create_download_link` with `ref="okf-bundle"` returns a one-time URL for a zip of the whole vault.
 - `create_download_link` with `ref="okf-bundle:guides"` scopes the zip to a folder subtree.
 
-The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are.
+The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`), the template folder and every path that is not part of the bundle (a file or folder whose name starts with `.`) are left out, while the reserved `index.md` and `log.md` stay in. Selecting a dot folder, such as `ref="okf-bundle:.drafts"`, downloads an empty zip. Non-conformant notes appear as they are.
 
 It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the **index** currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run `okf_validate`. Run `okf_validate` yourself before you publish, and read `get_index_status.skipped_files` to see what the index is leaving out.
 

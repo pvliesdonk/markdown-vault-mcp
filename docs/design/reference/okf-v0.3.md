@@ -319,6 +319,7 @@ are named where they exist; a fix rewrites them.
 | 24 | Unknown keys inside `generated` kept (§4.1) | silent | silent | MUST keep | fixed: the stamp sets only `by` and `at` and keeps every other key of the written `generated` in its slot (was: the whole mapping replaced, so `x-model` was lost) | MUST | #2484 (fixed) |
 | 25 | Reserved files carry no frontmatter (§8, §9); trust fields describe concepts (§3.2, §5.3) | n/a | n/a | folder `index.md` and `log.md`: none | fixed: the write stamp applies only to a non-reserved `.md` file whose written frontmatter has a non-empty `type`; any other file lands as given (was: any `write`/`edit` gained `generated`, a body-only `log.md` included) | stated (no keyword) | #2486 (fixed) |
 | 26 | Regenerated root `index.md` keeps its block (§8.1, §4) | silent | silent | MUST keep; SHOULD NOT re-serialize | fixed: the new listing follows the stored block's bytes and an added required field is spliced in (was: the block re-dumped, so comments went and `"0.3"` became `'0.3'`) | MUST / SHOULD NOT | #2485 (fixed) |
+| 27 | Dot paths are not part of the bundle (§3.2 rule 4) | same rule | same rule | stated | fixed for the artifact: the audit, export, generated listings, listing upkeep and the write stamp skip any path with a component starting with `.` (was: counted, exported, listed and stamped). Index and search admission stay retrieval policy (account holder, 2026-11-28, #2451) | stated (no keyword) | #2451 |
 
 Notes on the table:
 
@@ -386,7 +387,8 @@ Notes on the table:
 - §10 Attested Computations and the `usage_*` signals: nothing reads them.
 - The bundle root is assumed to be the vault root; §2 lets a bundle be a
   subdirectory identified by its root `index.md`. Not checked.
-- Dot-path and out-of-root symlink handling (§3.2 rules 4 and 5) in
-  `iter_markdown_files` was not exercised by fixture. [unverified: run the
-  audit over a vault with a `.hidden/x.md` and an outward symlink]
+- §3.2 rule 5, out-of-root symbolic links, is not a departure: it says how
+  a consumer reads a bundle laid out as files, and the server presents a
+  bundle whose storage the client never sees (account holder, 2026-11-28,
+  #2450, closed). Rule 4 is row 27.
 - Index entry format details beyond the description (§8 SHOULD).
