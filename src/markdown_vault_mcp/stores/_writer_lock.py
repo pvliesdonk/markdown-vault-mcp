@@ -1,31 +1,34 @@
 """One process writes a built-in vector store, or a keyword index, at a time.
 
-A numpy or SQLite vector writer holds an advisory lock on ``{base}.lock``
+A numpy or SQLite vector writer holds a lock on ``{base}.lock``
 (named with ``Path.with_suffix``, #819) while it is open (#1505); an owning
 keyword index holds one on ``{index}.lock``, its full name plus ``.lock``
 (#1890). A second process that opens a writer on the same file is refused
 with :class:`StoreBusyError`, so a batch command cannot write a store a
 running server is writing. Readers take no
 lock. The operating system drops the lock when its process dies, so a killed
-server leaves none behind; the file itself is never deleted, and the pid it
-names is cleared on the last release. Inside one process every writer on a
-base shares one lock, counted, so two vaults in one process never block each
-other; a caller that closes one store and opens another on the same base
+server leaves none behind, though on Windows the release can come late: it
+waits on the system's available resources. The file itself is never deleted,
+and the pid it names is cleared on the last release. Inside one process every
+writer on a base shares one lock, counted, so two vaults in one process never
+block each other; a caller that closes one store and opens another on the same base
 holds a share across the swap (the vector backends' ``hold_writer``), so another
 process cannot take the lock in between. A store collected unclosed gives its
 share back through a finalizer that never waits for the guard, and a forked
 child holds nothing.
 
-Where no lock can be taken (no ``fcntl``, as on Windows, or a lock file that
+Where no lock can be taken (no supported lock API or a lock file that
 cannot be created) the writer proceeds as before this lock existed; its own
 writes still report a real I/O fault. A lock file this user cannot write is
-locked read-only.
+locked read-only. Windows byte-range semantics are documented in
+``docs/design/reference/windows-byte-locking.md``.
 """
 
 from __future__ import annotations
 
 import collections
 import contextlib
+import errno
 import logging
 import os
 import threading
@@ -38,9 +41,15 @@ try:
 except ImportError:  # pragma: no cover - Windows
     fcntl = None  # type: ignore[assignment]
 
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 LOCK_SUFFIX = ".lock"
+_PID_BYTES = 32  # Windows locks the next byte, keeping the pid readable.
 
 
 class _Held:
@@ -127,7 +136,7 @@ def hold_writer_lock(
         if lock_file is not None
         else Path(base).with_suffix(LOCK_SUFFIX)
     )
-    if fcntl is None:
+    if fcntl is None and msvcrt is None:
         return _skipped(path, "unsupported")
     key = os.path.realpath(path)
     with _GUARD:
@@ -140,8 +149,14 @@ def hold_writer_lock(
         if fd is None:
             return _skipped(path, "unwritable")
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            _lock(fd)
+        except OSError as exc:
+            if not (
+                isinstance(exc, BlockingIOError)
+                or (fcntl is None and exc.errno == errno.EACCES)
+            ):
+                os.close(fd)
+                return _skipped(path, "unwritable")
             holder = _holder(fd)
             os.close(fd)
             raise StoreBusyError(
@@ -150,12 +165,8 @@ def hold_writer_lock(
                 backend=backend,
                 location=str(base),
             ) from None
-        except OSError:
-            os.close(fd)
-            return _skipped(path, "unwritable")
         with contextlib.suppress(OSError):  # a read-only lock file names no pid
-            os.ftruncate(fd, 0)
-            os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+            _write_pid(fd, f"{os.getpid()}\n".encode())
         _HELD[key] = _Held(fd)
         return WriterLock(key)
 
@@ -164,7 +175,7 @@ def _open_lock_file(path: Path) -> int | None:
     """Open the lock file, creating it and its directory; ``None`` if impossible.
 
     A lock file this user may not write (another user's, say root's through
-    ``docker exec``) is opened read-only: ``flock`` needs no write access.
+    ``docker exec``) is opened read-only: neither lock API needs write access.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,12 +188,40 @@ def _open_lock_file(path: Path) -> int | None:
     return None
 
 
+def _lock(fd: int) -> None:
+    """Take the platform's nonblocking lock.
+
+    On Windows the descriptor is first switched to binary mode, so the pid
+    is written without a carriage return.
+    """
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    else:
+        msvcrt.setmode(fd, getattr(os, "O_BINARY", 0))
+        os.lseek(fd, _PID_BYTES, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+
+def _write_pid(fd: int, value: bytes) -> None:
+    """Replace the pid without truncating the Windows locked range."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    if fcntl is not None:
+        os.ftruncate(fd, 0)
+    else:
+        value = value.ljust(_PID_BYTES, b" ")
+    os.write(fd, value)
+
+
 def _unlock(fd: int) -> None:
     """Clear the pid, then unlock and close: a stale pid is never named."""
     with contextlib.suppress(OSError):
-        os.ftruncate(fd, 0)
+        _write_pid(fd, b"")
     with contextlib.suppress(OSError):
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        else:
+            os.lseek(fd, _PID_BYTES, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
     os.close(fd)
 
 
@@ -195,7 +234,8 @@ def _drain() -> None:
 def _holder(fd: int) -> str:
     """Return `` (pid N)`` for the other process the lock file names, else ``""``."""
     with contextlib.suppress(OSError, ValueError):
-        pid = int(os.pread(fd, 32, 0).decode().strip())
+        os.lseek(fd, 0, os.SEEK_SET)
+        pid = int(os.read(fd, _PID_BYTES).decode().strip())
         if pid != os.getpid():
             return f" (pid {pid})"
     return ""

@@ -153,9 +153,9 @@ to many writers strict. We start with single writer, but be prepared" (owner,
 17–18 October 2026, in the [#1504][1504] design,
 [#1813](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1813)).
 
-`evidenced` — Every built-in store and the keyword index enforce one writer,
-except on Windows, which takes no lock ([#1923][1923]): the file stores by
-`flock` (`stores/_writer_lock.py`), PostgreSQL by an advisory lease and the
+`evidenced` — Every built-in store and the keyword index enforce one writer:
+the file stores by `flock`, or on Windows a byte-range lock ([#1923][1923])
+(`stores/_writer_lock.py`), PostgreSQL by an advisory lease and the
 keyword index by its own lock (decisions 34 and 36 in [design.md](design.md)).
 Two write paths depend on it: the bulk re-token
 (`indexing/embedding_reconciler.py`) and whole-generation publication.
