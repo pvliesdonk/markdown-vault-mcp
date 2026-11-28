@@ -87,6 +87,11 @@
 
 ## 2026-11-16
 
+- [FastMCP 4 protocol and server behaviour](fastmcp-4.md): added the
+  maintainer-confirmed outer mount pattern for path-scoped OAuth discovery
+  (#152), pinned with two synthetic services over HTTP on FastMCP 4.2.0.
+  Other claims and review deadline remain unchanged.
+
 - Added [Docker Hub PostgreSQL range tags](docker-hub-range-tags.md) for #1853.
   Observed anonymous responses for both repositories, pagination and strict tag
   shapes; checked variants against the chosen patterns. Next review: 2027-05-16.
