@@ -70,7 +70,9 @@
       noteDiv.innerHTML = icon + '<span class="tree-label">' + escHtml(n.title || n.path) + '</span>';
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
-      noteDiv.addEventListener('click', () => window.loadPreview(n.path));
+      noteDiv.addEventListener('click', () => {
+        window.loadPreview(n.path).catch(err => console.error('note preview render failed for %s', n.path, err));
+      });
       parentEl.appendChild(noteDiv);
     }
   }
@@ -104,7 +106,9 @@
         div.className = 'search-result';
         div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
           + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
-        div.addEventListener('click', () => window.loadPreview(r.path));
+        div.addEventListener('click', () => {
+          window.loadPreview(r.path).catch(err => console.error('note preview render failed for %s', r.path, err));
+        });
         treeEl.appendChild(div);
       }
       if (data.length === 0) {

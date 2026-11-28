@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:370962bd070c3858386587b8b94c451b358bfa5715c46b1bee3333d3c10fd216 -->
+<!-- vendor-spa-source-sha256:924527c1e819e74d04a0a4040c137ae52029ea2ebc8f709614cb1d5b1407f2b8 -->
 </head>
 <body>
 <div class="app-container">
@@ -1637,7 +1637,9 @@ app.onteardown = () => {
       noteDiv.innerHTML = icon + '<span class="tree-label">' + escHtml(n.title || n.path) + '</span>';
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
-      noteDiv.addEventListener('click', () => window.loadPreview(n.path));
+      noteDiv.addEventListener('click', () => {
+        window.loadPreview(n.path).catch(err => console.error('note preview render failed for %s', n.path, err));
+      });
       parentEl.appendChild(noteDiv);
     }
   }
@@ -1671,7 +1673,9 @@ app.onteardown = () => {
         div.className = 'search-result';
         div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
           + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
-        div.addEventListener('click', () => window.loadPreview(r.path));
+        div.addEventListener('click', () => {
+          window.loadPreview(r.path).catch(err => console.error('note preview render failed for %s', r.path, err));
+        });
         treeEl.appendChild(div);
       }
       if (data.length === 0) {
