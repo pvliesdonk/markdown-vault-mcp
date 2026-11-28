@@ -19,6 +19,10 @@
   const searchInput = document.getElementById('browser-search-input');
   const searchClear = document.getElementById('browser-search-clear');
 
+  function openPreview(path) {
+    window.loadPreview(path).catch(err => console.error('failed to open note preview for %s', path, err));
+  }
+
   async function loadFolder(folder) {
     const key = folder || '__root__';
     if (treeDataCache[key]) return treeDataCache[key];
@@ -70,9 +74,7 @@
       noteDiv.innerHTML = icon + '<span class="tree-label">' + escHtml(n.title || n.path) + '</span>';
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
-      noteDiv.addEventListener('click', () => {
-        window.loadPreview(n.path).catch(err => console.error('note preview render failed for %s', n.path, err));
-      });
+      noteDiv.addEventListener('click', () => openPreview(n.path));
       parentEl.appendChild(noteDiv);
     }
   }
@@ -106,9 +108,7 @@
         div.className = 'search-result';
         div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
           + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
-        div.addEventListener('click', () => {
-          window.loadPreview(r.path).catch(err => console.error('note preview render failed for %s', r.path, err));
-        });
+        div.addEventListener('click', () => openPreview(r.path));
         treeEl.appendChild(div);
       }
       if (data.length === 0) {

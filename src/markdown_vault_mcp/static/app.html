@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:924527c1e819e74d04a0a4040c137ae52029ea2ebc8f709614cb1d5b1407f2b8 -->
+<!-- vendor-spa-source-sha256:e9dc488978169be6fbe97f640b3caffe802162b5e964041b284eceff9b5743b4 -->
 </head>
 <body>
 <div class="app-container">
@@ -1586,6 +1586,10 @@ app.onteardown = () => {
   const searchInput = document.getElementById('browser-search-input');
   const searchClear = document.getElementById('browser-search-clear');
 
+  function openPreview(path) {
+    window.loadPreview(path).catch(err => console.error('failed to open note preview for %s', path, err));
+  }
+
   async function loadFolder(folder) {
     const key = folder || '__root__';
     if (treeDataCache[key]) return treeDataCache[key];
@@ -1637,9 +1641,7 @@ app.onteardown = () => {
       noteDiv.innerHTML = icon + '<span class="tree-label">' + escHtml(n.title || n.path) + '</span>';
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
-      noteDiv.addEventListener('click', () => {
-        window.loadPreview(n.path).catch(err => console.error('note preview render failed for %s', n.path, err));
-      });
+      noteDiv.addEventListener('click', () => openPreview(n.path));
       parentEl.appendChild(noteDiv);
     }
   }
@@ -1673,9 +1675,7 @@ app.onteardown = () => {
         div.className = 'search-result';
         div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
           + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
-        div.addEventListener('click', () => {
-          window.loadPreview(r.path).catch(err => console.error('note preview render failed for %s', r.path, err));
-        });
+        div.addEventListener('click', () => openPreview(r.path));
         treeEl.appendChild(div);
       }
       if (data.length === 0) {
