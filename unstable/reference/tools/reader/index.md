@@ -221,7 +221,7 @@ Index freshness rides in the response's `_meta.index_stale` field: True when the
 
 **Vault Stats.** Read-only. Idempotent.
 
-Report the vault's size, link health and capabilities: the search modes it serves and the frontmatter fields search can filter on.
+Report the vault's size, link health and capabilities: the search modes it serves and the frontmatter fields search can filter on. Also reports known problems recording changes or exchanging them with other copies of the vault; their absence does not confirm that the copies agree.
 
 **Parameters**
 
@@ -242,6 +242,7 @@ Dict with the following fields:
 - `link_count` (int): Total number of indexed links. 0 may mean no links exist or link tracking not yet built (call 'reindex').
 - `broken_link_count` (int): Links pointing to missing documents. Call '`get_broken_links`' if non-zero.
 - `orphan_count` (int): Notes with no inbound or outbound links. Call '`get_orphan_notes`' if non-zero.
+- remote (dict, optional): Present while the server knows of a problem recording this vault's changes or exchanging them with other copies of it. Carries state, reason, since and detail, a sentence to act on. Absent means no problem is known, not that the copies agree.
 - okf (dict, optional): Present only when the vault is an active OKF (Open Knowledge Format) bundle. Carries mode, `declared_version`, a per-`type` histogram plus `untyped_count`, status and recorded-review trust-tier breakdowns, and `stale_count`. These counts cover the note population '`okf_validate`' audits; the classifications do not establish review applicability to current content. The reserved `index.md` / `log.md` files are counted apart as `reserved_count`. `write_configured` is the configured OKF write flag; `write_effective` is true when that flag is enabled, OKF is active, and the vault is not read-only.
 
 Index freshness rides in the response's `_meta.index_stale` field: True when the IndexWriter was non-idle, a write completed inside the read window, or `wait_for_pending_writes` timed out; False otherwise.

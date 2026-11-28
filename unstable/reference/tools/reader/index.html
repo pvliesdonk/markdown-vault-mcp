@@ -3575,7 +3575,9 @@ otherwise.</p>
 <h2 id="stats"><code>stats</code><a class="headerlink" href="#stats" title="Permanent link">&para;</a></h2>
 <p><strong>Vault Stats.</strong> Read-only. Idempotent.</p>
 <p>Report the vault's size, link health and capabilities: the search modes it
-serves and the frontmatter fields search can filter on.</p>
+serves and the frontmatter fields search can filter on. Also reports known
+problems recording changes or exchanging them with other copies of the
+vault; their absence does not confirm that the copies agree.</p>
 <p><strong>Parameters</strong></p>
 <table>
 <thead>
@@ -3613,6 +3615,11 @@ serves and the frontmatter fields search can filter on.</p>
   Call '<code>get_broken_links</code>' if non-zero.</li>
 <li><code>orphan_count</code> (int): Notes with no inbound or outbound links.
   Call '<code>get_orphan_notes</code>' if non-zero.</li>
+<li>remote (dict, optional): Present while the server knows of a
+  problem recording this vault's changes or exchanging them with
+  other copies of it. Carries state, reason, since and detail, a
+  sentence to act on. Absent means no problem is known, not that
+  the copies agree.</li>
 <li>okf (dict, optional): Present only when the vault is an active
   OKF (Open Knowledge Format) bundle. Carries mode,
   <code>declared_version</code>, a per-<code>type</code> histogram plus <code>untyped_count</code>,

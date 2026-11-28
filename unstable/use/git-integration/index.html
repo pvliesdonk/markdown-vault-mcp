@@ -3299,7 +3299,8 @@ produced them.</p>
 <p>Startup inspects the repository's working tree and staging area in both git
 modes, even with periodic pulls disabled. If it finds changes, it logs
 <code>git_worktree_dirty</code>. <code>sync_health()</code> reports <code>reason=uncommitted_changes</code>,
-which also appears in the <code>remote</code> diagnostic on write-tool results.
+which also appears in the <code>remote</code> diagnostic on write-tool results and in
+<code>stats</code>.
 Ignored files do not trigger this warning; files Git reports as <code>untracked</code> do.
 Changes inside submodules and plain repositories nested in the vault do
 not, because the server never writes into them.</p>
@@ -3647,7 +3648,7 @@ committing the attribute alone does not install a driver. The built-in
 and the rejection stands, or the histories diverged in a way the conflict
 resolver gave up on. Writes keep working (the commit lands, <code>read</code> serves it
 back), but nothing reaches the remote.</p>
-<p>Two things make that visible.</p>
+<p>Three things make that visible.</p>
 <p><strong>Every write tool says so.</strong> While the clone is not reaching its remote,
 each write result carries a <code>remote</code> object with <code>state</code>, <code>reason</code>, <code>since</code>,
 and a <code>detail</code> sentence for the caller to act on. It appears once a push has
@@ -3665,6 +3666,26 @@ after a break can still answer clean and the next one warns. <code>git_sync</cod
 carries no such key, because it reports the sync outcome directly. This is the signal for a client whose only route to the
 repository is this server: it says the content is committed locally only, so
 the client can keep its own copy instead of treating the note as saved.</p>
+<p><strong><code>stats</code> says so without a write.</strong> The read-only <code>stats</code> tool and the
+<code>stats://vault</code> resource carry the same <code>remote</code> object, so a monitor or a
+client can check for a problem without changing the vault. Reading it starts
+no sync of its own: it returns what the server last observed.
+That sets three limits:</p>
+<ul>
+<li>An absent <code>remote</code> is not an all-clear. It means the server knows of no
+  problem it tracks, not that the other copies hold this vault's changes.
+  The server learns of a problem only when it tries to send or receive
+  changes, so nothing is known before the first such attempt.</li>
+<li>What the server observed resets when it restarts, because it is held in
+  memory. Changes left unrecorded are checked again at startup. A problem sending
+  changes shows again only once a new attempt runs into it, typically the
+  next write or a <code>git_sync</code> call.</li>
+<li>A failure to receive changes is reported only when the server cannot
+  integrate what the other copy holds (<code>conflict_resolution_failed</code>,
+  <code>non_fast_forward_with_conflicts</code>). A copy that cannot be reached to
+  receive from (<code>fetch_failed</code>) is not reported, so a vault that makes no
+  writes can lose contact with the other copies while <code>stats</code> shows nothing.</li>
+</ul>
 <p><strong>The log records the transition, not the cycle.</strong> Entering that state logs
 once at <code>ERROR</code>:</p>
 <div class="highlight"><pre><span></span><code>ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
