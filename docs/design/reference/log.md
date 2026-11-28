@@ -2,6 +2,11 @@
 
 ## 2026-11-28
 
+- New: [Bounding a regular expression with a child process](regex-replacement-worker.md),
+  for #2031. Read the published Python 3 documentation of `re`, `subprocess`
+  and the command line, and observed the template check on CPython 3.14.8
+  and 3.15.2. No refute pass yet, so the page stays `draft`. Next review:
+  2027-05-28.
 - New: [Windows CRT byte-range locks](windows-byte-locking.md), for #1923.
   Read the Python 3.15 `msvcrt` docs, CPython 3.14's `PC/msvcrtmodule.c`
   and `os.open`, and Microsoft's `_locking`, text-and-binary-mode,

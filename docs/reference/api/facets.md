@@ -74,10 +74,47 @@ continues to support computed OKF filters.
 
 ## WriterFacet
 
-Create, edit, append, delete, rename, and attachment writes.
+Create, edit, append, delete, rename, and attachment writes, and the preview
+of one text replacement across many notes.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.writer.WriterFacet
+<!-- vale on -->
+
+### Previewing a text replacement across notes
+
+`preview_replace` computes one replacement across the notes a request covers
+and writes nothing. Matches cover each note's body and never its frontmatter.
+
+```python { .fragment }
+from markdown_vault_mcp.managers.text_replace import ReplaceRequest
+
+request = ReplaceRequest(
+    pattern=r"(\d{2})/(\d{2})/(\d{4})",
+    replacement=r"\3-\2-\1",
+    folders=("Journal",),
+    regex=True,
+)
+preview = vault.writer.preview_replace(request)
+# preview.notes: each note it would change, with a count and, for the first
+# ten, a diff; preview.refused: notes it would leave alone, with the reason.
+```
+
+A request covers at most 1,000 notes, reads at most 256 KiB per note and
+8 MiB in total, changes at most 200 notes and makes at most 10,000
+replacements. Past a bound, the request is refused with `InvalidRequestError`
+rather than cut short. A regular expression gets 3 seconds across the whole
+selection. A preview shows diffs for the first 10 changed notes, each cut at
+3,000 characters; narrow `paths` or `folders` to see the rest.
+
+<!-- vale off -->
+::: markdown_vault_mcp.managers.text_replace.ReplaceRequest
+
+::: markdown_vault_mcp.managers.text_replace.ReplacePreview
+
+::: markdown_vault_mcp.managers.text_replace.PlannedNote
+
+::: markdown_vault_mcp.managers.text_replace.NoteRefusal
 <!-- vale on -->
 
 ## GraphFacet
