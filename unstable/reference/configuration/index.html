@@ -4814,7 +4814,7 @@ explains how <code>READ_ONLY</code> and <code>WRITE_PROTECT_EXISTING</code> comb
 <td><code>MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT</code></td>
 <td><code>256</code></td>
 <td>No</td>
-<td>Maximum live background jobs per calling subject; further promotions are rejected until older records expire.</td>
+<td>Maximum live background jobs per calling subject: running, or finished with an outcome not yet retrieved. Further promotions are rejected until a job's outcome is retrieved or its record expires.</td>
 </tr>
 </tbody>
 </table>
