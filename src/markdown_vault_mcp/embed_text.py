@@ -9,18 +9,22 @@ boot convergence pass would "heal" the enriched vectors back to plain.
 
 The builder has two formats:
 
-* **v1** — the default: :meth:`EmbedTextBuilder.build` returns the chunk
-  content byte-for-byte unchanged, so default configurations are an exact
-  behavioural no-op.
-* **v2** — active when ``embed_context`` is enabled or any
-  ``searchable_fields`` are configured: the chunk content is prefixed with
-  the document title, the chunk heading (when present), and — on the first
-  chunk only — the newline-joined scalar frontmatter values of the
-  configured fields.
+* **v1** — ``EMBED_INPUT=body``: :meth:`EmbedTextBuilder.build` returns the
+  chunk content byte-for-byte unchanged.
+* **v2** — ``EMBED_INPUT=context`` or ``context+fields``: the chunk content
+  is prefixed with the document title and the chunk heading (when present);
+  under ``context+fields`` the first chunk also carries the newline-joined
+  scalar frontmatter values of the searchable fields.
+
+With ``EMBED_INPUT`` unset, :func:`resolve_embed_input` derives the input
+from the deprecated ``EMBED_CONTEXT`` and the searchable fields exactly as
+before #2311, so an upgrade re-embeds nothing.
 
 :meth:`EmbedTextBuilder.format_token` canonicalises the active format into
 a string persisted in the vector sidecar's ``index_metadata`` so a format
-flip is detected at load time and routes to a full re-embed.
+flip is detected at load time and routes to a full re-embed. Identical
+input gives an identical token: ``context`` shares ``v2;fields=`` with
+``context+fields`` over no fields.
 """
 
 from __future__ import annotations
@@ -29,12 +33,87 @@ import datetime
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 logger = logging.getLogger(__name__)
+
+#: What reaches the embedding provider for each chunk (``EMBED_INPUT``).
+EmbedInput = Literal["body", "context", "context+fields"]
+
+#: Every accepted ``EMBED_INPUT`` value, in documentation order.
+EMBED_INPUTS: tuple[EmbedInput, ...] = ("body", "context", "context+fields")
+
+
+def check_embed_input(
+    embed_input: str | None, *, embed_context: bool
+) -> EmbedInput | None:
+    """Validate an explicit ``EMBED_INPUT`` against the deprecated ``EMBED_CONTEXT``.
+
+    ``EMBED_CONTEXT=true`` asserts that the note title and chunk heading reach
+    the embedder, so it conflicts with ``body`` alone. ``EMBED_CONTEXT=false``
+    asserts nothing on its own (searchable fields still enriched the input),
+    so it conflicts with no value.
+
+    Args:
+        embed_input: The ``EMBED_INPUT`` value, or ``None`` when unset.
+        embed_context: The deprecated ``EMBED_CONTEXT`` flag.
+
+    Returns:
+        The value typed as :data:`EmbedInput`, or ``None`` when unset.
+
+    Raises:
+        ValueError: If *embed_input* is not one of :data:`EMBED_INPUTS`, or
+            if it is ``body`` while *embed_context* is ``True``.
+    """
+    if embed_input is None:
+        return None
+    if embed_input not in EMBED_INPUTS:
+        raise ValueError(
+            "MARKDOWN_VAULT_MCP_EMBED_INPUT must be one of "
+            f"{', '.join(EMBED_INPUTS)}, got {embed_input!r}"
+        )
+    if embed_context and embed_input == "body":
+        raise ValueError(
+            "MARKDOWN_VAULT_MCP_EMBED_CONTEXT=true conflicts with "
+            "MARKDOWN_VAULT_MCP_EMBED_INPUT=body: EMBED_CONTEXT adds the note "
+            "title and chunk heading, which body leaves out. Remove the "
+            "deprecated MARKDOWN_VAULT_MCP_EMBED_CONTEXT."
+        )
+    return embed_input
+
+
+def resolve_embed_input(
+    embed_input: str | None,
+    *,
+    embed_context: bool,
+    searchable_fields: Sequence[str],
+) -> EmbedInput:
+    """Return the effective embedding input for a configuration.
+
+    An explicit *embed_input* wins. Unset, the rule from before #2311
+    applies: ``context+fields`` when *embed_context* is on or any searchable
+    field is configured, else ``body``.
+
+    Args:
+        embed_input: The ``EMBED_INPUT`` value, or ``None`` when unset.
+        embed_context: The deprecated ``EMBED_CONTEXT`` flag.
+        searchable_fields: The effective searchable frontmatter fields.
+
+    Returns:
+        The effective :data:`EmbedInput`.
+
+    Raises:
+        ValueError: As :func:`check_embed_input`.
+    """
+    explicit = check_embed_input(embed_input, embed_context=embed_context)
+    if explicit is not None:
+        return explicit
+    if embed_context or searchable_fields:
+        return "context+fields"
+    return "body"
 
 
 def is_embeddable(text: str) -> bool:
@@ -128,40 +207,59 @@ class EmbedTextBuilder:
     """Builds the text submitted to the embedding provider for one chunk.
 
     Args:
-        embed_context: When ``True``, forces format v2 (document title and
-            chunk heading enrichment) even when ``searchable_fields`` is
-            empty. Any non-empty ``searchable_fields`` also activates v2, so
-            this flag is only load-bearing on its own.
-        searchable_fields: Frontmatter keys whose scalar values form the
-            first-chunk preamble (also switches to format v2 when
-            non-empty).
+        embed_context: The deprecated ``EMBED_CONTEXT`` flag; only consulted
+            when *embed_input* is ``None`` (see :func:`resolve_embed_input`).
+        searchable_fields: The effective searchable frontmatter fields, kept
+            whole whatever the input so the keyword index's provenance does
+            not depend on what reaches the embedder.
+        embed_input: The explicit ``EMBED_INPUT``, or ``None`` to derive it.
+
+    Raises:
+        ValueError: As :func:`check_embed_input`, at construction.
     """
 
     embed_context: bool = False
     searchable_fields: tuple[str, ...] = field(default=())
+    embed_input: EmbedInput | None = None
+    mode: EmbedInput = field(init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Resolve the effective input once, refusing a conflicting pair."""
+        mode = resolve_embed_input(
+            self.embed_input,
+            embed_context=self.embed_context,
+            searchable_fields=self.searchable_fields,
+        )
+        object.__setattr__(self, "mode", mode)
+
+    @property
+    def embedded_fields(self) -> tuple[str, ...]:
+        """The searchable fields whose values reach the embedder."""
+        return self.searchable_fields if self.mode == "context+fields" else ()
 
     @property
     def is_v2(self) -> bool:
-        """``True`` when enrichment is active (any knob set)."""
-        return self.embed_context or bool(self.searchable_fields)
+        """``True`` when the title and heading prefix the chunk."""
+        return self.mode != "body"
 
     def format_token(self) -> str:
         """Canonical format token persisted in the vector sidecar.
 
         Returns:
-            ``"v1"`` for the default no-op format, else
-            ``"v2;fields=<comma-joined field names>"``.
+            ``"v1"`` for ``body``, else ``"v2;fields=<comma-joined embedded
+            field names>"`` (empty after ``=`` under ``context``).
         """
         if not self.is_v2:
             return "v1"
-        return "v2;fields=" + ",".join(self.searchable_fields)
+        return "v2;fields=" + ",".join(self.embedded_fields)
 
     def fields_text(self, frontmatter_or_json: Mapping[str, Any] | str | None) -> str:
-        """Return the first-chunk preamble for this builder's fields.
+        """Return the first-chunk preamble for this builder's embedded fields.
 
-        See the module-level :func:`fields_text` for the exact contract.
+        See the module-level :func:`fields_text` for the exact contract; it
+        is ``""`` unless the input is ``context+fields``.
         """
-        return fields_text(frontmatter_or_json, self.searchable_fields)
+        return fields_text(frontmatter_or_json, self.embedded_fields)
 
     def build(
         self,

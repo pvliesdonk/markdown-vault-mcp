@@ -70,6 +70,7 @@ from markdown_vault_mcp.config_sections._helpers import (
     parse_opt_int,
     parse_weight_map,
 )
+from markdown_vault_mcp.config_sections.embeddings import read_embed_context
 from markdown_vault_mcp.config_sections.indexing import store_default_search
 from markdown_vault_mcp.config_sections.server import ServerConfig
 
@@ -369,10 +370,12 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Comma-separated frontmatter fields whose text values become "
-                "keyword-searchable and enrich first-chunk embeddings. "
-                "Inherits INDEXED_FIELDS when unset; the sentinel none means "
-                "filterable but not searchable. Changing it cold-rebuilds the "
-                "index and re-embeds once on next startup."
+                "keyword-searchable; under EMBED_INPUT=context+fields they "
+                "also enrich first-chunk embeddings. Inherits INDEXED_FIELDS "
+                "when unset; the sentinel none means filterable but not "
+                "searchable. Changing it cold-rebuilds the index once on next "
+                "startup, and re-embeds once when the values reach the "
+                "embedding provider."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -731,16 +734,37 @@ class ProjectConfig:
             "wizard": {"group": "Embeddings"},
         },
     )
-    embed_context: bool = field(
-        default=False,
+    embed_input: str | None = field(
+        default=None,
         metadata={
             "help": (
-                "Enrich embedding input with the note title, chunk heading, "
-                "and (first chunk) searchable-field values. Flipping it "
-                "re-embeds the whole vault once on next startup."
+                "What each chunk sends to the embedding provider. body sends "
+                "the chunk text only. context adds the note title and chunk "
+                "heading. context+fields adds the SEARCHABLE_FIELDS values to "
+                "each note's first chunk as well. Keyword search and "
+                "filters are the same under all three. Unset derives it from "
+                "the deprecated EMBED_CONTEXT and from SEARCHABLE_FIELDS: "
+                "context+fields when EMBED_CONTEXT is true or any searchable "
+                "field is set, else body. Changing what reaches the provider "
+                "re-embeds the vault once on next startup."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},
+        },
+    )
+    embed_context: bool | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Deprecated in favour of EMBED_INPUT, which takes precedence "
+                "when both are set. Alone, true is the same as "
+                "EMBED_INPUT=context+fields and false is the same as leaving "
+                "it unset. Beside EMBED_INPUT, true asserts that the title and "
+                "heading reach the provider, so EMBED_INPUT=body fails at "
+                "startup. Setting it logs a deprecation warning."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"control": "none", "group": "Embeddings"},
         },
     )
     embed_timeout_s: float = field(
@@ -1161,7 +1185,8 @@ class ProjectConfig:
             voyage_model=self.voyage_model,
             fastembed_model=self.fastembed_model,
             fastembed_cache_dir=self.fastembed_cache_dir,
-            embed_context=self.embed_context,
+            embed_context=bool(self.embed_context),
+            embed_input=self.embed_input,
             embed_timeout_s=self.embed_timeout_s,
             embedding_batch_size=self.embedding_batch_size,
         )
@@ -1482,7 +1507,8 @@ class ProjectConfig:
             fastembed_model=env(_ENV_PREFIX, "FASTEMBED_MODEL")
             or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(_ENV_PREFIX, "FASTEMBED_CACHE_DIR") or None,
-            embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
+            embed_input=(env(_ENV_PREFIX, "EMBED_INPUT") or "").strip().lower() or None,
+            embed_context=read_embed_context(env(_ENV_PREFIX, "EMBED_CONTEXT")),
             embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
             embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),

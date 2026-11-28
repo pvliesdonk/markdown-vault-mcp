@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.embed_text import EmbedInput
 
 #: Where the state file defaulted to before #1693, under the vault root.
 #: Nothing writes there now; ``Vault`` copies a leftover file into the new
@@ -183,14 +184,19 @@ class VaultSettings:
             titles (default ``"title"``; falls back to ``title`` → first H1
             → filename stem).
         searchable_frontmatter_fields: Frontmatter keys whose scalar values
-            are keyword-searchable via the FTS ``summary`` column and —
-            because configuring this activates format v2 — prefixed to
-            first-chunk embedding text (triggering a one-time re-embed).
-            ``None`` disables both.
-        embed_context: When ``True``, forces format v2 (document title +
-            chunk heading enrichment) even with no
-            ``searchable_frontmatter_fields``; any searchable field also
-            activates v2 (default ``False`` — raw chunk content).
+            are keyword-searchable via the FTS ``summary`` column; under
+            ``embed_input="context+fields"`` they are also prefixed to
+            first-chunk embedding text. ``None`` means no searchable fields.
+        embed_context: Deprecated in favour of ``embed_input``. Consulted
+            only when ``embed_input`` is ``None``, where ``True`` selects
+            ``context+fields`` (default ``False``).
+        embed_input: What reaches the embedding provider: ``"body"``,
+            ``"context"`` (title and heading) or ``"context+fields"`` (also
+            the searchable-field values on the first chunk). ``None``
+            (default) derives it as before #2311: ``context+fields`` when
+            ``embed_context`` is set or any searchable field is configured,
+            else ``body``. ``Vault`` raises ``ValueError`` for an unknown
+            value, or for ``"body"`` with ``embed_context=True``.
         embedding_batch_size: Maximum number of chunk texts sent to the
             embedding provider per call in the cold-build, convergence, and
             inline-reindex paths (default ``4``).
@@ -249,6 +255,7 @@ class VaultSettings:
     title_field: str = "title"
     searchable_frontmatter_fields: Sequence[str] | None = None
     embed_context: bool = False
+    embed_input: EmbedInput | None = None
     embedding_batch_size: int = 4
     folder_weights: dict[str, float] | None = None
     fts_weights: dict[str, float] | None = None
@@ -288,6 +295,7 @@ class VaultSettings:
         # Function-local import: _assembly imports the git package at module
         # level; keep this module import-light and cycle-free.
         from markdown_vault_mcp.config_sections._assembly import derive_max_chunk_chars
+        from markdown_vault_mcp.embed_text import check_embed_input
 
         git = config.git
         return cls(
@@ -338,6 +346,10 @@ class VaultSettings:
             title_field=config.indexing.title_field,
             searchable_frontmatter_fields=config.indexing.searchable_frontmatter,
             embed_context=config.embeddings.embed_context,
+            embed_input=check_embed_input(
+                config.embeddings.embed_input,
+                embed_context=config.embeddings.embed_context,
+            ),
             embedding_batch_size=config.embeddings.embedding_batch_size,
             # Weight maps are stored as frozen sorted tuples on the config
             # (#639); the Vault API takes plain dicts.

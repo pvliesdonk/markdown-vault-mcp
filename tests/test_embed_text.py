@@ -119,6 +119,47 @@ class TestFormatToken:
         assert a.format_token() != b.format_token()
 
 
+_FIELDS = ("summary", "type")
+_FM = {"summary": "An overview.", "type": "decision"}
+
+
+class TestEmbedInput:
+    @pytest.mark.parametrize(
+        ("embed_input", "token", "preamble"),
+        [
+            ("body", "v1", ""),
+            ("context", "v2;fields=", ""),
+            ("context+fields", "v2;fields=summary,type", "An overview.\ndecision"),
+        ],
+    )
+    def test_explicit_input_overrides_the_legacy_rule(
+        self, embed_input: str, token: str, preamble: str
+    ) -> None:
+        builder = EmbedTextBuilder(
+            searchable_fields=_FIELDS,
+            embed_input=embed_input,  # type: ignore[arg-type]
+        )
+        assert builder.mode == embed_input
+        assert builder.format_token() == token
+        assert builder.fields_text(_FM) == preamble
+        # The keyword index's provenance keeps the whole list.
+        assert builder.searchable_fields == _FIELDS
+
+    def test_context_without_fields_matches_legacy_context(self) -> None:
+        legacy = EmbedTextBuilder(embed_context=True)
+        for embed_input in ("context", "context+fields"):
+            builder = EmbedTextBuilder(embed_input=embed_input)  # type: ignore[arg-type]
+            assert builder.format_token() == legacy.format_token()
+
+    def test_body_with_embed_context_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="conflicts"):
+            EmbedTextBuilder(embed_context=True, embed_input="body")
+
+    def test_unknown_input_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="must be one of"):
+            EmbedTextBuilder(embed_input="fields")  # type: ignore[arg-type]
+
+
 # ---------------------------------------------------------------------------
 # build
 # ---------------------------------------------------------------------------

@@ -342,6 +342,7 @@ NOT_IN_WIZARD = {
     "OPENAI_EMBEDDING_MODEL": "bare fallback; wizard emits MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
     # Deprecated alias / auto-computed / alternate auth mode.
     f"{PREFIX}_EVENT_STORE_URL": "deprecated alias for KV_STORE_URL",
+    f"{PREFIX}_EMBED_CONTEXT": "deprecated alias; wizard emits EMBED_INPUT",
     f"{PREFIX}_APP_DOMAIN": "optional override; auto-computed from BASE_URL when unset",
     f"{PREFIX}_BEARER_TOKENS_FILE": "multi-token file auth; wizard covers single BEARER_TOKEN",
     f"{PREFIX}_BEARER_DEFAULT_SUBJECT": "multi-token file auth; wizard covers single BEARER_TOKEN",
