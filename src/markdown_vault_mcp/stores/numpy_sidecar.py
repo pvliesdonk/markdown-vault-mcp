@@ -58,8 +58,8 @@ from markdown_vault_mcp.stores._resident import (
     fresh_snapshot,
     frozen,
     generation_snapshot,
+    numbered,
     row_vectors,
-    validated_generation,
     with_document,
     without_document,
 )
@@ -272,15 +272,21 @@ class NumpySidecarStore(ResidentStore):
     ) -> None:
         """Replace the store with *documents* under *identity*, durably.
 
+        Reads *documents* twice and holds its vectors in one matrix
+        (:func:`~markdown_vault_mcp.stores._resident.generation_snapshot`).
+
         Raises:
             ReadOnlyError: If the store was opened read-only.
-            ValueError: If a path appears twice, or a row is of another
-                dimension or not finite.
+            TypeError: If *documents* is a single-pass iterator; nothing
+                is written.
+            ValueError: If a path appears twice, a row is of another
+                dimension or not finite, or *documents* yields other
+                documents on its second pass.
         """
-        docs, blocks = validated_generation(identity, documents)
+        prepared = generation_snapshot(identity, documents)
         with self._lock:
             snap = self._writable()
-            new = generation_snapshot(identity, snap.generation + 1, docs, blocks)
+            new = numbered(prepared, snap.generation + 1)
             self._persist(new)
             self._snap = new
             self._dirty = False

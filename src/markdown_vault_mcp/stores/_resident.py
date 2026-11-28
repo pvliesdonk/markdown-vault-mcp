@@ -14,7 +14,7 @@ Nothing here touches a file.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover - exercised only without the extra
     NUMPY_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     from markdown_vault_mcp.types import (
         DocumentRows,
@@ -156,39 +156,73 @@ def without_document(snap: Snapshot, path: str) -> Snapshot | None:
     )
 
 
-def validated_generation(
-    identity: EmbeddingIdentity, documents: Iterable[DocumentRows]
-) -> tuple[list[DocumentRows], list[Any]]:
-    """Return *documents* and each one's normalised vectors, refusing bad input.
+def _generation_shape(documents: Iterator[DocumentRows]) -> list[tuple[str, int]]:
+    """Return each of *documents*' path and row count, refusing a path twice.
 
     Raises:
-        ValueError: If a path appears twice, or a row is of another
-            dimension or not finite.
+        ValueError: If a path appears twice.
     """
-    docs = list(documents)
+    shape: list[tuple[str, int]] = []
     seen: set[str] = set()
-    for document in docs:
+    for document in documents:
         if document.path in seen:
             raise ValueError(f"publish_generation got {document.path} twice.")
         seen.add(document.path)
-    return docs, [row_vectors(d.rows, identity.dimension) for d in docs]
+        shape.append((document.path, len(document.rows)))
+    return shape
+
+
+def _changed_between_passes() -> ValueError:
+    return ValueError(
+        "publish_generation got other documents on its second pass over them."
+    )
 
 
 def generation_snapshot(
-    identity: EmbeddingIdentity,
-    generation: int,
-    documents: Sequence[DocumentRows],
-    blocks: Sequence[Any],
+    identity: EmbeddingIdentity, documents: Iterable[DocumentRows]
 ) -> Snapshot:
-    """Return the snapshot holding exactly *documents*, with *blocks* as their vectors."""
-    matrix = (
-        np.vstack(blocks)
-        if blocks
-        else np.zeros((0, identity.dimension), dtype=np.float32)
-    )
-    rows = tuple(meta for d in documents for meta in row_metadata(d))
-    tokens = MappingProxyType({d.path: d.token for d in documents})
-    return Snapshot(identity, generation, frozen(matrix), rows, tokens)
+    """Return the snapshot holding exactly *documents*, at generation 0.
+
+    Reads *documents* twice, as the publish contract allows: once to check
+    the paths and count the rows, then again to fill one float32 matrix of
+    that size a document at a time, each block normalised as
+    :func:`row_vectors` does. So the generation's vectors are held once,
+    never as a list of blocks and their stacked copy (#1938). The caller
+    numbers the snapshot with :func:`numbered` when it installs it.
+
+    Raises:
+        TypeError: If *documents* is a single-pass iterator, such as a
+            generator, which a second pass would find empty.
+        ValueError: If a path appears twice, a row is of another dimension
+            or not finite, or the second pass yields other documents or
+            other row counts than the first.
+    """
+    first_pass = iter(documents)
+    if first_pass is documents:
+        raise TypeError(
+            "publish_generation needs re-iterable documents, such as a list,"
+            " to read them twice; it got a single-pass iterator."
+        )
+    shape = _generation_shape(first_pass)
+    matrix = np.empty((sum(n for _, n in shape), identity.dimension), np.float32)
+    rows: list[dict[str, Any]] = []
+    tokens: dict[str, RevisionToken | None] = {}
+    for index, document in enumerate(documents):
+        if index >= len(shape) or shape[index] != (document.path, len(document.rows)):
+            raise _changed_between_passes()
+        matrix[len(rows) : len(rows) + len(document.rows)] = row_vectors(
+            document.rows, identity.dimension
+        )
+        rows.extend(row_metadata(document))
+        tokens[document.path] = document.token
+    if len(tokens) != len(shape):
+        raise _changed_between_passes()
+    return Snapshot(identity, 0, frozen(matrix), tuple(rows), MappingProxyType(tokens))
+
+
+def numbered(snap: Snapshot, generation: int) -> Snapshot:
+    """Return *snap* at *generation*, sharing its matrix, rows and tokens."""
+    return replace(snap, generation=generation)
 
 
 class ResidentStore:

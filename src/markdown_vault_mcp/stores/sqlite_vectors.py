@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import itertools
 import json
 import logging
 import sqlite3
@@ -74,10 +75,10 @@ from markdown_vault_mcp.stores._resident import (
     frozen,
     generation_snapshot,
     hollow_snapshot,
+    numbered,
     row_metadata,
     row_vectors,
     unit_vector,
-    validated_generation,
     with_document,
     without_document,
 )
@@ -496,11 +497,20 @@ def _chunk_rows(
         raise ValueError(f"Row metadata of {path} cannot be stored: {exc}") from exc
 
 
-def _generation_chunks(
-    documents: Sequence[DocumentRows], blocks: Sequence[Any]
-) -> Iterator[tuple[Any, ...]]:
-    for document, block in zip(documents, blocks, strict=True):
-        yield from _chunk_rows(document.path, row_metadata(document), block)
+def _generation_chunks(snap: Snapshot) -> Iterator[tuple[Any, ...]]:
+    """Yield the ``chunks`` rows of *snap*, document by document, in its order.
+
+    A generation's rows are contiguous per document and each names its
+    document's path, so the runs of one path are the documents.
+
+    Raises:
+        ValueError: If row metadata cannot be stored as JSON.
+    """
+    at = 0
+    for path, run in itertools.groupby(snap.rows, key=lambda row: row["path"]):
+        metadata = list(run)
+        yield from _chunk_rows(path, metadata, snap.matrix[at : at + len(metadata)])
+        at += len(metadata)
 
 
 def _stream_generation(
@@ -1166,13 +1176,20 @@ class SqliteVectorStore(ResidentStore):
     ) -> None:
         """Replace the store with *documents* under *identity* in one commit.
 
-        A streamed store writes each document as it arrives; a resident one
-        checks them all before it starts writing.
+        A streamed store writes each document as it arrives
+        (:meth:`_publish_streamed`). A resident one reads *documents* twice
+        and holds its vectors in one matrix
+        (:func:`~markdown_vault_mcp.stores._resident.generation_snapshot`),
+        checking them all before it starts writing.
 
         Raises:
             ReadOnlyError: If the store was opened read-only.
-            ValueError: If a path appears twice, or a row is of another
-                dimension, not finite, or its metadata cannot be stored.
+            TypeError: If a resident store gets a single-pass iterator as
+                *documents*; nothing is written.
+            ValueError: If a path appears twice, a row is of another
+                dimension, not finite, or its metadata cannot be stored, or
+                a resident store's *documents* yields other documents on its
+                second pass.
             StoreUnavailableError: If the first write cannot create the
                 database; the previous generation stands.
             StoreCorruptError: If SQLite reports damaged pages; the previous
@@ -1182,16 +1199,16 @@ class SqliteVectorStore(ResidentStore):
         if self._streamed:
             self._publish_streamed(identity, documents)
             return
-        docs, blocks = validated_generation(identity, documents)
+        prepared = generation_snapshot(identity, documents)
         with self._lock:
             snap = self._writable()
-            new = generation_snapshot(identity, snap.generation + 1, docs, blocks)
+            new = numbered(prepared, snap.generation + 1)
 
             def work(conn: sqlite3.Connection) -> PublicationOutcome:
                 conn.execute("DELETE FROM chunks")
                 conn.execute("DELETE FROM documents")
-                conn.executemany(_UPSERT_DOCUMENT, ((d.path, d.token) for d in docs))
-                conn.executemany(_INSERT_CHUNK, _generation_chunks(docs, blocks))
+                conn.executemany(_UPSERT_DOCUMENT, prepared.tokens.items())
+                conn.executemany(_INSERT_CHUNK, _generation_chunks(prepared))
                 _write_meta(conn, identity, new.generation)
                 return "published"
 
@@ -1202,7 +1219,7 @@ class SqliteVectorStore(ResidentStore):
             "sqlite_vector_store_generation_published path=%s generation=%d rows=%d",
             self._where,
             new.generation,
-            sum(len(d.rows) for d in docs),
+            len(prepared.rows),
         )
 
     def _publish_streamed(
@@ -1216,6 +1233,10 @@ class SqliteVectorStore(ResidentStore):
         the previous generation stands. On a store's first write the
         database file is created first and stays behind, holding no rows
         and no identity: it opens as an empty store, as no file does.
+        *documents* is read inside the write transaction, so one that reads
+        this store from the publishing thread fails as unavailable
+        (:class:`~markdown_vault_mcp.exceptions.StoreUnavailableError`) and
+        the publish rolls back.
 
         Raises:
             ReadOnlyError: If the store was opened read-only.

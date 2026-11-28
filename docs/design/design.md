@@ -1214,8 +1214,14 @@ vectors. Operating-system temporary files are removed when handles close, includ
 publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.
 Custom non-scalar metadata remains resident to preserve its original objects.
 A streamed SQLite store writes the replayed generation one document at a
-time inside its write transaction and holds no copy of it (#1938); the
-resident stores still materialize their own generation copies. The
+time inside its write transaction and holds no copy of it (#1938). The
+numpy and resident SQLite publishers read the replayed generation twice, as
+the publish contract allows: once to check its paths and count its rows,
+then again to fill one preallocated float32 matrix a document at a time,
+each block normalised as a single document's is (#1938). So they hold the
+generation's vectors once, the matrix a resident store then serves; a
+generation that can be iterated only once, or whose second pass yields
+other documents or row counts, is refused before anything is written. The
 largest document and path bookkeeping also grow independently of the window.
 
 Convergence packs missing inputs across documents in bounded requests (#1496).
@@ -5014,7 +5020,8 @@ instead of deleting them first. A removal is `remove_document`; the
 points that saved the sidecar call `checkpoint()`. The cold build stages
 every row on scratch disk and publishes one generation with
 `publish_generation`, which replays the stage; a streamed SQLite store
-writes each document as it is replayed (#1938). A forced rebuild publishes into the open store when
+writes each document as it is replayed, and a resident store builds its
+matrix from it in one copy (#1938). A forced rebuild publishes into the open store when
 its identity is the provider's, so readers keep its rows meanwhile and a
 rebuild that embeds nothing leaves them; a store that will not open or
 holds another identity is rebuilt into a fresh one (owned) or emptied in
@@ -5443,9 +5450,10 @@ another one, and is the explicit switch of choice C.
 
 Out of scope: reusing vectors for a renamed note (matching is by path);
 changing the default built-in store (#1900, § The default embedding store); quarantining damaged
-PostgreSQL tables; #1476's content-history recovery; a memory bound on a
-resident store's generation publish, which holds the whole generation in
-memory (#1938 measures it; a streamed SQLite or PostgreSQL publish streams).
+PostgreSQL tables; #1476's content-history recovery; a memory bound below
+one matrix on a resident store's generation publish, since that matrix is
+what the store serves (#1938 measures it; a streamed SQLite or PostgreSQL
+publish streams).
 
 ### Measuring the operating envelope (#1506)
 
