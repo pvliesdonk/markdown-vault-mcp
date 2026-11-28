@@ -7028,7 +7028,14 @@ rejected keeps accepting writes — the commit lands, `read` serves it back —
 so a client whose only route to the repository is this server believes it
 saved work that never left the host. `SyncHealthTracker` is the single place
 that remembers whether the clone is reaching its remote, and the MCP write
-path reports it.
+path reports it. The read-only `stats` tool and `stats://vault` resource
+attach the same snapshot (#1293), so a monitor can see it without writing.
+They read the published snapshot and run no git. Their own descriptions are
+engine-neutral, per the version-control north star's "What callers see"; the
+shared `remote` payload (reason codes and `detail` prose) is #2502's scope.
+The snapshot is process-local and resets on restart, and absence is not proof
+that the copies agree: an untracked outcome such as `fetch_failed` leaves no
+trace in it.
 
 - **Fed from the outcomes, not the call sites.** `_pull_pipeline` and
   `force_push` own the strategy-wide lock and call the implementations under

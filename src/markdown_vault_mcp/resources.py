@@ -31,6 +31,7 @@ from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
 from ._server_queryable import needs_queryable
+from ._tools._common import attach_remote_health
 from .domain import get_vault
 
 if TYPE_CHECKING:
@@ -155,10 +156,11 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_stats(
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Vault statistics: note, chunk and link counts and search capabilities."""
+        """Vault statistics, search capabilities and known problems exchanging changes."""
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
-        return _stale_resource(vault, json.dumps(asdict(result)), gen_before)
+        payload = attach_remote_health(vault, asdict(result))
+        return _stale_resource(vault, json.dumps(payload), gen_before)
 
     @mcp.resource(
         "tags://vault", mime_type="application/json", icons=_TOOL_ICONS["list_tags"]
