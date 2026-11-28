@@ -85,6 +85,7 @@ def search(  # noqa: PLR0913, RUF100 -- one CLI option per search control
         ClientOptions,
         resolve_settings,
     )
+    from markdown_vault_mcp._cli_errors import diagnostic, render_error
     from markdown_vault_mcp._cli_output import output_mode, render_reply
     from markdown_vault_mcp._cli_read import run_read
     from markdown_vault_mcp._http_logging import quiet_http_loggers
@@ -94,12 +95,16 @@ def search(  # noqa: PLR0913, RUF100 -- one CLI option per search control
         parse_filters,
     )
     from markdown_vault_mcp.cli import _local_search
-    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.exceptions import ConfigurationError, MarkdownMCPError
 
     quiet_http_loggers()
     try:
         if json_output and agent:
-            raise ClientError("--json and --agent cannot be combined.")
+            raise ClientError(
+                "--json and --agent cannot be combined.",
+                reason="conflicting_options",
+                hint="Choose either --json or --agent.",
+            )
         controls = SearchOptions(
             mode,
             parse_filters(filters or []),
@@ -111,7 +116,9 @@ def search(  # noqa: PLR0913, RUF100 -- one CLI option per search control
         settings = resolve_settings(options)
         if source_dir is not None and settings.url is not None:
             raise ClientError(
-                "--source-dir conflicts with a remote server; use --local."
+                "--source-dir conflicts with a remote server; use --local.",
+                reason="conflicting_options",
+                hint="Use --local with --source-dir, or omit --source-dir for a remote server.",
             )
         arguments = controls.arguments(query, limit, folder)
         reply = run_read(
@@ -123,14 +130,9 @@ def search(  # noqa: PLR0913, RUF100 -- one CLI option per search control
         )
         reply.meta["requested_mode"] = mode
         render_reply("search", reply, output_mode(json_output, agent))
-    except ClientError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(exc.code) from None
-    except InvalidRequestError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(1) from None
-    except ReadPayloadError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
-        raise typer.Exit(exc.code) from None
+    except (ClientError, ReadPayloadError, MarkdownMCPError, ConfigurationError) as exc:
+        error = diagnostic(exc)
+        render_error("search", error, output_mode(json_output, agent))
+        raise typer.Exit(error.code) from None
     except KeyboardInterrupt:
         raise typer.Exit(130) from None

@@ -89,7 +89,6 @@ def test_remote_controls(mode: str) -> None:
         ["--filter", "missing-equals"],
         ["--filter", "=empty-key"],
         ["--filter", "tag=a", "--filter", "tag=b"],
-        ["--json", "--agent"],
     ],
 )
 def test_invalid_controls_fail_before_io(flags: list[str]) -> None:

@@ -17,6 +17,7 @@ from markdown_vault_mcp import cli
 from tests.fixtures.logging import reader_logging
 
 _LIFETIME_CASE = """\
+import json
 import logging
 import threading
 
@@ -95,7 +96,7 @@ def test_later_capture(backend):
     result = CliRunner().invoke(cli.app, ["read", "alpha.md", *connection, "--json"])
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "ERROR:" in result.stderr
+    assert json.loads(result.stderr)["error"]["exit_code"] == 1
     assert "Traceback" not in result.stderr
     logs = sink.getvalue()
     assert "reindex_index_failed" in logs
