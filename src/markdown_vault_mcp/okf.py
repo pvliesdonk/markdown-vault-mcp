@@ -1330,6 +1330,61 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
     return content, converted, skipped
 
 
+def compose_regenerated_reserved(
+    stored: str | None, frontmatter: dict[str, Any] | None, body: str
+) -> str:
+    """Full text of a regenerated reserved file, keeping the stored block's bytes.
+
+    OKF 0.3 §8.1: "A producer that regenerates ``index.md`` MUST keep the
+    existing frontmatter of the bundle-root ``index.md``", and §4: a producer
+    "SHOULD NOT re-serialize values that it did not change" (#2485). When
+    *stored* opens with a block, the new *body* follows that block's exact
+    bytes, comments and quoting included; keys *frontmatter* adds are
+    spliced in (#2419). Only a block the splice cannot handle, or a file
+    with no block yet, is serialized whole.
+
+    Args:
+        stored: The file's current full text, or ``None`` when it does not
+            exist or cannot be read.
+        frontmatter: The mapping the regenerated file must carry, from
+            :meth:`ReservedFrontmatterPolicy.build`, or ``None`` for a
+            body-only file.
+        body: The regenerated body.
+
+    Returns:
+        The full text to write.
+    """
+    if frontmatter is None:
+        return body
+    if stored is not None:
+        kept = _keep_stored_block(stored, frontmatter, body)
+        if kept is not None:
+            return kept
+    return fm.dumps(
+        fm.Post(body, **frontmatter), handler=YAML12_HANDLER, sort_keys=False
+    )
+
+
+def _keep_stored_block(
+    stored: str, frontmatter: dict[str, Any], body: str
+) -> str | None:
+    """*body* after *stored*'s own block, or ``None`` when it cannot be kept."""
+    stored_body = strip_frontmatter_block(stored)
+    if stored_body == stored:
+        return None
+    candidate = stored[: len(stored) - len(stored_body)] + body
+    try:
+        stored_meta = dict(parse_frontmatter(stored).metadata)
+    except yaml.YAMLError:
+        return None
+    if stored_meta == frontmatter:
+        return candidate
+    added = {k: v for k, v in frontmatter.items() if k not in stored_meta}
+    if {**stored_meta, **added} != frontmatter:
+        return None
+    return splice_keys(candidate, added, expected=frontmatter)
+
+
 @dataclass(frozen=True)
 class ReservedFrontmatterPolicy:
     """Frontmatter the server's own generated reserved files must carry.

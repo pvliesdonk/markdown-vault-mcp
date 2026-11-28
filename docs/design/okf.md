@@ -866,7 +866,12 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 - **Existing keys win.** A hand-authored title and the root `index.md`'s
   `okf_version` declaration survive regeneration; only genuinely absent
   required fields are added. Regeneration never changes the declaration;
-  only upgrading a managed bundle does (north star, #2459).
+  only upgrading a managed bundle does (north star, #2459). The stored block
+  keeps its bytes: the new listing follows it unchanged, and an added
+  required field is spliced in, so comments and quoting survive (OKF 0.3
+  §8.1 "MUST keep the existing frontmatter", §4 "SHOULD NOT re-serialize",
+  #2485; `okf.compose_regenerated_reserved`). Only a block the splice
+  cannot handle is serialized whole.
 - **`title_field` gets the derived title** (the same H1 the body builders
   emit); any other required field is seeded as `null`, since the gate tests
   presence rather than value and the server has nothing truthful to put there.
