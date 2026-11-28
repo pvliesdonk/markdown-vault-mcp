@@ -1868,6 +1868,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#replace_text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        replace_text
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fetch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2898,6 +2909,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#replace_text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        replace_text
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fetch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3402,6 +3424,92 @@ into it across the vault: rename for a whole folder.</p>
 <!-- DOMAIN-EXAMPLE-move_folder-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-move_folder-END -->
+
+<h2 id="replace_text"><code>replace_text</code><a class="headerlink" href="#replace_text" title="Permanent link">&para;</a></h2>
+<p><strong>Replace Text Across Notes.</strong> Destructive. Tags: <code>write</code>.</p>
+<p>Replace every match of one text or regular expression in the bodies of many
+notes; returns a preview with per-note diffs, or each note's outcome.</p>
+<p>Use edit for one change in one note. Frontmatter is never matched. A call
+with <code>dry_run</code> true returns a plan; the same arguments with <code>dry_run</code> false and
+that plan write it.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pattern</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Exact text to find, or a Python regular expression when regex is true.</td>
+</tr>
+<tr>
+<td><code>replacement</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Text each match becomes; with regex, <code>\1</code> and <code>\g&lt;name&gt;</code> insert capture groups.</td>
+</tr>
+<tr>
+<td><code>paths</code></td>
+<td><code>array of string \| null</code></td>
+<td><code>null</code></td>
+<td>Notes to cover, by path.</td>
+</tr>
+<tr>
+<td><code>folders</code></td>
+<td><code>array of string \| null</code></td>
+<td><code>null</code></td>
+<td>Folders whose notes are all covered, recursively; <code>""</code> is the whole vault. Paths with a part starting with <code>.</code> are left out.</td>
+</tr>
+<tr>
+<td><code>regex</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Treat pattern as a regular expression.</td>
+</tr>
+<tr>
+<td><code>dry_run</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>True previews and writes nothing; false writes the plan.</td>
+</tr>
+<tr>
+<td><code>plan</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>The plan the dry run returned; needed when <code>dry_run</code> is false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>A dry run returns <code>dry_run</code> (true), plan (str), replacements (int),
+scanned (int), notes (list of {path, replacements, diff,
+<code>diff_truncated</code>}; diff is null after the first 10 notes) and
+refused (list of {path, reason}: notes it will not write).</p>
+<p>A write returns <code>dry_run</code> (false), plan (str), the applied, skipped
+and refused counts (int), and notes (list of {path, status,
+reason}). Status is <code>applied</code>, <code>skipped</code> (the note changed just
+before its write, so it was left as it is) or <code>refused</code>. While
+the vault's git clone cannot reach its remote, <code>remote</code> (dict) is
+present too, and the change is committed locally only.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>ValueError: If the request is malformed or past a fixed bound, or a path is not a note inside the vault.</li>
+<li>DocumentNotFoundError: If a named note or folder does not exist.</li>
+<li>ToolError: If <code>dry_run</code> is false without a plan, or the notes no longer give the plan; nothing is written.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-replace_text-START -->
+<p>Change every <code>DD/MM/YYYY</code> date under <code>Journal/</code> to <code>YYYY-MM-DD</code>. First the dry run:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"pattern"</span><span class="p">:</span><span class="w"> </span><span class="s2">"(\\d{2})/(\\d{2})/(\\d{4})"</span><span class="p">,</span><span class="w"> </span><span class="nt">"replacement"</span><span class="p">:</span><span class="w"> </span><span class="s2">"\\3-\\2-\\1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">"folders"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"Journal"</span><span class="p">]}</span>
+</code></pre></div>
+<p>It returns the plan, each note it would change with its count and diff, and the notes it would leave alone. Nothing is written. After reviewing the diffs, send the same arguments with <code>"dry_run": false</code> and the returned <code>"plan"</code>. When a covered note changed in between, the call writes nothing and asks for a new dry run. Each note is written as <code>edit</code> writes it, and the call makes one commit on a git-backed vault.</p>
+<!-- DOMAIN-EXAMPLE-replace_text-END -->
 
 <h2 id="fetch"><code>fetch</code><a class="headerlink" href="#fetch" title="Permanent link">&para;</a></h2>
 <p><strong>Fetch to Vault.</strong> Changes state, not destructive. Idempotent. Tags: <code>write</code>.</p>

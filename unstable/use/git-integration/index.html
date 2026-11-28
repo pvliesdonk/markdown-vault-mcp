@@ -3275,7 +3275,7 @@ filenames retain the same spelling when Git decides which paths to stage.</p>
 A call that wrote one file commits under that file's path
 (<code>write: notes/one.md</code>), so an ordinary vault's log reads as it always
 did. A call that touched many primary files, such as
-<code>okf_convert_links</code>, produces one commit with the
+<code>okf_convert_links</code> or a <code>replace_text</code> that changed several notes, produces one commit with the
 subject <code>&lt;tool&gt;: N files</code>, where a per-file boundary produced one commit per
 file (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264">#1264</a>).
 With <code>OKF_WRITE</code> enabled, a single-note <code>write</code>, <code>edit</code>, <code>append</code> or
@@ -3763,7 +3763,7 @@ it.</p>
 <li>Bitbucket: account username</li>
 </ul>
 <h2 id="submodules-and-nested-repositories-in-the-vault">Submodules and nested repositories in the vault<a class="headerlink" href="#submodules-and-nested-repositories-in-the-vault" title="Permanent link">&para;</a></h2>
-<p>A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, attachment writes and OKF tools at their existing write checks.</p>
+<p>A git submodule or plain Git repository nested inside the vault is read-only. Its notes are indexed and searchable like any folder, but the vault's own repository cannot commit their changes. In managed and commit-only mode the write tools refuse a protected path and name the repository. This applies to <code>write</code>, <code>append</code>, <code>edit</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, attachment writes and OKF tools at their existing write checks. <code>replace_text</code> reports a note in such a repository as <code>refused</code> and writes the other notes.</p>
 <ul>
 <li><code>create_upload_link</code> refuses a <code>ref</code> inside a protected repository before creating a link, for notes and attachments. Choose a destination outside that repository. Download links can still read its files.</li>
 <li><code>fetch</code> refuses a <code>path</code> inside a protected repository before downloading anything. The save still applies the usual overwrite and etag checks.</li>

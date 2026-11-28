@@ -201,6 +201,46 @@ Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int) and `updated_lin
 - TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
 - IndexUnavailableError: If the index build failed; nothing is changed.
 
+## `replace_text`
+
+**Replace Text Across Notes.** Destructive. Tags: `write`.
+
+Replace every match of one text or regular expression in the bodies of many notes; returns a preview with per-note diffs, or each note's outcome.
+
+Use edit for one change in one note. Frontmatter is never matched. A call with `dry_run` true returns a plan; the same arguments with `dry_run` false and that plan write it.
+
+**Parameters**
+
+| Name          | Type                      | Default  | Description                                                                                                                  |
+| ------------- | ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `pattern`     | `string`                  | required | Exact text to find, or a Python regular expression when regex is true.                                                       |
+| `replacement` | `string`                  | `""`     | Text each match becomes; with regex, `\1` and `\g<name>` insert capture groups.                                              |
+| `paths`       | `array of string \| null` | `null`   | Notes to cover, by path.                                                                                                     |
+| `folders`     | `array of string \| null` | `null`   | Folders whose notes are all covered, recursively; `""` is the whole vault. Paths with a part starting with `.` are left out. |
+| `regex`       | `boolean`                 | `false`  | Treat pattern as a regular expression.                                                                                       |
+| `dry_run`     | `boolean`                 | `true`   | True previews and writes nothing; false writes the plan.                                                                     |
+| `plan`        | `string \| null`          | `null`   | The plan the dry run returned; needed when `dry_run` is false.                                                               |
+
+**Returns**
+
+A dry run returns `dry_run` (true), plan (str), replacements (int), scanned (int), notes (list of {path, replacements, diff, `diff_truncated`}; diff is null after the first 10 notes) and refused (list of {path, reason}: notes it will not write).
+
+A write returns `dry_run` (false), plan (str), the applied, skipped and refused counts (int), and notes (list of {path, status, reason}). Status is `applied`, `skipped` (the note changed just before its write, so it was left as it is) or `refused`. While the vault's git clone cannot reach its remote, `remote` (dict) is present too, and the change is committed locally only.
+
+**Outcomes and errors**
+
+- ValueError: If the request is malformed or past a fixed bound, or a path is not a note inside the vault.
+- DocumentNotFoundError: If a named note or folder does not exist.
+- ToolError: If `dry_run` is false without a plan, or the notes no longer give the plan; nothing is written.
+
+Change every `DD/MM/YYYY` date under `Journal/` to `YYYY-MM-DD`. First the dry run:
+
+```
+{"pattern": "(\\d{2})/(\\d{2})/(\\d{4})", "replacement": "\\3-\\2-\\1", "regex": true, "folders": ["Journal"]}
+```
+
+It returns the plan, each note it would change with its count and diff, and the notes it would leave alone. Nothing is written. After reviewing the diffs, send the same arguments with `"dry_run": false` and the returned `"plan"`. When a covered note changed in between, the call writes nothing and asks for a new dry run. Each note is written as `edit` writes it, and the call makes one commit on a git-backed vault.
+
 ## `fetch`
 
 **Fetch to Vault.** Changes state, not destructive. Idempotent. Tags: `write`.
