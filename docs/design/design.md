@@ -1213,7 +1213,9 @@ reader pages whole documents in path order, with each page read atomically. Chan
 vectors. Operating-system temporary files are removed when handles close, including at process termination; a create-then-unlink fallback has a brief interval in which termination can leave a name. An unavailable or full scratch directory fails preparation before
 publication. Compatible and owned stores retain previous vectors; an incompatible injected store is emptied before this preparation. Cleanup failures are logged without changing the build outcome.
 Custom non-scalar metadata remains resident to preserve its original objects.
-The built-in publishers still materialize their own generation copies. The
+A streamed SQLite store writes the replayed generation one document at a
+time inside its write transaction and holds no copy of it (#1938); the
+resident stores still materialize their own generation copies. The
 largest document and path bookkeeping also grow independently of the window.
 
 Convergence packs missing inputs across documents in bounded requests (#1496).
@@ -4700,7 +4702,16 @@ rename raising *unavailable*). That catches damage the open did not see, such
 as a damaged store whose identity still reads, which is refused as another
 model and rebuilt through `open_fresh`; it refuses a newer format instead, and
 that write empties a usable database inside its own transaction, so a
-conflict or an interrupt keeps the old rows. `embeddings_status` counts
+conflict or an interrupt keeps the old rows. A streamed store's
+`publish_generation` checks and writes each document as the generation
+arrives, inside that one transaction, keeping only the set of paths seen
+(#1938): a path seen twice, a refused row, or an error from the documents
+themselves rolls the whole publish back, and the previous generation
+stands. The database is created before the documents are read, so a store's
+first publish that fails leaves a file holding the schema and no identity;
+it opens as an empty store at generation 0, as no file does, which is also
+what a first write that conflicts leaves. A resident store checks the
+whole generation before it writes. `embeddings_status` counts
 the database's rows read-only before the store opens. Vectors keep their
 own file so keyword rebuilds never touch them; what WAL with `FULL`
 promises, why the WAL-reset bug does not reach this single-writer use, and
@@ -5000,9 +5011,10 @@ diff, dirty flush, purge loops) and changes only how it mutates. A
 document's rows are replaced in one `replace_document` call, so a vector
 the store refuses (another dimension, a NaN) keeps the document's old rows
 instead of deleting them first. A removal is `remove_document`; the
-points that saved the sidecar call `checkpoint()`. The cold build collects
-every row as float32 and publishes one generation with
-`publish_generation`. A forced rebuild publishes into the open store when
+points that saved the sidecar call `checkpoint()`. The cold build stages
+every row on scratch disk and publishes one generation with
+`publish_generation`, which replays the stage; a streamed SQLite store
+writes each document as it is replayed (#1938). A forced rebuild publishes into the open store when
 its identity is the provider's, so readers keep its rows meanwhile and a
 rebuild that embeds nothing leaves them; a store that will not open or
 holds another identity is rebuilt into a fresh one (owned) or emptied in
@@ -5431,9 +5443,9 @@ another one, and is the explicit switch of choice C.
 
 Out of scope: reusing vectors for a renamed note (matching is by path);
 changing the default built-in store (#1900, § The default embedding store); quarantining damaged
-PostgreSQL tables; #1476's content-history recovery; a memory bound on
-publishing a whole generation, which a full build already holds in memory
-today and #1506's envelope measures.
+PostgreSQL tables; #1476's content-history recovery; a memory bound on a
+resident store's generation publish, which holds the whole generation in
+memory (#1938 measures it; a streamed SQLite or PostgreSQL publish streams).
 
 ### Measuring the operating envelope (#1506)
 
