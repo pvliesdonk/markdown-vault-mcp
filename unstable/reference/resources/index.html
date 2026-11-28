@@ -2083,6 +2083,61 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#okf-speclicensemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/LICENSE.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specprovenancemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/PROVENANCE.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specskillmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/SKILL.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specspecmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/SPEC.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-spec_manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/_manifest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vault-workflowskillmd" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2920,6 +2975,61 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#okf-speclicensemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/LICENSE.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specprovenancemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/PROVENANCE.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specskillmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/SKILL.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-specspecmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/SPEC.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf-spec_manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf-spec/_manifest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vault-workflowskillmd" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3008,7 +3118,7 @@
 <li><code>recent://vault</code> as <a href="../tools/reader/#get_recent"><code>get_recent</code></a>, with an ISO 8601 <code>modified_at_iso</code> added to each note.</li>
 </ul>
 <p><code>config://vault</code> has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. <code>ui://markdown_vault_mcp/app.html</code> is the <a href="../../use/vault-explorer/">vault explorer</a>'s page, for clients that render MCP Apps.</p>
-<p>The <code>skill://</code> resources are the <code>vault-workflow</code> skill, which tells the model which vault tool to use when. A client that supports skills over MCP, such as Claude Code, lists it by name and description and loads it only when needed; to any other client the files are ordinary resources.</p>
+<p>The <code>skill://</code> resources are two skills. <code>vault-workflow</code> tells the model which vault tool to use when. <code>okf-spec</code> holds the text of the <a href="../../use/okf/#reading-the-specification">Open Knowledge Format</a> version the server follows, and is absent when OKF support is off. A client that supports skills over MCP, such as Claude Code, lists each skill by name and description and loads it only when needed; to any other client the files are ordinary resources.</p>
 <p>Every JSON resource reports index freshness in the read's <code>_meta.index_stale</code>, <code>true</code> while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's <code>wait_for_pending_writes</code> can.</p>
 <!-- DOMAIN-INTRO-END -->
 
@@ -3031,6 +3141,18 @@
 <p>The 20 most recently modified notes.</p>
 <h2 id="_app_shell"><code>_app_shell</code><a class="headerlink" href="#_app_shell" title="Permanent link">&para;</a></h2>
 <p><code>ui://markdown_vault_mcp/app.html</code> (text/html;profile=mcp-app)</p>
+<h2 id="okf-speclicensemd"><code>okf-spec/LICENSE.md</code><a class="headerlink" href="#okf-speclicensemd" title="Permanent link">&para;</a></h2>
+<p><code>skill://okf-spec/LICENSE.md</code> (text/markdown)</p>
+<h2 id="okf-specprovenancemd"><code>okf-spec/PROVENANCE.md</code><a class="headerlink" href="#okf-specprovenancemd" title="Permanent link">&para;</a></h2>
+<p><code>skill://okf-spec/PROVENANCE.md</code> (text/markdown)</p>
+<h2 id="okf-specskillmd"><code>okf-spec/SKILL.md</code><a class="headerlink" href="#okf-specskillmd" title="Permanent link">&para;</a></h2>
+<p><code>skill://okf-spec/SKILL.md</code> (text/markdown)</p>
+<p>Use when you create, edit, check or interpret notes in an Open Knowledge Format (OKF) bundle in this vault; holds the full text of OKF 0.3, the version this server reads and writes.</p>
+<h2 id="okf-specspecmd"><code>okf-spec/SPEC.md</code><a class="headerlink" href="#okf-specspecmd" title="Permanent link">&para;</a></h2>
+<p><code>skill://okf-spec/SPEC.md</code> (text/markdown)</p>
+<h2 id="okf-spec_manifest"><code>okf-spec/_manifest</code><a class="headerlink" href="#okf-spec_manifest" title="Permanent link">&para;</a></h2>
+<p><code>skill://okf-spec/_manifest</code> (application/json)</p>
+<p>File listing for okf-spec</p>
 <h2 id="vault-workflowskillmd"><code>vault-workflow/SKILL.md</code><a class="headerlink" href="#vault-workflowskillmd" title="Permanent link">&para;</a></h2>
 <p><code>skill://vault-workflow/SKILL.md</code> (text/markdown)</p>
 <p>Use when the user asks you to search, read, or reason about notes in their markdown vault; says which vault tool to use when, and how to chain them for good results.</p>

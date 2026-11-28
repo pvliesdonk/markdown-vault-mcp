@@ -1,6 +1,6 @@
 # Open Knowledge Format (OKF) with markdown-vault-mcp
 
-[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
+[Open Knowledge Format](https://github.com/open-knowledge-format/open-knowledge-format) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
 
 Note
 
@@ -93,6 +93,12 @@ Call `find_citing_notes(resource="https://example.org/source")` to find indexed 
 The reader uses CommonMark block and inline parsing with a small literal marker extension. It recognizes single-line labels with no whitespace, brackets or backslashes. It skips code spans and fences, escaped markers, HTML blocks and attributes, navigation links, images, wikilinks, and footnote definition blocks. A citation right after inline code, an inline link or a wikilink is still recognized. A marker right after other bracketed text, such as the reference-style link in `[text][ref][^a]`, is read as part of that link and skipped. Footnote definition prose never supplies the source join. Other Markdown dialect extensions are not interpreted; an empty result is not an exhaustive citation audit. The response's `syntax` and `scope` fields retain these limits.
 
 The existing whole-note read limits apply. The source list and body are parsed from one returned content string. `returned_text_sha256` hashes that complete string after line endings are normalized to LF and it is encoded as UTF-8. It is not the file's raw-byte etag or a portable file identity, and cannot be used as `if_match`. No index refresh, traversal, metadata write or permission change is part of this call. See the [tool reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/reader/#inspect_citations).
+
+## Reading the specification
+
+The server serves the text of the one OKF version it follows, 0.3, as the `okf-spec` skill, so an assistant that reaches your vault only through this server can read the format it is asked to write. The specification doesn't have to live in your vault as a note. A client that supports skills over MCP, such as Claude or Claude Code, lists the skill by name and description and loads it when the assistant needs it; to other clients its files are ordinary resources, such as `skill://okf-spec/SPEC.md`. The skill disappears with the OKF tools when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+The file is the specification exactly as the [Open Knowledge Format project](https://github.com/open-knowledge-format/open-knowledge-format) published it, under the Apache License 2.0. The skill carries that license and a note naming the exact revision. A server release that moves to a newer OKF version replaces it.
 
 ## Migrating an existing vault
 

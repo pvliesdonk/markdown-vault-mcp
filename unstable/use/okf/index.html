@@ -1448,6 +1448,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reading-the-specification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the specification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-an-existing-vault" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2993,6 +3004,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reading-the-specification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the specification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-an-existing-vault" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3157,7 +3179,7 @@
 
 
 <h1 id="open-knowledge-format-okf-with-markdown-vault-mcp">Open Knowledge Format (OKF) with markdown-vault-mcp<a class="headerlink" href="#open-knowledge-format-okf-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
-<p><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">Open Knowledge Format</a> (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.</p>
+<p><a href="https://github.com/open-knowledge-format/open-knowledge-format">Open Knowledge Format</a> (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.</p>
@@ -3286,6 +3308,9 @@ string after line endings are normalized to LF and it is encoded as UTF-8. It
 is not the file's raw-byte etag or a portable file identity, and cannot be used
 as <code>if_match</code>. No index refresh, traversal, metadata write or permission change
 is part of this call. See the <a href="../../reference/tools/reader/#inspect_citations">tool reference</a>.</p>
+<h2 id="reading-the-specification">Reading the specification<a class="headerlink" href="#reading-the-specification" title="Permanent link">&para;</a></h2>
+<p>The server serves the text of the one OKF version it follows, 0.3, as the <code>okf-spec</code> skill, so an assistant that reaches your vault only through this server can read the format it is asked to write. The specification doesn't have to live in your vault as a note. A client that supports skills over MCP, such as Claude or Claude Code, lists the skill by name and description and loads it when the assistant needs it; to other clients its files are ordinary resources, such as <code>skill://okf-spec/SPEC.md</code>. The skill disappears with the OKF tools when <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> is <code>off</code>.</p>
+<p>The file is the specification exactly as the <a href="https://github.com/open-knowledge-format/open-knowledge-format">Open Knowledge Format project</a> published it, under the Apache License 2.0. The skill carries that license and a note naming the exact revision. A server release that moves to a newer OKF version replaces it.</p>
 <h2 id="migrating-an-existing-vault">Migrating an existing vault<a class="headerlink" href="#migrating-an-existing-vault" title="Permanent link">&para;</a></h2>
 <p>Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.</p>
 <h3 id="1-audit">1. Audit<a class="headerlink" href="#1-audit" title="Permanent link">&para;</a></h3>

@@ -308,7 +308,7 @@ Claude calls the server's `get_server_info` tool, which reads the server's versi
 
 **With the plugin**, Claude Code asks for the plugin's settings when you enable it. Only the vault directory is required: the absolute path of the folder that holds your notes. For a first run, set **Read-only mode** to `true`. The plugin's default is `false`, which gives Claude the tools that change files. Restart Claude Code after answering, because the server starts with a session.
 
-The server serves a `vault-workflow` skill, with or without the plugin, that teaches Claude how to search, follow links and write safely. The plugin brings two more skills. `vault-summarize` handles summaries across many notes, with a read-only `vault-mapper` subagent. Ask Claude to set up or repair your vault and `vault-setup` looks for candidate folders, checks your choice and records it. A check at the start of each session says so when no vault directory is set, or the one set has gone.
+The server serves a `vault-workflow` skill, with or without the plugin, that teaches Claude how to search, follow links and write safely. Unless Open Knowledge Format support is off, it also serves `okf-spec`, the text of the [OKF](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/#reading-the-specification) version it follows. The plugin brings two more skills. `vault-summarize` handles summaries across many notes, with a read-only `vault-mapper` subagent. Ask Claude to set up or repair your vault and `vault-setup` looks for candidate folders, checks your choice and records it. A check at the start of each session says so when no vault directory is set, or the one set has gone.
 
 **With the command**, pass the same settings with `--env`:
 
@@ -3385,7 +3385,7 @@ The PARA and Zettelkasten workflow prompts, and the built-in ones such as `propo
 
 # Open Knowledge Format (OKF) with markdown-vault-mcp
 
-[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
+[Open Knowledge Format](https://github.com/open-knowledge-format/open-knowledge-format) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
 
 Note
 
@@ -3478,6 +3478,12 @@ Call `find_citing_notes(resource="https://example.org/source")` to find indexed 
 The reader uses CommonMark block and inline parsing with a small literal marker extension. It recognizes single-line labels with no whitespace, brackets or backslashes. It skips code spans and fences, escaped markers, HTML blocks and attributes, navigation links, images, wikilinks, and footnote definition blocks. A citation right after inline code, an inline link or a wikilink is still recognized. A marker right after other bracketed text, such as the reference-style link in `[text][ref][^a]`, is read as part of that link and skipped. Footnote definition prose never supplies the source join. Other Markdown dialect extensions are not interpreted; an empty result is not an exhaustive citation audit. The response's `syntax` and `scope` fields retain these limits.
 
 The existing whole-note read limits apply. The source list and body are parsed from one returned content string. `returned_text_sha256` hashes that complete string after line endings are normalized to LF and it is encoded as UTF-8. It is not the file's raw-byte etag or a portable file identity, and cannot be used as `if_match`. No index refresh, traversal, metadata write or permission change is part of this call. See the [tool reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/reader/#inspect_citations).
+
+## Reading the specification
+
+The server serves the text of the one OKF version it follows, 0.3, as the `okf-spec` skill, so an assistant that reaches your vault only through this server can read the format it is asked to write. The specification doesn't have to live in your vault as a note. A client that supports skills over MCP, such as Claude or Claude Code, lists the skill by name and description and loads it when the assistant needs it; to other clients its files are ordinary resources, such as `skill://okf-spec/SPEC.md`. The skill disappears with the OKF tools when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+The file is the specification exactly as the [Open Knowledge Format project](https://github.com/open-knowledge-format/open-knowledge-format) published it, under the Apache License 2.0. The skill carries that license and a note naming the exact revision. A server release that moves to a newer OKF version replaces it.
 
 ## Migrating an existing vault
 
@@ -7482,7 +7488,7 @@ Most JSON resources here serve the same data as a tool, whose reference describe
 
 `config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/vault-explorer/index.md)'s page, for clients that render MCP Apps.
 
-The `skill://` resources are the `vault-workflow` skill, which tells the model which vault tool to use when. A client that supports skills over MCP, such as Claude Code, lists it by name and description and loads it only when needed; to any other client the files are ordinary resources.
+The `skill://` resources are two skills. `vault-workflow` tells the model which vault tool to use when. `okf-spec` holds the text of the [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/#reading-the-specification) version the server follows, and is absent when OKF support is off. A client that supports skills over MCP, such as Claude Code, lists each skill by name and description and loads it only when needed; to any other client the files are ordinary resources.
 
 Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 
@@ -7523,6 +7529,30 @@ The 20 most recently modified notes.
 ## `_app_shell`
 
 `ui://markdown_vault_mcp/app.html` (text/html;profile=mcp-app)
+
+## `okf-spec/LICENSE.md`
+
+`skill://okf-spec/LICENSE.md` (text/markdown)
+
+## `okf-spec/PROVENANCE.md`
+
+`skill://okf-spec/PROVENANCE.md` (text/markdown)
+
+## `okf-spec/SKILL.md`
+
+`skill://okf-spec/SKILL.md` (text/markdown)
+
+Use when you create, edit, check or interpret notes in an Open Knowledge Format (OKF) bundle in this vault; holds the full text of OKF 0.3, the version this server reads and writes.
+
+## `okf-spec/SPEC.md`
+
+`skill://okf-spec/SPEC.md` (text/markdown)
+
+## `okf-spec/_manifest`
+
+`skill://okf-spec/_manifest` (application/json)
+
+File listing for okf-spec
 
 ## `vault-workflow/SKILL.md`
 
