@@ -67,12 +67,44 @@ def test_duplicate_ids_are_ambiguous_even_when_resources_equal() -> None:
     assert unused.duplicate_ids == ["a"]
 
 
-@pytest.mark.parametrize("sources", [None, "wrong", {"id": "a"}, 42])
-def test_malformed_source_collection_is_visible(sources: object) -> None:
+@pytest.mark.parametrize("sources", ["wrong", 42])
+def test_a_single_non_mapping_source_is_visible(sources: object) -> None:
+    # OKF 0.3 §11.2 rule 2: one item is a list with one item (#2429).
     report = inspect_citation_text("one.md", _note(sources, "[^a]"))
     assert report.sources == sources
-    assert report.source_issues == ["sources is not a list; no source IDs joined"]
+    assert report.source_issues == ["sources[0] is not a mapping"]
     assert report.citations[0].status == "unmatched"
+
+
+@pytest.mark.parametrize("sources", [None, "", []])
+def test_an_absent_source_collection_reports_nothing(sources: object) -> None:
+    # §11.2 rule 1: null, "" and [] are the same as an absent key.
+    report = inspect_citation_text("one.md", _note(sources, "[^a]"))
+    assert report.source_issues == []
+    assert report.citations[0].status == "unmatched"
+
+
+def test_a_single_source_mapping_is_joined() -> None:
+    source = {"id": "a", "resource": "urn:s"}
+    report = inspect_citation_text("one.md", _note(source, "[^a]"))
+    assert report.sources == source
+    assert report.source_issues == []
+    assert report.citations[0].status == "matched"
+    assert report.citations[0].source_indices == [0]
+    keyless = inspect_citation_text("one.md", _note({"id": "a"}, "[^a]"))
+    assert keyless.source_issues == [
+        "sources[0].resource is missing or not a nonempty string"
+    ]
+
+
+def test_a_single_source_mapping_yields_citation_edges() -> None:
+    from markdown_vault_mcp.citations import citation_edges
+
+    edges = citation_edges(_note({"id": "s", "resource": "https://x"}, "[^s]"))
+    assert [(e.label, e.status, e.resource) for e in edges] == [
+        ("", "declared", "https://x"),
+        ("s", "matched", "https://x"),
+    ]
 
 
 def test_malformed_records_do_not_hide_literal_matches() -> None:

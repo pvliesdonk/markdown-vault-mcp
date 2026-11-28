@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_it import MarkdownIt
 
+from markdown_vault_mcp.okf import source_entries
 from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
 
 if TYPE_CHECKING:
@@ -69,7 +70,9 @@ class CitationReport:
         "etag or portable file identity. " + CITATION_MARKER_SCOPE + " "
         "Matches are literal attribution, "
         "not support or truth; unmatched markers may be ordinary footnotes. "
-        "Source indices are zero-based, not stable keys; IDs are stable exact strings. "
+        "Source indices are zero-based into sources read as a list (one entry "
+        "written without a list is 0), not stable keys; IDs are stable exact "
+        "strings. "
         "No resources were opened."
     )
 
@@ -156,13 +159,18 @@ def _markers(body: str) -> dict[str, int]:
     return labels
 
 
-def _source_ids(sources: Any) -> tuple[dict[str, list[int]], list[str], list[int]]:
+def _source_ids(
+    entries: list[Any],
+) -> tuple[dict[str, list[int]], list[str], list[int]]:
+    """Index the ``id`` of each ``sources`` entry, read as OKF 0.3 §11.2 lists.
+
+    *entries* is :func:`~markdown_vault_mcp.okf.source_entries`' list: one
+    item written without a list is entry 0, and an absent value has none.
+    """
     ids: dict[str, list[int]] = {}
     issues: list[str] = []
     unkeyed: list[int] = []
-    if not isinstance(sources, list):
-        return ids, ["sources is not a list; no source IDs joined"], unkeyed
-    for index, source in enumerate(sources):
+    for index, source in enumerate(entries):
         if not isinstance(source, dict):
             issues.append(f"sources[{index}] is not a mapping")
             continue
@@ -195,9 +203,7 @@ def inspect_citation_text(path: str, content: str) -> CitationReport:
     text = content.replace("\r\n", "\n").replace("\r", "\n")
     post = parse_frontmatter(text)
     sources = post.metadata.get("sources")
-    ids, issues, unkeyed = (
-        _source_ids(sources) if "sources" in post.metadata else ({}, [], [])
-    )
+    ids, issues, unkeyed = _source_ids(source_entries(dict(post.metadata)))
     markers = _markers(strip_frontmatter_block(text))
     citations = _join(markers, ids)
     return CitationReport(
@@ -235,9 +241,7 @@ def citation_edges(text: str) -> list[CitationEdge]:
     if "[^" not in text:
         return []
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    sources = parse_frontmatter(text).metadata.get("sources")
-    if not isinstance(sources, list):
-        return []
+    sources = source_entries(dict(parse_frontmatter(text).metadata))
     ids, _, _ = _source_ids(sources)
     declared = dict.fromkeys(
         source["resource"]
