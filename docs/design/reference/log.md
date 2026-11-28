@@ -9,6 +9,9 @@
   without its path-identity claims, which the code no longer relies on; adds
   the delayed release after a crash and binary mode. Three claims stay
   `[unverified]`, and nothing was run on Windows. Next review: 2027-05-28.
+- [Open Knowledge Format v0.3](okf-v0.3.md) now lists the served `okf-spec`
+  skill among its dependants, and [Claude as an MCP client](claude-mcp-client.md)
+  pins the skill size limits to a test (#2090). No claim changed.
 - [Open Knowledge Format v0.3](okf-v0.3.md): every rule the refute pass had
   left unchecked now has a verdict (#2402). Three are departures with bugs
   (#2452, #2454, #2455); #2453 was filed too, then closed by the account

@@ -19,6 +19,10 @@ MCP_JSON=".claude-plugin/plugin/.mcp.json"
 [[ -f "$MCP_JSON" ]] || fail "$MCP_JSON missing"
 [[ -f "src/markdown_vault_mcp/skills/vault-workflow/SKILL.md" ]] \
   || fail "vault-workflow skill missing from the package"
+for f in SKILL.md SPEC.md LICENSE.md PROVENANCE.md; do
+  [[ -f "src/markdown_vault_mcp/skills/okf-spec/$f" ]] \
+    || fail "okf-spec skill file $f missing from the package"
+done
 [[ -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" ]] \
   || fail "vault-summarize skill missing from plugin"
 [[ -f ".claude-plugin/plugin/agents/vault-mapper.md" ]] \

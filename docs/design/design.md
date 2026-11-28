@@ -6308,12 +6308,31 @@ extension (`skills/list`, `skills/get`) and serves each file as a `skill://`
 resource. A host that implements the extension shows the model the skill's
 name and description and loads the body on demand
 ([reference](reference/claude-mcp-client.md)). The folder holds
-`vault-workflow` only: `vault-setup` repairs a server that is down, so that
-server cannot serve it, and `vault-summarize` relies on the plugin's
-`vault-mapper` agent. Both stay in the Claude Code plugin, which drops its
-copy of `vault-workflow`: the plugin's own server now serves it. A skill
-carries long-form workflow guidance only; a fact a single call depends on
-stays in that tool's description or result.
+`vault-workflow` and `okf-spec`. `vault-setup` repairs a server that is
+down, so that server cannot serve it, and `vault-summarize` relies on the
+plugin's `vault-mapper` agent. Both stay in the Claude Code plugin, which
+drops its copy of `vault-workflow`: the plugin's own server now serves it. A
+skill carries long-form guidance only; a fact a single call depends on stays
+in that tool's description or result. The server instructions name
+neither skill: a host that implements the extension lists both by name and
+description.
+
+`okf-spec` (#2090) gives an agent that reaches the vault only over MCP the
+text of the one OKF version the server reads and writes. It vendors `SPEC.md`
+of OKF 0.3 byte for byte from `open-knowledge-format/open-knowledge-format`
+at commit `527e81aff5`, the commit [reference/okf-v0.3.md](reference/okf-v0.3.md)
+reads, with the upstream Apache-2.0 `LICENSE.md` and a `PROVENANCE.md` beside
+it; the package metadata stays MIT. `tests/test_served_skills.py` pins the
+file's git blob id, so a new OKF version replaces the file, the provenance
+note, the pin and the reference page together, as the server upgrade the
+OKF north star calls a version move. A skill belonging to a feature is
+listed in `_skills.SKILL_TAGS` under the feature's tag, and
+`_skills.disable_skills` hides its `skill://` URIs by name wherever the
+feature's tools are hidden: `okf-spec` goes when `okf_mode` is `off`, in the
+same pass as the `okf` tools. Tagging the files themselves is not open,
+because `SkillsDirectoryProvider` serves them untagged and the skills
+extension refuses a provider that carries a transform. `skills/list` drops a
+skill once any of its files is unreadable.
 
 **TOC surface** (``get_toc`` tool and ``toc://vault/{path}`` resource): dispatch is by suffix. Paths ending in ``.md`` are note mode; all other paths are folder-prefix mode.
 

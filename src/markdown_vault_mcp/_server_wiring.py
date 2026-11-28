@@ -247,7 +247,8 @@ def _register_jobs(mcp: FastMCP, config: ProjectConfig) -> None:
 
 
 def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
-    """Hide summarize, the Apps UI tools and the OKF tools when off."""
+    """Hide summarize, the Apps UI tools and the OKF tools and skill when off."""
+    from markdown_vault_mcp._skills import disable_skills
     from markdown_vault_mcp._tools import summarize as summarize_tools
 
     # Hide the LLM-backed summarize tool unless a summarization backend is
@@ -276,8 +277,10 @@ def _hide_by_feature(mcp: FastMCP, config: ProjectConfig) -> None:
         mcp.disable(tags={"apps-ui"})
     if config.content.okf_mode == "off":
         # OKF semantics vetoed by the operator: hide the OKF tool surface
-        # entirely (same pattern as the apps-ui toggle).
+        # entirely (same pattern as the apps-ui toggle), the okf-spec skill
+        # included.
         mcp.disable(tags={"okf"})
+        disable_skills(mcp, {"okf"})
     if not config.content.okf_write or config.content.okf_verify == "off":
         # The enforced-write layer (#964) is opt-in: hide its tool surface
         # (okf_verify) unless OKF_WRITE is enabled. Provenance stamping is a
