@@ -149,6 +149,49 @@ class TestGitSync:
         # dry_run key is only present when the caller passed dry_run=True.
         assert "dry_run" not in payload
 
+    async def test_failed_push_does_not_expose_remote_stderr(
+        self, git_repo_pair: GitRepoPair, _git_managed_env: Path
+    ) -> None:
+        """A rejected push reports failure without exposing the remote's output."""
+        hook = git_repo_pair.remote_path / "hooks" / "pre-receive"
+        hook.write_text(
+            "#!/bin/sh\necho 'synthetic private remote detail' >&2\nexit 1\n"
+        )
+        hook.chmod(0o755)
+        (git_repo_pair.local_path / "local.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "local.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local commit")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool("git_sync", {"direction": "push"})
+
+        payload = _parse_tool_data(result)
+        assert payload["push"]["applied"] is False
+        assert payload["push"]["reason"] == "push_failed"
+        assert "hint" not in payload["push"]
+        assert "synthetic private remote detail" not in str(result.content)
+
+    async def test_non_fast_forward_push_keeps_recovery_hint(
+        self, git_repo_pair: GitRepoPair, _git_managed_env: Path
+    ) -> None:
+        """A rejected divergent push still tells the caller how to recover."""
+        _seed_remote_commit(
+            git_repo_pair, clone_name="other", file_name="remote.md", body="remote\n"
+        )
+        (git_repo_pair.local_path / "local.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "local.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local commit")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool("git_sync", {"direction": "push"})
+
+        push = _parse_tool_data(result)["push"]
+        assert push["applied"] is False
+        assert push["reason"] == "non_fast_forward"
+        assert push["hint"]
+
     async def test_pull_only_direction_skips_push(
         self, git_repo_pair: GitRepoPair, _git_managed_env: Path
     ) -> None:

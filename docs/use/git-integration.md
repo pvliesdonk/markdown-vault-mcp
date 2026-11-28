@@ -188,8 +188,8 @@ The symptom is the same either way: writes succeed, `read` serves them back,
 and the commits accumulate in the clone without reaching the remote. See
 [When the clone stops reaching its remote](#when-the-clone-stops-reaching-its-remote)
 for what that looks like, and
-[Manual sync](#manual-sync-git_sync-tool) for the one call that returns the
-remote's actual refusal message.
+[Manual sync](#manual-sync-git_sync-tool) to check the push outcome and
+find diagnostic details in the server logs.
 - Periodic pull uses fast-forward-only updates.
 - After every periodic tick, the index is brought up to the current HEAD when
   the two differ. A reindex that failed after an earlier pull is retried on
@@ -361,16 +361,10 @@ Use `direction="pull"` or `direction="push"` to skip a leg. In
 succeeded; otherwise `push` stays `null` and the LLM should inspect
 `pull.reason` (and `pull.conflict_files`) before retrying.
 
-**`git_sync(direction="push")` is how you see why a push was refused.** It
-runs a real push and returns the remote's own words in `push.hint`:
-
-```
-remote: GitLab: You are not allowed to push code to protected branches on this project.
-```
-
-That is the fastest route from "the vault is not replicating" to the sentence
-that names the cause, and it is worth reaching for before inspecting the
-container or reproducing the push by hand.
+A real push that fails reports `applied=false` and `reason="push_failed"`.
+The result does not include the remote's output; operators can inspect the
+server logs for diagnostic details. A non-fast-forward rejection instead
+returns `reason="non_fast_forward"` with a hint to pull and retry.
 
 Do not substitute `git push --dry-run` for it. A dry-run push negotiates with
 the remote but never runs its pre-receive hooks, which is where a protected

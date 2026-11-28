@@ -219,8 +219,8 @@ class PushResult:
             See module-level ``PUSH_REASON_*`` constants for the
             string values.
         hint: Operator-facing remediation suggestion when ``applied=False``.
-            Surfaced verbatim in the MCP tool response so the caller can
-            see exactly what to do next.
+            The MCP tool omits it for ``push_failed`` because it contains
+            git output; other hints are included when present.
     """
 
     applied: bool
