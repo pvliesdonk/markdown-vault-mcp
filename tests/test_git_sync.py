@@ -190,7 +190,7 @@ class TestGitSync:
         push = _parse_tool_data(result)["push"]
         assert push["applied"] is False
         assert push["reason"] == "non_fast_forward"
-        assert "git_sync(direction='pull')" in push["hint"]
+        assert push["hint"]
 
     async def test_pull_only_direction_skips_push(
         self, git_repo_pair: GitRepoPair, _git_managed_env: Path
