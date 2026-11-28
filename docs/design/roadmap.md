@@ -793,16 +793,18 @@ that statement (§ Revisions); the OKF entries no longer have their 18 November
 membership. Since 21 November 2026 every ordinal from `025` to `041`
 is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
 
-- **[020 north-star-governance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/43)**:
+- **[north-star-governance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/43)**
+  (formerly `020`; not a release package):
   epic [#2460][2460], refinement [#2461][2461], the OKF north star's
   reopening [#2459][2459], the three features that carry the rule
   ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
   for the other subsystems ([#2462][2462] to [#2467][2467]), and writing the
   storage, library, release and documentation north stars that followed
   ([#2538][2538], [#2540][2540], [#2547][2547], [#2557][2557]), and the
-  template-artifact removal ([#2558][2558]). Docs and process, which cut no release on their own,
-  like `010 template-detach`: the reopening's code departures went to the OKF
-  packages below.
+  template-artifact removal ([#2558][2558]). Docs and process, which cut no
+  release on their own, like `010 template-detach`: the reopening's code
+  departures went to the OKF packages below. The milestone carries no ordinal,
+  so a stable cut never closes it; it is closed by hand.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
   (major): epic [#2401][2401]: research [#2403][2403] first, then one bug per
   departure from the spec, including the three the north-star audit found
@@ -1558,6 +1560,14 @@ scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
 ### 28 November 2026 — the north-star spikes report
+
+`stated` — `025` is an actual release package, so the governance milestone is
+renamed, "otherwise release will close it" (owner, 28 November 2026).
+
+`derived` — A stable cut closes the lowest open milestone titled `NNN name`
+(`scripts/package_milestones.py`). `020 north-star-governance` was lower than
+`025` and cuts no release, so it is now `north-star-governance`, with no
+ordinal. `020` in the entries below and earlier names this milestone.
 
 `stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
 with what we are already doing." On the spike's questions, the owner chose
