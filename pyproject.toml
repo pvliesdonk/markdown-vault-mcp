@@ -27,7 +27,8 @@ keywords = [
     # PROJECT-KEYWORDS-END
 ]
 classifiers = [
-    # PROJECT-CLASSIFIERS-START — development status and topic classifiers.
+    # PROJECT-CLASSIFIERS-START — development status and any
+    # audience/topic/framework classifiers.
     "Development Status :: 5 - Production/Stable",
     "Topic :: Text Processing :: Markup :: Markdown",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -156,7 +157,7 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # version it knows, and the publisher's twine refuses metadata it does not
 # know -- an invariant spanning this file and release.yml's
 # gh-action-pypi-publish pin.  Unpinned, this side moves on hatchling's
-# release schedule rather than on a deliberate update, and the break lands at
+# release schedule rather than on anyone's decision, and the break lands at
 # release time (#479).
 #
 # The ceiling has to bind at the minor, because that is where the metadata
