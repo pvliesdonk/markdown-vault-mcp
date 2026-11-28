@@ -26,7 +26,7 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, exact queries, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads. Exact query methods check library index readiness and raise `IndexUnavailableError` if unavailable; an unavailable index is never an exact zero. They accept the [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) and return the same projections as the [keyword backend](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#exact-keyword-queries).
+Search, exact queries, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads. Use `read_attachment_bytes` for raw bytes; `read_attachment` returns base64 content and metadata. Exact query methods check library index readiness and raise `IndexUnavailableError` if unavailable; an unavailable index is never an exact zero. They accept the [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) and return the same projections as the [keyword backend](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#exact-keyword-queries).
 
 ```
 from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
@@ -561,6 +561,24 @@ Returns:
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 
+### `read_etag(path)`
+
+Return a note's or attachment's etag without its body, at any size.
+
+The etag is the lowercase hex SHA-256 of the file's raw bytes, equal to a whole-file :meth:`read` or :meth:`read_attachment` etag. No read cap applies: a large file is hashed in full on this side and none of its bytes are returned. Delegates to :meth:`DocumentManager.read_etag`.
+
+Parameters:
+
+| Name   | Type  | Description                               | Default    |
+| ------ | ----- | ----------------------------------------- | ---------- |
+| `path` | `str` | Relative note or allowed attachment path. | *required* |
+
+Returns:
+
+| Name | Type       | Description                               |
+| ---- | ---------- | ----------------------------------------- |
+| `A`  | `FileEtag` | class:~markdown_vault_mcp.types.FileEtag. |
+
 ### `attachment_size(path)`
 
 Return an attachment's on-disk byte size without reading it.
@@ -572,6 +590,32 @@ Delegates to :meth:`DocumentManager.attachment_size`.
 Read the binary content of a non-.md attachment.
 
 Delegates to :meth:`DocumentManager.read_attachment`.
+
+### `read_attachment_bytes(path)`
+
+Read a non-.md attachment's raw bytes.
+
+Unlike :meth:`read_attachment`, this returns the bytes alone, without base64 encoding, an etag or other metadata. Like it, it applies no size cap. Delegates to :meth:`DocumentManager.read_attachment_bytes`.
+
+Parameters:
+
+| Name   | Type  | Description               | Default    |
+| ------ | ----- | ------------------------- | ---------- |
+| `path` | `str` | Relative attachment path. | *required* |
+
+Returns:
+
+| Type    | Description           |
+| ------- | --------------------- |
+| `bytes` | The attachment bytes. |
+
+Raises:
+
+| Type                    | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `InvalidRequestError`   | If the path is invalid.                      |
+| `DocumentNotFoundError` | If no regular file is at the path.           |
+| `ValueError`            | If the file system refuses the stat or read. |
 
 ## WriterFacet
 

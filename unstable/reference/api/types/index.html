@@ -2348,6 +2348,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.FileEtag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FileEtag
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown_vault_mcp.types.NoteInfo" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3256,6 +3267,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.FileEtag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FileEtag
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown_vault_mcp.types.NoteInfo" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3869,7 +3891,10 @@ above it (#1391).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Opaque hash of file content for optimistic concurrency checks.</p>
+                <p>Lowercase hex SHA-256 of the file's raw bytes, frontmatter
+and any byte-order mark included; pass it as <code>if_match</code> to
+guard a write. It hashes the bytes on disk, not <code>content</code>,
+which is decoded text. Empty for a section read.</p>
               </div>
             </td>
           </tr>
@@ -3987,6 +4012,118 @@ section read of the note on disk returns.  Either way this is the
 committed blob, so a repository with <code>core.autocrlf</code> or an
 <code>eol</code> attribute returns the normalised form rather than whatever
 line endings the file had on disk.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.types.FileEtag" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">FileEtag</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">size_bytes</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">etag</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.types.FileEtag" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>A file's etag without its body, returned by :meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read_etag</code>.</p>
+<p>Covers notes and allowed attachments alike, at any size: the read caps
+do not apply, because no bytes are returned.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.FileEtag.path">path</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative path from the vault root.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.FileEtag.size_bytes">size_bytes</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>File size in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.FileEtag.modified_at">modified_at</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Last-modified time as a Unix timestamp float.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.FileEtag.etag">etag</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Lowercase hex SHA-256 of the file's raw bytes, the same value
+a whole-file :meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read</code>
+or :meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment</code>
+returns and <code>if_match</code> checks.</p>
               </div>
             </td>
           </tr>
@@ -6957,7 +7094,8 @@ notes indexed under it were kept as they were (#1625).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Opaque hash for optimistic concurrency checks.</p>
+                <p>Lowercase hex SHA-256 of the file's raw bytes; pass it as
+<code>if_match</code> to guard a write.</p>
               </div>
             </td>
           </tr>

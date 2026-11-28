@@ -2440,6 +2440,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_etag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_etag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.attachment_size" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2455,6 +2466,17 @@
     <span class="md-ellipsis">
       
         read_attachment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment_bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_attachment_bytes
       
     </span>
   </a>
@@ -3759,6 +3781,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_etag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_etag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.attachment_size" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3774,6 +3807,17 @@
     <span class="md-ellipsis">
       
         read_attachment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment_bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_attachment_bytes
       
     </span>
   </a>
@@ -4322,10 +4366,12 @@ reached through the <code>reader</code> / <code>writer</code> / <code>graph</cod
 </code></pre></div>
 <h2 id="readerfacet">ReaderFacet<a class="headerlink" href="#readerfacet" title="Permanent link">&para;</a></h2>
 <p>Search, exact queries, read, listing, table-of-contents, similarity, context,
-history/diff, revision reads, and attachment reads. Exact query methods check
-library index readiness and raise <code>IndexUnavailableError</code> if unavailable; an
-unavailable index is never an exact zero. They accept the <a href="../types/#exact-query-types">query types</a>
-and return the same projections as the <a href="../storage/#exact-keyword-queries">keyword backend</a>.</p>
+history/diff, revision reads, and attachment reads. Use <code>read_attachment_bytes</code>
+for raw bytes; <code>read_attachment</code> returns base64 content and metadata. Exact
+query methods check library index readiness and raise <code>IndexUnavailableError</code>
+if unavailable; an unavailable index is never an exact zero. They accept the
+<a href="../types/#exact-query-types">query types</a> and return the same projections as the
+<a href="../storage/#exact-keyword-queries">keyword backend</a>.</p>
 <div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.query_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">NoteGrouping</span><span class="p">,</span> <span class="n">NoteQuery</span>
 
 <span class="n">request</span> <span class="o">=</span> <span class="n">NoteQuery</span><span class="p">(</span><span class="n">query</span><span class="o">=</span><span class="s2">"release"</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">"body"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
@@ -7467,6 +7513,86 @@ type.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.read_etag" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_etag</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_etag" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return a note's or attachment's etag without its body, at any size.</p>
+<p>The etag is the lowercase hex SHA-256 of the file's raw bytes, equal
+to a whole-file :meth:<code>read</code> or :meth:<code>read_attachment</code> etag. No read
+cap applies: a large file is hashed in full on this side and none of
+its bytes are returned. Delegates to :meth:<code>DocumentManager.read_etag</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative note or allowed attachment path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="FileEtag(path, size_bytes, modified_at, etag)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.FileEtag)" href="../types/#markdown_vault_mcp.types.FileEtag">FileEtag</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.FileEtag</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.attachment_size" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">attachment_size</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
 
@@ -7496,6 +7622,124 @@ type.</p>
 
         <p>Read the binary content of a non-.md attachment.</p>
 <p>Delegates to :meth:<code>DocumentManager.read_attachment</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment_bytes" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_attachment_bytes</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment_bytes" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Read a non-.md attachment's raw bytes.</p>
+<p>Unlike :meth:<code>read_attachment</code>, this returns the bytes alone, without
+base64 encoding, an etag or other metadata. Like it, it applies no
+size cap. Delegates to :meth:<code>DocumentManager.read_attachment_bytes</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative attachment path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="bytes">bytes</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The attachment bytes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the path is invalid.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If no regular file is at the path.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the file system refuses the stat or read.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>

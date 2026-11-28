@@ -66,19 +66,20 @@ Look paths up with search or `list_documents` first rather than guessing them.
 
 **Parameters**
 
-| Name       | Type             | Default  | Description                                                                                                                                                                                                                                      |
-| ---------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`     | `string`         | required | Path in the vault, such as `"Journal/note.md"` or `"assets/diagram.pdf"`; case-sensitive.                                                                                                                                                        |
-| `section`  | `string \| null` | `null`   | A heading, such as the heading field of a search result; returns that section and its sub-sections instead of the whole note. Notes only.                                                                                                        |
-| `revision` | `string \| null` | `null`   | A commit SHA from `get_history` or from a write result's `previous_revision`; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision. |
+| Name              | Type             | Default  | Description                                                                                                                                                                                                                                      |
+| ----------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`            | `string`         | required | Path in the vault, such as `"Journal/note.md"` or `"assets/diagram.pdf"`; case-sensitive.                                                                                                                                                        |
+| `section`         | `string \| null` | `null`   | A heading, such as the heading field of a search result; returns that section and its sub-sections instead of the whole note. Notes only.                                                                                                        |
+| `revision`        | `string \| null` | `null`   | A commit SHA from `get_history` or from a write result's `previous_revision`; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision. |
+| `include_content` | `boolean`        | `true`   | False returns only path, `size_bytes`, `modified_at` and etag, the SHA-256 of the whole file's raw bytes, at any file size.                                                                                                                      |
 
 **Returns**
 
-For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, the note's 'sources' list when present, and on a deprecated note `superseded_by`: its replacement's vault path, or null). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent, null, empty or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor; `at` a date or an offset date-time). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
+For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, the note's 'sources' list when present, and on a deprecated note `superseded_by`: its replacement's vault path, or null). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent, null, empty or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor; `at` a date or an offset date-time). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value is the lowercase hex SHA-256 of the file's raw bytes, frontmatter and any byte-order mark included, so it is not a hash of 'content'. It can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With `include_content`=False: dict with path, `size_bytes`, `modified_at` and etag, the same etag a whole-file read returns, for notes and attachments of any size. Neither read size limit applies; the server hashes the whole file and returns none of it. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
 
 **Outcomes and errors**
 
-- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. A whole note over the size limit this server returns in one read (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by `section`. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).
+- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. A whole note over the size limit this server returns in one read (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by `section`. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content). With `include_content=False`: if `section` or `revision` is also given.
 - DocumentUnreadableError: If the file cannot be read or decoded, its frontmatter does not parse, or git stores it in LFS at that revision.
 
 Read a note:
@@ -102,6 +103,25 @@ returns
 ```
 
 `content` is the raw file, frontmatter included. Pass `etag` as `if_match` to `write`, `edit`, `delete` or `rename` to change the note you read.
+
+Get a file's etag without its body, for a note or an attachment of any size:
+
+```
+{"path": "assets/recording.mp4", "include_content": false}
+```
+
+returns
+
+```
+{
+  "path": "assets/recording.mp4",
+  "size_bytes": 734003200,
+  "modified_at": 1791052994.65,
+  "etag": "9f2c3b0e8a1d4f5e6c7b8a9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b"
+}
+```
+
+`etag` is the lowercase hex SHA-256 of the file's raw bytes, the value a whole-file read returns. Compare it with a digest you stored earlier to tell whether the file changed. Neither read size limit applies to this call, because none of the file comes back. The server hashes it in fixed-size chunks, so its memory use stays flat, but it reads the whole file each time: a large file costs a full read on the server.
 
 ## `inspect_citations`
 

@@ -2473,7 +2473,7 @@ Completed embedding windows go to scratch disk beside the configured state file,
 
 Scratch uses operating-system temporary files that are removed when their handles close, including on process termination. On platforms that create a name before removing its name, a forced termination during that brief creation interval can leave a file behind.
 
-Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+A streamed `sqlite` store writes each note's vectors to its database as the build hands them over, so its first build no longer holds them all in memory. Measured in November with the same stand-in provider, its peak fell from about 305 MB to 82 MB at the smaller size and from about 2.4 GB to 144 MB at the larger ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). `numpy` and resident `sqlite` still copy the whole set of vectors in memory while they store them, so for those, size the server's memory for the first build and expect a restart, which reads every note again, to come close to it. On every store, add an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#fastembed) takes 1 to 2 GB).
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 
@@ -5653,19 +5653,20 @@ Look paths up with search or `list_documents` first rather than guessing them.
 
 **Parameters**
 
-| Name       | Type             | Default  | Description                                                                                                                                                                                                                                      |
-| ---------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`     | `string`         | required | Path in the vault, such as `"Journal/note.md"` or `"assets/diagram.pdf"`; case-sensitive.                                                                                                                                                        |
-| `section`  | `string \| null` | `null`   | A heading, such as the heading field of a search result; returns that section and its sub-sections instead of the whole note. Notes only.                                                                                                        |
-| `revision` | `string \| null` | `null`   | A commit SHA from `get_history` or from a write result's `previous_revision`; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision. |
+| Name              | Type             | Default  | Description                                                                                                                                                                                                                                      |
+| ----------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`            | `string`         | required | Path in the vault, such as `"Journal/note.md"` or `"assets/diagram.pdf"`; case-sensitive.                                                                                                                                                        |
+| `section`         | `string \| null` | `null`   | A heading, such as the heading field of a search result; returns that section and its sub-sections instead of the whole note. Notes only.                                                                                                        |
+| `revision`        | `string \| null` | `null`   | A commit SHA from `get_history` or from a write result's `previous_revision`; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision. |
+| `include_content` | `boolean`        | `true`   | False returns only path, `size_bytes`, `modified_at` and etag, the SHA-256 of the whole file's raw bytes, at any file size.                                                                                                                      |
 
 **Returns**
 
-For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, the note's 'sources' list when present, and on a deprecated note `superseded_by`: its replacement's vault path, or null). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent, null, empty or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor; `at` a date or an offset date-time). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
+For .md: dict with path, title, folder, content (the full raw file including frontmatter, or the section text when section= is given), frontmatter (dict: empty {} when section= is provided; call read(path) without section= to get the full document's frontmatter), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). On an active OKF bundle, whole-document reads also carry an 'okf' dict (type, status, stale, `trust_tier` for recorded review metadata, freshness, review, `review_applicability`, recorded, the note's 'sources' list when present, and on a deprecated note `superseded_by`: its replacement's vault path, or null). `review_applicability`.state is "unknown" when verified has entries or is malformed (no snapshot binding) and "none" when it is absent, null, empty or an empty list. attribution reports `sources` in the shape of review, and generation reports `generated` as {state, basis}, judged like a verified entry (recorded actor; `at` a date or an offset date-time). Section reads omit the annotation because they carry no frontmatter to derive it from. For attachments: dict with path, `mime_type` (str or null), `size_bytes` (int), `content_base64` (str), `modified_at` (Unix timestamp), etag (SHA-256 hex str or null). The 'etag' value is the lowercase hex SHA-256 of the file's raw bytes, frontmatter and any byte-order mark included, so it is not a hash of 'content'. It can be passed as '`if_match`' to write, edit, delete, or rename to guard against concurrent modifications. With `include_content`=False: dict with path, `size_bytes`, `modified_at` and etag, the same etag a whole-file read returns, for notes and attachments of any size. Neither read size limit applies; the server hashes the whole file and returns none of it. With revision=: dict with path, `historical_path` (the name the note carried at that revision), revision, and content: the whole raw file, or just one section's body when section= is also given. No etag and no `modified_at` (both describe the note as it is now), and no 'okf' block for the same reason.
 
 **Outcomes and errors**
 
-- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. A whole note over the size limit this server returns in one read (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by `section`. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).
+- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. A whole note over the size limit this server returns in one read (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by `section`. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content). With `include_content=False`: if `section` or `revision` is also given.
 - DocumentUnreadableError: If the file cannot be read or decoded, its frontmatter does not parse, or git stores it in LFS at that revision.
 
 Read a note:
@@ -5689,6 +5690,25 @@ returns
 ```
 
 `content` is the raw file, frontmatter included. Pass `etag` as `if_match` to `write`, `edit`, `delete` or `rename` to change the note you read.
+
+Get a file's etag without its body, for a note or an attachment of any size:
+
+```
+{"path": "assets/recording.mp4", "include_content": false}
+```
+
+returns
+
+```
+{
+  "path": "assets/recording.mp4",
+  "size_bytes": 734003200,
+  "modified_at": 1791052994.65,
+  "etag": "9f2c3b0e8a1d4f5e6c7b8a9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b"
+}
+```
+
+`etag` is the lowercase hex SHA-256 of the file's raw bytes, the value a whole-file read returns. Compare it with a digest you stored earlier to tell whether the file changed. Neither read size limit applies to this call, because none of the file comes back. The server hashes it in fixed-size chunks, so its memory use stays flat, but it reads the whole file each time: a large file costs a full read on the server.
 
 ## `inspect_citations`
 
@@ -8716,7 +8736,7 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, exact queries, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads. Exact query methods check library index readiness and raise `IndexUnavailableError` if unavailable; an unavailable index is never an exact zero. They accept the [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) and return the same projections as the [keyword backend](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#exact-keyword-queries).
+Search, exact queries, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads. Use `read_attachment_bytes` for raw bytes; `read_attachment` returns base64 content and metadata. Exact query methods check library index readiness and raise `IndexUnavailableError` if unavailable; an unavailable index is never an exact zero. They accept the [query types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/#exact-query-types) and return the same projections as the [keyword backend](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/#exact-keyword-queries).
 
 ```
 from markdown_vault_mcp.query_types import NoteGrouping, NoteQuery
@@ -9251,6 +9271,24 @@ Returns:
 | \`dict[str, Any] | None\`      |
 | \`dict[str, Any] | None\`      |
 
+### `read_etag(path)`
+
+Return a note's or attachment's etag without its body, at any size.
+
+The etag is the lowercase hex SHA-256 of the file's raw bytes, equal to a whole-file :meth:`read` or :meth:`read_attachment` etag. No read cap applies: a large file is hashed in full on this side and none of its bytes are returned. Delegates to :meth:`DocumentManager.read_etag`.
+
+Parameters:
+
+| Name   | Type  | Description                               | Default    |
+| ------ | ----- | ----------------------------------------- | ---------- |
+| `path` | `str` | Relative note or allowed attachment path. | *required* |
+
+Returns:
+
+| Name | Type       | Description                               |
+| ---- | ---------- | ----------------------------------------- |
+| `A`  | `FileEtag` | class:~markdown_vault_mcp.types.FileEtag. |
+
 ### `attachment_size(path)`
 
 Return an attachment's on-disk byte size without reading it.
@@ -9262,6 +9300,32 @@ Delegates to :meth:`DocumentManager.attachment_size`.
 Read the binary content of a non-.md attachment.
 
 Delegates to :meth:`DocumentManager.read_attachment`.
+
+### `read_attachment_bytes(path)`
+
+Read a non-.md attachment's raw bytes.
+
+Unlike :meth:`read_attachment`, this returns the bytes alone, without base64 encoding, an etag or other metadata. Like it, it applies no size cap. Delegates to :meth:`DocumentManager.read_attachment_bytes`.
+
+Parameters:
+
+| Name   | Type  | Description               | Default    |
+| ------ | ----- | ------------------------- | ---------- |
+| `path` | `str` | Relative attachment path. | *required* |
+
+Returns:
+
+| Type    | Description           |
+| ------- | --------------------- |
+| `bytes` | The attachment bytes. |
+
+Raises:
+
+| Type                    | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `InvalidRequestError`   | If the path is invalid.                      |
+| `DocumentNotFoundError` | If no regular file is at the path.           |
+| `ValueError`            | If the file system refuses the stat or read. |
 
 ## WriterFacet
 
@@ -11710,6 +11774,21 @@ Attributes:
 | `historical_path` | `str` | Relative path the note carried at revision. Differs from path when the note has been renamed since.                                                                                                                                                                                                                                                           |
 | `revision`        | `str` | The commit the content was read from.                                                                                                                                                                                                                                                                                                                         |
 | `content`         | `str` | Raw markdown at that revision, frontmatter included — or, when a section was requested, just that section's body, matching what a section read of the note on disk returns. Either way this is the committed blob, so a repository with core.autocrlf or an eol attribute returns the normalised form rather than whatever line endings the file had on disk. |
+
+## `FileEtag(path, size_bytes, modified_at, etag)`
+
+A file's etag without its body, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_etag`.
+
+Covers notes and allowed attachments alike, at any size: the read caps do not apply, because no bytes are returned.
+
+Attributes:
+
+| Name          | Type    | Description                                                                                                                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`        | `str`   | Relative path from the vault root.                                                                                                                                                                                                      |
+| `size_bytes`  | `int`   | File size in bytes.                                                                                                                                                                                                                     |
+| `modified_at` | `float` | Last-modified time as a Unix timestamp float.                                                                                                                                                                                           |
+| `etag`        | `str`   | Lowercase hex SHA-256 of the file's raw bytes, the same value a whole-file :meth:~markdown_vault_mcp.facets.reader.ReaderFacet.read or :meth:~markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment returns and if_match checks. |
 
 ## `NoteInfo(path, title, folder, frontmatter, modified_at, kind='note', content_chars=0)`
 

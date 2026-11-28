@@ -39,6 +39,21 @@ Attributes:
 | `revision`        | `str` | The commit the content was read from.                                                                                                                                                                                                                                                                                                                         |
 | `content`         | `str` | Raw markdown at that revision, frontmatter included — or, when a section was requested, just that section's body, matching what a section read of the note on disk returns. Either way this is the committed blob, so a repository with core.autocrlf or an eol attribute returns the normalised form rather than whatever line endings the file had on disk. |
 
+## `FileEtag(path, size_bytes, modified_at, etag)`
+
+A file's etag without its body, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_etag`.
+
+Covers notes and allowed attachments alike, at any size: the read caps do not apply, because no bytes are returned.
+
+Attributes:
+
+| Name          | Type    | Description                                                                                                                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`        | `str`   | Relative path from the vault root.                                                                                                                                                                                                      |
+| `size_bytes`  | `int`   | File size in bytes.                                                                                                                                                                                                                     |
+| `modified_at` | `float` | Last-modified time as a Unix timestamp float.                                                                                                                                                                                           |
+| `etag`        | `str`   | Lowercase hex SHA-256 of the file's raw bytes, the same value a whole-file :meth:~markdown_vault_mcp.facets.reader.ReaderFacet.read or :meth:~markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment returns and if_match checks. |
+
 ## `NoteInfo(path, title, folder, frontmatter, modified_at, kind='note', content_chars=0)`
 
 Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.

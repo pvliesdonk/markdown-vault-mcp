@@ -60,7 +60,7 @@ Completed embedding windows go to scratch disk beside the configured state file,
 
 Scratch uses operating-system temporary files that are removed when their handles close, including on process termination. On platforms that create a name before removing its name, a forced termination during that brief creation interval can leave a file behind.
 
-Built-in publishers still materialize generation copies, so this does not promise a lower complete-build peak. Size the server's memory for the first build, plus an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#fastembed) takes 1 to 2 GB), and expect a restart, which reads every note again, to come close to it.
+A streamed `sqlite` store writes each note's vectors to its database as the build hands them over, so its first build no longer holds them all in memory. Measured in November with the same stand-in provider, its peak fell from about 305 MB to 82 MB at the smaller size and from about 2.4 GB to 144 MB at the larger ([#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938)). `numpy` and resident `sqlite` still copy the whole set of vectors in memory while they store them, so for those, size the server's memory for the first build and expect a restart, which reads every note again, to come close to it. On every store, add an in-process provider's own memory ([FastEmbed](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/#fastembed) takes 1 to 2 GB).
 
 `sqlite`, resident was not measured. It holds the vectors in memory as `numpy` does and writes each edit as streamed `sqlite` does, so its memory and search time are probably close to `numpy`'s, with `sqlite`'s writes.
 

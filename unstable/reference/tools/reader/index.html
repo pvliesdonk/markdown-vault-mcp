@@ -3287,6 +3287,12 @@ base64.</p>
 <td><code>null</code></td>
 <td>A commit SHA from <code>get_history</code> or from a write result's <code>previous_revision</code>; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision.</td>
 </tr>
+<tr>
+<td><code>include_content</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>False returns only path, <code>size_bytes</code>, <code>modified_at</code> and etag, the SHA-256 of the whole file's raw bytes, at any file size.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Returns</strong></p>
@@ -3311,8 +3317,14 @@ no frontmatter to derive it from.
 For attachments: dict with path, <code>mime_type</code> (str or null),
 <code>size_bytes</code> (int), <code>content_base64</code> (str), <code>modified_at</code> (Unix timestamp),
 etag (SHA-256 hex str or null).
-The 'etag' value can be passed as '<code>if_match</code>' to write, edit,
+The 'etag' value is the lowercase hex SHA-256 of the file's raw
+bytes, frontmatter and any byte-order mark included, so it is not a
+hash of 'content'. It can be passed as '<code>if_match</code>' to write, edit,
 delete, or rename to guard against concurrent modifications.
+With <code>include_content</code>=False: dict with path, <code>size_bytes</code>,
+<code>modified_at</code> and etag, the same etag a whole-file read returns,
+for notes and attachments of any size. Neither read size limit
+applies; the server hashes the whole file and returns none of it.
 With revision=: dict with path, <code>historical_path</code> (the name the note
 carried at that revision), revision, and content: the whole raw
 file, or just one section's body when section= is also given. No
@@ -3320,7 +3332,7 @@ etag and no <code>modified_at</code> (both describe the note as it is now), and
 no 'okf' block for the same reason.</p>
 <p><strong>Outcomes and errors</strong></p>
 <ul>
-<li>ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code>, or the requested section heading is not found. A whole note over the size limit this server returns in one read (<code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code>) is refused; read it by <code>section</code>. With <code>revision</code>: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).</li>
+<li>ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code>, or the requested section heading is not found. A whole note over the size limit this server returns in one read (<code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code>) is refused; read it by <code>section</code>. With <code>revision</code>: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content). With <code>include_content=False</code>: if <code>section</code> or <code>revision</code> is also given.</li>
 <li>DocumentUnreadableError: If the file cannot be read or decoded, its frontmatter does not parse, or git stores it in LFS at that revision.</li>
 </ul>
 <!-- DOMAIN-EXAMPLE-read-START -->
@@ -3339,6 +3351,18 @@ no 'okf' block for the same reason.</p>
 <span class="p">}</span>
 </code></pre></div>
 <p><code>content</code> is the raw file, frontmatter included. Pass <code>etag</code> as <code>if_match</code> to <code>write</code>, <code>edit</code>, <code>delete</code> or <code>rename</code> to change the note you read.</p>
+<p>Get a file's etag without its body, for a note or an attachment of any size:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/recording.mp4"</span><span class="p">,</span><span class="w"> </span><span class="nt">"include_content"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">}</span>
+</code></pre></div>
+<p>returns</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/recording.mp4"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">734003200</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1791052994.65</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"etag"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9f2c3b0e8a1d4f5e6c7b8a9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b"</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>etag</code> is the lowercase hex SHA-256 of the file's raw bytes, the value a whole-file read returns. Compare it with a digest you stored earlier to tell whether the file changed. Neither read size limit applies to this call, because none of the file comes back. The server hashes it in fixed-size chunks, so its memory use stays flat, but it reads the whole file each time: a large file costs a full read on the server.</p>
 <!-- DOMAIN-EXAMPLE-read-END -->
 
 <h2 id="inspect_citations"><code>inspect_citations</code><a class="headerlink" href="#inspect_citations" title="Permanent link">&para;</a></h2>
