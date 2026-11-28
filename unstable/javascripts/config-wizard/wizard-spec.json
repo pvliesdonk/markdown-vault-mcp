@@ -653,7 +653,7 @@
       "label": "Searchable Fields",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-      "help": "Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup.",
+      "help": "Comma-separated frontmatter fields whose text values become keyword-searchable; under EMBED_INPUT=context+fields they also enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index once on next startup, and re-embeds once when the values reach the embedding provider.",
       "advancedGroup": "Indexing"
     },
     {
@@ -873,11 +873,11 @@
       "advancedGroup": "Embeddings"
     },
     {
-      "id": "embed_context",
-      "label": "Embed Context",
-      "type": "bool",
-      "var": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
-      "help": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
+      "id": "embed_input",
+      "label": "Embed Input",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_EMBED_INPUT",
+      "help": "What each chunk sends to the embedding provider. body sends the chunk text only. context adds the note title and chunk heading. context+fields adds the SEARCHABLE_FIELDS values to each note's first chunk as well. Keyword search and filters are the same under all three. Unset derives it from the deprecated EMBED_CONTEXT and from SEARCHABLE_FIELDS: context+fields when EMBED_CONTEXT is true or any searchable field is set, else body. Changing what reaches the provider re-embeds the vault once on next startup.",
       "advancedGroup": "Embeddings"
     },
     {

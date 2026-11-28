@@ -464,13 +464,37 @@ It refuses, changing no vectors, and prints one line saying what to do when:
 
 The [CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/#markdown-vault-mcp-admin-embeddings-import) lists every option of `admin embeddings import`.
 
+### Choose what reaches the embedding provider
+
+`MARKDOWN_VAULT_MCP_EMBED_INPUT` decides what the server sends to the embedding provider for each section of a note:
+
+| Value            | Sent for each section                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| `body`           | The section's text only.                                                                                      |
+| `context`        | The note's title and the section heading, then the section's text.                                            |
+| `context+fields` | As `context`; the first section also carries the values of the `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` fields. |
+
+Keyword search and filters are the same under all three values: searchable fields stay keyword-searchable and indexed fields stay filterable. To search a note's description and filter on its type and tags while embedding only the Markdown body:
+
+```
+MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS=description
+MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,tags
+MARKDOWN_VAULT_MCP_EMBED_INPUT=body
+```
+
+Under `context` one frontmatter value can still leave the server: the note's title is the frontmatter field named by `MARKDOWN_VAULT_MCP_TITLE_FIELD` (`title` by default) when the note sets it, and only otherwise its first heading or file name. Other fields reach the provider only under `context+fields`, or where the same text appears in the body.
+
+Unset, the server keeps the rule from before the setting existed: `context+fields` when `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` is `true` or any searchable field is configured, which includes the fields inherited from `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`, and `body` otherwise. An upgrade re-embeds nothing. `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` is deprecated: it still works and logs a warning at startup. Beside `MARKDOWN_VAULT_MCP_EMBED_INPUT`, which wins, `true` only asks for the title and heading, so the server refuses to start when it is `true` and `MARKDOWN_VAULT_MCP_EMBED_INPUT` is `body`. Remove it once you set `MARKDOWN_VAULT_MCP_EMBED_INPUT`.
+
+Changing what reaches the provider re-embeds the vault once on the next start. Under `body` and `context`, an edit to a note's frontmatter updates keyword search and filters without asking the provider for anything, unless under `context` it changes the note's title. The setting covers what the server sends when it embeds notes; a semantic or hybrid search still sends its query text. The [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md) lists what each provider receives.
+
 ### Notes with no body
 
 A note with no body is indexed for keyword search but is not embedded. This covers zero-byte files, notes that are nothing but frontmatter, and notes whose body is only whitespace. These notes hold no text to embed, so they carry no semantic signal either way.
 
 The server skips these notes deliberately. Embedding providers reject an empty input string with HTTP 400 (Voyage reports `Input cannot contain empty strings or empty lists`), and the rejection fails the whole request, so a single body-less note used to stop a batch of unrelated notes from being embedded as well. On version 3.1.0 it could hold the entire index stale until the file was excluded. See issue [#1087](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087).
 
-Nothing is required of you. The notes still appear in keyword search and in `list_documents`, and they gain vectors as soon as they get a body. If you set `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` or `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`, the enriched input carries the title and frontmatter values, so those notes are embedded as before.
+Nothing is required of you. The notes still appear in keyword search and in `list_documents`, and they gain vectors as soon as they get a body. Under `MARKDOWN_VAULT_MCP_EMBED_INPUT=context` or `context+fields` the input carries the title, and under `context+fields` the searchable-field values, so those notes are embedded as before.
 
 ### Slow or CPU-only backends
 

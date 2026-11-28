@@ -3030,6 +3030,7 @@
 <ul>
 <li>no <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> or <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> with a <code>numpy</code> or <code>sqlite</code> store, so the vectors live in memory and are embedded again at each start;</li>
 <li>a change of embedding provider, model or dimensions;</li>
+<li>a change of <a href="../embeddings/#choose-what-reaches-the-embedding-provider">what reaches the embedding provider</a>, <code>MARKDOWN_VAULT_MCP_EMBED_INPUT</code> or, while it is unset, the searchable fields;</li>
 <li>a switch of <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE</code> without <code>admin embeddings import</code>, which includes leaving it unset on an edge build whose only store is a <code>numpy</code> one (<code>index-db-embeddings.v2.json</code> with no 5.x files beside it): run <code>embeddings import --from numpy</code> first, or set <code>MARKDOWN_VAULT_MCP_EMBEDDING_STORE=numpy</code>;</li>
 <li><code>markdown-vault-mcp admin index --force</code>, or the <code>build_embeddings</code> tool with <code>force</code>;</li>
 <li>deleting the store with no backup, or recreating an empty <code>postgres</code> schema;</li>

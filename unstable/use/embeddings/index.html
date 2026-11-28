@@ -1491,6 +1491,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#choose-what-reaches-the-embedding-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choose what reaches the embedding provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#notes-with-no-body" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3421,6 +3432,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#choose-what-reaches-the-embedding-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choose what reaches the embedding provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#notes-with-no-body" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3979,6 +4001,61 @@ markdown-vault-mcp<span class="w"> </span>admin<span class="w"> </span>embedding
 </tbody>
 </table>
 <p>The <a href="../../reference/cli/#markdown-vault-mcp-admin-embeddings-import">CLI reference</a> lists every option of <code>admin embeddings import</code>.</p>
+<h3 id="choose-what-reaches-the-embedding-provider">Choose what reaches the embedding provider<a class="headerlink" href="#choose-what-reaches-the-embedding-provider" title="Permanent link">&para;</a></h3>
+<p><code>MARKDOWN_VAULT_MCP_EMBED_INPUT</code> decides what the server sends to the
+embedding provider for each section of a note:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Sent for each section</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>body</code></td>
+<td>The section's text only.</td>
+</tr>
+<tr>
+<td><code>context</code></td>
+<td>The note's title and the section heading, then the section's text.</td>
+</tr>
+<tr>
+<td><code>context+fields</code></td>
+<td>As <code>context</code>; the first section also carries the values of the <code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code> fields.</td>
+</tr>
+</tbody>
+</table>
+<p>Keyword search and filters are the same under all three values: searchable
+fields stay keyword-searchable and indexed fields stay filterable. To search a
+note's description and filter on its type and tags while embedding only the
+Markdown body:</p>
+<div class="config highlight" data-expect="embed_input='body',searchable_fields=('description',)"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</span><span class="o">=</span>description
+<span class="nv">MARKDOWN_VAULT_MCP_INDEXED_FIELDS</span><span class="o">=</span>type,tags
+<span class="nv">MARKDOWN_VAULT_MCP_EMBED_INPUT</span><span class="o">=</span>body
+</code></pre></div>
+<p>Under <code>context</code> one frontmatter value can still leave the server: the note's
+title is the frontmatter field named by <code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code>
+(<code>title</code> by default) when the note sets it, and only otherwise its first
+heading or file name. Other fields reach the provider only under
+<code>context+fields</code>, or where the same text appears in the body.</p>
+<p>Unset, the server keeps the rule from before the setting existed:
+<code>context+fields</code> when <code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code> is <code>true</code> or any
+searchable field is configured, which includes the fields inherited from
+<code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code>, and <code>body</code> otherwise. An upgrade
+re-embeds nothing. <code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code> is
+deprecated: it still works and logs a warning at startup. Beside
+<code>MARKDOWN_VAULT_MCP_EMBED_INPUT</code>, which wins, <code>true</code> only asks for the title
+and heading, so the server refuses to start when it is <code>true</code> and
+<code>MARKDOWN_VAULT_MCP_EMBED_INPUT</code> is <code>body</code>. Remove it once you set
+<code>MARKDOWN_VAULT_MCP_EMBED_INPUT</code>.</p>
+<p>Changing what reaches the provider re-embeds the vault once on the next
+start. Under <code>body</code> and <code>context</code>, an edit to a note's frontmatter updates
+keyword search and filters without asking the provider for anything, unless
+under <code>context</code> it changes the note's title. The setting covers what the
+server sends when it embeds notes; a semantic or hybrid search still sends
+its query text. The <a href="../../security-model/">security model</a> lists what each
+provider receives.</p>
 <h3 id="notes-with-no-body">Notes with no body<a class="headerlink" href="#notes-with-no-body" title="Permanent link">&para;</a></h3>
 <p>A note with no body is indexed for keyword search but is not embedded. This
 covers zero-byte files, notes that are nothing but frontmatter, and notes
@@ -3991,10 +4068,10 @@ body-less note used to stop a batch of unrelated notes from being embedded as
 well. On version 3.1.0 it could hold the entire index stale until the file was
 excluded. See issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087">#1087</a>.</p>
 <p>Nothing is required of you. The notes still appear in keyword search and in
-<code>list_documents</code>, and they gain vectors as soon as they get a body. If you set
-<code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code> or <code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code>,
-the enriched input carries the title and frontmatter values, so those notes are
-embedded as before.</p>
+<code>list_documents</code>, and they gain vectors as soon as they get a body. Under
+<code>MARKDOWN_VAULT_MCP_EMBED_INPUT=context</code> or <code>context+fields</code> the input carries
+the title, and under <code>context+fields</code> the searchable-field values, so those
+notes are embedded as before.</p>
 <h3 id="slow-or-cpu-only-backends">Slow or CPU-only backends<a class="headerlink" href="#slow-or-cpu-only-backends" title="Permanent link">&para;</a></h3>
 <p>Each embedding request has a wall-clock budget, <code>MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S</code> (default <code>30.0</code> seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.</p>
 <p>A background flush, and the convergence pass of <code>build_embeddings</code>, groups chunks from several notes into each request, up to the configured batch size. A reindex still embeds one note at a time. If a shared request fails, the server retries each note in it on its own, for the chunks that note still lacks. A note the provider failed for stays out of shared requests on later flushes and is sent on its own, so a note the provider keeps rejecting does not fail a shared request on every flush.</p>
