@@ -78,8 +78,9 @@ class TestAFailureMidStream:
     ) -> None:
         store = _seeded(tmp_path)
         before = _state(store)
+        documents = _FAILURES[case]()
         with pytest.raises(_ERRORS[case]):
-            store.publish_generation(IDENT, _FAILURES[case]())
+            store.publish_generation(IDENT, documents)
         assert _state(store) == before
         store.close()
         again = _streamed().open(_base(tmp_path), IDENT)
@@ -90,10 +91,9 @@ class TestAFailureMidStream:
         self, tmp_path: Path
     ) -> None:
         store = _streamed().open(_base(tmp_path), IDENT)
+        documents = _FAILURES["a later document repeats a path"]()
         with pytest.raises(ValueError, match="twice"):
-            store.publish_generation(
-                IDENT, _FAILURES["a later document repeats a path"]()
-            )
+            store.publish_generation(IDENT, documents)
         assert (store.generation, store.count, store.tokens()) == (0, 0, {})
         store.close()
         assert _base(tmp_path).with_suffix(".sqlite3").is_file()
@@ -109,8 +109,9 @@ class TestAFailureMidStream:
         _seeded(tmp_path).close()
         other = EmbeddingIdentity("fake", "m2", "", "v1", 2)
         fresh = _streamed().open_fresh(_base(tmp_path), other)
+        documents = _then_failing([doc("n.md", [[1, 0]])])
         with pytest.raises(OSError, match="staged"):
-            fresh.publish_generation(other, _then_failing([doc("n.md", [[1, 0]])]))
+            fresh.publish_generation(other, documents)
         assert fresh.count == 0
         fresh.close()
         again = _streamed().open(_base(tmp_path), IDENT)
