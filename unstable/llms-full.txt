@@ -308,7 +308,7 @@ Claude calls the server's `get_server_info` tool, which reads the server's versi
 
 **With the plugin**, Claude Code asks for the plugin's settings when you enable it. Only the vault directory is required: the absolute path of the folder that holds your notes. For a first run, set **Read-only mode** to `true`. The plugin's default is `false`, which gives Claude the tools that change files. Restart Claude Code after answering, because the server starts with a session.
 
-The plugin also brings its own skills. `vault-workflow` teaches Claude how to search, follow links and write safely. `vault-summarize` handles summaries across many notes, with a read-only `vault-mapper` subagent. Ask Claude to set up or repair your vault and `vault-setup` looks for candidate folders, checks your choice and records it. A check at the start of each session says so when no vault directory is set, or the one set has gone.
+The server serves a `vault-workflow` skill, with or without the plugin, that teaches Claude how to search, follow links and write safely. The plugin brings two more skills. `vault-summarize` handles summaries across many notes, with a read-only `vault-mapper` subagent. Ask Claude to set up or repair your vault and `vault-setup` looks for candidate folders, checks your choice and records it. A check at the start of each session says so when no vault directory is set, or the one set has gone.
 
 **With the command**, pass the same settings with `--env`:
 
@@ -5192,13 +5192,16 @@ Every Markdown Vault MCP instance wires a background-task backend at startup, so
 
 Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Set the backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than `FASTMCP_DOCKET_URL`: the former wins when both are set, and the server warns about the disagreement.
 
-| Variable                                | Default | Description                                                                              |
-| --------------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `FASTMCP_DOCKET_CONCURRENCY`            | `10`    | Maximum background tasks this worker runs at once.                                       |
-| `FASTMCP_DOCKET_WORKER_NAME`            | (none)  | Identifies this worker in the queue; defaults to a generated name.                       |
-| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT`     | `300`   | Seconds before a task claimed by a worker that never finished is redelivered to another. |
-| `FASTMCP_DOCKET_RECONNECTION_DELAY`     | `5`     | Seconds to wait before reconnecting after the queue connection drops.                    |
-| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `0.05`  | Seconds between queue polls; lower cuts latency and raises idle load.                    |
+A task and its result are kept for two hours from the task's creation, so a client that comes back to a long index build still finds the result. The upstream default is 15 minutes. Set `FASTMCP_DOCKET_EXECUTION_TTL` to an ISO 8601 duration, such as `PT4H`, to change it.
+
+| Variable                                | Default | Description                                                                                                                       |
+| --------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `FASTMCP_DOCKET_CONCURRENCY`            | `10`    | Maximum background tasks this worker runs at once.                                                                                |
+| `FASTMCP_DOCKET_WORKER_NAME`            | (none)  | Identifies this worker in the queue; defaults to a generated name.                                                                |
+| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT`     | `300`   | Seconds before a task claimed by a worker that never finished is redelivered to another.                                          |
+| `FASTMCP_DOCKET_RECONNECTION_DELAY`     | `5`     | Seconds to wait before reconnecting after the queue connection drops.                                                             |
+| `FASTMCP_DOCKET_EXECUTION_TTL`          | `PT2H`  | How long a task and its result are kept, from the task's creation, as an ISO 8601 duration; clients see it as the task's `ttlMs`. |
+| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `0.05`  | Seconds between queue polls; lower cuts latency and raises idle load.                                                             |
 
 ## MCP Apps
 
@@ -7443,6 +7446,8 @@ Most JSON resources here serve the same data as a tool, whose reference describe
 
 `config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/vault-explorer/index.md)'s page, for clients that render MCP Apps.
 
+The `skill://` resources are the `vault-workflow` skill, which tells the model which vault tool to use when. A client that supports skills over MCP, such as Claude Code, lists it by name and description and loads it only when needed; to any other client the files are ordinary resources.
+
 Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 
 ## Reading a resource
@@ -7482,6 +7487,18 @@ The 20 most recently modified notes.
 ## `_app_shell`
 
 `ui://markdown_vault_mcp/app.html` (text/html;profile=mcp-app)
+
+## `vault-workflow/SKILL.md`
+
+`skill://vault-workflow/SKILL.md` (text/markdown)
+
+Use when the user asks you to search, read, or reason about notes in their markdown vault; says which vault tool to use when, and how to chain them for good results.
+
+## `vault-workflow/_manifest`
+
+`skill://vault-workflow/_manifest` (application/json)
+
+File listing for vault-workflow
 
 ## `vault_tags_by_field`
 

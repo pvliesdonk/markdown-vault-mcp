@@ -2083,6 +2083,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vault-workflowskillmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vault-workflow/SKILL.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vault-workflow_manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vault-workflow/_manifest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vault_tags_by_field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2898,6 +2920,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vault-workflowskillmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vault-workflow/SKILL.md
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vault-workflow_manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vault-workflow/_manifest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vault_tags_by_field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2964,6 +3008,7 @@
 <li><code>recent://vault</code> as <a href="../tools/reader/#get_recent"><code>get_recent</code></a>, with an ISO 8601 <code>modified_at_iso</code> added to each note.</li>
 </ul>
 <p><code>config://vault</code> has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. <code>ui://markdown_vault_mcp/app.html</code> is the <a href="../../use/vault-explorer/">vault explorer</a>'s page, for clients that render MCP Apps.</p>
+<p>The <code>skill://</code> resources are the <code>vault-workflow</code> skill, which tells the model which vault tool to use when. A client that supports skills over MCP, such as Claude Code, lists it by name and description and loads it only when needed; to any other client the files are ordinary resources.</p>
 <p>Every JSON resource reports index freshness in the read's <code>_meta.index_stale</code>, <code>true</code> while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's <code>wait_for_pending_writes</code> can.</p>
 <!-- DOMAIN-INTRO-END -->
 
@@ -2986,6 +3031,12 @@
 <p>The 20 most recently modified notes.</p>
 <h2 id="_app_shell"><code>_app_shell</code><a class="headerlink" href="#_app_shell" title="Permanent link">&para;</a></h2>
 <p><code>ui://markdown_vault_mcp/app.html</code> (text/html;profile=mcp-app)</p>
+<h2 id="vault-workflowskillmd"><code>vault-workflow/SKILL.md</code><a class="headerlink" href="#vault-workflowskillmd" title="Permanent link">&para;</a></h2>
+<p><code>skill://vault-workflow/SKILL.md</code> (text/markdown)</p>
+<p>Use when the user asks you to search, read, or reason about notes in their markdown vault; says which vault tool to use when, and how to chain them for good results.</p>
+<h2 id="vault-workflow_manifest"><code>vault-workflow/_manifest</code><a class="headerlink" href="#vault-workflow_manifest" title="Permanent link">&para;</a></h2>
+<p><code>skill://vault-workflow/_manifest</code> (application/json)</p>
+<p>File listing for vault-workflow</p>
 <h2 id="vault_tags_by_field"><code>vault_tags_by_field</code><a class="headerlink" href="#vault_tags_by_field" title="Permanent link">&para;</a></h2>
 <p><code>tags://vault/{field}</code> (application/json)</p>
 <p>Every value of one indexed frontmatter field.</p>
