@@ -2523,6 +2523,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.apply_replace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_replace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2655,10 +2666,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#previewing-a-text-replacement-across-notes" class="md-nav__link">
+  <a href="#replacing-text-across-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Previewing a text replacement across notes
+        Replacing text across notes
       
     </span>
   </a>
@@ -2708,6 +2719,39 @@
     <span class="md-ellipsis">
       
         NoteRefusal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.ReplaceResult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReplaceResult
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.NoteOutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NoteOutcome
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.StalePlanError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StalePlanError
       
     </span>
   </a>
@@ -3930,6 +3974,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.apply_replace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        apply_replace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.okf_preview_log_repair" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4062,10 +4117,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#previewing-a-text-replacement-across-notes" class="md-nav__link">
+  <a href="#replacing-text-across-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Previewing a text replacement across notes
+        Replacing text across notes
       
     </span>
   </a>
@@ -4115,6 +4170,39 @@
     <span class="md-ellipsis">
       
         NoteRefusal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.ReplaceResult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReplaceResult
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.NoteOutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NoteOutcome
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.managers.text_replace.StalePlanError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StalePlanError
       
     </span>
   </a>
@@ -7887,8 +7975,8 @@ size cap. Delegates to :meth:<code>DocumentManager.read_attachment_bytes</code>.
 </div><!-- vale on -->
 
 <h2 id="writerfacet">WriterFacet<a class="headerlink" href="#writerfacet" title="Permanent link">&para;</a></h2>
-<p>Create, edit, append, delete, rename, and attachment writes, and the preview
-of one text replacement across many notes.</p>
+<p>Create, edit, append, delete, rename, and attachment writes, and one text
+replacement across many notes.</p>
 <!-- vale off -->
 
 
@@ -7967,7 +8055,8 @@ the <code>okf_*</code> migration methods unavailable.</p>
                 <p>The OKF enforced-write convention
 maintainer (#964); <code>None</code> (the default, and whenever
 <code>OKF_WRITE</code> is off) disables <code>log.md</code> / <code>index.md</code>
-upkeep on <code>write</code> / <code>edit</code>.</p>
+upkeep on <code>write</code> / <code>edit</code> and on each note
+:meth:<code>apply_replace</code> writes.</p>
               </div>
             </td>
             <td>
@@ -8188,6 +8277,159 @@ whose notes it covers.</p>
               <div class="doc-md-description">
                 <p>The request is malformed, names a path that
 is not a note, or exceeds one of the fixed bounds.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.writer.WriterFacet.apply_replace" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">apply_replace</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">plan</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.writer.WriterFacet.apply_replace" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Apply a previewed text replacement, note by note (#2031).</p>
+<p>Recomputes the plan and refuses, writing nothing, when it is no longer
+<em>plan</em>. Otherwise writes each planned note as :meth:<code>edit</code> writes it,
+with the same upkeep after each write, and reports every note as
+applied, skipped (it changed just before its write) or refused.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>request</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ReplaceRequest(pattern, replacement='', paths=(), folders=(), regex=False)
+
+  
+      dataclass
+   (markdown_vault_mcp.managers.text_replace.ReplaceRequest)" href="#markdown_vault_mcp.managers.text_replace.ReplaceRequest">ReplaceRequest</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The request :meth:<code>preview_replace</code> was given.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>plan</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The <code>plan</code> that preview returned.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ReplaceResult(plan, notes, applied, skipped, refused)
+
+  
+      dataclass
+   (markdown_vault_mcp.managers.text_replace.ReplaceResult)" href="#markdown_vault_mcp.managers.text_replace.ReplaceResult">ReplaceResult</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.managers.text_replace.ReplaceResult</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code>ReadOnlyError</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is read-only.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code>DocumentNotFoundError</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A named note or folder does not exist.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code>InvalidRequestError</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The request is malformed or exceeds a bound.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code>StalePlanError</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The notes no longer give <em>plan</em>; preview again.</p>
               </div>
             </td>
           </tr>
@@ -9982,9 +10224,12 @@ has an extension not in the allowlist.</p>
 
 </div><!-- vale on -->
 
-<h3 id="previewing-a-text-replacement-across-notes">Previewing a text replacement across notes<a class="headerlink" href="#previewing-a-text-replacement-across-notes" title="Permanent link">&para;</a></h3>
+<h3 id="replacing-text-across-notes">Replacing text across notes<a class="headerlink" href="#replacing-text-across-notes" title="Permanent link">&para;</a></h3>
 <p><code>preview_replace</code> computes one replacement across the notes a request covers
-and writes nothing. Matches cover each note's body and never its frontmatter.</p>
+and writes nothing. <code>apply_replace</code> takes the plan from that preview,
+recomputes it, and writes each planned note when the notes still give that
+plan. Matches cover each note's body and never its frontmatter. Each write
+behaves like <code>edit</code>, OKF stamping and upkeep included.</p>
 <div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.managers.text_replace</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReplaceRequest</span>
 
 <span class="n">request</span> <span class="o">=</span> <span class="n">ReplaceRequest</span><span class="p">(</span>
@@ -9996,7 +10241,13 @@ and writes nothing. Matches cover each note's body and never its frontmatter.</p
 <span class="n">preview</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">preview_replace</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
 <span class="c1"># preview.notes: each note it would change, with a count and, for the first</span>
 <span class="c1"># ten, a diff; preview.refused: notes it would leave alone, with the reason.</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">apply_replace</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">preview</span><span class="o">.</span><span class="n">plan</span><span class="p">)</span>
+<span class="c1"># Each of result.notes is applied, skipped or refused.</span>
 </code></pre></div>
+<p><code>apply_replace</code> raises <code>StalePlanError</code> and writes nothing when a covered
+note changed after the preview, or the request differs from the previewed
+one; preview again and apply the new plan. A note that changes between that
+check and its own write is reported <code>skipped</code> and left as it is.</p>
 <p>A request covers at most 1,000 notes, reads at most 256 KiB per note and
 8 MiB in total, changes at most 200 notes and makes at most 10,000
 replacements. Past a bound, the request is refused with <code>InvalidRequestError</code>
@@ -10445,6 +10696,257 @@ every covered note it cannot read as text, in path order.</p>
 
 
   </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.managers.text_replace.ReplaceResult" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">ReplaceResult</span><span class="p">(</span><span class="n">plan</span><span class="p">,</span> <span class="n">notes</span><span class="p">,</span> <span class="n">applied</span><span class="p">,</span> <span class="n">skipped</span><span class="p">,</span> <span class="n">refused</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.managers.text_replace.ReplaceResult" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>What an apply did, note by note.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.ReplaceResult.plan">plan</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The digest the apply was given and matched.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.ReplaceResult.notes">notes</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<a class="autorefs autorefs-internal" title="NoteOutcome(path, status, reason=None)
+
+  
+      dataclass
+   (markdown_vault_mcp.managers.text_replace.NoteOutcome)" href="#markdown_vault_mcp.managers.text_replace.NoteOutcome">NoteOutcome</a>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>One outcome per planned or refused note, in path order.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.ReplaceResult.applied">applied</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many notes were written.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.ReplaceResult.skipped">skipped</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many planned notes changed before their write.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.ReplaceResult.refused">refused</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many notes were not written by policy.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.managers.text_replace.NoteOutcome" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">NoteOutcome</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.managers.text_replace.NoteOutcome" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>What an apply did with one note.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.NoteOutcome.path">path</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Vault-relative note path.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.NoteOutcome.status">status</span></code></td>
+            <td>
+                  <code><span title="markdown_vault_mcp.managers.text_replace.NoteStatus">NoteStatus</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>applied</code> (written), <code>skipped</code> (it changed after the
+plan was recomputed, so it was not written) or <code>refused</code> (not
+written: inside a nested repository, or not UTF-8 text).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.managers.text_replace.NoteOutcome.reason">reason</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Why it was skipped or refused; <code>None</code> when applied.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.managers.text_replace.StalePlanError" class="doc doc-heading">
+            <code>StalePlanError</code>
+
+
+<a href="#markdown_vault_mcp.managers.text_replace.StalePlanError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="../exceptions/#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code></p>
+
+
+
+        <p>The notes no longer give the plan an apply was given; nothing was written.</p>
+
+
+
+
+
+
+
+
 
     </div>
 

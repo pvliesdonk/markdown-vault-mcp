@@ -619,7 +619,7 @@ Raises:
 
 ## WriterFacet
 
-Create, edit, append, delete, rename, and attachment writes, and the preview of one text replacement across many notes.
+Create, edit, append, delete, rename, and attachment writes, and one text replacement across many notes.
 
 ## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None, link_reporter=None)`
 
@@ -629,13 +629,13 @@ Hold the managers the write operations delegate to.
 
 Parameters:
 
-| Name                    | Type                     | Description                                          | Default                                                                                                                                                   |
-| ----------------------- | ------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doc_mgr`               | `DocumentManager`        | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
-| `okf_migrate`           | \`OkfMigrationManager    | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
-| `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
-| `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
-| `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
+| Name                    | Type                     | Description                                          | Default                                                                                                                                                                                               |
+| ----------------------- | ------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_mgr`               | `DocumentManager`        | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                                                            |
+| `okf_migrate`           | \`OkfMigrationManager    | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                                                              |
+| `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit and on each note :meth:apply_replace writes. |
+| `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                                                                |
+| `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.                                               |
 
 ### `preview_replace(request)`
 
@@ -664,6 +664,34 @@ Raises:
 | ----------------------- | ---------------------------------------------------------------------------------------------- |
 | `DocumentNotFoundError` | A named note or folder does not exist.                                                         |
 | `InvalidRequestError`   | The request is malformed, names a path that is not a note, or exceeds one of the fixed bounds. |
+
+### `apply_replace(request, plan)`
+
+Apply a previewed text replacement, note by note (#2031).
+
+Recomputes the plan and refuses, writing nothing, when it is no longer *plan*. Otherwise writes each planned note as :meth:`edit` writes it, with the same upkeep after each write, and reports every note as applied, skipped (it changed just before its write) or refused.
+
+Parameters:
+
+| Name      | Type             | Description                                  | Default    |
+| --------- | ---------------- | -------------------------------------------- | ---------- |
+| `request` | `ReplaceRequest` | The request :meth:preview_replace was given. | *required* |
+| `plan`    | `str`            | The plan that preview returned.              | *required* |
+
+Returns:
+
+| Type            | Description                                                    |
+| --------------- | -------------------------------------------------------------- |
+| `ReplaceResult` | class:~markdown_vault_mcp.managers.text_replace.ReplaceResult. |
+
+Raises:
+
+| Type                    | Description                                   |
+| ----------------------- | --------------------------------------------- |
+| `ReadOnlyError`         | If the vault is read-only.                    |
+| `DocumentNotFoundError` | A named note or folder does not exist.        |
+| `InvalidRequestError`   | The request is malformed or exceeds a bound.  |
+| `StalePlanError`        | The notes no longer give plan; preview again. |
 
 ### `okf_preview_log_repair(path)`
 
@@ -964,9 +992,9 @@ Raises:
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `InvalidRequestError`         | If the path escapes the source directory or has an extension not in the allowlist.                                            |
 
-### Previewing a text replacement across notes
+### Replacing text across notes
 
-`preview_replace` computes one replacement across the notes a request covers and writes nothing. Matches cover each note's body and never its frontmatter.
+`preview_replace` computes one replacement across the notes a request covers and writes nothing. `apply_replace` takes the plan from that preview, recomputes it, and writes each planned note when the notes still give that plan. Matches cover each note's body and never its frontmatter. Each write behaves like `edit`, OKF stamping and upkeep included.
 
 ```
 from markdown_vault_mcp.managers.text_replace import ReplaceRequest
@@ -980,7 +1008,11 @@ request = ReplaceRequest(
 preview = vault.writer.preview_replace(request)
 # preview.notes: each note it would change, with a count and, for the first
 # ten, a diff; preview.refused: notes it would leave alone, with the reason.
+result = vault.writer.apply_replace(request, preview.plan)
+# Each of result.notes is applied, skipped or refused.
 ```
+
+`apply_replace` raises `StalePlanError` and writes nothing when a covered note changed after the preview, or the request differs from the previewed one; preview again and apply the new plan. A note that changes between that check and its own write is reported `skipped` and left as it is.
 
 A request covers at most 1,000 notes, reads at most 256 KiB per note and 8 MiB in total, changes at most 200 notes and makes at most 10,000 replacements. Past a bound, the request is refused with `InvalidRequestError` rather than cut short. A regular expression gets 3 seconds across the whole selection. A preview shows diffs for the first 10 changed notes, each cut at 3,000 characters; narrow `paths` or `folders` to see the rest.
 
@@ -1035,6 +1067,38 @@ Attributes:
 | -------- | ----- | --------------------------- |
 | `path`   | `str` | Vault-relative note path.   |
 | `reason` | `str` | Why the note is left alone. |
+
+## `ReplaceResult(plan, notes, applied, skipped, refused)`
+
+What an apply did, note by note.
+
+Attributes:
+
+| Name      | Type                | Description                                             |
+| --------- | ------------------- | ------------------------------------------------------- |
+| `plan`    | `str`               | The digest the apply was given and matched.             |
+| `notes`   | `list[NoteOutcome]` | One outcome per planned or refused note, in path order. |
+| `applied` | `int`               | How many notes were written.                            |
+| `skipped` | `int`               | How many planned notes changed before their write.      |
+| `refused` | `int`               | How many notes were not written by policy.              |
+
+## `NoteOutcome(path, status, reason=None)`
+
+What an apply did with one note.
+
+Attributes:
+
+| Name     | Type         | Description                                                                                                                                                           |
+| -------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`   | `str`        | Vault-relative note path.                                                                                                                                             |
+| `status` | `NoteStatus` | applied (written), skipped (it changed after the plan was recomputed, so it was not written) or refused (not written: inside a nested repository, or not UTF-8 text). |
+| `reason` | \`str        | None\`                                                                                                                                                                |
+
+## `StalePlanError`
+
+Bases: `InvalidRequestError`
+
+The notes no longer give the plan an apply was given; nothing was written.
 
 ## GraphFacet
 
