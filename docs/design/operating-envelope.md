@@ -330,7 +330,8 @@ on scratch disk beside the state file, or under `TMPDIR` without a state file;
 memory-backed scratch consumes memory. Scratch contains embedding text and
 metadata content plus base64-encoded vectors. Operating-system temporary files are removed on handle close or process termination, though a create-then-unlink fallback has a brief vulnerable creation interval. A full or unwritable location
 fails preparation before publication; compatible and owned stores retain previous vectors, while an incompatible injected store is emptied before preparation. Cleanup failures are logged. The built-in chunk reader reads atomic pages and holds read locks only during each page fetch. Changes between pages can be observed or missed; convergence reconciles later edits. Built-in
-publishers still materialize generation copies, third-party indexes without the
+publishers then materialized generation copies (no longer, since
+[#1938's publishes](#after-1938-the-cold-builds-publish)), third-party indexes without the
 optional chunk iterator retain an eager read, and custom non-scalar metadata
 remains resident. Path bookkeeping and the largest document remain unbounded by
 the window. NumPy's required resident matrix alone was
@@ -373,8 +374,60 @@ size and one each at growth. Figures are whole-process peak resident memory
 | Time to index and embed, streamed publish | 6.3–6.7 s | 64.7 s |
 
 At growth the streamed build's anonymous memory now peaks during keyword
-indexing (110 MiB), not in the publish. The resident stores, numpy and
-resident SQLite, still hold copies of the generation while they publish.
+indexing (110 MiB), not in the publish. The resident stores' publish is
+[below](#after-1938-the-resident-stores-publish).
+
+## After #1938: the resident stores' publish
+
+The same profile found the resident stores' peak in `publish_generation`
+too. A resident store kept every replayed document and a normalised block
+of each one's vectors, then stacked the blocks into its matrix: about three
+copies of the vectors at once.
+
+numpy and resident SQLite now read the replayed generation twice. The first
+pass checks the paths and counts the rows. The second fills one preallocated
+float32 matrix a document at a time, so the vectors are held once, in the
+matrix the store then serves. The saved `.npy` matrix and SQLite's `chunks`
+rows are byte-identical to main's for the same documents.
+
+Measured on 28 November 2026 on one Linux host (16 threads, 125 GiB), Python
+3.14.8, with the stand-in provider and scratch on an ext4 disk. Main is
+`873457e0`; the change is the one-copy matrix alone. Main and the change alternated, three runs each at deployed size
+and one each at growth. Peaks are whole-process peak resident memory
+(`VmHWM`) in MiB, from the per-phase profiler. Times are the publish alone;
+whole-build times varied by a third between runs on this host, under other
+load, and are not compared.
+
+| | Deployed (22,764 rows) | Growth (227,640 rows) |
+|---|---|---|
+| numpy, peak, main | 408 MiB | 3,459 MiB |
+| numpy, peak, one copy | 206 MiB | 1,442 MiB |
+| SQLite resident, peak, main | 386 MiB | 3,219 MiB |
+| SQLite resident, peak, one copy | 184 MiB | 1,201 MiB |
+| numpy, publish, main | 1.10–1.38 s | 23.4 s |
+| numpy, publish, one copy | 1.30–1.37 s | 20.4 / 21.6 s |
+| SQLite resident, publish, main | 1.92–2.28 s | 31.9 s |
+| SQLite resident, publish, one copy | 2.52–3.91 s | 35.8 s |
+
+The second pass costs a second replay of the stage, which decodes every
+vector again. At deployed size that makes the publish slower, by about a
+tenth for numpy and a quarter for SQLite. At growth, numpy's publish is
+faster, since it no longer stacks 889 MiB of blocks, and SQLite's is an
+eighth slower. What remains at growth is the matrix itself
+(889 MiB), each row's metadata, and, for numpy, the JSON commit `_persist`
+encodes. A resident store serves that matrix, so it is the floor by design.
+The envelope harness's `--size deployed` build agrees for numpy (peak resident
+396.2 → 194.5 MiB); it measures SQLite streamed only.
+
+The freed heap a process kept after the build, which #1938 also reported,
+shrank with the copies. At growth, anonymous memory after the build and
+before any `malloc_trim` fell from 646–649 to 158–168 MiB for numpy, and from
+1,997 to 256 MiB for resident SQLite.
+
+PostgreSQL's publish already streams through a temporary file (#2185). On
+main its build peaked at 102.3 MiB resident at deployed size and 164.2 MiB at
+growth (envelope harness, `--backends postgres`, a throwaway
+`pgvector/pgvector:0.8.1-pg17` container), so it needed no change.
 
 ## What follows
 
@@ -390,4 +443,6 @@ resident SQLite, still hold copies of the generation while they publish.
   PostgreSQL restart and removed its per-note reads
   ([above](#after-1937-the-postgresql-restart)). **#1938** follows up the
   cold-build peak; the streamed SQLite publish no longer holds the
-  generation ([above](#after-1938-the-cold-builds-publish)).
+  generation ([above](#after-1938-the-cold-builds-publish)), and the
+  resident stores build their matrix in one copy
+  ([above](#after-1938-the-resident-stores-publish)).
