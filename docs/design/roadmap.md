@@ -1728,8 +1728,8 @@ owner picked:
 Otherwise *we* do it". [#1415][1415] stays in `035`: "Leave it in 035
 (Recommended)".
 
-`derived` — This settles the "open design question" the 17 November entry
-gave each feature. [#2056][2056] and [#1405][1405] are blocked by the
+`derived` — This settles the "open design question" that the package section
+gave each feature on 17 November. [#2056][2056] and [#1405][1405] are blocked by the
 version-control engine work in `028 git-contracts`:
 - [#2056][2056] by [#2504][2504] and [#2516][2516];
 - [#1405][1405] by [#2513][2513] and [#2514][2514].
