@@ -60,7 +60,7 @@ from markdown_vault_mcp.utils.fs import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
@@ -1333,7 +1333,9 @@ class IndexManager:
             )
             return
 
-    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+    def flush_dirty_embeddings(
+        self, paths: set[str], *, retrying: Collection[str] = ()
+    ) -> None:
         """Reconcile each path's vectors with its keyword rows and checkpoint once.
 
         Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner.
@@ -1343,5 +1345,6 @@ class IndexManager:
 
         Args:
             paths: Paths to re-embed (relative to source_dir).
+            retrying: The paths among *paths* an earlier pass failed for.
         """
-        self._embeddings.flush_dirty_embeddings(paths)
+        self._embeddings.flush_dirty_embeddings(paths, retrying=retrying)

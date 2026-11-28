@@ -47,6 +47,29 @@ def _write(vault: Vault, name: str, text: str) -> None:
     vault._index_mgr.flush_dirty_embeddings({name})
 
 
+def test_backlink_rewrite_flush_batches(tmp_path):
+    provider = _Counting()
+    vault = _vault(tmp_path, provider)
+    try:
+        for name in ("alpha.md", "beta.md"):
+            (vault.source_dir / name).write_text(f"# {name}\n\nSee [[old]].\n")
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        for name in ("alpha.md", "beta.md"):
+            path = vault.source_dir / name
+            path.write_text(path.read_text().replace("[[old]]", "[[new]]"))
+        paths = {"alpha.md", "beta.md"}
+        vault._index_mgr.process_dirty_paths(paths)
+        store = vault._vectors
+        provider.calls = 0
+        vault._index_mgr.flush_dirty_embeddings(paths)
+        assert provider.calls == 1
+        for path in paths:
+            assert "[[new]]" in store.rows_for(path)[0].metadata["content"]
+    finally:
+        vault.close()
+
+
 class TestTokens:
     def test_every_document_carries_its_content_hash(self, tmp_path):
         vault = _vault(tmp_path, MockEmbeddingProvider())
@@ -144,6 +167,59 @@ class TestRetriesFromEverySite:
             vault._coordinator.writer.submit(FlushDirtyEmbeddings()).result(5)
             rows = metadata_by_path(vault._vectors)["alpha.md"]  # type: ignore[arg-type]
             assert any("Quinces" in r["content"] for r in rows)
+        finally:
+            vault.close()
+
+    @pytest.mark.parametrize("via_writer", [True, False])
+    def test_a_rejected_note_is_retried_alone_by_the_next_flush(
+        self, tmp_path, via_writer
+    ):
+        class Rejecting(MockEmbeddingProvider):
+            def __init__(self) -> None:
+                super().__init__(dim=32)
+                self.calls: list[list[str]] = []
+
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                self.calls.append(list(texts))
+                if any("Rejected" in text for text in texts):
+                    raise RuntimeError("rejected")
+                return super().embed(texts)
+
+        provider = Rejecting()
+        vault = _vault(tmp_path, provider)
+        writer = vault._coordinator.writer
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+
+            def flush(texts: dict[str, str]) -> list[list[str]]:
+                for name, text in texts.items():
+                    (vault.source_dir / name).write_text(text)
+                vault._index_mgr.process_dirty_paths(set(texts))
+                provider.calls.clear()
+                if via_writer:  # the retry waits in the writer
+                    writer.mark_embedding_dirty(texts)
+                    writer.submit(FlushDirtyEmbeddings()).result(5)
+                else:  # the retry waits in the manager
+                    vault._index_mgr.flush_dirty_embeddings(set(texts))
+                return provider.calls
+
+            calls = flush(
+                {
+                    "alpha.md": "# Alpha\n\nQuinces.\n",
+                    "beta.md": "# Beta\n\nRejected boats.\n",
+                    "gamma.md": "# Gamma\n\nGrapes.\n",
+                }
+            )
+            assert [len(call) for call in calls] == [3, 1, 1, 1]
+            calls = flush(
+                {"alpha.md": "# Alpha\n\nPlums.\n", "gamma.md": "# Gamma\n\nFigs.\n"}
+            )
+            assert [len(call) for call in calls] == [1, 2]
+            assert "Rejected" in calls[0][0]
+            rows = metadata_by_path(vault._vectors)  # type: ignore[arg-type]
+            assert "Plums" in rows["alpha.md"][0]["content"]
+            assert "Figs" in rows["gamma.md"][0]["content"]
         finally:
             vault.close()
 

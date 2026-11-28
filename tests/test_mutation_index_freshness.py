@@ -150,7 +150,7 @@ def test_refresh_does_not_wait_for_followup_embeddings(
     started = threading.Event()
     release = threading.Event()
 
-    def held_embeddings(_paths: set[str]) -> None:
+    def held_embeddings(_paths: set[str], **_kwargs: object) -> None:
         started.set()
         assert release.wait(5)
 
