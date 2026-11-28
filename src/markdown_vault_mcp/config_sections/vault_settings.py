@@ -58,11 +58,10 @@ def conventions_filenames(name: str | None) -> tuple[str, ...]:
     Returns:
         The primary filename and, for the default, its legacy fallback.
     """
-    if name is None:
-        return ()
+    names: list[str] = [] if name is None else [name]
     if name == DEFAULT_CONVENTIONS_FILE:
-        return (name, LEGACY_CONVENTIONS_FILE)
-    return (name,)
+        names.append(LEGACY_CONVENTIONS_FILE)
+    return tuple(names)
 
 
 @dataclasses.dataclass(frozen=True)

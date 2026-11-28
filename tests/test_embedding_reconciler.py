@@ -113,13 +113,15 @@ NOTES = {"a.md": "# A\n\nApples.\n", "b.md": "# B\n\nBoats.\n"}
 @pytest.mark.parametrize("batch_size", [0, -1])
 def test_reconciler_rejects_nonpositive_batch_size(tmp_path, batch_size):
     fts, provider, _, _ = _setup(tmp_path, NOTES)
+    builder = EmbedTextBuilder()
+    probe = _Probe()
     with pytest.raises(ValueError, match="batch_size"):
         EmbeddingReconciler(
             fts=fts,
             provider=provider,
-            embed_builder=EmbedTextBuilder(),
+            embed_builder=builder,
             batch_size=batch_size,
-            source_probe=_Probe(),
+            source_probe=probe,
             is_excluded=lambda _: False,
         )
 

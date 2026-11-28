@@ -513,6 +513,12 @@ def _generation_chunks(snap: Snapshot) -> Iterator[tuple[Any, ...]]:
         at += len(metadata)
 
 
+def _clear_rows(conn: sqlite3.Connection) -> None:
+    """Delete every chunk and document row, leaving the store's metadata."""
+    conn.execute("DELETE FROM chunks")
+    conn.execute("DELETE FROM documents")
+
+
 def _stream_generation(
     conn: sqlite3.Connection, documents: Iterable[DocumentRows], dimension: int
 ) -> int:
@@ -528,8 +534,7 @@ def _stream_generation(
         ValueError: If a path appears twice, or a row is of another
             dimension, not finite, or its metadata cannot be stored.
     """
-    conn.execute("DELETE FROM chunks")
-    conn.execute("DELETE FROM documents")
+    _clear_rows(conn)
     seen: set[str] = set()
     written = 0
     for document in documents:
@@ -555,8 +560,7 @@ def _token_conflicts(
 
 
 def _empty(conn: sqlite3.Connection) -> None:
-    conn.execute("DELETE FROM chunks")
-    conn.execute("DELETE FROM documents")
+    _clear_rows(conn)
     conn.execute("DELETE FROM meta WHERE key IN ('identity', 'generation')")
 
 
@@ -1205,8 +1209,7 @@ class SqliteVectorStore(ResidentStore):
             new = numbered(prepared, snap.generation + 1)
 
             def work(conn: sqlite3.Connection) -> PublicationOutcome:
-                conn.execute("DELETE FROM chunks")
-                conn.execute("DELETE FROM documents")
+                _clear_rows(conn)
                 conn.executemany(_UPSERT_DOCUMENT, prepared.tokens.items())
                 conn.executemany(_INSERT_CHUNK, _generation_chunks(prepared))
                 _write_meta(conn, identity, new.generation)
