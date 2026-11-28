@@ -22,6 +22,60 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 7.0.0-rc.0 (2026-11-28)
+
+### Breaking Changes
+
+- reject degenerate or conflicting search weight maps (#2180)
+- reject malformed history date filters (#2143)
+- distinguish recorded evidence states (#2134)
+- 024 okf-evidence (#2392)
+- read a date-only timestamp as the start of that day in UTC (#2425)
+- never read an unparseable stale_after as fresh (#2426)
+- count only current verification events in the trust tier (#2433)
+- keep verified as history on the server's own writes (#2435)
+- read a status outside the vocabulary as not stable (#2436)
+- judge audit conformance by OKF 0.3 §3.2 and §11.1 (#2437)
+- treat a target above the vault root as external and broken (#2440)
+- percent-encode written link destinations as RFC 3986 requires (#2441)
+- read OKF timestamps by the RFC 3339 date-time grammar only (#2443)
+- read frontmatter by the YAML 1.2 core schema (#2444)
+- keep generated.at on a trivial edit (#2447)
+- stamp only concepts (#2541)
+- name the conflict-marking keys x-markdown-vault-mcp-* (#2549)
+- open and close a block only on an exact --- line (#2550)
+
+### Features
+
+- report review applicability separately from recorded claims (#2196)
+- inspect exact-note source attribution (#2135)
+- find notes citing an exact source resource (#2236)
+- serve the vault-workflow skill over MCP (#2533)
+
+### Bug Fixes
+
+- resolve missing markdown paths across the vault (#2181)
+- report malformed provenance fields (#2069)
+- label recorded review claims (#2133)
+- read back a review recorded for a subject with spaces (#2394)
+- skip the CLI review notice for notes with no review (#2397)
+- show the app review notice only on OKF vaults (#2398)
+- judge and report provenance like recorded evidence (#2399)
+- read every bundle as OKF 0.3 (#2424)
+- treat null and empty OKF fields as absent and one item as a list (#2431)
+- accept any <scheme>:<id> actor as OKF 0.3 does (#2432)
+- stop reporting okf_version on a concept as a conformance finding (#2442)
+- rewrite only the keys the OKF stamp and okf_verify change (#2446)
+- keep MCP task results for two hours (#2532)
+- free a job's cap slot once its outcome is retrieved (#2536)
+- keep unknown keys inside generated when stamping (#2539)
+- keep the root index.md frontmatter bytes on regeneration (#2542)
+- read one sources mapping as a one-item list (#2544)
+- leave dot paths out of the bundle (#2546)
+- present no bundle metadata for paths outside the bundle (#2548)
+- never create a reserved file beside a case-only variant (#2556)
+- give a deprecated note's replacement in its annotation (#2562)
+
 ## 6.1.4 (2026-11-18)
 
 ### Bug Fixes
