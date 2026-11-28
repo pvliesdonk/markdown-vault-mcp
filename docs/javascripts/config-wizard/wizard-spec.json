@@ -677,7 +677,7 @@
       "label": "Conventions File",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
-      "help": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions.",
+      "help": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). A folder without the default .conventions.md falls back to the deprecated _conventions.md and logs a warning. Set to none to disable folder conventions.",
       "advancedGroup": "Content"
     },
     {

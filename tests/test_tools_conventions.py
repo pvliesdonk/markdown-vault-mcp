@@ -184,7 +184,7 @@ class TestConfigSurface:
         async with Client(make_server()) as client:
             resource = await client.read_resource("config://vault")
         payload = json.loads(resource[0].text)
-        assert payload["conventions_file"] == "_conventions.md"
+        assert payload["conventions_file"] == ".conventions.md"
         assert payload["convention_folders"] == ["", "3-Resources"]
 
     async def test_instructions_mention_conventions(self) -> None:
@@ -216,3 +216,28 @@ class TestConventionsPayloadHelper:
             assert [e["content"] for e in payload] == ["Rules."]
         finally:
             col.close()
+
+
+@pytest.mark.usefixtures("_conventions_env")
+async def test_hidden_conventions_written_and_applied_without_indexing() -> None:
+    async with Client(make_server()) as client:
+        await wait_for_mcp_writer_drain(client)
+        await client.call_tool(
+            "write",
+            {"path": "1-Projects/.conventions.md", "content": "Unique hidden rule."},
+        )
+        result = await client.call_tool(
+            "write", {"path": "1-Projects/new.md", "content": "# New"}
+        )
+        await wait_for_mcp_writer_drain(client)
+        listed = await client.call_tool("list_documents", {})
+        searched = await client.call_tool("search", {"query": "Unique hidden rule"})
+    assert _structured(result)["conventions"][-1]["content"] == "Unique hidden rule."
+    assert all(
+        d["path"] != "1-Projects/.conventions.md"
+        for d in listed.structured_content["result"]
+    )
+    assert all(
+        d["path"] != "1-Projects/.conventions.md"
+        for d in searched.structured_content["result"]
+    )

@@ -1,6 +1,7 @@
 """In-vault folder conventions: user-authored per-folder authoring policy.
 
-A vault may carry well-known convention files (default ``_conventions.md``)
+A vault may carry well-known convention files (default ``.conventions.md``,
+falling back to the deprecated ``_conventions.md`` in a folder without one)
 whose free-form markdown describes how notes in that folder should be
 authored — for example "reference material: keep notes self-contained".
 The server *transports* this text to MCP clients verbatim; it never parses,
@@ -22,6 +23,10 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from markdown_vault_mcp.config_sections.vault_settings import (
+    LEGACY_CONVENTIONS_FILE,
+    conventions_filenames,
+)
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import (
     is_note,
@@ -76,12 +81,12 @@ class ConventionsResolver:
     The resolver is pure disk I/O with zero index coupling: convention
     files are excluded from the search index (the Vault derives the
     exclusion from *filename*) but read directly from the vault directory
-    each call. Files are small and lookups touch at most one file per
-    ancestor folder, so no caching is applied.
+    each call. Files are small and lookups try the configured name and its
+    fallback, if any, per ancestor folder, so no caching is applied.
 
     Args:
         source_dir: Root directory of the markdown vault.
-        filename: Well-known convention filename (e.g. ``"_conventions.md"``),
+        filename: Well-known convention filename (e.g. ``".conventions.md"``),
             or ``None`` to disable the feature entirely.
         exclude_patterns: The *configured* vault exclude patterns (without
             the derived convention-file patterns). Folders under these
@@ -101,6 +106,9 @@ class ConventionsResolver:
         # Convention files already reported as truncated, so the warning is
         # logged once per file rather than on every write result.
         self._truncation_warned: set[str] = set()
+        # Folders already reported as using the legacy filename, so the
+        # deprecation is logged once per folder rather than on every write.
+        self._legacy_warned: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -161,7 +169,7 @@ class ConventionsResolver:
             return []
         folders: set[str] = set()
         for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):
-            if abs_path.name != self._filename:
+            if abs_path.name not in conventions_filenames(self._filename):
                 continue
             rel = abs_path.relative_to(self._source_dir)
             if any(part.startswith(".") for part in rel.parts[:-1]):
@@ -208,21 +216,40 @@ class ConventionsResolver:
             The entry with frontmatter stripped and content truncated, or
             ``None`` when the file does not exist or cannot be read.
         """
-        if self._filename is None:
-            return None
-        rel = f"{folder}/{self._filename}" if folder else self._filename
-        file_path = self._source_dir / rel
-        try:
-            raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
-        except FileNotFoundError:
-            return None
-        except (OSError, UnicodeDecodeError):
-            # Unreadable or non-UTF-8 file: skip this entry rather than
-            # breaking the whole chain (valid ancestor files still apply).
-            logger.debug("conventions_read_failed path=%s", rel, exc_info=True)
-            return None
-        content = self._truncate(self._strip_frontmatter(raw, rel), rel)
-        return ConventionEntry(folder=folder, path=rel, content=content)
+        for name in conventions_filenames(self._filename):
+            rel = f"{folder}/{name}" if folder else name
+            file_path = self._source_dir / rel
+            try:
+                raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
+            except FileNotFoundError:
+                continue
+            except (OSError, UnicodeDecodeError):
+                # Unreadable or non-UTF-8 file: skip this entry rather than
+                # breaking the whole chain (valid ancestor files still apply).
+                # A present but unreadable primary does not fall back.
+                logger.debug("conventions_read_failed path=%s", rel, exc_info=True)
+                return None
+            if name == LEGACY_CONVENTIONS_FILE and name != self._filename:
+                self._warn_legacy(folder, rel)
+            content = self._truncate(self._strip_frontmatter(raw, rel), rel)
+            return ConventionEntry(folder=folder, path=rel, content=content)
+        return None
+
+    def _warn_legacy(self, folder: str, rel: str) -> None:
+        """Log, once per folder, that *rel* is read only as the legacy fallback.
+
+        Args:
+            folder: Vault-relative folder of the file (``""`` for root).
+            rel: Vault-relative path of the legacy convention file.
+        """
+        if folder in self._legacy_warned:
+            return
+        self._legacy_warned.add(folder)
+        logger.warning(
+            "conventions_legacy_filename_deprecated path=%s replacement=%s",
+            rel,
+            self._filename,
+        )
 
     def _truncate(self, content: str, rel: str) -> str:
         """Cap *content* at :data:`_MAX_ENTRY_CHARS`, marking where it was cut.
