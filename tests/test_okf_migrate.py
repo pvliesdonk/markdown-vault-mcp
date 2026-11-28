@@ -685,3 +685,42 @@ class TestComposeRegeneratedReserved:
         out = compose_regenerated_reserved(stored, {"title": "New"}, self.BODY)
         assert out.startswith("---\ntitle: New\n---\n")
         assert "# c" not in out
+
+
+class TestNoCaseOnlyReservedFiles:
+    """OKF 0.3 §6: "Producers SHOULD NOT make two paths that differ only by case" (#2454)."""
+
+    def test_generate_index_refuses_beside_a_case_variant(self, vault: Vault) -> None:
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        _write(vault, "sub/Index.md", "# My index note\n")
+        with pytest.raises(InvalidRequestError, match=r"sub/Index\.md"):
+            vault.writer.okf_generate_index(folder="sub")
+        assert sorted(p.name for p in (vault.source_dir / "sub").iterdir()) == [
+            "Index.md"
+        ]
+
+    def test_a_parent_listing_skips_a_subfolder_it_cannot_index(
+        self, vault: Vault
+    ) -> None:
+        _write(vault, "a.md", "# A\n")
+        _write(vault, "sub/INDEX.md", "# Shouting\n")
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        raw = (vault.source_dir / "index.md").read_text(encoding="utf-8")
+        assert "/sub/" not in raw
+        assert not (vault.source_dir / "sub" / "index.md").exists()
+
+    def test_seed_log_refuses_beside_a_case_variant(self, vault: Vault) -> None:
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        _write(vault, "Log.md", "# My log note\n")
+        with pytest.raises(InvalidRequestError, match=r"Log\.md"):
+            vault.writer.okf_seed_log()
+        assert not (vault.source_dir / "log.md").exists()
+
+    def test_the_same_name_is_not_a_collision(self, vault: Vault) -> None:
+        _write(vault, "index.md", "# Index\n")
+        doc_mgr = vault._doc_mgr
+        assert doc_mgr.case_only_sibling("index.md") is None
+        assert doc_mgr.case_only_sibling("missing/index.md") is None

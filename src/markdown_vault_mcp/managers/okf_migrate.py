@@ -38,7 +38,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
-from markdown_vault_mcp.exceptions import DocumentUnreadableError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     OKF_ROOT_INDEX_TITLE,
@@ -200,6 +200,9 @@ class OkfMigrationManager:
         Raises:
             ReadOnlyError: If the vault is read-only.
             SubmodulePathError: If *folder* lies inside a git submodule.
+            InvalidRequestError: If *folder* holds an entry whose name differs
+                from ``index.md`` only by case (OKF 0.3 §6, #2454). A
+                subfolder in that state gets no index and no pointer.
             DocumentUnreadableError: If the folder's ``index.md`` exists but
                 cannot be read; it is left untouched (#1608).
             IndexUnavailableError: If the index is not built.
@@ -212,6 +215,7 @@ class OkfMigrationManager:
 
         folder = normalize_folder(folder) or ""
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
+        self._refuse_case_collision(f"{folder}/index.md" if folder else "index.md")
         prefix = f"{folder}/" if folder else ""
         note_entries: list[tuple[str, str, str | None]] = []
         subfolders: set[str] = set()
@@ -250,9 +254,14 @@ class OkfMigrationManager:
         created: list[str] = []
         for sub in sorted(subfolders):
             # A kept submodule subfolder has an index, so it is never generated.
-            if not self._has_index(f"{prefix}{sub}"):
-                child = self.generate_index(folder=f"{prefix}{sub}")
-                created += [child.path, *child.created]
+            if self._has_index(f"{prefix}{sub}"):
+                continue
+            if self._case_collision(f"{prefix}{sub}/index.md") is not None:
+                # No index can be made there, so no pointer may lead to one.
+                entries.remove((f"{sub}/", f"/{prefix}{sub}/index.md", None))
+                continue
+            child = self.generate_index(folder=f"{prefix}{sub}")
+            created += [child.path, *child.created]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
@@ -275,6 +284,32 @@ class OkfMigrationManager:
             frontmatter_preserved=preserved,
             created=tuple(created),
         )
+
+    def _case_collision(self, path: str) -> str | None:
+        """The existing path that *path* would differ from only by case."""
+        collision = self._doc_mgr.case_only_sibling(path)
+        if collision is not None:
+            logger.info(
+                "okf_reserved_file_skipped path=%s reason=case_collision existing=%s",
+                path,
+                collision,
+            )
+        return collision
+
+    def _refuse_case_collision(self, path: str) -> None:
+        """Refuse to create *path* beside a name differing only by case (#2454).
+
+        Raises:
+            InvalidRequestError: If such an entry exists.
+        """
+        collision = self._case_collision(path)
+        if collision is not None:
+            raise InvalidRequestError(
+                f"'{collision}' already exists and differs from '{path}' only "
+                f"by case, so writing '{path}' would make two such paths. "
+                f"Rename '{collision}' with rename first, or leave this folder "
+                "without it."
+            )
 
     def _has_index(self, folder: str) -> bool:
         """Whether *folder* has an ``index.md``; an unreadable one counts.
@@ -318,11 +353,14 @@ class OkfMigrationManager:
             DocumentUnreadableError: If ``log.md`` exists but cannot be read;
                 it is left untouched (#1608).
             FileExistsError: If ``log.md`` already exists in *folder*.
+            InvalidRequestError: If *folder* holds an entry whose name differs
+                from ``log.md`` only by case (OKF 0.3 §6, #2454).
         """
         self._doc_mgr.ensure_writable()
         folder = normalize_folder(folder) or ""
         self._doc_mgr.refuse_folder_in_submodule(folder, "folder")
         log_path = f"{folder}/log.md" if folder else "log.md"
+        self._refuse_case_collision(log_path)
         if self._doc_mgr.read(log_path) is not None:
             raise FileExistsError(
                 f"{log_path} already exists; seeding would overwrite the "

@@ -73,6 +73,10 @@ class _FakeDoc:
         "Return false for a document manager without a git guard."
         return False
 
+    def case_only_sibling(self, _path: str) -> str | None:
+        "Report no case-only variant: the double models an empty folder."
+        return None
+
     def read(self, _path: str) -> Any:
         """Model ``DocumentManager.read``: ``content`` is the *whole file*.
 
@@ -335,6 +339,28 @@ class TestConventionMaintenanceIntegration:
         assert not (enforced_vault.source_dir / ".drafts" / "index.md").exists()
         listing = _content(enforced_vault, "guides/index.md")
         assert listing is not None and "/guides/a.md" not in listing
+
+    def test_upkeep_creates_no_case_variant_of_a_reserved_file(
+        self, enforced_vault: Vault, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A user's Index.md and Log.md never gain index.md / log.md beside
+        # them (OKF 0.3 §6, #2454); the skip is an INFO line.
+        root = enforced_vault.source_dir
+        (root / "guides" / "Index.md").write_text("# Mine\n", encoding="utf-8")
+        (root / "guides" / "Log.md").write_text("# Mine too\n", encoding="utf-8")
+        enforced_vault.index.build_index()
+        with caplog.at_level(logging.INFO, logger="markdown_vault_mcp"):
+            enforced_vault.writer.write("guides/a.md", "# A\n")
+            wait_for_writer_drain(enforced_vault)
+        assert sorted(p.name for p in (root / "guides").iterdir()) == [
+            "Index.md",
+            "Log.md",
+            "a.md",
+        ]
+        skips = [r for r in caplog.records if "reason=case_collision" in r.getMessage()]
+        assert {r.levelno for r in skips} == {logging.INFO}
+        skipped = {r.args[0] for r in skips if isinstance(r.args, tuple)}
+        assert {"guides/log.md", "guides/index.md"} <= skipped
 
     def test_log_and_index_upkeep_survive_write_protection(
         self, tmp_path: Path
@@ -648,6 +674,21 @@ class TestRefreshIndexesGuards:
         maintainer, migrate = self._maintainer()
         maintainer.refresh_indexes(["b", "a", "b", ""], trigger_paths=["b/x.md"])
         assert migrate.index_calls == ["b", "a", ""]
+
+    def test_a_folder_with_a_case_variant_is_not_refreshed(self) -> None:
+        # OKF 0.3 §6, #2454: no index.md beside a user's Index.md.
+        doc = _FakeDoc()
+        doc.case_only_sibling = lambda path: (  # type: ignore[method-assign]
+            "a/Index.md" if path == "a/index.md" else None
+        )
+        migrate = _FakeMigrate()
+        maintainer = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+        )
+        maintainer.refresh_indexes(["a", "b"], trigger_paths=["a/x.md"])
+        assert migrate.index_calls == ["b"]
 
     def test_inactive_vault_is_a_noop(self) -> None:
         maintainer, migrate = self._maintainer(active=False)

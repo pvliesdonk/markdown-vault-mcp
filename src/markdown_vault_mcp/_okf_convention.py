@@ -279,6 +279,8 @@ class ConventionMaintainer:
         the vault's own change history stops being indexed.
         """
         log_path = f"{folder}/log.md" if folder else "log.md"
+        if self._skips_case_collision(log_path):
+            return
         verb = _OPERATION_VERB.get(operation, operation)
         summary = f"**Update**: {verb} `{path}`"
         try:
@@ -308,9 +310,27 @@ class ConventionMaintainer:
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 
+    def _skips_case_collision(self, path: str) -> bool:
+        """Whether upkeep must not create *path*: a name differs only by case."""
+        collision = self._doc_mgr.case_only_sibling(path)
+        if collision is None:
+            return False
+        logger.info(
+            "okf_convention_skipped path=%s reason=case_collision existing=%s",
+            path,
+            collision,
+        )
+        return True
+
     def _refresh_index(self, folder: str) -> None:
-        """Regenerate the folder's ``index.md`` from the (drained) listing."""
+        """Regenerate the folder's ``index.md`` from the (drained) listing.
+
+        Skipped, with an INFO line, when the folder holds a name differing
+        from ``index.md`` only by case (OKF 0.3 §6, #2454).
+        """
         index_path = f"{folder}/index.md" if folder else "index.md"
+        if self._skips_case_collision(index_path):
+            return
         try:
             if self._sync_index is not None:
                 self._sync_index()
