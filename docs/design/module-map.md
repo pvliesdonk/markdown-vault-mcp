@@ -178,7 +178,7 @@ src/markdown_vault_mcp/
     _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     query.py           -- exact page/count/aggregate MCP tools and typed wire projections
-    writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
+    writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments; replace_text, #2031)
     graph.py           -- link-graph tool registrations
     index.py           -- index/reindex/embeddings-status tool registrations
     git.py             -- git sync/history/diff tool registrations
