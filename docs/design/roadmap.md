@@ -261,7 +261,8 @@ star), storage and search ([#2463][2463], which led to
 [#2538][2538], writing its north star), the
 library and its public surface ([#2464][2464], which led to
 [#2540][2540]), the release system
-([#2465][2465], whose vision document was never adopted), vault views
+([#2465][2465], whose vision document was never adopted; it led to
+[#2547][2547]), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).
 
 `stated` — On which subsystems need a north star: "All likely deserve a North
@@ -796,8 +797,8 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
   reopening [#2459][2459], the three features that carry the rule
   ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
   for the other subsystems ([#2462][2462] to [#2467][2467]), and writing the
-  storage and library north stars that followed ([#2538][2538],
-  [#2540][2540]). Docs and process, which cut no release on their own,
+  storage, library and release north stars that followed ([#2538][2538],
+  [#2540][2540], [#2547][2547]). Docs and process, which cut no release on their own,
   like `010 template-detach`: the reopening's code departures went to the OKF
   packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
@@ -1554,7 +1555,7 @@ contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
 scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
-### 28 November 2026 — storage and the library will get north stars
+### 28 November 2026 — storage, the library and releasing will get north stars
 
 `stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
 with what we are already doing." On the spike's questions, the owner chose
@@ -1619,6 +1620,30 @@ The content of the tools, the meaning of the storage and history protocols,
 and how lockstep releases are cut stay outside it. It is drafted after the
 remaining spikes, like the storage one. In § First-class library and the
 sections before it, `020` names the package now numbered `029`.
+
+`stated` — On releasing: "We are pretty happy with what it is now, but it is
+*purely* intended for an mcp server in various shapes. If we grow with a
+library, a cli, and maybe other options, the release system should
+accommodate." On spike [#2465][2465]'s question, the owner chose "Replace with
+new NS (Recommended)" (owner, 28 November 2026).
+
+`evidenced` — The release model generalizes: a release is a reviewed pull
+request, with one tag and one changelog, and the edge build is versionless.
+The plumbing assumes one server distribution:
+- knope versions only the root `pyproject.toml` (`knope.toml`);
+- the plugin builder accepts exactly one wheel
+  (`.github/actions/build-plugin-zip/vendor.py`);
+- every artifact except the wheel is the server's.
+
+[release-vision.md](release-vision.md) was never adopted, and the build
+reverses it in several places. For example, rc wheels reach PyPI because the
+mcpb bundle points there (`release.yml`).
+
+`derived` — The release north star ([#2547][2547]) is written from what was
+built, generalized to a set of distributions released together, and settles
+those reversals in its rediscussion. The vision and
+[release-migration.md](release-migration.md) then become historical. It meets
+the library north star at the `==` pins between distributions.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
@@ -1845,6 +1870,7 @@ sections before it, `020` names the package now numbered `029`.
 [2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
 [2538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538
 [2540]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540
+[2547]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2547
 [2020]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2020
 [1812]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1812
 [2464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464
