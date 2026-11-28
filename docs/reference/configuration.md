@@ -126,7 +126,9 @@ startup when running over HTTP. The queue name comes from the
 `MARKDOWN_VAULT_MCP` prefix, so two servers sharing one Redis do not share a
 queue.
 
-Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Set the
+Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Give
+each duration in ISO 8601 form, such as `PT10M`; a bare number of seconds
+stops the server from starting. Set the
 backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than
 `FASTMCP_DOCKET_URL`: the former wins when both are set, and the server warns
 about the disagreement.
@@ -141,10 +143,10 @@ upstream default is 15 minutes. Set `FASTMCP_DOCKET_EXECUTION_TTL` to an ISO
 |---|---|---|
 | `FASTMCP_DOCKET_CONCURRENCY` | `10` | Maximum background tasks this worker runs at once. |
 | `FASTMCP_DOCKET_WORKER_NAME` | (none) | Identifies this worker in the queue; defaults to a generated name. |
-| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT` | `300` | Seconds before a task claimed by a worker that never finished is redelivered to another. |
-| `FASTMCP_DOCKET_RECONNECTION_DELAY` | `5` | Seconds to wait before reconnecting after the queue connection drops. |
+| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT` | `PT5M` | How long a task claimed by a worker that never finished waits before it is redelivered to another, as an ISO 8601 duration. |
+| `FASTMCP_DOCKET_RECONNECTION_DELAY` | `PT5S` | How long to wait before reconnecting after the queue connection drops, as an ISO 8601 duration. |
 | `FASTMCP_DOCKET_EXECUTION_TTL` | `PT2H` | How long a task and its result are kept, from the task's creation, as an ISO 8601 duration; clients see it as the task's `ttlMs`. |
-| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `0.05` | Seconds between queue polls; lower cuts latency and raises idle load. |
+| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `PT0.05S` | Time between queue polls, as an ISO 8601 duration; lower cuts latency and raises idle load. |
 <!-- GENERATED-ENV-TABLE-REF-TASKS-END -->
 
 ## MCP Apps
