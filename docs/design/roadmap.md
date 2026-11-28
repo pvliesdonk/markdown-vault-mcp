@@ -809,8 +809,11 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
   (major): epic [#2401][2401]: research [#2403][2403] first, then one bug per
   departure from the spec, including the three the north-star audit found
   ([#2484][2484] to [#2486][2486]).
-- **[026 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**:
-  the `025` of the sections above.
+- **[026 contributed-features](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/26)**
+  (minor): the owner-filed features [#1293][1293], [#1241][1241],
+  [#1923][1923], [#1605][1605], [#1496][1496] and [#2031][2031], the accepted
+  contributor features [#2311][2311], [#2124][2124] (narrowed) and
+  [#2090][2090], and the bug [#1938][1938] (§ Revisions, 28 November 2026).
 - **[027 okf-capabilities-inventory](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/27)**
   (major): capability settings, gating and reporting ([#2380][2380],
   [#1411][1411], [#1432][1432]), then inventory ([#1442][1442], [#1421][1421],
@@ -1700,6 +1703,54 @@ it.
 choice. The order of storage ([#2538][2538]), the library ([#2540][2540]) and
 documentation ([#2557][2557]) after it is open.
 
+### 28 November 2026 — settle `026`'s membership and design questions
+
+`stated` — The owner reviewed `026`'s contributed pull requests against the
+north stars. Contributions are reused and credited where possible, but "The
+existence of the issue doesn't make the problem valid per se" (owner,
+28 November 2026). Each answer is recorded on its issue as the option the
+owner picked:
+- [#2124][2124]: "Accept narrowed";
+- [#1923][1923]: "Adopt, fake-only tests";
+- [#1241][1241]: "perf (Recommended)";
+- [#2056][2056] and [#1405][1405]: "Move both out of 026 to 028+
+  (Recommended)";
+- [#875][875]: "Decline, move out";
+- [#2311][2311]: "Accept, one enum", then "Deprecated alias (Recommended)";
+- [#1293][1293]: "Yes: stats, failures only";
+- [#2031][2031]: "Per-note outcomes", "Body only", then "Go, lean rebuild
+  (Recommended)";
+- [#2090][2090]: "Accept, as a served skill", then "Vendor, keep metadata
+  MIT";
+- [#1605][1605]: "Deprecate with a warning".
+
+[#1938][1938]: "See if it was contributed later, outside the milestone.
+Otherwise *we* do it". [#1415][1415] stays in `035`: "Leave it in 035
+(Recommended)".
+
+`derived` — This settles the "open design question" the 17 November entry
+gave each feature. [#2056][2056] and [#1405][1405] are blocked by the
+version-control engine work in `028 git-contracts`:
+- [#2056][2056] by [#2504][2504] and [#2516][2516];
+- [#1405][1405] by [#2513][2513] and [#2514][2514].
+
+Their contributed PRs contradict the version-control north star: a second "is
+there git?" setting, and recording policy inside one engine. `028` is a patch
+package and both are features, so they stay unpackaged until a package after
+`028` takes them. Placing them is the owner's call. [#875][875] returns to the
+backlog.
+
+`evidenced` — Profiling for [#1938][1938] puts the cold build's peak in each
+store's `publish_generation`, which reads the whole embedding spool back into
+memory (`stores/_resident.py`). The build itself is bounded before that
+point, so the series' earlier slices did their part. The PostgreSQL store
+already streams its publish. One new departure surfaced in review:
+- [#2568][2568]: export leaves out the conventions file and the template folder
+  by server setting.
+
+It is unpackaged, with the other exclusion issues of
+`027 okf-capabilities-inventory` its likely home.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1923,6 +1974,7 @@ documentation ([#2557][2557]) after it is open.
 [2461]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2461
 [2462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462
 [2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
+[2504]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2504
 [2538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538
 [2540]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540
 [2547]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2547
@@ -1956,3 +2008,4 @@ documentation ([#2557][2557]) after it is open.
 [2520]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2520
 [2521]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2521
 [2522]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2522
+[2568]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2568
