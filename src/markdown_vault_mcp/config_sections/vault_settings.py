@@ -178,6 +178,7 @@ class VaultSettings:
             results just before file grouping (``None`` disables).
         fts_weights: Per-column BM25 weights persisted into the FTS5 rank
             configuration (``None`` or all-``1.0`` keeps the default).
+            A writable index logs a warning if all effective weights are zero.
         conventions_file: Well-known per-folder conventions filename resolved
             by :attr:`~markdown_vault_mcp.vault.Vault.conventions`
             (default ``"_conventions.md"``); ``None``
