@@ -1,0 +1,3472 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="How the server recognizes an Open Knowledge Format bundle, what it adds to results, and the tools that audit and migrate one.">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/okf/">
+      
+      
+        <link rel="prev" href="../obsidian-everywhere/">
+      
+      
+        <link rel="next" href="../para/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Open Knowledge Format - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#open-knowledge-format-okf-with-markdown-vault-mcp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Open Knowledge Format
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Overview
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../security-model/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Security model
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deploy/" class="md-tabs__link">
+          
+  
+  
+  Deploy
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Use
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/configuration/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../upgrade/" class="md-tabs__link">
+          
+  
+  
+  Upgrade
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contribute/" class="md-tabs__link">
+          
+  
+  
+  Contribute
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/http-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A remote server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deploy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd and packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/reverse-proxy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reverse proxy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploy/transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Use
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embedding-stores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing an embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postgresql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostgreSQL embedding store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embedding-state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading, switching and restoring embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Index storage and SQLite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vault-explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault explorer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-server-recognises-a-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the server recognises a bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-metadata-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the metadata means
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontmatter-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspect-citations-in-one-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspect citations in one note
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspect citations in one note">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#find-notes-citing-a-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Find notes citing a source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syntax-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Syntax coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-an-existing-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating an existing vault
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating an existing vault">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Declare
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-enrich" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Enrich
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-mechanical-transforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Mechanical transforms
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reserved-files-on-a-vault-with-required-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reserved files on a vault with required fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-enforced-write-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The enforced write layer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The enforced write layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-a-human-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording a human review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keeping-logmd-and-indexmd-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping log.md and index.md current
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repairing-legacy-log-frontmatter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repairing legacy log frontmatter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-okf-with-para-or-zettelkasten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using OKF with PARA or Zettelkasten
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exporting-a-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting a bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../terminal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Query a vault from the terminal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/reader/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reader
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/graph/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/indexing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Indexing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/writer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/vault_app_tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault app tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/server_info/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server info
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/transfer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/summarize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Summarize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/tools/jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_7" id="__nav_6_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Upgrade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contribute
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/docs-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/integration-branches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration branches
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-server-recognises-a-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the server recognises a bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-metadata-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the metadata means
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontmatter-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspect-citations-in-one-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspect citations in one note
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspect citations in one note">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#find-notes-citing-a-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Find notes citing a source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syntax-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Syntax coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-an-existing-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating an existing vault
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating an existing vault">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Declare
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-enrich" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Enrich
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-mechanical-transforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Mechanical transforms
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reserved-files-on-a-vault-with-required-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reserved files on a vault with required fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-enforced-write-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The enforced write layer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The enforced write layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-a-human-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording a human review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keeping-logmd-and-indexmd-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping log.md and index.md current
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repairing-legacy-log-frontmatter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repairing legacy log frontmatter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-okf-with-para-or-zettelkasten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using OKF with PARA or Zettelkasten
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exporting-a-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting a bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="open-knowledge-format-okf-with-markdown-vault-mcp">Open Knowledge Format (OKF) with markdown-vault-mcp<a class="headerlink" href="#open-knowledge-format-okf-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
+<p><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">Open Knowledge Format</a> (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Example pack</p>
+<p>The <a href="https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/"><code>examples/okf/</code></a> directory ships a declaration index, typed note templates (<code>Concept</code>, <code>Capture</code>), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.</p>
+</div>
+<h2 id="how-the-server-recognises-a-bundle">How the server recognises a bundle<a class="headerlink" href="#how-the-server-recognises-a-bundle" title="Permanent link">&para;</a></h2>
+<p>The server treats a vault as an OKF bundle when the root <code>index.md</code> declares a version in its frontmatter:</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">okf_version</span><span class="p">:</span><span class="w"> </span><span class="s">"0.3"</span>
+<span class="nn">---</span>
+<span class="c1"># My bundle</span>
+</code></pre></div>
+<p>This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The server reads every bundle by the rules of OKF 0.3, whatever version it declares, so a bundle that still declares <code>0.2</code> is read as 0.3. For a version it does not know, such as a later release, the server logs an <code>okf_unknown_version</code> warning and reads the bundle anyway. The <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> environment variable controls how the server responds to it:</p>
+<p>Files and folders whose names start with <code>.</code>, such as <code>.drafts/</code> or <code>.notes.md</code>, are not part of the bundle, as OKF 0.3 says. They remain vault files that search can find. The server never treats them as bundle content, though: their results carry no <code>okf</code> annotation and match no OKF filter, and the <code>stats</code> tool leaves them out of its <code>okf</code> counts. <code>okf_validate</code> and the export pass over them. Generated <code>index.md</code> listings never link or create them, and the write layer neither stamps them nor keeps a <code>log.md</code> or <code>index.md</code> for them. To keep a file out of a bundle, give it, or a folder above it, a name starting with <code>.</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code> (default)</td>
+<td>Apply OKF read semantics when the root <code>index.md</code> declares <code>okf_version</code>.</td>
+</tr>
+<tr>
+<td><code>off</code></td>
+<td>Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as <code>status</code> for an unrelated purpose.</td>
+</tr>
+<tr>
+<td><code>on</code></td>
+<td>Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own.</td>
+</tr>
+</tbody>
+</table>
+<p>Check the current state through the <code>config://vault</code> resource. Its <code>okf_write_configured</code> field reports the configured <code>OKF_WRITE</code> flag, and <code>okf_write_effective</code> is true when that flag is enabled, OKF is active, and the vault is not read-only. When OKF is active, the <code>stats</code> tool's <code>okf</code> section reports the same values as <code>write_configured</code> and <code>write_effective</code>. The section is absent when OKF is inactive; use <code>config://vault</code> to inspect that state. Detection reflects changes to the declaration on the next call.</p>
+<p>The effective write state describes the existing provenance stamping and reserved-file maintenance layer. It does not report whether <code>okf_verify</code> is available: <code>OKF_VERIFY=off</code> can hide that tool while the write layer remains effective. Independent capability reporting is planned in <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1412">#1412</a>.</p>
+<h2 id="what-the-metadata-means">What the metadata means<a class="headerlink" href="#what-the-metadata-means" title="Permanent link">&para;</a></h2>
+<p>On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in <code>search</code>, <code>read</code>, and <code>get_context</code> results under an <code>okf</code> key:</p>
+<ul>
+<li><strong>Type</strong>: the free-text <code>type</code> field, such as <code>Playbook</code>, <code>Metric</code>, or <code>Reference</code>.</li>
+<li><strong>Lifecycle</strong>: <code>status</code> is one of <code>draft</code>, <code>stable</code>, or <code>deprecated</code>. A note with no <code>status</code> is treated as <code>stable</code>. <code>stale_after</code> marks a note stale from an instant on (<code>2026-12-31T09:00:00+01:00</code>; a date-time needs its seconds and its offset, and a <code>T</code> between date and time) or from a date on (<code>2026-12-31</code>, which means the start of that day in UTC, as do the dates in <code>generated.at</code> and <code>verified[].at</code>). A value the server cannot parse, such as an instant without an offset, also marks the note stale. A deprecated note's annotation also carries <code>superseded_by</code>: the vault path of its replacement, resolved the way OKF resolves a path field (from the note's own folder, or from the bundle root when it starts with <code>/</code>), or <code>null</code> when the note names none or it points outside the bundle. Pass that path to <code>read</code> to follow it; filtering never follows it for you.</li>
+<li><strong>Recorded review tier</strong>: <code>trust_tier</code> describes supplied review claims (a single entry may be a bare mapping). Only current records count: a record is current when its <code>at</code> is equal to or later than <code>generated.at</code>, or when the note has no <code>generated</code>, as OKF 0.3 requires. A current record with a usable <code>human:&lt;id&gt;</code> actor and an <code>at</code> that is a date or a date-time with an offset gives <code>human-reviewed</code>; otherwise, current records from any other actor, <code>team:&lt;id&gt;</code> and unknown schemes included, give <code>machine-confirmed</code>, and no current record gives <code>unverified</code>. A review older than the last content change stays in the file as history but no longer counts, and a note whose <code>generated</code> has no usable <code>at</code> has no current record, so even an <code>okf_verify</code> entry does not promote it. Malformed entries do not promote the tier. The server does not certify the reviewer, truth, or applicability to the current revision. The <code>stats</code> trust breakdown counts these same classifications.</li>
+<li><strong>Evidence</strong>: <code>freshness.state</code> distinguishes <code>missing</code>, <code>malformed</code>, <code>unexpired</code>, and <code>expired</code>. <code>review</code> separates recorded and malformed entry counts, and splits the recorded ones into <code>current_entries</code> and <code>earlier_entries</code>, with <code>currency</code> naming how they were judged (<code>no_generation</code>, <code>generated_at</code>, or <code>no_generation_time</code>). Whole reads include the parsed values under <code>recorded</code>; compact results keep the summary. <code>stale: false</code> includes absent or malformed expiry, so it does not establish freshness.</li>
+<li><strong>Review applicability</strong>: <code>review_applicability.state</code> is <code>unknown</code> whenever the note's <code>verified</code> value has entries or is malformed, because no review is bound to the content it covered. Its <code>basis</code> is <code>no_snapshot_binding</code>. <code>review</code> reports entry validity. No timestamp or extension establishes coverage of the current content. An absent <code>verified</code>, or one that is null, empty or an empty list, reports <code>state: none</code>. This assessment is separate from freshness and the recorded review tier.</li>
+<li><strong>Sources</strong>: the <code>sources</code> provenance list, surfaced in full on <code>read</code> and as a count on search hits.</li>
+<li><strong>Provenance</strong>: <code>attribution</code> reports the <code>sources</code> list in the same shape as <code>review</code>: <code>state</code> is <code>missing</code>, <code>malformed</code>, or <code>recorded</code>, with counts of entries that carry a <code>resource</code>, which the OKF spec requires in each entry (recorded), and of other entries (malformed), and <code>basis: supplied_metadata_only</code>. As OKF 0.3 asks, a single source written without the list dash is a list of one, and a null or empty <code>sources</code>, <code>verified</code>, <code>generated</code> or <code>stale_after</code> counts as absent. <code>generation</code> reports <code>generated</code> as <code>{state, basis}</code> with <code>state</code> <code>missing</code>, <code>malformed</code>, or <code>recorded</code>. It follows the OKF spec: <code>by</code> is required and is an actor (<code>&lt;scheme&gt;:&lt;id&gt;</code> such as <code>human:&lt;id&gt;</code>, <code>team:&lt;id&gt;</code> or <code>process:&lt;id&gt;</code>, or <code>&lt;tool&gt;/&lt;version&gt;</code>; any other scheme is accepted as non-human), and <code>at</code> is optional but, when present, must be a date or a date-time with an offset. A <code>verified</code> entry needs both. The server's own stamps meet it. Neither object repairs or hides the raw values, so mixed source lists stay intact on reads and keep their full count on hits.</li>
+</ul>
+<p>The CLI labels recorded review metadata and unknown applicability in human-readable search output. For whole-note text reads, it sends that notice to <code>stderr</code>, leaving the note content on <code>stdout</code> unchanged. In both, a note without a review, where <code>review_applicability</code> reports <code>none</code> (no <code>verified</code> field or an empty one), gets no notice; a malformed or recorded <code>verified</code> field keeps it. The app's note and context views follow the same rule on an OKF bundle: a malformed or recorded <code>verified</code> field gets the notice, while an absent or empty one does not. On a vault without OKF they show no notice. The original metadata stays visible in all cases. These notices change only the human-readable presentation. JSON and agent output retain their existing payloads.</p>
+<p>You can filter on these dimensions. <code>search</code> and <code>list_documents</code> accept <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and <code>type</code> filters, so <code>{"stale": "true"}</code> or <code>{"status": "deprecated"}</code> builds a triage listing. See <a href="../../reference/tools/reader/#list_documents"><code>list_documents</code></a> for the full filter set.</p>
+<h2 id="frontmatter-fields">Frontmatter fields<a class="headerlink" href="#frontmatter-fields" title="Permanent link">&para;</a></h2>
+<p>A conformant note needs only a non-empty <code>type</code>. Everything else is optional but recommended:</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Playbook</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Onboarding a new teammate</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Step-by-step setup for the first week.</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">process</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">people</span><span class="p p-Indicator">]</span>
+<span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stable</span>
+<span class="nt">stale_after</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2027-01-01</span>
+<span class="nt">sources</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resource</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://example.com/handbook</span>
+<span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">handbook</span>
+<span class="nt">verified</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">by</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">human:alex</span>
+<span class="w">    </span><span class="nt">at</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-08-01T09:14:00Z"</span>
+<span class="nn">---</span>
+</code></pre></div>
+<h2 id="inspect-citations-in-one-note">Inspect citations in one note<a class="headerlink" href="#inspect-citations-in-one-note" title="Permanent link">&para;</a></h2>
+<p>Call <code>inspect_citations(path="research/note.md")</code> for an exact path you found with
+<code>search</code> or <code>list_documents</code>. The library equivalent is
+<code>vault.reader.inspect_citations("research/note.md")</code>. This opt-in read works
+without a bundle declaration, including when OKF annotations are off.</p>
+<p>It joins body markers such as <code>[^handbook]</code> to frontmatter <code>sources</code> entries whose
+<code>id</code> is exactly <code>handbook</code>. The result includes the literal parsed source records,
+unknown fields included. <code>source_indices</code> identifies matching records by their
+zero-based positions in that response. Those positions can change when sources
+are reordered; the exact string <code>id</code> is the stable key. A <code>sources</code> written as
+one mapping rather than a list is read as a one-entry list, at position 0, and a
+null or empty <code>sources</code> as none, as OKF 0.3 §11.2 asks. Labels are not trimmed,
+case-folded or coerced from numbers.</p>
+<ul>
+<li><code>matched</code>: exactly one source entry has the label's ID, even if that entry has
+  a separately reported source-shape issue.</li>
+<li><code>ambiguous</code>: multiple entries have that ID, even if their resources are equal.</li>
+<li><code>unmatched</code>: no entry has that ID. This may be an ordinary explanatory footnote,
+  not a broken citation.</li>
+</ul>
+<p>The report also lists duplicate IDs whether cited or not, entries without IDs,
+and source-shape issues. An ID is optional; an entry without one is not invalid.
+A resource may describe a scope rather than a location. URLs and paths are also
+accepted. The inspector does not open resources or check whether they exist. It
+does not assess whether a source supports a claim or whether the claim is true.</p>
+<h3 id="find-notes-citing-a-source">Find notes citing a source<a class="headerlink" href="#find-notes-citing-a-source" title="Permanent link">&para;</a></h3>
+<p>Call <code>find_citing_notes(resource="https://example.org/source")</code> to find indexed
+notes with literal footnote labels matching a source record for that
+exact resource. The result includes label occurrence counts and unresolved or
+ambiguous labels, plus labels whose matched source has no valid resource, in notes
+declaring the resource. Results are unbounded. When OKF is active, reserved
+<code>index.md</code> and <code>log.md</code> files are excluded. Body links alone do not count.
+On the first writer startup after upgrading from index semantics version 12, the
+index rebuilds. <code>unconverted_notes</code> counts indexed notes whose citation rows were
+not derived with the current rules, such as a note that could not be re-read
+during that rebuild; they are left out of the result. An ordinary reindex skips
+unchanged notes, so if the count stays above zero, call the MCP tool
+<code>reindex(force=True)</code> or the library method <code>build_index(force=True)</code> for a full
+rebuild.
+The lookup does not fetch resources or assess whether they support a claim.</p>
+<h3 id="syntax-coverage">Syntax coverage<a class="headerlink" href="#syntax-coverage" title="Permanent link">&para;</a></h3>
+<p>The reader uses CommonMark block and inline parsing with a small literal marker
+extension. It recognizes single-line labels with no whitespace, brackets or
+backslashes. It skips code spans and fences, escaped markers, HTML blocks and
+attributes, navigation links, images, wikilinks, and footnote definition blocks.
+A citation right after inline code, an inline link or a wikilink is still
+recognized. A marker right after other bracketed text, such as the reference-style
+link in <code>[text][ref][^a]</code>, is read as part of that link and skipped. Footnote
+definition prose never supplies the source join. Other Markdown dialect
+extensions are not interpreted; an empty result is not an exhaustive citation
+audit. The response's <code>syntax</code> and <code>scope</code> fields retain these limits.</p>
+<p>The existing whole-note read limits apply. The source list and body are parsed
+from one returned content string. <code>returned_text_sha256</code> hashes that complete
+string after line endings are normalized to LF and it is encoded as UTF-8. It
+is not the file's raw-byte etag or a portable file identity, and cannot be used
+as <code>if_match</code>. No index refresh, traversal, metadata write or permission change
+is part of this call. See the <a href="../../reference/tools/reader/#inspect_citations">tool reference</a>.</p>
+<h2 id="migrating-an-existing-vault">Migrating an existing vault<a class="headerlink" href="#migrating-an-existing-vault" title="Permanent link">&para;</a></h2>
+<p>Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.</p>
+<h3 id="1-audit">1. Audit<a class="headerlink" href="#1-audit" title="Permanent link">&para;</a></h3>
+<p>Run the <code>okf_validate</code> tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the count of concepts (notes with a non-empty <code>type</code>) out of the total, alongside a per-rule breakdown with example paths (frontmatter that does not parse, unknown <code>status</code> values, and the like). A note without a <code>type</code> is not a concept: it does not count against conformance, and the report lists it under <code>missing_type</code> so you can decide whether it should become one. The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.</p>
+<p>The evidence findings report missing expiry, malformed expiry, review, source or <code>generated</code> records, and unavailable assessments. An assessment is unavailable when a discovered concept cannot be read or parsed, or exceeds the read cap. Missing expiry is informational; malformed fields are format observations, not failures of a team's editorial policy. These findings leave the existing conformance ratio unchanged. The report covers discovered, non-excluded paths and does not certify complete traversal or current-review applicability.</p>
+<p>The report also lists folder <code>index.md</code> files and <code>log.md</code> files that carry frontmatter, which the format does not allow there; the root <code>index.md</code> may carry the bundle's <code>okf_version</code>, <code>title</code>, <code>description</code>, <code>license</code> and your own keys. That includes reserved files the server generated: with <code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code> set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.</p>
+<p>The evidence findings <code>malformed_sources</code> and <code>malformed_generated</code> count notes whose <code>attribution</code> reports a malformed entry or whose <code>generation</code> is <code>malformed</code>, using the same rules as the read annotation. Like the other evidence findings, they are withheld for a note counted under <code>evidence_unavailable</code>. They leave the conformant count unchanged, and affected notes remain readable and searchable. Reading and auditing preserve your files; they never repair these fields.</p>
+<h3 id="2-declare">2. Declare<a class="headerlink" href="#2-declare" title="Permanent link">&para;</a></h3>
+<p>Add <code>okf_version: "0.3"</code> to the root <code>index.md</code> frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.</p>
+<h3 id="3-enrich">3. Enrich<a class="headerlink" href="#3-enrich" title="Permanent link">&para;</a></h3>
+<p>Backfill the missing metadata. This is where most of the work is, and an agent can do it note by note. For each note it proposes a <code>type</code> from the content and fills in the <code>title</code> and <code>description</code>. Approve the changes in batches, then re-run <code>okf_validate</code> to watch the conformant count climb.</p>
+<p>When using <code>write</code> to update an existing note or root index, read its current
+content first and pass that read's etag as <code>if_match</code>. New files omit
+<code>if_match</code>. A failed replacement leaves the existing file intact; report the
+conflict before continuing with any dependent migration steps.</p>
+<h3 id="4-mechanical-transforms">4. Mechanical transforms<a class="headerlink" href="#4-mechanical-transforms" title="Permanent link">&para;</a></h3>
+<p>Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when <code>OKF_MODE</code> is <code>off</code>, and on a git-backed vault each change is committed.</p>
+<ul>
+<li><strong><code>okf_convert_links</code></strong> rewrites <code>[[wikilinks]]</code> as the root-absolute markdown links OKF recommends, such as <code>[text](/guides/note.md)</code>. Spaces in a note or folder name are percent-encoded, as Obsidian does when it writes a link, so <code>Project Notes/note.md</code> becomes <code>[text](/Project%20Notes/note.md)</code> and stays a link everywhere. Every destination is written as the URI reference OKF requires, so a <code>%</code>, <code>#</code>, <code>?</code>, bracket or accented letter in a name is percent-encoded too (<code>50% done.md</code> becomes <code>50%25%20done.md</code>), and an unbalanced parenthesis is encoded as well. A bracket in the link text is backslash-escaped. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.</li>
+<li><strong><code>okf_generate_index</code></strong> writes a folder's <code>index.md</code> as a listing of the notes directly in that folder, plus a pointer into each subfolder's own <code>index.md</code>. A subfolder without an <code>index.md</code> gets one, at every level below, so no pointer leads to a missing file; a subfolder that already has one is left as it is. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter byte for byte, comments and quoting included, so regenerating the root <code>index.md</code> keeps your <code>okf_version</code> declaration exactly as you wrote it. It never creates an <code>index.md</code> beside a file whose name differs from it only by case, such as your own <code>Index.md</code>: OKF says two such paths should not exist, and on macOS or Windows the new file would overwrite yours. It refuses that folder, and in a parent listing it leaves that subfolder out. Automatic upkeep and <code>okf_seed_log</code> treat <code>log.md</code> the same way.</li>
+<li><strong><code>okf_seed_log</code></strong> creates a <code>log.md</code> change history from the vault's git commits, newest first. The <code>folder</code> argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing <code>log.md</code>, so a hand-maintained history is safe.</li>
+</ul>
+<h3 id="reserved-files-on-a-vault-with-required-fields">Reserved files on a vault with required fields<a class="headerlink" href="#reserved-files-on-a-vault-with-required-fields" title="Permanent link">&para;</a></h3>
+<p>If you set <code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code>, documents missing any listed field are excluded from the index. The generated <code>index.md</code> and <code>log.md</code> are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written as <code>null</code>, for you to fill in. Without this the bundle's own listing and change history would be absent from <code>search</code> and <code>list_documents</code> while still opening through <code>read</code>.</p>
+<p>Anything already in the file wins, so a title you wrote yourself and the root <code>index.md</code>'s <code>okf_version</code> declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.</p>
+<h2 id="the-enforced-write-layer">The enforced write layer<a class="headerlink" href="#the-enforced-write-layer" title="Permanent link">&para;</a></h2>
+<p>The steps above keep a bundle conformant by convention. The enforced write layer makes the server maintain two of those fields on the writes that go through it. Turn it on by setting <code>MARKDOWN_VAULT_MCP_OKF_WRITE=true</code>. It requires <code>OKF_MODE</code> to be <code>auto</code> or <code>on</code>; pairing it with <code>OKF_MODE=off</code> is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.</p>
+<p>Enabling <code>OKF_WRITE</code> on a read-only deployment is valid, so a writable server and a read-only mirror can share an environment file. Stamping, reserved-file upkeep, and <code>okf_verify</code> are inactive regardless of <code>OKF_VERIFY</code>; OKF read semantics remain available. Startup logs <code>okf_write_inert</code> at INFO, and <code>config://vault</code> reports <code>okf_write_effective=false</code>.</p>
+<p>With the layer on, and only while the vault is an active OKF bundle, every <code>write</code> and <code>edit</code> of a concept stamps the note that lands and keeps its review history. A concept is a <code>.md</code> file other than <code>index.md</code> and <code>log.md</code> whose frontmatter, as written, has a non-empty <code>type</code>. Every other file is written exactly as you send it, with no <code>generated</code> added and no frontmatter created: <code>index.md</code> and <code>log.md</code>, which OKF says carry no frontmatter of their own, and files such as <code>README.md</code> or <code>SKILL.md</code> that have no <code>type</code>. A write that gives a file a <code>type</code> makes it a concept, so it is stamped.</p>
+<ul>
+<li><strong>Stamps provenance.</strong> The server writes <code>generated: {by, at}</code> describing the bytes it just saved. <code>at</code> is the instant of the write, in UTC (<code>2026-09-07T05:32:29Z</code>), as the OKF spec requires of every timestamp. <code>by</code> is <code>human:&lt;subject&gt;</code> when the token carries a usable <code>sub</code> claim the issuer does not mark as an application's, and a tool actor such as <code>markdown-vault-mcp/1.4.0</code> otherwise. Static bearer credentials, including custom and mapped subjects, use the tool actor, as does an OAuth token the issuer marks as an application's rather than a person's: its <code>sub</code> equals the client ID (Amazon Cognito, Authelia, and Okta in its usual configuration), or it carries <code>gty: client-credentials</code> (Auth0) or <code>idtyp: app</code> (Microsoft Entra ID, when the API is set up to receive that optional claim). Keycloak, authentik and Zitadel issue client-credentials tokens to a service account the token does not mark. List those accounts' <code>sub</code> values in <code>MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS</code> so their writes use the tool actor too; an unlisted one receives human attribution. It records who called the write, which is not the same as who wrote the words, so an agent writing under your token stamps your identity. Any existing <code>generated.by</code> and <code>generated.at</code> are replaced, including ones another tool wrote; any other key inside <code>generated</code>, such as <code>x-model</code>, keeps its value, as OKF 0.3 §4.1 requires. The field tracks the last write this server saw rather than the note's history. A write that changes only formatting or whitespace (the same frontmatter apart from <code>generated</code> and <code>verified</code>, and a body that renders the same) keeps the existing <code>generated</code>, as OKF says a trivial edit does.</li>
+<li><strong>Keeps recorded reviews.</strong> The server carries the stored note's <code>verified</code> across every write, as OKF 0.3 §5.3 asks: earlier events stay in the file as history. The value comes from the note on disk, not from the content you send, so <code>verified</code> in the content of a write has no effect, and a new note is written without it. Use <code>okf_verify</code> to record a review. Because the write moves <code>generated.at</code>, a review recorded before it no longer counts toward the trust tier, which only events at or after <code>generated.at</code> set. The entry remains, so a reader can still show it as verified before the last change. A new <code>okf_verify</code> call records a review of the current content. A <code>rename</code> may mechanically rewrite links in the moved note when link updates are enabled; this rewrite leaves both fields alone.</li>
+</ul>
+<p>Both fields describe what this server observed on its own write path. A note changed by anything else (a teammate's editor, a git pull, a script) carries whatever its author left there, and the layer neither notices nor corrects that.</p>
+<p>The one-shot migration transforms above (<code>okf_convert_links</code>, <code>okf_generate_index</code>, <code>okf_seed_log</code>) are exempt: a mechanical rewrite does not re-stamp provenance, so a human attestation stays current.</p>
+<p>A write whose frontmatter block cannot be parsed has no <code>type</code> the server can read, so it is not a concept: it lands as you sent it, unstamped, as it does with the layer off. The note is left out of the index until its frontmatter parses, and <code>okf_validate</code> reports the block as unparseable.</p>
+<h3 id="recording-a-human-review">Recording a human review<a class="headerlink" href="#recording-a-human-review" title="Permanent link">&para;</a></h3>
+<p>Enabling the layer also exposes the <a href="../../reference/tools/writer/#okf_verify"><code>okf_verify</code></a> tool. Call it on a note you have reviewed and it appends a <code>{by: human:&lt;subject&gt;, at}</code> entry (<code>at</code> a UTC instant) to that note's <code>verified</code> list, which promotes the note's trust tier to <code>human-reviewed</code> (unless the note's <code>generated</code> has no usable <code>at</code>; see <a href="#what-the-metadata-means">What the metadata means</a>). The verification write is exempt from the stamp above: recording a review does not move <code>generated.at</code>, so the entry you just added counts.</p>
+<p>One subtlety is worth understanding before you rely on the <code>human-reviewed</code> tier. The authenticated subject is <em>whose token</em> made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to <code>human-reviewed</code> on its own, and the tier would mean nothing. <code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code> controls how the tool guards against that. It applies only when <code>OKF_WRITE</code> is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.</p>
+<ul>
+<li><strong><code>elicit</code></strong> (the default) makes <code>okf_verify</code> ask you to confirm the review through an MCP <a href="https://gofastmcp.com/servers/elicitation">elicitation</a>, a prompt your client shows you, and it writes the <code>verified</code> entry only when you answer yes. It fails closed. On modern MCP connections the tool returns an input request and your client repeats the call with your answer; on older handshake connections it uses server-initiated elicitation. When your client cannot show the prompt or you decline it, the call fails and writes nothing. Use a client whose elicitation handler actually presents the question to a person: an automatically affirmative handler would defeat the human-review gate. The recorded subject is your token's <code>sub</code> when it identifies a person, or <code>local</code> when you use a service credential, a token the issuer marks as an application's, a token whose <code>sub</code> is listed in <code>MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS</code>, or no auth.</li>
+<li><strong><code>off</code></strong> hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes <code>verified</code> directly) and you want no in-session path to the tier at all.</li>
+<li><strong><code>trust-auth</code></strong> attributes to a token's <code>sub</code> with no confirmation. It refuses static bearer credentials, other client-ID-only identities, OAuth tokens the issuer marks as an application's or whose <code>sub</code> is listed in <code>MARKDOWN_VAULT_MCP_SERVICE_SUBJECTS</code> (see above), and callers without auth. Choose it only when the sole caller of <code>okf_verify</code> is a human-driven interface rather than an agent.</li>
+</ul>
+<p><strong>Upgrading bearer-based review clients:</strong> deployments that used <code>trust-auth</code> with a static or mapped bearer token must switch <code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code> to <code>elicit</code> and use a client that presents the confirmation to a person. Existing provenance and verification entries are not rewritten.</p>
+<p>The verification mode controls how this tool records a review claim. The <code>human-reviewed</code> tier itself only reports a <code>human:</code> prefix in supplied metadata, which can also arrive from other editors or imports. It does not prove that a person reviewed the note or that its content is correct.</p>
+<p>A <code>verified</code> entry records a review claim without identifying the reviewed snapshot. This server keeps it when its own write path changes the note and moves <code>generated.at</code>, so the entry stays as history but no longer counts toward the tier. A change that arrives another way (a teammate's editor, a git pull, a script) moves neither field. Applicability to current content remains unknown, and <code>review_applicability</code> reports it as <code>unknown</code>. Review timestamps do not establish applicability. Neither do <code>generated.at</code>, missing history or changed bytes. The trust tier does compare them: a review older than <code>generated.at</code> is not current and no longer promotes the tier. The presentation layer leaves write behavior unchanged. Snapshot-bound reviews and change-history assessment remain separate work.</p>
+<h3 id="keeping-logmd-and-indexmd-current">Keeping <code>log.md</code> and <code>index.md</code> current<a class="headerlink" href="#keeping-logmd-and-indexmd-current" title="Permanent link">&para;</a></h3>
+<p>With the layer on, the server also maintains a folder's reserved files as a side effect of writing into it. After a successful <code>write</code> or <code>edit</code> on a note, it appends a dated <code>**Update**</code> bullet to that folder's <code>log.md</code> (creating the log, and the day's <code>## YYYY-MM-DD</code> section, when needed) and regenerates the folder's <code>index.md</code> listing so a new note shows up without a manual step. A note written into a folder with no <code>index.md</code> is listed from the nearest folder above that has one, and each level in between gets its own <code>index.md</code>. That covers the upkeep the advisory layer otherwise asks the agent to do by hand, on the write paths below and no others.</p>
+<p>A <code>delete</code>, <code>rename</code> or <code>move_folder</code> keeps the listings current too. A deleted note drops out of its folder's <code>index.md</code>. A renamed note leaves its old folder's listing and appears in its new folder's, as a write there would. After a folder move, every <code>index.md</code> that moved with it is regenerated for its new paths, and so are the listings of the old and the new parent folder. When a note or folder lands several levels below the nearest folder with an <code>index.md</code>, that folder's listing is regenerated and each level in between gets one, so no listing points at a missing file. These changes add no <code>log.md</code> entry. A rename to or from <code>index.md</code> or <code>log.md</code> leaves the listings alone, so renaming a note onto a reserved name keeps its content.</p>
+<p>After a folder move, the refresh skips folders inside a git submodule or nested repository, and their descendants. It still updates ordinary containing folders and their other descendants, without attempting to rewrite those listings. The <a href="../git-integration/#submodules-and-nested-repositories-in-the-vault">Git integration guide</a> explains the read-only boundary.</p>
+<p>A few boundaries keep this predictable, and they are also its limits. Maintenance runs only on an active bundle. A write whose target is itself a reserved file does not trigger it. The <code>okf_verify</code> tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only one listing is regenerated per write: that of the folder directly containing the note, or, when it has no <code>index.md</code>, that of the nearest folder above it with one. A folder's own listing is not otherwise refreshed when a note lands in one of its subfolders. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it, so a listing can silently fall behind.</p>
+<p><strong>Do not hand-edit a maintained <code>index.md</code>.</strong> The write itself is left alone, because the maintainer skips a write whose target is a reserved file. But the next content write into that folder regenerates the listing from the note list, and an edit you made is gone with nothing reporting it. The same applies to anyone else editing the vault. A teammate's change to a maintained <code>index.md</code> in Obsidian, or one arriving through a git pull, survives only until the next write into that folder. Put anything you want to keep in a note, not in the generated navigation. <code>log.md</code> is appended to rather than regenerated, so hand-written entries there are not overwritten, but a conflicting edit from another editor can still collide with the server's append.</p>
+<p>One cost comes with this upkeep. Each <code>write</code> or <code>edit</code> waits for the search index to catch up before it regenerates <code>index.md</code>, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its <code>log.md</code> and its <code>index.md</code>.</p>
+<p>To stop the upkeep, set <code>MARKDOWN_VAULT_MCP_OKF_WRITE=false</code> and maintain the reserved files yourself. Two things to know before you do. If you had set <code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code> to anything but its default <code>elicit</code>, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a <code>log.md</code> that collected repeated frontmatter blocks from a version before 4.2 keeps them. Ordinary writes leave those blocks alone. The deliberate repair below requires review because the server cannot distinguish a block it stacked from one the log quotes on purpose.</p>
+<h2 id="repairing-legacy-log-frontmatter">Repairing legacy log frontmatter<a class="headerlink" href="#repairing-legacy-log-frontmatter" title="Permanent link">&para;</a></h2>
+<p>Versions 4.1.0 and 4.2.0-rc.0 could stack identical frontmatter blocks at the
+start of <code>log.md</code>. The <a href="../../reference/cli/#markdown-vault-mcp-admin-repair-log"><code>admin repair-log</code></a>
+command repairs one such file at a time. Without <code>--apply</code> it only previews.
+As an operator command rather than an MCP tool, it is out of every client's
+reach.</p>
+<p>Preview the affected log with its vault-relative path:</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>admin<span class="w"> </span>repair-log<span class="w"> </span>guides/log.md
+</code></pre></div>
+<p>The preview prints the exact bytes it would remove, with their byte offsets,
+between <code>&gt;&gt;&gt; removal begins</code> and <code>&lt;&lt;&lt; removal ends</code>. Below them it prints the
+command that applies the removal. It keeps the opening block and removes only the
+identical copies directly after it. Matching blocks alone do not prove the old
+defect wrote them: a log can quote its own frontmatter on purpose. Apply only
+when nothing in the removal was written deliberately. <code>Nothing to repair</code>
+means the file holds no supported repeated run: differing, interleaved or
+malformed blocks are left for you to edit by hand.</p>
+<p>To apply, run the printed command. It carries the <code>etag</code> of the log as you
+previewed it:</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>admin<span class="w"> </span>repair-log<span class="w"> </span>guides/log.md<span class="w"> </span>--apply<span class="w"> </span>&lt;etag&gt;
+</code></pre></div>
+<p>If the log changed after the preview, apply refuses and changes nothing;
+preview it again and review the new removal. Apply first keeps the complete
+original as <code>log.md.frontmatter-repair.bak</code> beside the log, then removes only
+the previewed repeats. The opening frontmatter, provenance fields, line endings
+and the rest of the file stay byte for byte; no <code>log.md</code> entry or provenance
+stamp is added. On systems that enforce Unix file modes, only the account
+that ran the command can read the recovery file. It is not indexed as a note.
+In a Git-backed vault both files are committed like any other write. Keep the
+recovery file until you have checked the result. The same preview and apply
+are available to library callers as <code>Vault.writer.okf_preview_log_repair</code> and
+<code>Vault.writer.okf_apply_log_repair</code>.</p>
+<p>Any existing recovery entry blocks apply, even one with the same bytes. If
+apply stops part-way, its error says whether the log may already have
+changed. The recovery file may then be partial or missing, so inspect both
+files. Apply never reuses or deletes the recovery file: move it somewhere safe
+before a retry.</p>
+<p>Stop the server before applying. Apply refuses while a server holds the
+on-disk index (<code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>), but a server with an
+in-memory index, another editor, or a sync tool writing the same file is not
+detected. Apply is not a transaction and gives no guarantee across a power
+loss. Apply does not update the search index. The next <code>admin reindex</code>, or
+the reindex the server runs when it starts, finds the changed log.</p>
+<h2 id="using-okf-with-para-or-zettelkasten">Using OKF with PARA or Zettelkasten<a class="headerlink" href="#using-okf-with-para-or-zettelkasten" title="Permanent link">&para;</a></h2>
+<p>OKF composes with the <a href="../para/">PARA</a> and <a href="../zettelkasten/">Zettelkasten</a> methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter (each method's guide has a matching section from its own angle: <a href="../para/#using-para-with-okf">Using PARA with OKF</a>, <a href="../zettelkasten/#using-zettelkasten-with-okf">Using Zettelkasten with OKF</a>):</p>
+<ul>
+<li><strong>Status vocabulary</strong>: PARA uses <code>status</code> for workflow state (<code>active</code>, <code>archived</code>), while OKF uses it for lifecycle (<code>draft</code>, <code>stable</code>, <code>deprecated</code>). These mean different things, so keep PARA's workflow state in its own frontmatter key and reserve <code>status</code> for OKF lifecycle. OKF preserves any extra keys you add.</li>
+<li><strong>Untyped inbox notes</strong>: PARA's inbox holds quick captures that are typed later. Give them a placeholder <code>type: Capture</code> so they are conformant from the start, and let triage set the real type.</li>
+<li><strong>Wikilinks</strong>: write in whichever link style you prefer. The server resolves both, and <code>okf_convert_links</code> produces the OKF link style when you are ready to share the bundle.</li>
+</ul>
+<h2 id="exporting-a-bundle">Exporting a bundle<a class="headerlink" href="#exporting-a-bundle" title="Permanent link">&para;</a></h2>
+<p>When you want a copy to share or hand to other OKF tooling, download one through the standard <code>create_download_link</code> tool with a bundle reference rather than a file path:</p>
+<ul>
+<li><code>create_download_link</code> with <code>ref="okf-bundle"</code> returns a one-time URL for a zip of the whole vault.</li>
+<li><code>create_download_link</code> with <code>ref="okf-bundle:guides"</code> scopes the zip to a folder subtree.</li>
+</ul>
+<p>The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (<code>_conventions.md</code>), the template folder and every path that is not part of the bundle (a file or folder whose name starts with <code>.</code>) are left out, while the reserved <code>index.md</code> and <code>log.md</code> stay in. Selecting a dot folder, such as <code>ref="okf-bundle:.drafts"</code>, downloads an empty zip. Non-conformant notes appear as they are.</p>
+<p>It is best-effort packaging rather than a certified publication, in three specific ways. It packages what the <strong>index</strong> currently holds. A note the index left out, whether excluded by pattern, missing a configured required field, or carrying frontmatter that does not parse, is absent from the archive without being reported. It reads the vault as it goes rather than from a point-in-time snapshot, so a write that lands mid-export can leave the archive internally inconsistent; quiesce writes if that matters. And nothing validates the result: the archive carries no conformance report, and building one does not run <code>okf_validate</code>. Run <code>okf_validate</code> yourself before you publish, and read <code>get_index_status.skipped_files</code> to see what the index is leaving out.</p>
+<p>Bundle export needs an HTTP or SSE transport with <code>MARKDOWN_VAULT_MCP_BASE_URL</code> set, the same requirement as any transfer link, and it is unavailable when <code>OKF_MODE</code> is <code>off</code>. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>

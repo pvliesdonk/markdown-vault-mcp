@@ -1,0 +1,280 @@
+# 6.1
+
+This release brings the vault to the terminal. The `markdown-vault-mcp` command can now search, read and explore a vault that a server publishes over MCP, with a bearer token and no copy of the vault or its index on the machine you type on; the same commands still work against a local vault. Clients and scripts also get exact answers ranked search could not give, from the number of notes that match to the path a mistyped filename meant. The commands that write the index move under `admin`, and their old names keep working. A build that fails to index a note now retries it on the next run. Nothing needs to change on upgrade; see [Upgrading](#upgrading).
+
+## Upgrading
+
+No step is required. The new commands, tools and settings are additions.
+
+- **If a script, cron job or unit runs `markdown-vault-mcp index`, `reindex` or `embeddings import`:** it keeps working, and prints a note on stderr naming the new command. Switch it to `admin index`, `admin reindex` or `admin embeddings import` when convenient ([#2005](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2005)).
+
+**Clients:** nothing beyond reconnecting. Clients discover four new read-only tools: `query_documents`, `count_documents`, `aggregate_documents` and `search_paths`.
+
+**State:** kept. The index and the embeddings are used as they are; nothing is rebuilt.
+
+**Security posture:** none on the server. The four new tools are read-only and answer from the same index the existing reader tools read. The new terminal client sends its bearer token only to the endpoint you select, over HTTP(S), with certificate verification on ([CLI reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/cli/#search-a-hosted-vault)).
+
+## Query a vault from the terminal
+
+Until now the `search` command built a local vault before every query. As [#1831](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1831) put it: "A person with access to an already hosted vault cannot search it from this CLI without also making its data and local configuration available on the client." The command now reaches a hosted vault through the MCP endpoint it already serves. The idea, the issues and all nine pull requests of [epic #1829](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1829) come from [@salmonumbrella](https://github.com/salmonumbrella), who proposed "a terminal workflow for a hosted Markdown vault" that never copies the vault or its index to the client.
+
+Install the command without extras on the machine you type on, then point a profile at the server:
+
+```
+uv tool install markdown-vault-mcp
+```
+
+```
+# ~/.config/markdown-vault-mcp/client.toml
+[remote]
+url = "https://vault.example/mcp"
+token_env = "VAULT_ACCESS_TOKEN"
+```
+
+`url` is the server's complete MCP endpoint, and `token_env` names the environment variable that holds the bearer token, so the profile never stores it. `--server` or `MARKDOWN_VAULT_MCP_SERVER_URL` selects an endpoint without a profile, `MARKDOWN_VAULT_MCP_CLIENT_TOKEN` supplies a token directly, and `--local` reads the local vault instead. A remote read never falls back to the local vault. The command doesn't sign in interactively; an OIDC access token you already hold works as the bearer token.
+
+The read commands, all of which accept the connection options above:
+
+- `search`, now with `--mode auto`, repeated `--filter KEY=VALUE`, `--chunks-per-file` and `--snippet-words` ([#1837](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1837), [#1844](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1844));
+- `read`, `list`, `folders`, `tags`, `stats`, `recent`, `toc`, `similar` and `context` ([#1845](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1845));
+- `links to`, `links from`, `links broken`, `links orphans`, `links hubs` and `links path` ([#1847](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1847));
+- `query metadata`, `query body`, `query note`, `query count` and `query aggregate` ([#1851](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1851));
+- `query path`, with `--fuzzy` for a one-letter typo ([#1849](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1849)).
+
+Output is plain text, `--json` for scripts, or `--agent` for one escaped record per line. On the Docker host you can also run the same commands inside the server's container, as the `appuser` user, against the server's own index with no address or token. Running them as root fails on a vault that is a git checkout ([#1999](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1999)).
+
+[Query a vault from the terminal](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/terminal/index.md) walks through both routes, and the [command reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/cli/index.md) lists every option.
+
+## Exact counts, groups and path discovery
+
+Search ranks a bounded set of hits, so its length says nothing about how many notes match. [#1842](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1842) describes the gap: "MCP clients receive bounded ranked search results, so they cannot use a result count as the total number of matching notes or count the full population by folder, tag or month." Four read-only tools answer those questions ([#1839](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1839), [#1846](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1846), [#1848](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1848)):
+
+- `query_documents` pages through every matching note with its exact total (20 notes per page by default, up to 1,000);
+- `count_documents` counts every matching note without reading content;
+- `aggregate_documents` groups the whole population by folder, tag or UTC month;
+- `search_paths` finds an indexed path from literal text, and with `fuzzy` also one a letter off: "A remembered filename with one wrong letter is hard to recover through content search" ([#1848](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1848)).
+
+The first three share their predicates: a keyword query scoped to metadata, body or both, a folder, a path or glob, modification bounds, and `filters`. `filters` works on the fields listed in `indexed_frontmatter_fields`, which `stats` reports; computed OKF fields stay with `search`. The [reader tools reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/tools/reader/#query_documents) has every parameter and default.
+
+Library callers get the same through `vault.reader`: `query_documents`, `count_documents_matching`, `aggregate_documents` and `search_paths`, with the request types in `markdown_vault_mcp.query_types`. A custom keyword index written against an earlier release keeps working. Exact queries are an optional capability, `RunsExactQueries`, rather than new required methods on `KeywordIndex`, so an index without it answers search as before. The exact queries then raise `ExactQueriesNotSupportedError`, which points the caller at `search` ([per the maintainer](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1846#issuecomment-6573006023); [storage reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/api/storage/#exact-keyword-queries)).
+
+## A note that fails to index is retried
+
+When a build failed to index a note, it logged `build_index_index_failed` and still recorded the note's new content hash. The next build then treated the note as unchanged and never retried it until the file changed again. A normal build kept serving the note's previous content, and a forced build left it out of search ([#1982](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1982)). A failed note is now recorded so that the next build indexes it again ([#1991](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1991), by [@tstotzer](https://github.com/tstotzer)).
+
+## Commands that write move under `admin`
+
+`index`, `reindex` and `embeddings import` change the shared index or the stored vectors, and they now sit in one group: `admin index`, `admin reindex` and `admin embeddings import`. Every other command except `serve` only reads, so the help screen shows what can change a vault. The old names still run the same commands and name the new form on stderr ([#2005](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2005), [#2006](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2006), [#2007](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2007)).
+
+The [command reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/cli/#markdown-vault-mcp-admin-embeddings-import) now documents `admin embeddings import` with every option. Before, it listed the `embeddings` group's description only. The fix comes from the project template's reference generator, which now walks a command group's sub-commands ([fastmcp-server-template#823](https://github.com/pvliesdonk/fastmcp-server-template/issues/823), [fastmcp-server-template#850](https://github.com/pvliesdonk/fastmcp-server-template/pull/850), [#1998](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1998)).
+
+## v6.1.1
+
+This release fixes how the server finds the headings in a note. The outline that `get_toc` returns now lists every heading the note has, a `#` line inside fenced code is no longer read as a heading, and a note that opens with indented code keeps it as code instead of taking its first line as the title. Nothing needs to change on upgrade. The first start rebuilds the text index once; the release's Upgrading notes say what that keeps.
+
+### Upgrading
+
+No step is required.
+
+**Clients:** nothing beyond reconnecting. No tool, parameter or payload shape changes. An outline can list more headings than before, a heading that occurs twice in a note is listed twice, and a note whose title came from a `#` line in code gets its real title.
+
+**State:** kept. The first start after upgrading rebuilds the text index once, automatically, because this release changes how headings are derived from the notes. The embeddings are kept: only a note whose sections came out different is embedded again, and only its changed sections. Those are notes with a `#` line inside fenced code and notes whose first line is indented. A reader that opens an index read-only, such as the terminal client on a local index, keeps the old outline for an index an older version built until the server has rebuilt it, and logs `toc_heading_table_missing` once.
+
+**Security posture:** none.
+
+### The outline lists every heading
+
+[`get_toc`](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/tools/reader/#get_toc) and the `toc://vault/{path}` resource return the heading outline of a note, or of every note under a folder. Until this release the outline was read from the index's search chunks, and a chunk carries at most one heading. The report in [#2033](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2033) was that it "omits headings that `read` returns and that `read(path, section=...)` finds". The outline missed:
+
+- every heading in a note of 30 lines or fewer;
+- headings below H2 inside a section short enough to stay one chunk;
+- a heading with no text under it;
+- in a long section, a heading followed directly by a deeper one.
+
+The index now stores every heading of a note in document order, found by the same scan that `read(path, section=...)` uses, so each heading the outline lists is one a section read accepts, and the other way round ([#2035](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2035)). Search chunks are unchanged.
+
+### Code is not a heading
+
+A `#` line inside fenced code is a comment or a prompt, not a heading. As [#2034](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2034) put it, `read(path, section="Setup")` "stops at a `# comment` line inside a fenced code block". The same line showed in the outline, split a search chunk inside the code, and could become the note's title. Lines between an opening and a closing fence of three or more backticks or tildes are now never headings, for section reads, the outline, chunking and the title alike ([#2037](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2037)).
+
+A note that opens with indented code had the same problem one step earlier: the body was read with its first line's indentation stripped, so, in the words of [#2036](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2036), "the code line loses its indentation, and a `#` line in it becomes the note's title and an H1 in the outline". The first line now keeps its indentation; every other note reads exactly as before ([#2038](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2038)).
+
+## v6.1.2
+
+This release closes gaps where a change looked saved but wasn't, or a failure came back as an empty answer. In a Git-backed vault, a plain Git repository nested inside the vault is now read-only, like a submodule. Upload links, `fetch` and the OKF refresh refuse such a destination up front. A search by meaning after an embedding model change reports a failed rebuild instead of returning nothing. Wikilinks with a `]` in the target resolve as in Obsidian. Commit subjects name the note when OKF maintenance is on. Local terminal reads work as root and stop printing startup logs. The package ships its type hints. The first start rebuilds the text index once; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required for most deployments.
+
+- **If your Git-backed vault holds a folder with its own `.git` that is not a registered submodule, and something writes notes into it:** those writes now fail with an error naming the nested repository. Before this release they reported success but were never committed. Change those files in their own repository, or move the destination outside it ([#1949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949)).
+- **If you used `-e MARKDOWN_VAULT_MCP_LOG_LEVEL=WARNING` to keep startup logs out of `docker exec` reads:** you can drop it. Pass `-v` when you want the routine logs back.
+- **If your Python code type-checks against `markdown_vault_mcp`:** mypy now reads the package's type hints, so code that passed against an untyped package can report new type errors. Nothing changes at runtime.
+
+**Clients:** nothing beyond reconnecting; the tool surface is unchanged. Two cases that looked like success now return errors: a write into a nested repository and a search by meaning after a failed model-change rebuild.
+
+**State:** kept. The first start after upgrading rebuilds the text index once, automatically, because this release changes which wikilinks are read from a note. The embeddings are kept: the rebuild re-embeds only notes whose sections changed, and this release changes no sections.
+
+**Security posture:** none. Nested repositories become read-only for the server's write tools. Reads, search and download links still reach them.
+
+### Nested repositories are read-only
+
+Since 6.0 the server refuses to change files inside a Git submodule of a Git-backed vault: a change there never reaches the vault's own commits. That check missed a plain repository nested in the vault: a folder with its own `.git` that isn't a registered submodule. A write there reported success but "is never committed" ([#1949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1949)).
+
+The server now refuses writes into a nested repository as it does for a submodule, including a repository created after the server started ([#2088](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2088)). The error names the argument and the nested repository. Reading and searching those files still work. A vault without Git refuses nothing.
+
+Three callers reached that refusal only after doing other work ([#1950](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1950)). They now refuse up front:
+
+- [`create_upload_link`](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/tools/transfer/#create_upload_link) refuses a protected `ref` before it creates a link, instead of handing out a link whose upload then failed ([#2101](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2101)).
+- `fetch` refuses a protected `path` before it downloads anything ([#2103](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2103)).
+- After `move_folder`, the OKF index refresh skips these folders instead of logging `okf_convention_index_failed` with a traceback ([#2104](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2104)).
+
+The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/#submodules-and-nested-repositories-in-the-vault) describes the boundary.
+
+### Search by meaning reports a failed model change
+
+When the embedding model or its vector size changes, the server rebuilds the embeddings on the next search by meaning. If every batch of that rebuild failed because the provider was down, "the search returns `[]` and so does every later search. The caller gets no error" ([#1946](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1946)).
+
+Semantic and hybrid searches now fail with an error that says the rebuild failed, that the request was fine, and to retry later or search by keyword. Each later search tries the rebuild again and recovers once the provider does. `admin index` and `admin embeddings import` print the same failure and exit with status 1 ([#2081](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2081)). The [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/embeddings/#common-to-all-providers) covers model changes.
+
+### Links and indexing
+
+- **A `]` inside a wikilink target.** "A single `]` inside a wikilink target ends the link for the scanner, but not for Obsidian, where only `]]` does" ([#1384](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1384)). `[[Sq]uare]]` now links to `Sq]uare.md`, for backlinks, broken-link reports and renames alike ([#2089](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2089)). This is the change behind the one-time index rebuild.
+- **Slow indexing of long backtick or space runs.** Link extraction took time growing with the square of an unmatched run of backticks, or of spaces before a link title: "Doubling the run roughly quadruples the time" ([#1749](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1749)). Both cases now run in linear time with the same results. For a 16,000-character backtick run the PR measured 3.359 s before and 0.00256 s after ([#2084](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2084)).
+
+### Git history
+
+- **Commit subjects name the note.** With OKF maintenance on, a single-note write, edit or append committed as `edit: 3 files`, because the folder's `index.md` and `log.md` were counted. The owner's report in [#1675](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1675): "Every commit is as an edit for 3 files." The subject now names the note, and the `index.md` and `log.md` updates still land in the same commit ([#2091](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2091)).
+- **Carriage returns in filenames.** A note whose name contains a carriage return, which can only arrive from outside the server, "comes back from `get_history` with that byte rewritten to a newline, so the path names a file that does not exist" ([#1290](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1290)). History, rename tracking, revision reads and conflict recovery now keep the name as Git wrote it ([#2092](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2092), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/index.md)).
+
+### Terminal reads in a container
+
+Running `markdown-vault-mcp search` through `docker exec` as root on a Git checkout owned by the service user failed with "Managed mode requires SOURCE_DIR to be empty or a git repository" ([#1999](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1999)). Local `search` now skips the managed Git checks, as `read`, `list` and the other read commands already did. It never clones or syncs ([#2097](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2097)).
+
+The same issue reported that "every successful call also writes the server's startup log lines (JSON, INFO) to stderr, interleaved with the results." Local read commands now print only warnings and errors; `-v` or `MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG` brings the routine lines back ([#2100](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2100)). The [terminal guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/terminal/index.md) shows the updated alias.
+
+### Type hints for library users
+
+The package now ships a `py.typed` marker, so mypy checks code that uses `markdown_vault_mcp` against its type hints instead of skipping it with "module is installed, but missing library stubs or py.typed marker" ([#1911](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1911)). Thanks to [@tstotzer](https://github.com/tstotzer) for [#2026](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2026).
+
+### Vault explorer
+
+Screen readers now announce the search box in the [vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/vault-explorer/index.md) as "Search vault" and the context heading as "Context" while the first note loads, where it used to be empty ([#1754](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754), [#2096](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2096)).
+
+### Contributors
+
+Every fix in this release except the type marker came from [@salmonumbrella](https://github.com/salmonumbrella), who sent the pull requests for issues the maintainer had filed.
+
+## v6.1.3
+
+This release makes a Git-backed vault say when its working tree holds changes the server did not commit, such as a write a crash interrupted. The commit subject of a rename names the note and where it went. A new `admin repair-log` command removes the frontmatter blocks that 4.1.0 stacked in `log.md` files. The Git guide now covers recurring conflicts on append-only notes. Nothing needs to change on upgrade; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required.
+
+- **If your Git-backed vault already holds uncommitted changes when the server starts:** startup now logs `git_worktree_dirty` and keeps reporting `uncommitted_changes` until the tree is clean. Commit or resolve the changes to clear it ([#1678](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678)).
+- **If something reads commit subjects, such as a script over `git log` or `get_history`:** a rename now commits as `rename: <old> -> <new>` instead of `rename: N files` ([#1676](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676)).
+
+**Clients:** nothing beyond reconnecting; the tool surface is unchanged. The `remote` diagnostic on write-tool results can now carry `reason=uncommitted_changes`.
+
+**State:** kept. The index is not rebuilt. Legacy `log.md` files stay as they are until you run `admin repair-log` on them.
+
+**Security posture:** none. The repair command runs from a shell on the vault's host, never from an MCP client.
+
+### Uncommitted changes at startup
+
+A write lands on disk before the server commits it. If the process dies in between, the file stays modified, and on the next start the server "neither commits it nor says it is there" ([#1678](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1678)).
+
+Startup now inspects the repository's working tree and staging area in both Git modes. When it finds changes it logs `git_worktree_dirty`, and `sync_health()` reports `reason=uncommitted_changes`, which also reaches the `remote` diagnostic on write-tool results. Only a clean tree clears the warning. A successful push or pull alone does not. The server cannot tell a crash from an operator's own edits, so it never commits or discards these changes itself. Changes inside submodules and repositories nested in the vault are left out, since the server never writes there ([#2099](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2099)). The [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/#uncommitted-files-at-startup) describes what to do.
+
+### Rename commits name the note
+
+A rename with `update_links=True` committed as `rename: N files`, counting the backlinks it rewrote. The owner reported a rename that committed as "'21 files' of which 1 is the rename and the rest is corrected backlinks and index and log" ([#1676](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1676)).
+
+A single-note rename now commits as `rename: notes/old.md -> notes/new.md`. The rewritten backlinks and refreshed OKF listings stay in the same commit. With OKF maintenance on, a single-note `delete` also names its note now, as `write`, `edit` and `append` already did ([#2115](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2115)). A `move_folder` of several files still commits as `move_folder: N files`; [#2139](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139) tracks that case. See [What a commit covers](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/#what-a-commit-covers).
+
+### Repairing stacked log frontmatter
+
+Vaults that ran 4.1.0 or 4.2.0-rc.0 with `OKF_WRITE` and a `required_frontmatter` setting have `log.md` files carrying one frontmatter block per write, eighteen of them in one live folder. A later fix stopped the growth, but the extra blocks stay in the body, where every reader shows them and the index stores them as content ([#1403](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403)).
+
+`markdown-vault-mcp admin repair-log PATH` previews the exact bytes it would remove from one log. Running the printed `--apply <etag>` command removes them after saving the complete original as `log.md.frontmatter-repair.bak`. Apply refuses if the log changed since the preview, and refuses while a server holds the on-disk index, so stop the server first. Identical blocks can be written on purpose, so review the preview before you apply. Library callers get the same two steps on `Vault.writer` ([#2130](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2130)). The [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/okf/#repairing-legacy-log-frontmatter) walks through it.
+
+### Documentation
+
+- **Append-only notes in a shared vault.** An operator in [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) wrote: "we have since set `merge=union` on our append-only notes, which removes this conflict class for us entirely and may be a reasonable documented recommendation for shared vaults." The Git guide now explains when the `union` merge driver fits, what it can silently get wrong, and where in a sync Git applies it ([#1294](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1294), [#2114](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2114), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/#recurring-conflicts-on-append-heavy-notes)).
+- **Configuration reference.** The notes on how the settings interact now sit under their own heading, in the same groups and order as the generated tables below them ([#1598](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1598), [#2125](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2125), [reference](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/configuration/#how-the-settings-interact)).
+
+### Indexing memory
+
+A cold build now writes each note to the keyword index as it is parsed and releases its body, instead of holding every parsed note until the scan ends. At 3,252 notes the PR measured the keyword stage's median resident memory at about 17 to 18 MiB lower, with the whole build's peak about the same ([#2106](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2106)). This is the first of several steps on [#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938), which stays open. Custom keyword backends can opt in through the new `ListsNoteStates` protocol ([storage API](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/api/storage/#build-state-listing)).
+
+### Contributors
+
+Every fix and guide change in this release came from pull requests by [@salmonumbrella](https://github.com/salmonumbrella), for issues the maintainer had filed. The append-only guidance answers a suggestion from [@FoundationOperations](https://github.com/FoundationOperations).
+
+## v6.1.4
+
+This release fixes how new notes and changed notes reach the disk and the index. A new note in a folder with a default ACL keeps the group access that ACL grants. Frontmatter is written in the order you gave it. A save that replaces a note through a hidden temporary file now triggers reindexing. OpenAI-compatible endpoints that omit `index`, such as Gemini's, embed whole batches again. A folder move's commit names the folder. Indexing no longer sends the Linux file watcher a read event for every file. Nothing needs to change on upgrade for most deployments; see [Upgrading](#upgrading).
+
+### Upgrading
+
+No step is required for most deployments.
+
+- **If you install with `pip` and pin `watchdog`:** the `file-watcher` and `all` extras now need `watchdog>=4.0.2`, because "earlier FSEvents scheduling overrides lack the filter keyword" ([#2066](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066)).
+- **If your state folder or `TMPDIR` is small or memory-backed:** a full embedding build now stages its prepared windows on scratch disk beside the state file (`/data/state` in the shipped Compose setup), or in `TMPDIR` when there is no state file. A PostgreSQL store's full publish also stages rows in the system temp folder. Make room there, since a memory-backed folder counts against memory ([#2176](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176), [#2185](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185)).
+- **If you installed the Claude Desktop bundle and left optional fields empty:** reinstall it. The new bundle sends those fields empty instead of as literal `${user_config.<id>}` text ([#2141](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141)).
+
+**Clients:** nothing beyond reconnecting. The tool surface is unchanged. `config://vault` and `stats` gain fields that report the OKF write state.
+
+**State:** kept. The index is not rebuilt and no vectors are re-embedded. On its first writable open, the keyword index repairs rows left without an owner by older builds, and logs `fts_index_rowid_map_repaired` when it finds any.
+
+**Security posture:** on Linux, a note or attachment the server creates in a folder with a POSIX default ACL now gets the permissions that ACL grants, as a plain file creation there would. A group the ACL grants write keeps write. When the ACL cannot be read for another reason than its absence, such as a permission error, creating the file fails instead of falling back to the umask. Three more Git failure log lines now redact the configured token.
+
+### New notes keep their folder's permissions
+
+In a vault folder with a POSIX default ACL, "a note the server creates gets its group permissions from the process umask instead of from the default ACL, so a group the ACL grants write gets read-only," reported [@princelundgren](https://github.com/princelundgren) in [#2054](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2054). Another program writing as that group, such as a sync client, then could not update the note.
+
+The server now reads the folder's default ACL and gives a new note the mode a plain `open()` would. Without a default ACL, the umask applies as before. Other platforms, filesystems without extended attributes, and NFSv4 or SMB ACL formats keep the umask behaviour. Overwriting a note still keeps its existing mode, and nothing is created in the vault to work the mode out ([#2144](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2144), [writer tools](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/tools/writer/index.md)).
+
+### Notes, frontmatter and the file watcher
+
+- **Frontmatter keeps your key order.** "Expected the frontmatter keys of `write()` to be serialised in the order the caller supplied them; got them re-sorted into alphabetical order on disk," reported [@mingyueman](https://github.com/mingyueman) in [#2029](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2029). Every writer now keeps the caller's order, nested mappings included: writes, OKF stamping and verification, and the two files a Git pull conflict rewrites. Notes already on disk keep their order until they are rewritten ([#2075](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2075)).
+- **Saves through a hidden temporary file reindex the note.** An editor that saves to a file such as `notes/.save.tmp` and renames it over the note did not trigger the watcher, while the same save from a visible temporary name did ([#2063](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2063)). A move now counts when either end is a visible path in the vault ([#2080](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2080)).
+- **Indexing no longer feeds the Linux watcher read events.** A reindex opens and closes every file. On a vault with about 40,000 files that produced about 80,000 read events, "well over the default `fs.inotify.max_queued_events` of 16384, so the queue overflows" ([#2045](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2045)). The watcher now subscribes only to creates, changes, moves and deletes ([#2066](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2066)). The reported loop was not reproduced, and a real burst of changes can still overflow the queue, so #2045 stays open for the overflow backoff and for skipping excluded folders.
+
+### Embeddings and search
+
+- **OpenAI-compatible endpoints that omit `index`.** With Gemini's compatibility endpoint, "every embedding batch that holds more than one chunk is skipped. No vectors are saved, so search by meaning has nothing to search." The issue's diagnosis: "The endpoint omits the `index` field of the first item in `data`" ([#2050](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2050)). A missing `index` now counts as the first position. A response whose indexes collide is refused rather than risk pairing a vector with the wrong text, and the build skips that batch with a warning. The `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE=1` workaround is no longer needed ([#2220](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2220), [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/embeddings/index.md)).
+- **A store damaged after startup is recovered by the writer.** A damaged `numpy` or `sqlite` vector store met by a reindex, flush or convergence job failed that job with a traceback on every note change ([#1976](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1976)). The job now moves the store aside as `.corrupt-<time>` and rebuilds it. Stores the process does not own, and PostgreSQL, behave as before ([#2194](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2194)).
+- **Full builds hold less at once.** Two more steps on [#1938](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1938): a full build now prepares sections in bounded windows staged on disk ([#2176](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2176)), and a PostgreSQL publish replays rows from a temporary file instead of holding every vector ([#2185](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2185)). The PRs measured only the steps they change: the PostgreSQL preparation probe went from between 111,140 and 111,532 KiB to between 97,248 and 97,540 KiB, and the build probe's `tracemalloc` peak from 190.8 MB to 188.9 MB, about 13% slower in one run. No step yet lowers a whole build's peak, and #1938 stays open ([embedding stores](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/embedding-stores/index.md)).
+- **The keyword index repairs orphaned rows.** After a downgrade to a build from before #1535 and back, keyword rows without an owner could never be deleted. In the issue's words, "The failure mode is silent" ([#1538](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1538)). Every writable open now re-links or purges them ([#2184](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2184)).
+
+### Git history and logs
+
+- **Folder moves name the folder.** v6.1.3 left `move_folder` commits as `move_folder: N files`. They now read `move_folder: drafts -> archive/2026`, with the moved files and rewritten backlinks in the same commit ([#2139](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2139), [#2178](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2178), [what a commit covers](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/#what-a-commit-covers)).
+- **Git errors stay on one log line.** Git's stderr spans several lines, so "one logical event becomes one prefixed line plus several unprefixed continuation lines" for a line-oriented collector ([#1349](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1349)). Failure logs now carry stderr on one line. The LFS pull, fast-forward and sync failure lines now also redact the configured token ([#2189](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2189)).
+- **Startup logs the Git version.** A Git-backed vault logs `git_runtime_version` once at startup. No minimum version is enforced yet ([#2146](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2146), [guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/git-integration/index.md)).
+
+### OKF write state
+
+Neither `config://vault` nor `stats` reported it, so "an operator cannot tell from the server whether `OKF_WRITE` is in effect" ([#1432](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1432)). `config://vault` now reports `okf_write_configured` and `okf_write_effective`, and `stats.okf` reports `write_configured` and `write_effective`. Effective means `OKF_WRITE` is on, OKF is active and the vault is writable ([#2155](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2155)). A read-only server with `OKF_WRITE` set also logs `okf_write_inert` at startup ([#1434](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1434), [#2174](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2174), [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/use/okf/index.md)).
+
+### Command line and installation
+
+- **Store-open errors without a traceback.** "A traceback also reads as a crash, so a permission or path mistake is reported as a bug" ([#1955](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1955)). `admin index` and `admin reindex` now print `ERROR: <cause>` and exit 1 ([#2164](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2164)).
+- **Empty optional install fields.** Claude Desktop passed an optional field the user left empty "as the literal text `${user_config.<id>}`" ([#1729](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1729)). Nine optional fields now default to empty. This was checked against the released MCPB loader, not in the Claude Desktop interface ([#2141](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2141), [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/get-started/claude-desktop/index.md)).
+
+### Documentation
+
+- [VS Code and Goose](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/get-started/http-client/index.md) connection examples, and a read-only local Goose setup ([#2145](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2145)).
+- [Cross-instance note links](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/configuration/#cross-instance-note-links): name a vault's URL prefix in its instance description, so a model can map a link to the right server ([#1131](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1131), [#2169](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2169)).
+- [Separate search data from persistent state](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/deploy/docker/#separate-search-data-from-persistent-state): an opt-in Docker volume, so the index and embeddings can be reset without losing sign-in state ([#650](https://github.com/pvliesdonk/markdown-vault-mcp/issues/650), [#2173](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2173)).
+
+### For library users
+
+Additions only. `markdown_vault_mcp.git.GitWriteSettings` groups the Git strategy's settings, and the flat constructor arguments still work ([#2219](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2219), [Git API](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/api/git/index.md)). `IteratesChunks` is a new optional protocol in `markdown_vault_mcp.interfaces` ([storage API](https://pvliesdonk.github.io/markdown-vault-mcp/7.0/reference/api/storage/index.md)). Importing `markdown_vault_mcp.write_callback` no longer loads FastMCP ([#2152](https://github.com/pvliesdonk/markdown-vault-mcp/pull/2152)).
+
+### Contributors
+
+Every fix in this release came from pull requests by [@salmonumbrella](https://github.com/salmonumbrella), except the Gemini fix, which [@Fl0p](https://github.com/Fl0p) both reported and wrote. Thanks also to [@princelundgren](https://github.com/princelundgren) and [@mingyueman](https://github.com/mingyueman) for their reports.
