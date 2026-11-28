@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # packages above must not depend on what a project keeps in the block below.
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
 
-# DOCKERFILE-APT-DEPS-START — add domain apt packages below; kept across copier update
+# DOCKERFILE-APT-DEPS-START — add domain apt packages below
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs gosu \
     && rm -rf /var/lib/apt/lists/* \
     && git lfs install --system
@@ -45,7 +45,7 @@ WORKDIR /app
 # ``docs/deploy/docker.md`` for the full attach workflow.
 ARG DEBUG=false
 
-# DOCKERFILE-UV-EXTRAS-START — append `--extra <name>` flags below to pull domain-specific extras; kept across copier update
+# DOCKERFILE-UV-EXTRAS-START — append `--extra <name>` flags below to pull domain-specific extras
 # Install dependencies first (cache layer).  The ``$( ... )`` shell
 # expansion appends ``--extra debug`` only when ``--build-arg DEBUG=true``;
 # default builds get the lean install.
@@ -71,7 +71,7 @@ RUN if [ "$APP_UID" -eq 0 ] || [ "$APP_GID" -eq 0 ]; then \
     fi \
     && groupadd -r --gid $APP_GID --non-unique appuser \
     && useradd -r --uid $APP_UID --gid $APP_GID --no-log-init -d /app appuser \
-    # DOCKERFILE-STATE-DIRS-START — domain state subdirs; kept across copier update
+    # DOCKERFILE-STATE-DIRS-START — domain state subdirs
     && mkdir -p /data/vault /data/state/embeddings /data/state/fastembed /data/state/fastmcp \
     # DOCKERFILE-STATE-DIRS-END
     && chown -R appuser:appuser /app /data
@@ -94,7 +94,7 @@ EXPOSE 8000
 # to reach with ``-p 127.0.0.1:5678:5678``.
 EXPOSE 5678
 
-# DOCKERFILE-VOLUMES-START — mounted volume list; kept across copier update
+# DOCKERFILE-VOLUMES-START — mounted volume list
 VOLUME ["/data/vault", "/data/state"]
 # DOCKERFILE-VOLUMES-END
 

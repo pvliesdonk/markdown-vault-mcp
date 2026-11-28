@@ -38,7 +38,7 @@ services:
     volumes:
       - service-data:/data/service
       - state-data:/data/state
-      # DOMAIN-COMPOSE-VOLUMES-START — project mounts; kept across copier update
+      # DOMAIN-COMPOSE-VOLUMES-START — project mounts
       - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:-./vault}:/data/vault
       # DOMAIN-COMPOSE-VOLUMES-END
     environment:
@@ -49,7 +49,7 @@ services:
       # object per record with nothing set.  Uncomment to read `docker logs`
       # in colour instead (`.env` works too; this is the same knob).
       # MARKDOWN_VAULT_MCP_LOG_FORMAT: rich
-      # DOMAIN-COMPOSE-ENVIRONMENT-START — project env; kept across copier update
+      # DOMAIN-COMPOSE-ENVIRONMENT-START — project env
       MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
       MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
       MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
@@ -78,11 +78,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-  # DOMAIN-COMPOSE-SERVICES-START — sidecars (a task backend, a cache); kept across copier update
+  # DOMAIN-COMPOSE-SERVICES-START — sidecars (a task backend, a cache)
   # DOMAIN-COMPOSE-SERVICES-END
 
 volumes:
   service-data:
   state-data:
-  # DOMAIN-COMPOSE-VOLUME-NAMES-START — named volumes for the mounts above; kept across copier update
+  # DOMAIN-COMPOSE-VOLUME-NAMES-START — named volumes for the mounts above
   # DOMAIN-COMPOSE-VOLUME-NAMES-END
