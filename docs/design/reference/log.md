@@ -1,5 +1,14 @@
 # Reference research log
 
+## 2026-11-28
+
+- New: [UTF-8 byte order mark before a frontmatter block](bom-before-frontmatter.md),
+  for #2452. Read OKF 0.3 SPEC.md and the OKF repository's parser, validator
+  and scanner at 527e81aff5, the Unicode Standard 18.0.0, RFC 3629, YAML
+  1.2.2, CommonMark 0.31.2 and its spec master, and the docs or source of
+  python-frontmatter, Jekyll, Hugo, gray-matter and Obsidian. The OKF tooling
+  claims were re-checked against the source; no refute pass yet, so the page
+  stays `draft`. Next review: 2027-05-28.
 ## 2026-11-27
 
 - New: [Claude as an MCP client](claude-mcp-client.md), for #2529. Read the

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import frontmatter
 import yaml
-from frontmatter.default_handlers import YAMLHandler
+from frontmatter.default_handlers import BaseHandler, YAMLHandler
 
 from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.hashing import compute_etag
@@ -800,6 +800,30 @@ class MalformedFrontmatterError(yaml.YAMLError):
     """
 
 
+def frontmatter_handler(text: str) -> BaseHandler | None:
+    """The handler for the frontmatter block *text* opens with, if any.
+
+    A block opens on the first line of *text* or not at all. A YAML block's
+    first line is exactly ``---`` (OKF 0.3 §4, #2452), read by
+    :data:`~markdown_vault_mcp._yaml12.YAML12_HANDLER`. python-frontmatter
+    stripped leading whitespace first and took ``----`` or ``--- `` as a
+    delimiter. TOML and JSON blocks keep their own handlers, anchored at the
+    first line the same way.
+
+    Args:
+        text: Raw markdown text, after any byte order mark.
+
+    Returns:
+        The handler, or ``None`` when *text* does not open with a block.
+    """
+    if YAML12_HANDLER.detect(text):
+        return YAML12_HANDLER
+    for handler in frontmatter.handlers:
+        if not isinstance(handler, YAMLHandler) and handler.detect(text):
+            return handler
+    return None
+
+
 def parse_frontmatter(text: str) -> frontmatter.Post:
     """Parse *text* as markdown-with-frontmatter, one error for one failure.
 
@@ -807,6 +831,9 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     has to know which handler will run or which error it raises (#1408).
     A YAML block is read by the YAML 1.2 core schema (OKF 0.3 §4, #2415), so
     a date or timestamp arrives as the string written, not a ``date``. A
+    block opens only on the first line (:func:`frontmatter_handler`); one
+    leading U+FEFF is an encoding signature, not content, and is skipped
+    first, as OKF's own parser does (#2452). A
     YAML failure propagates as the ``yaml.YAMLError`` it already was; every
     other handler's failure — all of them ``ValueError`` subclasses — is
     re-raised as :class:`MalformedFrontmatterError`, which is one.
@@ -821,11 +848,12 @@ def parse_frontmatter(text: str) -> frontmatter.Post:
     Raises:
         MalformedFrontmatterError: The block is present but unreadable.
     """
-    handler = frontmatter.detect_format(text, frontmatter.handlers)
-    if isinstance(handler, YAMLHandler):
-        # OKF 0.3 §4: YAML frontmatter is read by the YAML 1.2 core schema
-        # (#2415); TOML and JSON blocks keep their own handlers.
-        handler = YAML12_HANDLER
+    text = text.removeprefix("\ufeff")
+    handler = frontmatter_handler(text)
+    if handler is None:
+        # What frontmatter.loads returns for text with no block, without
+        # letting it strip leading blank lines and find one there (#2452).
+        return frontmatter.Post(text.replace("\r\n", "\n").strip())
     try:
         return frontmatter.loads(text, handler=handler)
     except ValueError as exc:
@@ -843,11 +871,11 @@ def strip_frontmatter_block(text: str) -> str:
     ``NoteContent.content`` — and every other raw file text in this package —
     includes the block, so it has to come off first.
 
-    Detection is delegated to ``python-frontmatter`` and so agrees with
-    :func:`parse_note` about *where* the block ends: the same handlers, the
-    same offset-zero anchoring (an identical block later in the body is body
-    text), and the same reading of an unterminated block as no frontmatter at
-    all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
+    Detection is :func:`frontmatter_handler`'s, shared with
+    :func:`parse_frontmatter`, so the two agree about *where* the block ends:
+    the same handlers, the same first-line anchoring (a block after a blank
+    line, or later in the body, is body text), and the same reading of an
+    unterminated block as no frontmatter at all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
     line that is an indented code block keeps its indentation.
 
     The newlines separating the block from the body are dropped — they are the
@@ -860,8 +888,8 @@ def strip_frontmatter_block(text: str) -> str:
     Returns:
         The body. *text* unchanged when it opens with no frontmatter block.
     """
-    candidate = text.lstrip()
-    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    candidate = text.removeprefix("\ufeff")
+    handler = frontmatter_handler(candidate)
     if handler is None:
         return text
     try:

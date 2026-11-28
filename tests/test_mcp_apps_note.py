@@ -10,6 +10,8 @@ buttons.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from tests.conftest import get_app_html
@@ -85,12 +87,22 @@ class TestNotePreviewFrontmatter:
         assert "marked.parse(body)" in html
 
     async def test_strip_regex_matches_server_fence_grammar(self) -> None:
+        # The preview hides exactly the block the server reads as frontmatter:
+        # a first line that is exactly ``---`` after an optional byte order
+        # mark, closed by the next such line (OKF 0.3 §4, #2452). The JS
+        # literal is also a valid Python pattern, so it is run here.
         html = await get_app_html()
-        # The server's python-frontmatter parser fences on ``^-{3,}\\s*$``; the
-        # strip regex must at least cover the realistic cases (3+ dashes, then
-        # optional spaces/tabs) else a ``----`` or ``--- `` fence renders the
-        # frontmatter twice.
-        assert "-{3,}[ \\t]*\\r?\\n" in html
+        match = re.search(
+            r"function stripFrontmatter\(text\) \{\s*return String\(text \|\| ''\)"
+            r"\.replace\(/(.+?)/, ''\);",
+            html,
+        )
+        assert match is not None
+        strip = re.compile(match.group(1))
+        assert strip.sub("", "---\ntype: N\n---\n# Body\n", count=1) == "# Body\n"
+        assert strip.sub("", "\ufeff---\r\nx: 1\r\n---\r\nB", count=1) == "B"
+        for kept in ("\n---\nx: 1\n---\nB", "--- \nx: 1\n---\nB", "----\nx\n----\nB"):
+            assert strip.sub("", kept, count=1) == kept
 
     async def test_collapsible_properties(self) -> None:
         html = await get_app_html()

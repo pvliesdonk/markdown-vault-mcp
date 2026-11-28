@@ -186,6 +186,19 @@ reader would read its plain form as anything else. TOML and JSON blocks
 keep their own handlers. The external rules are in
 [YAML 1.2 core schema](reference/yaml-1-2-core-schema.md).
 
+A block opens only on the first line of the file and, for YAML, only on a
+line that is exactly `---`; it closes on the next line that is exactly
+`---`, a CRLF ending included (OKF 0.3 §4, in every vault, #2452).
+`scanner.frontmatter_handler` decides this for `parse_frontmatter`,
+`strip_frontmatter_block` and the OKF audit's mapping check, and the SPA
+note preview strips the same block. A block after a blank line or a
+leading space, or fenced by `----` or `--- `, is body text.
+python-frontmatter itself stripped the text before detecting and accepted
+any run of three or more dashes with trailing whitespace. One leading
+U+FEFF is an encoding signature and is skipped first, as OKF's own parser,
+validator and scanner do; the spec is silent on it
+([BOM before frontmatter](reference/bom-before-frontmatter.md)).
+
 Content writes serialize supplied frontmatter in caller insertion order,
 including nested mappings and mappings inside lists. Edit, append, OKF
 verification and git conflict marking retain surviving fields in their

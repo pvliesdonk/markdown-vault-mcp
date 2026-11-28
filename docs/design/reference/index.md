@@ -22,6 +22,10 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Linux ownership of disposable PostgreSQL test containers](test-postgres-container-ownership.md) —
   initial namespace identity, process liveness and static ownership labels used
   by the PostgreSQL fixture to recover after SIGKILL (#1952).
+- [UTF-8 byte order mark before a frontmatter block](bom-before-frontmatter.md) —
+  whether a leading BOM is content or an encoding signature under OKF 0.3
+  §4, per the spec, OKF's own tooling, Unicode, RFC 3629, YAML and
+  CommonMark. Read before changing how a frontmatter block is detected.
 - [Python frontmatter serialization and mapping order](python-frontmatter-pyyaml.md) —
   pinned serializer keyword forwarding, recursive mapping order and formatting
   boundaries used by the document writer and OKF transforms.
