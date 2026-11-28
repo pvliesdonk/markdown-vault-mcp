@@ -318,6 +318,7 @@ are named where they exist; a fix rewrites them.
 | 23 | RFC 3339 `date-time` only (§5) | silent | silent | the `date-time` rule; "No other form is valid" | fixed: seconds, a `.` fraction and a `T` separator required, lower-case `t`/`z` and a `:60` leap second accepted (was: `14:00Z`, `,5` fractions and a space accepted; the checker took any `fromisoformat` form) | stated (no keyword) | #2428 (fixed) |
 | 24 | Unknown keys inside `generated` kept (§4.1) | silent | silent | MUST keep | fixed: the stamp sets only `by` and `at` and keeps every other key of the written `generated` in its slot (was: the whole mapping replaced, so `x-model` was lost) | MUST | #2484 (fixed) |
 | 25 | Reserved files carry no frontmatter (§8, §9); trust fields describe concepts (§3.2, §5.3) | n/a | n/a | folder `index.md` and `log.md`: none | fixed: the write stamp applies only to a non-reserved `.md` file whose written frontmatter has a non-empty `type`; any other file lands as given (was: any `write`/`edit` gained `generated`, a body-only `log.md` included) | stated (no keyword) | #2486 (fixed) |
+| 26 | Regenerated root `index.md` keeps its block (§8.1, §4) | silent | silent | MUST keep; SHOULD NOT re-serialize | fixed: the new listing follows the stored block's bytes and an added required field is spliced in (was: the block re-dumped, so comments went and `"0.3"` became `'0.3'`) | MUST / SHOULD NOT | #2485 (fixed) |
 
 Notes on the table:
 

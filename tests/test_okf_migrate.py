@@ -257,6 +257,21 @@ class TestGenerateIndex:
         # index.md does not list itself.
         assert "/index.md)" not in body
 
+    def test_keeps_the_root_frontmatter_bytes(self, vault: Vault) -> None:
+        # OKF 0.3 §8.1 keeps the root block; §4 says not to re-serialize the
+        # values the regeneration did not change (#2485).
+        block = "---\n# the bundle\nokf_version: \"0.3\"\ntitle: 'Acme'\n---\n\n"
+        _write(vault, "index.md", block + "# Old body\n")
+        _write(vault, "plain.md", "# Plain Note\n")
+
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+
+        raw = (vault.source_dir / "index.md").read_text(encoding="utf-8")
+        assert raw.startswith(block)
+        assert "# Old body" not in raw
+        assert "- [Plain Note](/plain.md)" in raw
+
     def test_regenerates_under_write_protection(self, source_dir: Path) -> None:
         """Regeneration reads the existing index.md, so the guard exempts it."""
         col = Vault(
@@ -553,6 +568,24 @@ class TestReservedFilesUnderRequiredFrontmatter:
         assert index.frontmatter["okf_version"] == "0.2"
         assert index.frontmatter["title"] == "Index"
 
+    def test_an_added_required_field_keeps_the_other_bytes(
+        self, gated_vault: Vault
+    ) -> None:
+        # The added title is spliced in; the comment and quoting stay (#2485).
+        _write(
+            gated_vault,
+            "index.md",
+            "---\n# the bundle\nokf_version: '0.3'\n---\n# Old\n",
+        )
+
+        gated_vault.writer.okf_generate_index()
+        wait_for_writer_drain(gated_vault)
+
+        raw = (gated_vault.source_dir / "index.md").read_text(encoding="utf-8")
+        assert raw.startswith(
+            "---\n# the bundle\nokf_version: '0.3'\ntitle: Index\n---"
+        )
+
     def test_subfolder_stays_reachable_from_the_parent_listing(
         self, gated_vault: Vault
     ) -> None:
@@ -601,3 +634,41 @@ class TestUnreadableReservedFiles:
         with pytest.raises(DocumentUnreadableError):
             vault.writer.okf_generate_index(folder="guides")
         assert (source_dir / "guides" / "index.md").read_bytes() == _UNREADABLE
+
+
+class TestComposeRegeneratedReserved:
+    """The text a regeneration writes (#2485)."""
+
+    BODY = "# Index\n\n- [A](/a.md)\n"
+
+    def test_body_only_when_no_frontmatter_is_needed(self) -> None:
+        from markdown_vault_mcp.okf import compose_regenerated_reserved
+
+        assert compose_regenerated_reserved("---\na: 1\n---\nx", None, self.BODY) == (
+            self.BODY
+        )
+
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            None,
+            "# No block yet\n",
+            "---\ntitle: [unclosed\n---\n# Old\n",
+        ],
+    )
+    def test_serializes_whole_when_the_stored_block_cannot_be_kept(
+        self, stored: str | None
+    ) -> None:
+        from markdown_vault_mcp.okf import compose_regenerated_reserved
+
+        out = compose_regenerated_reserved(stored, {"title": "Index"}, self.BODY)
+        assert out.startswith("---\ntitle: Index\n---\n")
+        assert out.rstrip().endswith(self.BODY.rstrip())
+
+    def test_a_changed_stored_value_is_not_kept(self) -> None:
+        from markdown_vault_mcp.okf import compose_regenerated_reserved
+
+        stored = "---\n# c\ntitle: Old\n---\n# Old\n"
+        out = compose_regenerated_reserved(stored, {"title": "New"}, self.BODY)
+        assert out.startswith("---\ntitle: New\n---\n")
+        assert "# c" not in out

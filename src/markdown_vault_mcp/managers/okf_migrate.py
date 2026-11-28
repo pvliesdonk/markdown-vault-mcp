@@ -48,6 +48,7 @@ from markdown_vault_mcp.okf import (
     ReservedFrontmatterPolicy,
     build_index_markdown,
     build_log_markdown,
+    compose_regenerated_reserved,
     convert_wikilinks_to_markdown,
     is_okf_reserved_file,
 )
@@ -254,15 +255,15 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
+        text = compose_regenerated_reserved(
+            existing.content if existing is not None else None,
+            self._reserved_frontmatter.build(
+                existing_fm if preserved else None, title=heading
+            ),
+            body,
+        )
         with okf_write_suppressed():
-            self._doc_mgr.write(
-                index_path,
-                body,
-                frontmatter=self._reserved_frontmatter.build(
-                    existing_fm if preserved else None, title=heading
-                ),
-                allow_overwrite=True,
-            )
+            self._doc_mgr.write(index_path, text, allow_overwrite=True)
         return OkfIndexResult(
             path=index_path,
             entries=len(entries),
