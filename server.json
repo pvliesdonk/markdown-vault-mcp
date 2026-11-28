@@ -216,7 +216,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup."
+          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable; under EMBED_INPUT=context+fields they also enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index once on next startup, and re-embeds once when the values reach the embedding provider."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
@@ -356,10 +356,13 @@
           "description": "FastEmbed model cache directory (in Docker, stored under /data/state/fastembed)."
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_INPUT",
+          "description": "What each chunk sends to the embedding provider. body sends the chunk text only. context adds the note title and chunk heading. context+fields adds the SEARCHABLE_FIELDS values to each note's first chunk as well. Keyword search and filters are the same under all three. Unset derives it from the deprecated EMBED_CONTEXT and from SEARCHABLE_FIELDS: context+fields when EMBED_CONTEXT is true or any searchable field is set, else body. Changing what reaches the provider re-embeds the vault once on next startup."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
-          "description": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
-          "format": "boolean",
-          "default": "false"
+          "description": "Deprecated in favour of EMBED_INPUT, which takes precedence when both are set. Alone, true is the same as EMBED_INPUT=context+fields and false is the same as leaving it unset. Beside EMBED_INPUT, true asserts that the title and heading reach the provider, so EMBED_INPUT=body fails at startup. Setting it logs a deprecation warning.",
+          "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
@@ -873,7 +876,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup."
+          "description": "Comma-separated frontmatter fields whose text values become keyword-searchable; under EMBED_INPUT=context+fields they also enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index once on next startup, and re-embeds once when the values reach the embedding provider."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
@@ -1013,10 +1016,13 @@
           "description": "FastEmbed model cache directory (in Docker, stored under /data/state/fastembed)."
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_INPUT",
+          "description": "What each chunk sends to the embedding provider. body sends the chunk text only. context adds the note title and chunk heading. context+fields adds the SEARCHABLE_FIELDS values to each note's first chunk as well. Keyword search and filters are the same under all three. Unset derives it from the deprecated EMBED_CONTEXT and from SEARCHABLE_FIELDS: context+fields when EMBED_CONTEXT is true or any searchable field is set, else body. Changing what reaches the provider re-embeds the vault once on next startup."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
-          "description": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
-          "format": "boolean",
-          "default": "false"
+          "description": "Deprecated in favour of EMBED_INPUT, which takes precedence when both are set. Alone, true is the same as EMBED_INPUT=context+fields and false is the same as leaving it unset. Beside EMBED_INPUT, true asserts that the title and heading reach the provider, so EMBED_INPUT=body fails at startup. Setting it logs a deprecation warning.",
+          "format": "boolean"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",

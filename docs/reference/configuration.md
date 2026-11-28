@@ -433,7 +433,8 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | No | OpenAI-compatible embedding model name; the bare OPENAI_EMBEDDING_MODEL is honoured as a fallback. |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | No | FastEmbed model name. |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | (none) | No | FastEmbed model cache directory (in Docker, stored under /data/state/fastembed). |
-| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | `false` | No | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup. |
+| `MARKDOWN_VAULT_MCP_EMBED_INPUT` | (none) | No | What each chunk sends to the embedding provider. body sends the chunk text only. context adds the note title and chunk heading. context+fields adds the SEARCHABLE_FIELDS values to each note's first chunk as well. Keyword search and filters are the same under all three. Unset derives it from the deprecated EMBED_CONTEXT and from SEARCHABLE_FIELDS: context+fields when EMBED_CONTEXT is true or any searchable field is set, else body. Changing what reaches the provider re-embeds the vault once on next startup. |
+| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | (none) | No | Deprecated in favour of EMBED_INPUT, which takes precedence when both are set. Alone, true is the same as EMBED_INPUT=context+fields and false is the same as leaving it unset. Beside EMBED_INPUT, true asserts that the title and heading reach the provider, so EMBED_INPUT=body fails at startup. Setting it logs a deprecation warning. |
 | `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` | `30.0` | No | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out. |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE` | `4` | No | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips. |
 
@@ -476,7 +477,7 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | (none) | No | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**). |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | `title` | No | Frontmatter field used as the document title (falls back to title, the first H1, then the filename). Changing it cold-rebuilds the index once on next startup. |
-| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | (none) | No | Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup. |
+| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | (none) | No | Comma-separated frontmatter fields whose text values become keyword-searchable; under EMBED_INPUT=context+fields they also enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index once on next startup, and re-embeds once when the values reach the embedding provider. |
 
 ### Content
 

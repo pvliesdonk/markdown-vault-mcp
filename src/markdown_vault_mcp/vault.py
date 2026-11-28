@@ -477,6 +477,7 @@ class Vault:
         self._embed_builder = EmbedTextBuilder(
             embed_context=settings.embed_context,
             searchable_fields=tuple(self._searchable_frontmatter_fields),
+            embed_input=settings.embed_input,
         )
         self._git_pull_interval_s = settings.git_pull_interval_s
         # The resolver prunes its folder walk with the *configured* patterns
