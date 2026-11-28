@@ -3,25 +3,18 @@ name = "markdown-vault-mcp"
 version = "6.1.4"
 description = "Generic markdown vault MCP with hybrid search"
 readme = "README.md"
-# PROJECT-LICENSE-START — the license you picked; replace the value below and
-# it is kept across copier update.  The template ships a proprietary starter
-# because it cannot know your choice, and it does not re-render over yours.
-# See LICENSE for the other places the same choice has to be stated.
+# PROJECT-LICENSE-START — see LICENSE for the other places the license is stated.
 license = "MIT"
 # PROJECT-LICENSE-END
 requires-python = ">=3.11"
 authors = [{ name = "Peter van Liesdonk", email = "pvliesdonk@users.noreply.github.com" }]
-# The template knows the terms that are true of every server it generates and
-# the project's own names; it cannot know the domain terms, which go in the
-# seam.  An empty list was not a decision, just nobody's job (#583).
 # bootstrap.yml also sets these as the GitHub repository's topics.
 keywords = [
     "mcp",
     "model-context-protocol",
     "fastmcp",
     "markdown-vault-mcp",
-    # PROJECT-KEYWORDS-START — add this project's domain terms below (what it
-    # is *about*: "vault", "ocr", "patents"); kept across copier update.
+    # PROJECT-KEYWORDS-START — this project's domain terms.
     "markdown",
     "search",
     "fts5",
@@ -34,15 +27,14 @@ keywords = [
     # PROJECT-KEYWORDS-END
 ]
 classifiers = [
-    # PROJECT-CLASSIFIERS-START — kept across copier update: this project's
-    # development status, and any audience/topic/framework classifiers.
+    # PROJECT-CLASSIFIERS-START — development status and any
+    # audience/topic/framework classifiers.
     "Development Status :: 5 - Production/Stable",
     "Topic :: Text Processing :: Markup :: Markdown",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     # PROJECT-CLASSIFIERS-END
     # The Python versions are the ones ci.yml's matrix requires (its
-    # non-experimental entries); scripts/tests/test_python_classifiers.py in
-    # the template keeps the two equal.
+    # non-experimental entries).
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -50,9 +42,8 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     # src/<module>/py.typed (PEP 561) ships with the package.
     "Typing :: Typed",
-    # PROJECT-LICENSE-CLASSIFIER-START — kept across copier update; the trove
-    # name is not the SPDX id (Apache-2.0 is "Apache Software License"), which
-    # is one reason this is a separate edit rather than a derived one.
+    # PROJECT-LICENSE-CLASSIFIER-START — the trove name is not the SPDX id
+    # (Apache-2.0 is "Apache Software License").
     "License :: OSI Approved :: MIT License",
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
@@ -81,7 +72,7 @@ dependencies = [
     # (#2277). A transitive through fastmcp, declared because this project
     # imports it directly; no floor, fastmcp owns the version.
     "httpx2",
-    # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
+    # PROJECT-DEPS-START — domain dependencies
     # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
     "httpx>=0.25",
     "python-frontmatter>=1.0",
@@ -91,7 +82,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
+# PROJECT-EXTRAS-START — domain-specific optional-dependency groups
 mcp = ["fastmcp>=4,<5"]
 # numpy carries no bound here on purpose: the <2.5 ceiling lives in
 # [tool.uv] constraint-dependencies below (single bound per package, per
@@ -136,8 +127,7 @@ dev = [
     # is an untyped import that fails `mypy src/ tests/` without these stubs.
     "types-PyYAML>=6",
     # PROJECT-DEV-DEPS-START — this project's test and tooling dependencies
-    # (respx, hypothesis, ...); kept across copier update.  Never published,
-    # unlike an extra in PROJECT-EXTRAS.
+    # (respx, hypothesis, ...); never published, unlike an extra in PROJECT-EXTRAS.
     # The request-logging trace tests need a real tracer provider (#2341).
     "opentelemetry-sdk",
     # PROJECT-DEV-DEPS-END
@@ -168,7 +158,7 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # know -- an invariant spanning this file and release.yml's
 # gh-action-pypi-publish pin.  Unpinned, this side moves on hatchling's
 # release schedule rather than on anyone's decision, and the break lands at
-# release time in every project at once (#479).
+# release time (#479).
 #
 # The ceiling has to bind at the minor, because that is where the metadata
 # version moves: 1.27 took it to 2.4 and 1.32 took it to 2.5.  A `<2` ceiling
@@ -183,8 +173,7 @@ requires = ["hatchling>=1.33,<1.34"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-# PROJECT-UV-START — project-owned uv settings; kept across copier update.  The
-# template ships none, but it does ship the rules for what goes here.
+# PROJECT-UV-START — project uv settings.
 #
 # This is where a temporary dependency bound belongs.  `constraint-dependencies`
 # and `override-dependencies` are invisible to Renovate, so its update-lockfile
@@ -233,9 +222,7 @@ dependency-groups = { docs = { requires-python = ">=3.11.5" } }
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
 # app.src.html is the input scripts/vendor_spa.py builds app.html from, so the
-# distribution carries the build and not the source (#580).  It is
-# `_skip_if_exists` precisely because it is yours to edit; that is not a reason
-# to ship it to installers.
+# wheel carries the bundled HTML and excludes its source (#580).
 exclude = ["src/markdown_vault_mcp/static/app.src.html"]
 
 [tool.ruff]
@@ -255,21 +242,20 @@ ignore = ["E501"]
 # Context/FastMCP/Service imports must stay runtime (not TYPE_CHECKING) for
 # DI resolution — TC001/TC002/TC003.
 
-# Template-managed: the structural diff-gate adds `S` (security) on the diff
-# pass, so the shipped structural-gate test would self-block: its asserts trip
+# The structural diff-gate adds `S` (security) on the diff
+# pass, so the structural-gate test would self-block: its asserts trip
 # S101, and its bare-name `git` call trips S607 (a partial executable path —
 # the `sys.executable -m ...` calls are NOT flagged). S603 (subprocess use) is
 # included defensively: inert in current ruff but emitted by some versions.
 # Ignoring all three in tests keeps the gate from self-blocking on its own test
 # module; all three are safe in test code. No-op for the base whole-repo select
-# (which excludes S). If your project needs its own tests/** ignores, EXTEND
-# this list in place — do not add a second "tests/**" key (duplicate TOML key).
+# (which excludes S). Add further tests/** ignores to this list in place; do
+# not add a second "tests/**" key (duplicate TOML key).
 "tests/**" = ["S101", "S603", "S607"]
 # The release stamper stages its rewrites with a fixed-argv `git add`
 # (subprocess with a list, never a shell). S607 flags the bare `git` name
 # (a partial executable path) and S603 the subprocess call itself; both are
-# safe here and would otherwise trip every adopter's structural diff-gate
-# the first time an update touches the template-owned parts of the script.
+# safe here and would otherwise trip the structural diff-gate.
 "scripts/stamp_manifests.py" = ["S603", "S607"]
 # The release-notes promoter stages only its computed repository-relative paths
 # from an explicit repository root. Its `git add -A --` uses fixed argv with no
@@ -304,22 +290,19 @@ ignore = ["E501"]
 # S105/S106: tests construct configs with fake literal tokens/secrets
 # (git_token="...", github_webhook_secret="...") — not real credentials.
 # S108: fixture paths under /tmp are inputs to pure config objects, never
-# actually opened. A second glob rather than a wider "tests/**" entry: that
-# key is template-owned above, and ruff unions every matching pattern.
+# actually opened. A second glob rather than a wider "tests/**" entry; ruff
+# unions every matching pattern.
 "tests/**/*.py" = ["S105", "S106", "S108"]
 # config.py needs Sequence importable at runtime: the config-surface
 # generator resolves ProjectConfig's field annotations via get_type_hints,
 # which fails if the name only exists under TYPE_CHECKING (matches the
 # indexing.py / content.py suppressions below).
 "src/markdown_vault_mcp/config.py" = ["TC003"]
-# for your project's real source/test paths (split _server_apps.py into
-# per-domain modules, rename tests, add per-file overrides as needed); kept
-# across copier update.
 # PLR0913 (too-many-args) is ignored on the DI/wiring modules below: FastMCP
 # inflates their arg counts with `Context` + `Depends()` injections, so the
 # structural diff-gate would flag every new tool/resource/prompt and make
-# `# noqa: PLR0913` routine. It only bites when enable_structural_gate is on
-# (PLR0913 isn't in the base select); domain modules keep the check, and
+# `# noqa: PLR0913` routine. PLR0913 isn't in the base select;
+# domain modules keep the check, and
 # C901/PLR0912/PLR0915 still catch a genuinely complex tool here.
 "src/markdown_vault_mcp/cli.py" = ["B008", "PLR0913"]
 "src/markdown_vault_mcp/server.py" = ["B008", "TC002", "PLR0913"]
@@ -329,8 +312,7 @@ ignore = ["E501"]
 "src/markdown_vault_mcp/_tools/*.py" = ["B008", "TC001", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/resources.py" = ["B008", "TC001", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/prompts.py" = ["B008", "TC002", "PLR0913"]
-# The template renders tool_boundary for its placeholder app tools; the vault
-# replaces them (DOMAIN-APP-TOOLS), so the template's import goes unused here.
+# _server_apps.py retains an unused tool_boundary import (F401).
 "src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002", "PLR0913", "F401"]
 "src/markdown_vault_mcp/_vault_app_tools.py" = ["B008", "TC001", "TC002", "PLR0913"]
 # The read commands annotate their parameters with the shared Typer option
@@ -443,8 +425,7 @@ addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
 markers = [
     "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
-    # PROJECT-MARKERS-START — this project's pytest markers; kept across
-    # copier update.  --strict-markers rejects any marker not declared here.
+    # PROJECT-MARKERS-START — --strict-markers rejects undeclared markers.
     # PROJECT-MARKERS-END
 ]
 
@@ -491,7 +472,7 @@ ignore_missing_imports = true
 
 # PROJECT-MYPY-OVERRIDES-START — one [[tool.mypy.overrides]] table per untyped
 # third-party library this project imports, setting only
-# ignore_missing_imports = true; kept across copier update.  Prefer a stubs
+# ignore_missing_imports = true. Prefer a stubs
 # package in PROJECT-DEV-DEPS when one exists.  tests/test_mypy_overrides.py
 # rejects any other setting, and any table that names this project's own
 # package or tests, so neither can loosen `mypy src/ tests/`.
@@ -522,7 +503,7 @@ extraPaths = ["src"]
 #   [tool.docs-reference.env]
 #   MARKDOWN_VAULT_MCP_UPSTREAM_URL = "https://example.invalid"
 #   MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
-# PROJECT-DOCS-CHECKS-START — kept across copier update
+# PROJECT-DOCS-CHECKS-START
 [tool.docs-structure]
 strict = true
 

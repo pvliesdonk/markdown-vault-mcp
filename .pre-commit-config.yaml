@@ -142,10 +142,8 @@ repos:
         # Upstream hook has `types: [text]`; this `files:` scopes to the
         # user-facing docs site plus the README. Net scope: any text file
         # under docs/ (minus the dev-reference subtrees — working specs,
-        # design notes, ADRs) plus README.md. Matches the CI step's
-        # `vale ... --glob='!docs/{superpowers,design,decisions}/**'
-        # docs README.md` exactly. Keep the dev-reference subtree set in
-        # sync with the CI step's `glob:` input; template-ci asserts they match.
+        # design notes, ADRs) plus README.md. Keep the excluded subtrees in
+        # sync with the Vale glob in .github/workflows/ci.yml.
         files: ^(docs/|README\.md$)
         exclude: ^docs/(superpowers|design|decisions)/
 
@@ -176,10 +174,7 @@ repos:
 
 # DOMAIN-HOOKS-START — add domain-specific hooks (shellcheck, yamllint,
 # project linters, etc.) below as full `- repo:` blocks indented to match the
-# `repos:` list above; kept across copier update. Everything OUTSIDE this
-# block is template-owned and re-rendered on update, which keeps the hook
-# pins and the structural-gate wiring above in lockstep with the re-rendered
-# tests that assert on them.
+# `repos:` list above.
   - repo: local
     hooks:
       - id: build-spa-check
