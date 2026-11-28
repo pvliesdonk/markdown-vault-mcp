@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:769b1d2dacb223d95c8b21e7e4286ef69a570879da7f2b1e38af683ca85f34ef -->
+<!-- vendor-spa-source-sha256:55a7f47a01617dc1639028ede0fb4732058d8664fc51dabf998cd28938bb6fdc -->
 </head>
 <body>
 <div class="app-container">
@@ -1648,6 +1648,10 @@ app.onteardown = () => {
     renderTree(data, treeEl);
   }
 
+  function loadRootTreeFromEvent() {
+    loadRootTree().catch(err => console.error('root tree load failed', err));
+  }
+
   // Search
   let searchTimeout = null;
   searchInput.addEventListener('input', () => {
@@ -1686,7 +1690,7 @@ app.onteardown = () => {
     isSearchMode = false;
     searchClear.style.display = 'none';
     searchInput.value = '';
-    loadRootTree();
+    loadRootTreeFromEvent();
   }
 
   searchClear.addEventListener('click', exitSearch);
@@ -1694,7 +1698,7 @@ app.onteardown = () => {
   // Auto-load when browse tab is selected
   window.addEventListener('vault-tab-changed', (e) => {
     if (e.detail.tab === 'browse' && treeEl.children.length === 0 && !isSearchMode) {
-      loadRootTree();
+      loadRootTreeFromEvent();
     }
   });
 
