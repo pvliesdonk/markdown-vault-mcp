@@ -3763,7 +3763,9 @@ store set, the backend falls back to <code>memory://</code>, which the server lo
 startup when running over HTTP. The queue name comes from the
 <code>MARKDOWN_VAULT_MCP</code> prefix, so two servers sharing one Redis do not share a
 queue.</p>
-<p>Worker tuning stays on the native <code>FASTMCP_DOCKET_*</code> variables below. Set the
+<p>Worker tuning stays on the native <code>FASTMCP_DOCKET_*</code> variables below. Give
+each duration in ISO 8601 form, such as <code>PT10M</code>; a bare number of seconds
+stops the server from starting. Set the
 backend through <code>MARKDOWN_VAULT_MCP_TASKS_URL</code> rather than
 <code>FASTMCP_DOCKET_URL</code>: the former wins when both are set, and the server warns
 about the disagreement.</p>
@@ -3793,13 +3795,13 @@ upstream default is 15 minutes. Set <code>FASTMCP_DOCKET_EXECUTION_TTL</code> to
 </tr>
 <tr>
 <td><code>FASTMCP_DOCKET_REDELIVERY_TIMEOUT</code></td>
-<td><code>300</code></td>
-<td>Seconds before a task claimed by a worker that never finished is redelivered to another.</td>
+<td><code>PT5M</code></td>
+<td>How long a task claimed by a worker that never finished waits before it is redelivered to another, as an ISO 8601 duration.</td>
 </tr>
 <tr>
 <td><code>FASTMCP_DOCKET_RECONNECTION_DELAY</code></td>
-<td><code>5</code></td>
-<td>Seconds to wait before reconnecting after the queue connection drops.</td>
+<td><code>PT5S</code></td>
+<td>How long to wait before reconnecting after the queue connection drops, as an ISO 8601 duration.</td>
 </tr>
 <tr>
 <td><code>FASTMCP_DOCKET_EXECUTION_TTL</code></td>
@@ -3808,8 +3810,8 @@ upstream default is 15 minutes. Set <code>FASTMCP_DOCKET_EXECUTION_TTL</code> to
 </tr>
 <tr>
 <td><code>FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL</code></td>
-<td><code>0.05</code></td>
-<td>Seconds between queue polls; lower cuts latency and raises idle load.</td>
+<td><code>PT0.05S</code></td>
+<td>Time between queue polls, as an ISO 8601 duration; lower cuts latency and raises idle load.</td>
 </tr>
 </tbody>
 </table>
