@@ -29,6 +29,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import logging
+import posixpath
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -52,7 +53,11 @@ from markdown_vault_mcp.scanner import (
     strip_frontmatter_block,
 )
 from markdown_vault_mcp.utils.fs import is_directory
-from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
+from markdown_vault_mcp.utils.links import (
+    build_plain_destination,
+    decode_link_target,
+    escape_link_text,
+)
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -703,9 +708,59 @@ def _review_applicability(entries: list[Any]) -> dict[str, str]:
     return {"state": "none", "basis": "no_review_supplied"}
 
 
+#: An RFC 3986 scheme: ``ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )``. OKF
+#: 0.3 §6 makes a path field a URI reference (RFC 3986), so a one-letter
+#: scheme counts and ``C:/x.md`` is an absolute URI, hence external. This
+#: differs on purpose from ``scanner._RE_URI_SCHEME``, which reads a single
+#: letter as a Windows drive for vault links in Obsidian's dialect (#1335);
+#: an OKF path field is governed by the spec, not by that dialect.
+_RE_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def resolve_path_field(value: object, source_path: str) -> str | None:
+    """Resolve an OKF path field to the vault path it names (OKF 0.3 §6).
+
+    §6's resolution rules: "A value with a URI scheme (for example
+    ``https:``) is an absolute URL. A value that starts with ``/`` resolves
+    from the bundle root. Any other value resolves from the directory of
+    the file that contains it." A value is a URI reference, so it is
+    percent-decoded as a link target is
+    (:func:`~markdown_vault_mcp.utils.links.decode_link_target`), and a
+    ``#fragment`` is dropped. Resolution is lexical: it does not check that
+    a file exists there.
+
+    Args:
+        value: The field's value, as read.
+        source_path: Vault-relative path of the note that holds the field.
+
+    Returns:
+        The vault-relative path, or ``None`` for a value that is not a
+        non-empty string, is an absolute URI (any RFC 3986 scheme, one
+        letter included) or a ``//`` network-path reference, or leaves the
+        bundle root (external, §6).
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    target = value.strip().split("#", 1)[0]
+    # A scheme makes an absolute URI; ``//`` opens a network-path reference
+    # (RFC 3986 §4.2), an authority and not a bundle path. Both are external.
+    if not target or _RE_URI_SCHEME.match(target) or target.startswith("//"):
+        return None
+    target = decode_link_target(target)
+    if target.startswith("/"):
+        joined = target.lstrip("/")
+    else:
+        joined = posixpath.join(posixpath.dirname(source_path), target)
+    resolved = posixpath.normpath(joined) if joined else "."
+    if resolved in (".", "..") or resolved.startswith("../"):
+        return None
+    return resolved
+
+
 def derive_annotation(
     metadata: dict[str, Any],
     *,
+    path: str | None = None,
     now: _dt.datetime | None = None,
     include_sources: bool = False,
 ) -> dict[str, Any]:
@@ -713,6 +768,9 @@ def derive_annotation(
 
     Args:
         metadata: The note's frontmatter dict (may be empty).
+        path: The note's vault-relative path. With it, a deprecated note's
+            annotation carries ``superseded_by`` resolved to a vault path
+            (OKF 0.3 §5.4, #2421).
         now: The current instant for staleness, timezone-aware; defaults to
             the server's local now.
         include_sources: When true (``read`` payloads), include the raw
@@ -736,7 +794,12 @@ def derive_annotation(
         §5.1); ``generation`` reports ``generated`` as ``{state, basis}``
         under OKF §5.2 (an actor ``by``; an optional ``at`` that, when present,
         is an OKF §5 timestamp). Both
-        leave the source projections unchanged.
+        leave the source projections unchanged. ``superseded_by`` appears
+        only when ``status`` is ``deprecated`` and *path* is given, the one
+        status it "has a meaning" with (§5.4): the replacement's vault path
+        per :func:`resolve_path_field`, or ``None`` when there is none or it
+        does not resolve. The server only resolves it; following it is the
+        client's choice (account holder, 28 November 2026, #2421).
     """
     now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
@@ -744,6 +807,10 @@ def derive_annotation(
     if isinstance(note_type, str) and note_type.strip():
         annotation["type"] = note_type.strip()
     annotation["status"] = derive_status(metadata)
+    if path is not None and annotation["status"] == "deprecated":
+        annotation["superseded_by"] = resolve_path_field(
+            metadata.get("superseded_by"), path
+        )
     annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
     annotation["freshness"] = _freshness_evidence(metadata, now)

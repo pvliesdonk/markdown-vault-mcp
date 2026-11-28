@@ -170,7 +170,7 @@ class Deny(MetaPathFinder):
 sys.meta_path.insert(0, Deny())
 from markdown_vault_mcp._read_payloads import parse_filters, annotate_hits
 assert parse_filters(['tag=文=a']) == {'tag':'文=a'}
-assert annotate_hits([{'frontmatter':{}}], lambda _: {'status':'stable'}) == [{'frontmatter':{},'okf':{'status':'stable'}}]
+assert annotate_hits([{'frontmatter':{}}], lambda _, path: {'status':'stable'}) == [{'frontmatter':{},'okf':{'status':'stable'}}]
 """
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, timeout=30

@@ -301,6 +301,17 @@ frontmatter blob; not persisted):
   REQUIRED key (`resource`; `by` and `at`) is ignored, and its
   `malformed_entries` count is the warning rule 3 asks for. The server
   reads no OKF-specific `tags`; the generic `tags` indexing is unchanged.
+- `superseded_by`: on a note whose `status` is `deprecated` only, the
+  replacement's vault path, resolved by OKF 0.3 §6 (a value with an RFC
+  3986 scheme, a one-letter one included, or a `//` network-path reference
+  is external; `/` resolves from the bundle root, anything else from the
+  note's folder; percent-decoded, `#fragment` dropped), or `null` when absent or
+  outside the bundle (`okf.resolve_path_field`, lexical; existence is not
+  checked). §5.4's SHOULD falls on "Consumers that filter results to
+  current knowledge", and that consumer is the MCP client: the server
+  resolves the field and never follows it inside a filter (account holder,
+  28 November 2026, #2421: "The consumer is not the server, but the mcp
+  client is suppose. The mcp model reads superseded_by"; "1 and not 2").
 - `review_applicability`: `{state, basis}` stating whether a supplied review
   applies to the current content. No review is bound to a content snapshot,
   so a `verified` value with entries, malformed ones included, reports
