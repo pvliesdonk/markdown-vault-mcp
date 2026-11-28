@@ -60,6 +60,7 @@ from markdown_vault_mcp.git.health import (
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
+from markdown_vault_mcp.git.submodule_refresh import SubmoduleRefresher
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
@@ -188,6 +189,8 @@ class GitWriteStrategy:
             lazy initialisation so LFS pointers are resolved before the
             first write is committed.  Requires ``git-lfs`` to be on
             ``PATH``; failures are logged at ERROR and never propagated.
+        submodule_remotes: Opt-in (#1565): remotes a submodule may be fetched
+            from. Empty, the default, leaves submodules as git leaves them.
         repo_path: Optional repository path used for startup validation and
             reporting uncommitted files without modifying them. When set together with ``token``, startup raises
             :class:`~markdown_vault_mcp.exceptions.ConfigurationError`
@@ -238,6 +241,7 @@ class GitWriteStrategy:
         *,
         git_lfs: bool = True,
         repo_path: Path | None = None,
+        submodule_remotes: tuple[str, ...] = (),
         settings: GitWriteSettings | None = None,
     ) -> None:
         legacy = GitWriteSettings(
@@ -308,6 +312,12 @@ class GitWriteStrategy:
             enable_push=resolved.enable_push,
             push_delay_s=resolved.push_delay_s,
         )
+        self._submodules = (
+            SubmoduleRefresher(submodule_remotes) if submodule_remotes else None
+        )
+        if self._submodules is not None and not resolved.enable_pull:
+            logger.warning("git_submodule_refresh_inactive reason=pull_disabled")
+        self._submodule_observer: Callable[[], None] | None = None
         self._closed = False
         self._pull_stop = threading.Event()
         self._pull_thread: threading.Thread | None = None
@@ -421,9 +431,9 @@ class GitWriteStrategy:
                     "--porcelain=v1",
                     "-z",
                     "--untracked-files=normal",
-                    # The server never writes into a submodule, and a pull
-                    # does not update one: a lagging or dirty submodule is
-                    # not leftover work of this server (#1564).
+                    # The server never writes into a submodule, and only an
+                    # opted-in refresh (#1565) moves a clean one: a lagging
+                    # or dirty submodule is not this server's work (#1564).
                     "--ignore-submodules=all",
                 ],
                 capture_output=True,
@@ -1053,6 +1063,8 @@ class GitWriteStrategy:
                 result = self._pull_locked(git_root, env, dry_run=dry_run, entry=entry)
                 if not dry_run:
                     self._record_pull(result)
+                    if result.applied:
+                        self._refresh_submodules(git_root)
                     self._observe_worktree(git_root)
                 return result
         finally:
@@ -1096,7 +1108,10 @@ class GitWriteStrategy:
         # Always fetch first — both dry-run and real-pull need the
         # remote-tracking ref refreshed before comparing SHAs.
         try:
-            self._git(git_root, "fetch", "origin", env=env)
+            # Opted in, the refresher is the only route to a submodule's
+            # remote; off, git's on-demand recursion is left as it was.
+            scope = ("--no-recurse-submodules",) if self._submodules else ()
+            self._git(git_root, "fetch", *scope, "origin", env=env)
         except subprocess.CalledProcessError as exc:
             # Sanitise the token before logging — fetch is the
             # network-touching subprocess in this method, and git
@@ -1633,6 +1648,34 @@ class GitWriteStrategy:
             remote_sha_before=remote_sha_before,
             remote_sha_after=local_head,
         )
+
+    def _refresh_submodules(self, git_root: Path) -> None:
+        """Bring opted-in submodules current before the post-pull reindex (#1565).
+
+        Args:
+            git_root: Resolved working-tree root.
+        """
+        if self._submodules is None:
+            return
+        try:
+            updated, failures = self._submodules.refresh(git_root)
+        except OSError as exc:
+            self._health.submodules_observed(f"refresh_unavailable {exc}")
+            return
+        self._health.submodules_observed("; ".join(failures) or None)
+        if updated and self._submodule_observer is not None:
+            self._submodule_observer()
+
+    def set_submodule_observer(self, observer: Callable[[], None]) -> None:
+        """Wire a callable told when a refresh moved a submodule (#1565).
+
+        A refresh can change notes without moving HEAD, which index
+        reconciliation keys on. Called with :attr:`_lock` held.
+
+        Args:
+            observer: Called with no arguments.
+        """
+        self._submodule_observer = observer
 
     def sync_once(self, repo_path: Path, *, timer_driven: bool = False) -> bool:
         """Fetch and update once, returning True if HEAD advanced.

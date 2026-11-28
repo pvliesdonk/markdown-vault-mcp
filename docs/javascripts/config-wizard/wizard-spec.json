@@ -977,6 +977,14 @@
       "advancedGroup": "Git sync"
     },
     {
+      "id": "git_submodule_remotes",
+      "label": "Git Submodule Remotes",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_SUBMODULE_REMOTES",
+      "help": "Comma-separated remote URLs that git submodules inside the vault may be fetched from. Unset (the default) leaves submodules as git leaves them. When set, every pull checks out each clean submodule whose remote is listed at the commit the vault records; other submodules are never fetched and are reported in sync health. When set, GIT_TOKEN is never sent to a submodule remote.",
+      "advancedGroup": "Git sync"
+    },
+    {
       "id": "file_watcher",
       "label": "File Watcher",
       "type": "bool",

@@ -2,7 +2,7 @@
 type: Reference
 title: Git submodules seen from a superproject
 description: "How git treats a submodule inside a working tree the way src/markdown_vault_mcp/git/ drives it: what a gitlink is and how to find one, what superproject-level add, ls-files, log and show say about a path inside a submodule, how clone, fetch, merge and pull populate or leave a submodule, and the detached HEAD that update leaves behind"
-subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0); Git v2.55.0 source for plain repositories; observed on git 2.55.0 and 2.43.0"
+subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0); Git v2.55.0 source for plain repositories; observed on git 2.55.0, 2.43.0 and 2.56.1"
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
@@ -135,7 +135,8 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   Windows path forms; isomorphic-git (obsidian-git mobile lists "No
   submodules support", see [obsidian-git](obsidian-git.md)).
 - Depended on by: `src/markdown_vault_mcp/git/submodules.py` (the gitlinks
-  a write is refused under, #1564). `src/markdown_vault_mcp/git/bootstrap.py`
+  a write is refused under, #1564); `src/markdown_vault_mcp/git/submodule_refresh.py`
+  and the superproject fetch in `git/strategy.py` (opt-in refresh, #1565). `src/markdown_vault_mcp/git/bootstrap.py`
   (clone, root discovery), `git/strategy.py` (staging, pull) and
   `git/query.py` (history, revision reads) will depend on it once the
   submodule epic ([#1561](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1561))
@@ -279,6 +280,7 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
 - `git clone` without `--recurse-submodules` leaves `sub/` as an empty
   directory (zero entries) and `status --porcelain` prints nothing about it.
   [observed: sandbox]
+  [pins: tests/test_submodule_refresh.py::test_default_leaves_a_bootstrapped_submodule_empty]
 - `git clone --recurse-submodules` initialises and clones all submodules
   after the clone, "equivalent to running
   `git submodule update --init --recursive <pathspec>` immediately after the
@@ -308,6 +310,18 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   "cannot be fetched until it is cloned e.g. by `git submodule update`".
   [source: git-fetch] `fetch.recurseSubmodules` defaults to `on-demand`, or
   to `submodule.recurse` when set. [source: git-config]
+- A plain `git fetch origin` in a superproject whose populated submodule's
+  remote is unreachable exits non-zero with `Errors during submodule fetch`,
+  though the superproject's own refs were fetched; `--no-recurse-submodules`
+  avoids it. [observed: synthetic pytest fixtures, git 2.56.1, 2026-11-16]
+  [pins: tests/test_submodule_refresh.py::test_an_unreachable_allowed_remote_is_reported, tests/test_submodule_refresh.py::test_an_unlisted_remote_does_not_fetch_into_a_populated_submodule]
+- `git submodule update` fetches inside the submodule, and that fetch recurses
+  on demand into the submodule's own populated submodules when their
+  gitlink moved; `-c fetch.recurseSubmodules=false` stops it.
+  `git ls-remote --get-url <url>` prints *url* after `url.<base>.insteadOf`
+  rewriting without contacting a remote, while `git config --get` returns
+  it unrewritten. [observed: synthetic pytest fixtures, git 2.56.1, 2026-11-16]
+  [pins: tests/test_submodule_refresh.py::test_a_nested_submodule_remote_is_not_fetched, tests/test_submodule_refresh.py::test_insteadof_is_compared_the_same_before_and_after_population]
 - git-merge(1) and git-rebase(1) list no `--recurse-submodules` option
   [source: git-merge] [source: git-rebase]; `git merge --ff-only
   --recurse-submodules origin/main` fails with
@@ -318,6 +332,7 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   reporting ` M sub`. A following `git submodule update --init --recursive`
   prints `Submodule path 'sub': checked out '<sha>'` and the content is
   current. [observed: sandbox]
+  [pins: tests/test_submodule_refresh.py::test_default_leaves_a_pulled_submodule_stale, tests/test_submodule_refresh.py::test_opt_in_brings_the_submodule_to_a_pulled_gitlink]
 - `git pull --recurse-submodules` controls whether new commits of populated
   submodules are fetched and whether "the working trees of active submodules
   should be updated, too"; via rebase, local submodule commits are rebased;
@@ -330,6 +345,7 @@ cloned both with and without `--recurse-submodules`, on git 2.55.0.
   `fatal: Unable to checkout '<sha>' in submodule path 'sub'`; the
   superproject HEAD is already advanced, the submodule stays at its old
   commit, and status shows `+<sha> sub` / ` M sub`. [observed: sandbox]
+  [pins: tests/test_submodule_refresh.py::test_a_dirty_submodule_is_left_alone_then_recovers]
   git-checkout(1) states the rule: with `--recurse-submodules`, "If local
   modifications in a submodule would be overwritten the checkout will fail
   unless `-f` is used". [source: git-checkout]
@@ -373,7 +389,8 @@ refusal and skip policy.
   when a submodule commit is unpublished: would be settled by a push sandbox
   against a bare remote for both repositories.
 - Nested submodules (a submodule of a submodule): whether `status` and
-  `update --recursive` report them at the depth the walker sees.
+  `update --recursive` report them at the depth the walker sees. Only the
+  fetch recursion above is observed.
 - `git mv` and `add -A -- <old> <new>` across the submodule boundary: only
   the `ls-files` and `add` refusals above are observed, not the combined
   rename staging the project uses.

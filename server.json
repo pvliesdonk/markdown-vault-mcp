@@ -424,6 +424,10 @@
           "default": "true"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_GIT_SUBMODULE_REMOTES",
+          "description": "Comma-separated remote URLs that git submodules inside the vault may be fetched from. Unset (the default) leaves submodules as git leaves them. When set, every pull checks out each clean submodule whose remote is listed at the commit the vault records; other submodules are never fetched and are reported in sync health. When set, GIT_TOKEN is never sent to a submodule remote."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
           "description": "Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.",
           "format": "boolean",
@@ -1079,6 +1083,10 @@
           "description": "Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS.",
           "format": "boolean",
           "default": "true"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_SUBMODULE_REMOTES",
+          "description": "Comma-separated remote URLs that git submodules inside the vault may be fetched from. Unset (the default) leaves submodules as git leaves them. When set, every pull checks out each clean submodule whose remote is listed at the commit the vault records; other submodules are never fetched and are reported in sync health. When set, GIT_TOKEN is never sent to a submodule remote."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
