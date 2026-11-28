@@ -815,7 +815,9 @@ class EmbeddingsManager:
     # Deferred embedding flush
     # ------------------------------------------------------------------
 
-    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+    def flush_dirty_embeddings(
+        self, paths: set[str], *, retrying: Collection[str] = ()
+    ) -> None:
         """Reconcile each path in the snapshot and checkpoint the store once.
 
         Called only by the IndexWriter's ``FlushDirtyEmbeddings`` runner,
@@ -829,15 +831,21 @@ class EmbeddingsManager:
         search, until it is fixed or deleted (#1505). A provider failure
         or a refused vector keeps that path's rows and is logged; a conflict
         is recorded for re-queueing, retained retries join, errors propagate.
+        Retries, the ones passed in and the ones retained here, are embedded
+        in requests of their own, never packed with other notes (#1496).
 
         Args:
             paths: Paths to reconcile (relative to source_dir).
+            retrying: The paths among *paths* an earlier pass failed for.
         """
         if self._reconciler is None or not (paths or self._retries):
             return
         vectors = self._open_store()
-        paths |= self.take_embedding_retries()
-        self.reconcile_paths(vectors, paths, site="flush")
+        retained = self.take_embedding_retries()
+        paths |= retained
+        self.reconcile_paths(
+            vectors, paths, site="flush", retrying=retained.union(retrying)
+        )
         if self._slot is not None and self._slot.has_suspect():
             self.rebuild_after_fault(_strict=True)
             return
@@ -847,7 +855,12 @@ class EmbeddingsManager:
         logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def reconcile_paths(
-        self, vectors: EmbeddingStore, paths: Collection[str] | None, *, site: str
+        self,
+        vectors: EmbeddingStore,
+        paths: Collection[str] | None,
+        *,
+        site: str,
+        retrying: Collection[str] = (),
     ) -> ReconcileResult:
         """Reconcile *paths* in *vectors* with the keyword index (#1785).
 
@@ -860,6 +873,7 @@ class EmbeddingsManager:
             vectors: The store to write.
             paths: The paths to reconcile; ``None`` for every document.
             site: Which caller, for the log lines.
+            retrying: Paths an earlier pass failed for, embedded unpacked.
 
         Returns:
             What the pass did; conflicts and retries are also recorded here.
@@ -875,6 +889,7 @@ class EmbeddingsManager:
                 paths,
                 site=site,
                 recover_corruption=recover,
+                retrying=retrying,
             )
         except StoreCorruptError:
             if self._slot is None or not self._slot.mark_suspect(vectors):

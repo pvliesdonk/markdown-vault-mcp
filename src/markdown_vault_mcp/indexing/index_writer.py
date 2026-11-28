@@ -255,13 +255,18 @@ class IndexWriter:
             self._dirty_paths.clear()
         return snapshot
 
-    def drain_dirty_embeddings(self) -> set[str]:
-        """Snapshot-and-clear the vector-dirty set and the retries, under the lock."""
+    def drain_dirty_embeddings(self) -> tuple[set[str], set[str]]:
+        """Snapshot-and-clear the vector-dirty set and the retries, under the lock.
+
+        Returns:
+            The vector-dirty paths and the retried paths, as two sets.
+        """
         with self._dirty_lock:
-            snapshot = self._dirty_embeddings | self._retry_embeddings
+            dirty = set(self._dirty_embeddings)
+            retrying = set(self._retry_embeddings)
             self._dirty_embeddings.clear()
             self._retry_embeddings.clear()
-        return snapshot
+        return dirty, retrying
 
     def get_status(self) -> dict[str, Any]:
         """Return non-blocking snapshot of writer state."""
@@ -475,9 +480,10 @@ def run_flush_dirty_embeddings(
     if ctx.writer is None:
         msg = "WriterContext.writer must be set before running jobs"
         raise RuntimeError(msg)
-    snapshot = ctx.writer.drain_dirty_embeddings()
+    dirty, retrying = ctx.writer.drain_dirty_embeddings()
+    snapshot = dirty | retrying
     try:
-        ctx.index_manager.flush_dirty_embeddings(snapshot)
+        ctx.index_manager.flush_dirty_embeddings(snapshot, retrying=retrying)
     except Exception:
         # Restore the snapshot so a future FlushDirtyEmbeddings job
         # can retry these paths.  Mirrors the recovery in

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
 from markdown_vault_mcp.indexing import (
     BuildEmbeddings,
@@ -239,8 +239,16 @@ def test_drain_dirty_embeddings_clears_and_returns():
     writer = IndexWriter(runners={}, ctx=None)
     writer.mark_embedding_dirty(["a.md", "b.md"])
     drained = writer.drain_dirty_embeddings()
-    assert drained == {"a.md", "b.md"}
+    assert drained == ({"a.md", "b.md"}, set())
     assert writer.snapshot_dirty_embeddings() == set()
+
+
+def test_drain_dirty_embeddings_keeps_retries_apart():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_embedding_dirty(["a.md"])
+    writer.mark_embedding_retry(["r.md"])
+    assert writer.drain_dirty_embeddings() == ({"a.md"}, {"r.md"})
+    assert writer.drain_dirty_embeddings() == (set(), set())
 
 
 def test_get_status_empty_writer():
@@ -351,7 +359,12 @@ class _FakeIndexManager:
         for path in paths:
             on_refreshed(path)
 
-    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+    def flush_dirty_embeddings(
+        self,
+        paths: set[str],
+        *,
+        retrying: Collection[str] = (),  # noqa: ARG002 - writer contract
+    ) -> None:
         self.flush_paths_calls.append(paths)
 
 
@@ -507,7 +520,12 @@ class _FailingProcessIM:
         self.process_paths_calls.append(paths)
         raise RuntimeError("boom_process")
 
-    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+    def flush_dirty_embeddings(
+        self,
+        paths: set[str],
+        *,
+        retrying: Collection[str] = (),  # noqa: ARG002 - writer contract
+    ) -> None:
         self.flush_paths_calls.append(paths)
 
 
@@ -517,7 +535,12 @@ class _FailingFlushIM:
 
     flush_paths_calls: list[set[str]] = field(default_factory=list)
 
-    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+    def flush_dirty_embeddings(
+        self,
+        paths: set[str],
+        *,
+        retrying: Collection[str] = (),  # noqa: ARG002 - writer contract
+    ) -> None:
         self.flush_paths_calls.append(paths)
         raise RuntimeError("boom_flush")
 
