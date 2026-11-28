@@ -617,15 +617,16 @@ A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`; shipped behaviour, which the north star
-  changes: only concepts are stamped, a supplied `generated.by` and unknown keys
-  are kept, supplied reviews survive only as history, and the default actor is the
+  changes: only concepts are stamped, a supplied `generated.by` is kept, supplied reviews survive only as history, and the default actor is the
   MCP client, then the tool actor, never `human:<subject>`; #2459): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
   the token's usable `sub` when the principal is human (`human:<subject>`), else
-  `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
-  values are overwritten (it describes the current bytes); `sources` are
-  never touched. A trivial edit keeps the stored `generated` instead (OKF
+  `markdown-vault-mcp/<version>` as a tool actor. Existing `generated.by`
+  and `generated.at` are overwritten (they describe the current bytes);
+  every other key inside the written `generated` keeps its value and slot
+  (OKF 0.3 §4.1: a producer "MUST keep the keys that it does not know",
+  #2484), and `sources` are never touched. A trivial edit keeps the stored `generated` instead (OKF
   0.3 §5.2: "A trivial edit (format, whitespace, link repair) does not
   change `generated.at`", #2418). Trivial means a reader provably cannot
   see the change: the frontmatter is equal apart from `generated` and

@@ -106,7 +106,7 @@ where the account holder ruled that a departure from the standard is a bug.
   that contain unknown keys. A producer that modifies an existing file MUST
   keep the keys that it does not know." Future versions will not define
   `x-` keys. [source: spec] (§4.1)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields]
+  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_keeps_unknown_keys_inside_generated]
 - The body is CommonMark with GFM tables and `[^label]` footnotes.
   [source: spec] (§4.2)
 
@@ -316,6 +316,7 @@ are named where they exist; a fix rewrites them.
 | 21 | Known versions (§12) | — | — | `0.3` | fixed: `KNOWN_OKF_VERSIONS` is `0.1`, `0.2`, `0.3`; the value selects no rules; any other value warns, then reads best-effort | none broken | #2422 (fixed) |
 | 22 | `okf_version` on a concept (§4.1, §8.1) | silent | silent | an extension key; MUST NOT reject unknown keys | fixed: no finding (was `misplaced_okf_version`, a conformance finding); on a folder `index.md` it is `index_frontmatter` | MUST NOT | #2427 (fixed) |
 | 23 | RFC 3339 `date-time` only (§5) | silent | silent | the `date-time` rule; "No other form is valid" | fixed: seconds, a `.` fraction and a `T` separator required, lower-case `t`/`z` and a `:60` leap second accepted (was: `14:00Z`, `,5` fractions and a space accepted; the checker took any `fromisoformat` form) | stated (no keyword) | #2428 (fixed) |
+| 24 | Unknown keys inside `generated` kept (§4.1) | silent | silent | MUST keep | fixed: the stamp sets only `by` and `at` and keeps every other key of the written `generated` in its slot (was: the whole mapping replaced, so `x-model` was lost) | MUST | #2484 (fixed) |
 
 Notes on the table:
 

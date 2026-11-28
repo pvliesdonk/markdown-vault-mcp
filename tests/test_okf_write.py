@@ -120,6 +120,33 @@ class TestApplyOkfWriteStamp:
         assert list(post.metadata["sources"][0]) == ["resource", "id"]
         assert post.content == before.content
 
+    def test_keeps_unknown_keys_inside_generated(self) -> None:
+        # OKF 0.3 §4.1: a producer "MUST keep the keys that it does not
+        # know", inside ``generated`` too (#2484).
+        text = (
+            "---\ntype: Playbook\ngenerated:\n  x-model: foo\n  by: agent/1.0\n"
+            "  at: '2026-01-01T00:00:00Z'\n  prompt_id: 42\n---\n\nNew text.\n"
+        )
+        out = apply_okf_write_stamp(
+            text,
+            actor="human:bob",
+            now=_NOW,
+            stored=text.replace("New text.", "Old text."),
+        )
+        generated = fm.loads(out).metadata["generated"]
+        assert generated == {
+            "x-model": "foo",
+            "by": "human:bob",
+            "at": _ISO,
+            "prompt_id": 42,
+        }
+        assert list(generated) == ["x-model", "by", "at", "prompt_id"]
+
+    def test_replaces_a_generated_that_is_not_a_mapping(self) -> None:
+        text = "---\ntype: Playbook\ngenerated: yesterday\n---\n\nText.\n"
+        out = apply_okf_write_stamp(text, actor="a/1", now=_NOW)
+        assert fm.loads(out).metadata["generated"] == {"by": "a/1", "at": _ISO}
+
     def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
         out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
         post = fm.loads(out)
