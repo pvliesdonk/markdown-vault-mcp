@@ -7087,8 +7087,10 @@ path reports it.
   alert on the transitions, not the attempts.
 
 Git CLI stderr in log fields is token-redacted and collapsed to one line so
-line-oriented collectors keep each event together (#1349). Result hints and
-details retain their existing redacted text and whitespace.
+line-oriented collectors keep each event together (#1349). Library result hints
+and details retain their existing redacted text and whitespace. The `git_sync`
+response omits the hint for a generic `push_failed` result because it contains
+git output; other push hints remain available.
 
 Every vault-mutating write tool passes its result through
 `attach_remote_health`, which adds a `remote` object while the clone is

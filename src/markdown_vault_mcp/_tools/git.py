@@ -12,7 +12,12 @@ from fastmcp.dependencies import Depends
 from markdown_vault_mcp._tool_boundary import tool_boundary
 from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.git import PullResult, PushResult, Syncer
+from markdown_vault_mcp.git import (
+    PUSH_REASON_PUSH_FAILED,
+    PullResult,
+    PushResult,
+    Syncer,
+)
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -105,7 +110,8 @@ def _format_push_dict(result: PushResult) -> dict[str, Any]:
     """Project a :class:`PushResult` into the response dict shape.
 
     Pure transformation — no side effects.  Adds optional ``reason``
-    and ``hint`` fields when present.
+    and ``hint`` fields when present, except the generic failure hint, which
+    contains engine output.
     """
     push_dict: dict[str, Any] = {
         "applied": result.applied,
@@ -115,7 +121,7 @@ def _format_push_dict(result: PushResult) -> dict[str, Any]:
     }
     if result.reason is not None:
         push_dict["reason"] = result.reason
-    if result.hint is not None:
+    if result.hint is not None and result.reason != PUSH_REASON_PUSH_FAILED:
         push_dict["hint"] = result.hint
     return push_dict
 
@@ -410,7 +416,8 @@ def register(mcp: FastMCP) -> None:
               direction `"both"`. Contains applied, commits_pushed,
               remote_sha_before, remote_sha_after, and an optional reason
               (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
-              `"push_failed"`) and hint.
+              `"push_failed"`) and hint. A generic `"push_failed"` result
+              omits the hint; diagnostic output is in the server logs.
             - dry_run (bool): Only present when dry_run was true.
 
         Raises:

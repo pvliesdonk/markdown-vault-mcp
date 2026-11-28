@@ -169,7 +169,8 @@ Dict with the following fields:
   direction `"both"`. Contains applied, `commits_pushed`,
   `remote_sha_before`, `remote_sha_after`, and an optional reason
   (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
-  `"push_failed"`) and hint.
+  `"push_failed"`) and hint. A generic `"push_failed"` result
+  omits the hint; diagnostic output is in the server logs.
 - `dry_run` (bool): Only present when `dry_run` was true.
 
 **Outcomes and errors**
