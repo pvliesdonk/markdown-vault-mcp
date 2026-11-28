@@ -32,6 +32,10 @@ if TYPE_CHECKING:
         ("my%20metric.md", "metrics/my metric.md"),
         ("gross-margin.md#definition", "metrics/gross-margin.md"),
         ("https://example.com/m.md", None),
+        # RFC 3986: a one-letter scheme is a scheme, so this is an absolute
+        # URI, not the Windows drive scanner.py reads in vault links (#1335).
+        ("C:/notes/topic.md", None),
+        ("//host/share/m.md", None),
         ("../../outside.md", None),
         ("", None),
         (None, None),

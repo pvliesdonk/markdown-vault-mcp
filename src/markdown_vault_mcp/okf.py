@@ -708,6 +708,12 @@ def _review_applicability(entries: list[Any]) -> dict[str, str]:
     return {"state": "none", "basis": "no_review_supplied"}
 
 
+#: An RFC 3986 scheme: ``ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )``. OKF
+#: 0.3 §6 makes a path field a URI reference (RFC 3986), so a one-letter
+#: scheme counts and ``C:/x.md`` is an absolute URI, hence external. This
+#: differs on purpose from ``scanner._RE_URI_SCHEME``, which reads a single
+#: letter as a Windows drive for vault links in Obsidian's dialect (#1335);
+#: an OKF path field is governed by the spec, not by that dialect.
 _RE_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
@@ -729,13 +735,16 @@ def resolve_path_field(value: object, source_path: str) -> str | None:
 
     Returns:
         The vault-relative path, or ``None`` for a value that is not a
-        non-empty string, is an absolute URL, or leaves the bundle root
-        (external, §6).
+        non-empty string, is an absolute URI (any RFC 3986 scheme, one
+        letter included) or a ``//`` network-path reference, or leaves the
+        bundle root (external, §6).
     """
     if not isinstance(value, str) or not value.strip():
         return None
     target = value.strip().split("#", 1)[0]
-    if not target or _RE_URI_SCHEME.match(target):
+    # A scheme makes an absolute URI; ``//`` opens a network-path reference
+    # (RFC 3986 §4.2), an authority and not a bundle path. Both are external.
+    if not target or _RE_URI_SCHEME.match(target) or target.startswith("//"):
         return None
     target = decode_link_target(target)
     if target.startswith("/"):
