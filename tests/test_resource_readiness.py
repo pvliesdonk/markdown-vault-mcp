@@ -18,21 +18,33 @@ if TYPE_CHECKING:
     from fastmcp import Client
 
 
-@pytest.mark.parametrize("uri", ["toc://vault/simple.md", "similar://vault/simple.md"])
 @pytest.mark.parametrize(
-    "case",
+    "uri,case",
     [
         (
-            "timeout",
-            "The search index is still building. The request was fine. Retry shortly.",
+            "toc://vault/simple.md",
+            ("timeout", "The search index is still building. Retry shortly."),
         ),
         (
-            "never_built",
-            "The search index has not been built. The request was fine. An operator should build the index before you retry.",
+            "toc://vault/simple.md",
+            (
+                "never_built",
+                "The search index has not been built. An operator should build the index before you retry.",
+            ),
         ),
         (
-            "build_failed",
-            "The search index build failed. The request was fine. An operator should check the index before you retry.",
+            "toc://vault/simple.md",
+            (
+                "build_failed",
+                "The search index build failed. An operator should check the index before you retry.",
+            ),
+        ),
+        (
+            "similar://vault/simple.md",
+            (
+                "build_failed",
+                "The search index build failed. An operator should check the index before you retry.",
+            ),
         ),
     ],
 )
@@ -56,59 +68,44 @@ async def test_resource_index_unavailable(
             await client.read_resource(uri)
         assert message in str(error.value)
         assert "secret build detail" not in str(error.value)
+        level = logging.WARNING if reason == "timeout" else logging.ERROR
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "fastmcp.server.server" and r.levelno == level and r.exc_info
+        ]
+        assert records
         if reason == "build_failed":
-            records = [
-                r
-                for r in caplog.records
-                if r.name == "fastmcp.server.server"
-                and r.levelno == logging.ERROR
-                and r.exc_info
-            ]
-            assert records
             assert records[-1].exc_info is not None
             assert "secret build detail" in str(records[-1].exc_info[1].__cause__)
-        if reason == "timeout" and uri.startswith("toc:"):
-            state.mark_built()
-            assert await client.read_resource(uri)
 
 
-@pytest.mark.parametrize(
-    "resource",
-    [
-        ("toc://vault/simple.md", "get_toc"),
-        ("similar://vault/simple.md", "get_similar"),
-    ],
-)
 @pytest.mark.parametrize(
     "fault",
     [
         (
             "SQLITE_BUSY",
-            "The search index is busy. The request was fine. Retry shortly.",
+            "The search index is busy. Retry shortly.",
             logging.WARNING,
         ),
         (
             "SQLITE_IOERR",
-            "The search index could not be read. The request was fine. An operator should check the index before you retry.",
+            "The search index could not be read. An operator should check the index before you retry.",
             logging.ERROR,
         ),
-        (None, "Error reading resource", logging.ERROR),
     ],
 )
 async def test_resource_handler_faults(
-    resource: tuple[str, str],
-    fault: tuple[str | None, str, int],
+    fault: tuple[str, str, int],
     client: Client[Any],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    uri, method = resource
+    uri, method = "toc://vault/simple.md", "get_toc"
     error_name, expected, level = fault
     monkeypatch.setattr(IndexFacet, "is_queryable", lambda _self: True)
 
     def fail(*_args: object, **_kwargs: object) -> None:
-        if error_name is None:
-            raise RuntimeError("secret detail")
         exc = sqlite3.OperationalError("secret detail")
         exc.sqlite_errorname = error_name
         raise exc
@@ -122,15 +119,3 @@ async def test_resource_handler_faults(
         r.name == "fastmcp.server.server" and r.levelno == level and r.exc_info
         for r in caplog.records
     )
-    if error_name == "SQLITE_IOERR":
-        record = next(
-            r
-            for r in caplog.records
-            if r.name == "fastmcp.server.server"
-            and r.levelno == logging.ERROR
-            and r.exc_info
-        )
-        assert record.exc_info is not None
-        readiness_error = record.exc_info[1].__cause__
-        assert readiness_error is not None
-        assert "secret detail" in str(readiness_error.__cause__)

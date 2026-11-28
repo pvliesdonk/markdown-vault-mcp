@@ -34,18 +34,18 @@ from ._server_queryable import _TRANSIENT_INDEX, needs_queryable
 from .domain import get_vault
 
 _INDEX_MESSAGES = {
-    "busy": "The search index is busy. The request was fine. Retry shortly.",
-    "timeout": "The search index is still building. The request was fine. Retry shortly.",
+    "busy": "The search index is busy. Retry shortly.",
+    "timeout": "The search index is still building. Retry shortly.",
     "never_built": (
-        "The search index has not been built. The request was fine. "
+        "The search index has not been built. "
         "An operator should build the index before you retry."
     ),
     "build_failed": (
-        "The search index build failed. The request was fine. "
+        "The search index build failed. "
         "An operator should check the index before you retry."
     ),
     "broken": (
-        "The search index could not be read. The request was fine. "
+        "The search index could not be read. "
         "An operator should check the index before you retry."
     ),
 }

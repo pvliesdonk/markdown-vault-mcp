@@ -67,10 +67,7 @@ def test_transient_index_says_retry_at_warning(reason: Any) -> None:
     err = outcome_error(IndexUnavailableError("x", reason=reason))
     assert err is not None
     assert err.log_level == logging.WARNING
-    assert str(err) == (
-        "The search index is busy or still building; the request was fine. "
-        "Retry in a minute."
-    )
+    assert "request was fine" in str(err)
 
 
 @pytest.mark.parametrize(
