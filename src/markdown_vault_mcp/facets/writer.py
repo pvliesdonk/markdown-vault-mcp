@@ -2,7 +2,7 @@
 
 A thin view over :class:`~markdown_vault_mcp.managers.document.DocumentManager`
 exposing the vault's write / edit / append / delete / rename / attachment
-operations.
+operations, and the preview of one text replacement across many notes.
 Part of the ``vault.py`` facade decomposition (#576); reached via the
 ``Vault.writer`` accessor.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeVar
 
+from markdown_vault_mcp.managers.text_replace import TextReplacer
 from markdown_vault_mcp.okf import is_okf_reserved_file
 from markdown_vault_mcp.utils import folder_of, is_note
 
@@ -26,6 +27,10 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
+    from markdown_vault_mcp.managers.text_replace import (
+        ReplacePreview,
+        ReplaceRequest,
+    )
     from markdown_vault_mcp.okf import (
         OkfConvertResult,
         OkfIndexResult,
@@ -83,6 +88,29 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
+        self._replacer = TextReplacer(doc_mgr)
+
+    def preview_replace(self, request: ReplaceRequest) -> ReplacePreview:
+        """Preview one text replacement across many notes, writing nothing (#2031).
+
+        Matches cover each note's body; the frontmatter is never matched.
+
+        Args:
+            request: The pattern, its replacement, and the paths and folders
+                whose notes it covers.
+
+        Returns:
+            :class:`~markdown_vault_mcp.managers.text_replace.ReplacePreview`:
+            the plan digest, the notes it would change with their match
+            counts and diffs for the first ten, and the notes it matches but
+            would not write.
+
+        Raises:
+            DocumentNotFoundError: A named note or folder does not exist.
+            InvalidRequestError: The request is malformed, names a path that
+                is not a note, or exceeds one of the fixed bounds.
+        """
+        return self._replacer.preview(request)
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]

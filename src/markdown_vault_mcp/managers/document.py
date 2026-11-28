@@ -399,6 +399,22 @@ class DocumentManager:
         """
         self._check_writable()
 
+    @property
+    def source_dir(self) -> Path:
+        """The vault root directory, as configured (not resolved)."""
+        return self._source_dir
+
+    def is_excluded(self, path: str) -> bool:
+        """Whether *path* matches a configured exclude pattern.
+
+        Args:
+            path: Vault-relative POSIX path.
+
+        Returns:
+            ``True`` when the index and search leave *path* out.
+        """
+        return self._is_path_excluded(path)
+
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
 

@@ -3842,6 +3842,58 @@ carries no report, because attachments have no `links` rows. A note the
 index does not hold (excluded, or skipped for its frontmatter) has no rows,
 so it reports `[]`, as `get_broken_links` reports nothing for it.
 
+### Text Replacement Across Notes (#2031)
+
+`TextReplacer` (`managers/text_replace.py`) computes one literal or regular
+expression replacement across the notes a request covers: the notes named in
+`paths` and every note under each folder in `folders`. It is reached through
+`WriterFacet.preview_replace`, which writes nothing.
+
+**Body only.** A match never covers a note's frontmatter block (the account
+holder's choice, [#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7239788112)).
+The block ends where `strip_frontmatter_block` says it does, which is also
+where the indexer and every read-modify-write in the package say it does. An
+unterminated block is body text, as everywhere else. A note is read as `edit`
+reads it: UTF-8, a leading BOM dropped, line endings read as `\n`.
+
+**Selection.** A note named in `paths` is validated as `edit` validates its
+`path`, so a dot path or an excluded path is reachable by name. A folder walk
+uses the indexer's walk (`iter_markdown_files`) and leaves out every path with
+a component starting with `.` and every path an exclude pattern matches, as
+search leaves them out. The walk is a selection, not an OKF enumeration:
+bundle membership never rests on the exclude settings (OKF north star, "Local
+exclusion is not OKF"). A note reached twice, through a symlink or through
+both a folder and a path, is covered once; a symlink out of the vault is not
+covered. A covered note is listed as refused, with its reason, when it
+matches but lies inside a nested repository (version-control north star: "a
+write into a nested history is refused rather than lost"), or when it is not
+UTF-8 text.
+
+**Plan digest.** A preview reads each covered note once and takes, from that
+one read, the etag of the raw bytes and the text to match. The digest is the
+SHA-256 of the pattern, the replacement, the mode, and each changed note's
+path, etag and new-text hash. Two previews share it exactly when they would
+write the same text to the same notes from the same note versions, whatever
+selection reached them. Nothing is cached: the digest is recomputable from
+the vault. The design is #2187's.
+
+**Regular expressions.** `re` has no timeout and can backtrack
+catastrophically, so a regex runs in `managers/_replace_worker.py` as a
+`python -I` child process, killed after 3 seconds for the whole selection
+(#2187's design; the standard-library behaviour it rests on is in
+[reference/regex-replacement-worker.md](reference/regex-replacement-worker.md)).
+The child returns match spans; the parent assembles the new text. Literal
+mode matches in-process with `str.find`, with no normalised fallback.
+
+**Bounds.** Fixed, and refused rather than truncated: 1,000 covered notes,
+256 KiB per note, 8 MiB read in total, 200 changed notes, 10,000
+replacements, 4 MiB of replacement text, a 4,096-character pattern and a
+16,384-character replacement. A preview gives every changed note its count.
+The first 10 changed notes in path order also get a context-free unified
+diff. It is built from the match spans, so its cost is linear in the note,
+and it is cut at a whole line within 3,000 characters with `diff_truncated`
+set.
+
 ### Graph Traversal
 
 The `links` table is a directed graph where notes are nodes and links are edges.
@@ -7918,3 +7970,4 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows uses the same writer exclusion (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
+| 39 | Text replacement preview | One literal or regex replacement covers note bodies only; a preview returns a plan digest, per-note counts and bounded diffs and writes nothing; fixed bounds refuse rather than truncate; a regex runs in an isolated process with a 3 s deadline; folder walks skip dot and excluded paths, named paths reach what `edit` reaches (#2031). | The account holder chose body-only matching on #2031. The plan digest, the isolated regex process and the refusing bounds come from the contributed #2187. The digest is stateless: the account holder selected "Go, lean rebuild (Recommended)" on [#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7241060214). **Rejected:** a cache of previewed plans (server state the digest would depend on); a plan token carrying every entry (the model would have to echo it); diffing with `difflib`, whose cost grows with how far apart the matches are. |
