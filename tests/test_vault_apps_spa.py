@@ -5,9 +5,12 @@ match what the page loads."""
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import markdown_vault_mcp._server_apps as apps
 import markdown_vault_mcp._vault_apps as vault_apps
@@ -104,3 +107,72 @@ def test_declared_csp_origins_reach_the_app_resource() -> None:
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
     ]
+
+
+def test_browser_root_tree_entry_points_handle_rejection() -> None:
+    """Browse, clear, and deleting a query restore the tree and report failures."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to execute the SPA browser view")
+    repo = Path(__file__).resolve().parent.parent
+    source = repo / "src/markdown_vault_mcp/static/spa/views/browser.js"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+class Element {
+  constructor() { this.children = []; this.style = {}; this.dataset = {}; this.events = {}; this.value = ''; }
+  set innerHTML(value) { this.children = []; }
+  addEventListener(name, handler) { this.events[name] = handler; }
+  appendChild(child) { this.children.push(child); }
+}
+const tree = new Element(), input = new Element(), clear = new Element(), events = {};
+let fail = false;
+tree.appendChild = child => {
+  if (fail) throw new Error('injected tree rendering failure');
+  tree.children.push(child);
+};
+global.document = {
+  getElementById: id => ({'browser-tree': tree, 'browser-search-input': input,
+    'browser-search-clear': clear})[id],
+  createElement: () => new Element(),
+};
+global.window = {addEventListener: (name, handler) => { events[name] = handler; }};
+let listCalls = 0;
+global.app = {callServerTool: async ({name}) => {
+  if (name !== 'app___vault_list') return [{path: 'search.md'}];
+  listCalls++;
+  return {folders: [], notes: [{path: 'root.md'}]};
+}};
+global.parseToolResult = result => result;
+global.setTimeout = callback => { callback(); return 1; };
+global.clearTimeout = () => {};
+const errors = [];
+console.error = (...args) => errors.push(args);
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const browse = () => { tree.innerHTML = ''; events['vault-tab-changed']({detail: {tab: 'browse'}}); };
+const search = async () => { input.value = 'query'; input.events.input(); await flush(); };
+const clearSearch = () => clear.events.click();
+const deleteQuery = () => { input.value = ''; input.events.input(); };
+(async () => {
+  for (const action of [browse, clearSearch, deleteQuery]) {
+    fail = false;
+    if (action !== browse) await search();
+    fail = false; action(); await flush();
+    assert.equal(tree.children[0].dataset.path, 'root.md');
+    if (action !== browse) await search();
+    fail = true; action(); await flush();
+  }
+  assert.equal(listCalls, 6);
+  assert.equal(errors.length, 3);
+  assert.ok(errors.every(args => args.some(arg => arg instanceof Error &&
+    arg.message === 'injected tree rendering failure')));
+})();
+"""
+    result = subprocess.run(
+        [node, "--unhandled-rejections=strict", "-e", script, str(source)],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr

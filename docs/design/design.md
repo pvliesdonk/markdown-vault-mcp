@@ -6889,6 +6889,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 | Vault Browser | `browse` | Searchable, filterable file tree for direct vault navigation without issuing tool calls |
 | Note Preview | `note` | Full-width rendered markdown preview with a Contents popover, collapsible frontmatter properties and tags, copy-markdown / copy-vault-link controls, and action buttons |
 
+Unexpected root-tree loading failures when opening Browse or leaving search are reported to the iframe console.
+
 **Primary tools** (visible to LLM, launch apps):
 
 | Tool | Description |

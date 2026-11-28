@@ -81,6 +81,10 @@
     renderTree(data, treeEl);
   }
 
+  function loadRootTreeFromEvent() {
+    loadRootTree().catch(err => console.error('root tree load failed', err));
+  }
+
   // Search
   let searchTimeout = null;
   searchInput.addEventListener('input', () => {
@@ -119,7 +123,7 @@
     isSearchMode = false;
     searchClear.style.display = 'none';
     searchInput.value = '';
-    loadRootTree();
+    loadRootTreeFromEvent();
   }
 
   searchClear.addEventListener('click', exitSearch);
@@ -127,7 +131,7 @@
   // Auto-load when browse tab is selected
   window.addEventListener('vault-tab-changed', (e) => {
     if (e.detail.tab === 'browse' && treeEl.children.length === 0 && !isSearchMode) {
-      loadRootTree();
+      loadRootTreeFromEvent();
     }
   });
 
