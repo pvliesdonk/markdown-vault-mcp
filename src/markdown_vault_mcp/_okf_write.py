@@ -1,6 +1,6 @@
 """OKF enforced-write layer runtime (#964): request-scoped actor + enrichment.
 
-The enforced-write layer (design §6) stamps ``generated`` provenance on content
+The enforced-write layer (design §6) stamps ``generated`` provenance on concept
 writes, attributing it to the authenticated identity, and keeps ``verified`` as
 history (OKF 0.3 §5.3; #2405).
 That identity is a FastMCP request-context dependency (``get_subject``), so it is
@@ -42,7 +42,7 @@ from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING, Protocol
 
 from markdown_vault_mcp._identity import current_principal, resolve_mcp_principal
-from markdown_vault_mcp.okf import apply_okf_write_stamp
+from markdown_vault_mcp.okf import apply_okf_write_stamp, is_written_concept
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -64,13 +64,20 @@ class OkfWriteEnrich(Protocol):
     """The ``DocumentManager`` write-enrichment hook's call shape."""
 
     def __call__(
-        self, text: str, operation: WriteOperation, *, stored: str | None = None
+        self,
+        text: str,
+        operation: WriteOperation,
+        *,
+        path: str,
+        stored: str | None = None,
     ) -> str:
         """Return *text* as it should land.
 
         Args:
             text: The full note text the write would save.
             operation: The write operation.
+            path: The vault-relative path being written, which with *text*
+                decides whether the file is a concept (OKF 0.3 §3.2).
             stored: The note's text on disk before the write, or ``None``
                 for a new note.
         """
@@ -179,10 +186,14 @@ def build_okf_write_enrich(
     """Build the ``DocumentManager`` write-enrichment hook, or ``None`` when off.
 
     Returns ``None`` (zero overhead, no detector probe) when ``okf_write`` is
-    disabled. Otherwise returns a callable that, for ``write`` / ``edit`` on an
-    OKF-active vault, stamps ``generated`` provenance and carries the stored
-    note's ``verified`` across in place of the written text's — unless the
-    current request carries a suppressing :class:`OkfWriteIntent` (``okf_verify``).
+    disabled. Otherwise returns a callable that, for ``write`` / ``edit`` of a
+    concept on an OKF-active vault, stamps ``generated`` provenance and
+    carries the stored note's ``verified`` across in place of the written
+    text's — unless the current request carries a suppressing
+    :class:`OkfWriteIntent` (``okf_verify``). A concept is a non-reserved
+    ``.md`` file whose written frontmatter has a non-empty ``type`` (OKF 0.3
+    §3.2); every other file, reserved ones and files whose block does not
+    parse included, is returned as given (#2486).
 
     Args:
         okf_write: The ``OKF_WRITE`` operator flag.
@@ -197,7 +208,11 @@ def build_okf_write_enrich(
     default_actor = tool_actor(version)
 
     def enrich(
-        text: str, operation: WriteOperation, *, stored: str | None = None
+        text: str,
+        operation: WriteOperation,
+        *,
+        path: str,
+        stored: str | None = None,
     ) -> str:
         if operation not in ("write", "edit"):
             return text
@@ -205,6 +220,10 @@ def build_okf_write_enrich(
         if intent is not None and intent.suppress:
             return text
         if not detector.state().active:
+            return text
+        if not is_written_concept(path, text):
+            # The stamp is for concepts (OKF north star, #2486): any other
+            # file, reserved ones included, is written as given.
             return text
         actor = intent.actor if intent is not None else default_actor
         return apply_okf_write_stamp(

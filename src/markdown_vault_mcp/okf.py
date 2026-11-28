@@ -1002,6 +1002,31 @@ def _is_concept(metadata: dict[str, Any]) -> bool:
     return isinstance(note_type, str) and bool(note_type.strip())
 
 
+def is_written_concept(path: str, text: str) -> bool:
+    """Whether a file written at *path* with *text* is an OKF concept (§3.2).
+
+    The rule every consumer applies to find concepts: a non-reserved
+    ``.md`` file "that has frontmatter with a non-empty ``type``". The role
+    is read from the written content and the reserved names only, never
+    from a folder or another file name. A block that does not parse carries
+    no ``type``, so its file is not a concept.
+
+    Args:
+        path: The vault-relative POSIX path the text is written to.
+        text: The full file text as it would land.
+
+    Returns:
+        Whether the written file is a concept.
+    """
+    if not path.endswith(".md") or is_okf_reserved_file(path):
+        return False
+    try:
+        metadata = dict(parse_frontmatter(text).metadata)
+    except yaml.YAMLError:
+        return False
+    return _is_concept(metadata)
+
+
 def _audit_reserved(
     rel: str, name: str, body: str, has_block: bool, acc: _AuditCounters
 ) -> None:

@@ -317,6 +317,7 @@ are named where they exist; a fix rewrites them.
 | 22 | `okf_version` on a concept (§4.1, §8.1) | silent | silent | an extension key; MUST NOT reject unknown keys | fixed: no finding (was `misplaced_okf_version`, a conformance finding); on a folder `index.md` it is `index_frontmatter` | MUST NOT | #2427 (fixed) |
 | 23 | RFC 3339 `date-time` only (§5) | silent | silent | the `date-time` rule; "No other form is valid" | fixed: seconds, a `.` fraction and a `T` separator required, lower-case `t`/`z` and a `:60` leap second accepted (was: `14:00Z`, `,5` fractions and a space accepted; the checker took any `fromisoformat` form) | stated (no keyword) | #2428 (fixed) |
 | 24 | Unknown keys inside `generated` kept (§4.1) | silent | silent | MUST keep | fixed: the stamp sets only `by` and `at` and keeps every other key of the written `generated` in its slot (was: the whole mapping replaced, so `x-model` was lost) | MUST | #2484 (fixed) |
+| 25 | Reserved files carry no frontmatter (§8, §9); trust fields describe concepts (§3.2, §5.3) | n/a | n/a | folder `index.md` and `log.md`: none | fixed: the write stamp applies only to a non-reserved `.md` file whose written frontmatter has a non-empty `type`; any other file lands as given (was: any `write`/`edit` gained `generated`, a body-only `log.md` included) | stated (no keyword) | #2486 (fixed) |
 
 Notes on the table:
 

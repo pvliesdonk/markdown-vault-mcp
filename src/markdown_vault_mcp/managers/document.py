@@ -981,31 +981,13 @@ class DocumentManager:
             stored: The file's text before this write, read under the same
                 lock, or ``None`` for a new file. The enricher keeps its
                 ``verified`` (design §6).
-
-        Raises:
-            InvalidRequestError: The enforced-write layer is on and a *write*'s
-                content opens with a frontmatter block it cannot parse.
-            ValueError: The same for an edit or append, whose block may be the
-                stored note's (a fault, #1608).
         """
         if self._okf_write_enrich is not None:
-            try:
-                content = self._okf_write_enrich(content, operation, stored=stored)
-            except yaml.YAMLError as exc:
-                # The stamp is written *into* the note's frontmatter, so a
-                # block the parser cannot read leaves the enforced-write layer
-                # nothing to stamp and the write is refused. The parser's own
-                # exception named no path and reached the client looking like a
-                # server fault, so it is restated as the refusal it is (#1454).
-                # A write's frontmatter is the caller's own content; for an
-                # edit or append it may be the stored note's, so that stays a
-                # fault until the edit path can tell which (#1608).
-                error = InvalidRequestError if operation == "write" else ValueError
-                raise error(
-                    f"Cannot {operation} {path}: its frontmatter block is not "
-                    f"parseable, so the OKF enforced-write layer cannot stamp "
-                    f"provenance on it — {exc}"
-                ) from exc
+            # A block that does not parse makes no concept, so the layer
+            # writes it as given rather than refusing it (#2486).
+            content = self._okf_write_enrich(
+                content, operation, path=path, stored=stored
+            )
         atomic_write(abs_path, content)
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
