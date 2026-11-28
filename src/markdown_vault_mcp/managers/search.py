@@ -57,6 +57,7 @@ from markdown_vault_mcp.managers._ranking import (
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
     derive_annotation,
+    is_bundle_member_path,
     is_okf_reserved_file,
     matches_okf_filters,
     okf_downweight_factor,
@@ -637,7 +638,7 @@ class SearchManager:
         if note_row is None:
             return False
         metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
-        return matches_okf_filters(metadata, okf_filters)
+        return matches_okf_filters(metadata, okf_filters, path=path)
 
     def _filter_rows_okf(
         self, rows: builtins.list[FTSResult], okf_filters: dict[str, str]
@@ -690,8 +691,14 @@ class SearchManager:
         def factor_for(path: str) -> float:
             cached = factors.get(path)
             if cached is None:
-                annotation = derive_annotation(self._get_frontmatter(path))
-                cached = okf_downweight_factor(annotation, path)
+                # A path outside the bundle carries no lifecycle to weigh.
+                cached = (
+                    okf_downweight_factor(
+                        derive_annotation(self._get_frontmatter(path)), path
+                    )
+                    if is_bundle_member_path(path)
+                    else 1.0
+                )
                 factors[path] = cached
             return cached
 
@@ -1451,7 +1458,9 @@ class SearchManager:
             ]
         if okf_filters:
             note_infos = [
-                n for n in note_infos if matches_okf_filters(n.frontmatter, okf_filters)
+                n
+                for n in note_infos
+                if matches_okf_filters(n.frontmatter, okf_filters, path=n.path)
             ]
         notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
 
@@ -1684,6 +1693,9 @@ class SearchManager:
         stale = 0
         reserved = 0
         for row in self._fts.list_notes():
+            if not is_bundle_member_path(row["path"]):
+                # Not part of the bundle (OKF 0.3 §3.2 rule 4, #2451).
+                continue
             if is_okf_reserved_file(row["path"]):
                 reserved += 1
                 continue

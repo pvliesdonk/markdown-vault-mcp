@@ -446,10 +446,14 @@ during migration it is a progress meter:
   `.` is not part of the bundle (OKF 0.3 §3.2 rule 4), so it is skipped
   before any rule; the same predicate (`okf.is_bundle_member_path`) keeps
   it out of export, generated listings, listing and log upkeep, and the
-  write stamp (#2451). This is the bundle as artifact; what the index and
-  search admit stays retrieval policy (account holder, 28 November 2026:
-  "This here is the difference between an okf bundle as interface and as an
-  artifact").
+  write stamp (#2451). On the interface the server presents the same
+  bundle: a non-member's read or search result carries no `okf` annotation,
+  matches no OKF filter, takes no OKF downweight and is left out of
+  `okf_stats`. What the index and search admit stays retrieval policy, so
+  the file is still found (account holder, 28 November 2026: "This here is
+  the difference between an okf bundle as interface and as an artifact";
+  "the server presents a bundle to the client, and for that it doesn't
+  matter how the backend works").
 - Conformance findings follow OKF 0.3 §11.1. Rule 1: a frontmatter block
   in any `.md` file, `index.md` and `log.md` included, that does not parse
   as a YAML mapping (`unparseable_frontmatter`; an empty or comment-only

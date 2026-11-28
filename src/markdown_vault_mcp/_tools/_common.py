@@ -9,7 +9,7 @@ from typing import Annotated, Any, TypeVar
 from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.git import SyncHealthReporter
-from markdown_vault_mcp.okf import derive_annotation
+from markdown_vault_mcp.okf import derive_annotation, is_bundle_member_path
 from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,10 @@ async def attach_okf(
 
     The ``okf`` key is omitted entirely when OKF read semantics are not
     active (no declaration under ``auto`` mode, or mode ``off``), keeping
-    non-OKF payloads byte-identical to the pre-OKF behavior. Mirrors
+    non-OKF payloads byte-identical to the pre-OKF behavior. It is also
+    omitted for a note whose ``data["path"]`` is not part of the bundle (a
+    dot path, OKF 0.3 §3.2 rule 4): the server presents no bundle metadata
+    for a file the bundle does not hold (#2451). Mirrors
     :func:`attach_conventions`.
 
     Args:
@@ -149,7 +152,7 @@ async def attach_okf(
     Returns:
         *data*, with the ``okf`` key added when active.
     """
-    if await okf_active(vault):
+    if await okf_active(vault) and is_bundle_member_path(str(data.get("path", ""))):
         data["okf"] = derive_annotation(metadata or {}, include_sources=include_sources)
     return data
 

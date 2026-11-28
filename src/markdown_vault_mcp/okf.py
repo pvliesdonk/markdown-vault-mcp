@@ -812,6 +812,7 @@ def matches_okf_filters(
     metadata: dict[str, Any],
     okf_filters: dict[str, str],
     *,
+    path: str | None = None,
     now: _dt.datetime | None = None,
 ) -> bool:
     """Evaluate the OKF filter dimensions against one note's frontmatter.
@@ -826,6 +827,9 @@ def matches_okf_filters(
         metadata: The note's frontmatter dict (may be empty).
         okf_filters: The OKF-dimension subset of a ``filters`` dict —
             keys from :data:`OKF_FILTER_KEYS` only.
+        path: The note's vault-relative path. A path that is not part of
+            the bundle (:func:`is_bundle_member_path`) matches no OKF
+            filter: the bundle the server presents does not hold it (#2451).
         now: The current instant for staleness, timezone-aware; defaults to
             the server's local now.
 
@@ -835,6 +839,8 @@ def matches_okf_filters(
     Raises:
         InvalidRequestError: If a ``stale`` value is not a true/false spelling.
     """
+    if path is not None and not is_bundle_member_path(path):
+        return False
     annotation = derive_annotation(metadata, now=now)
     for key, value in okf_filters.items():
         if key == "stale":
