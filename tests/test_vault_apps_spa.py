@@ -5,9 +5,12 @@ match what the page loads."""
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import markdown_vault_mcp._server_apps as apps
 import markdown_vault_mcp._vault_apps as vault_apps
@@ -36,6 +39,66 @@ def test_build_check_is_clean() -> None:
     repo = Path(__file__).resolve().parent.parent
     result = subprocess.run(
         [sys.executable, str(repo / "scripts" / "build_spa.py"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_browser_preview_clicks_handle_rejection() -> None:
+    """Tree and search clicks open their paths and report rejected previews."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to execute the SPA browser view")
+    repo = Path(__file__).resolve().parent.parent
+    source = repo / "src/markdown_vault_mcp/static/spa/views/browser.js"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+class Element {
+  constructor() { this.children = []; this.style = {}; this.dataset = {}; this.events = {}; }
+  set innerHTML(value) { this.children = []; }
+  addEventListener(name, handler) { this.events[name] = handler; }
+  appendChild(child) { this.children.push(child); }
+}
+const tree = new Element(), input = new Element(), clear = new Element();
+global.document = {
+  getElementById: id => ({'browser-tree': tree, 'browser-search-input': input,
+    'browser-search-clear': clear})[id],
+  createElement: () => new Element(),
+};
+global.window = {addEventListener() {}};
+global.app = {callServerTool: async ({name}) => name === 'app___vault_list'
+  ? {folders: [], notes: [{path: 'tree.md'}]}
+  : [{path: 'search.md'}]};
+global.parseToolResult = result => result;
+global.setTimeout = callback => { callback(); return 1; };
+global.clearTimeout = () => {};
+const calls = [], errors = [];
+console.error = (...args) => errors.push(args);
+window.loadPreview = async path => {
+  calls.push(path);
+  throw new Error('preview failed');
+};
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const flush = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+  await window.loadBrowser();
+  tree.children[0].events.click();
+  await flush();
+  input.value = 'query';
+  input.events.input();
+  await flush();
+  tree.children[0].events.click();
+  await flush();
+  assert.deepEqual(calls, ['tree.md', 'search.md']);
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every(args => args.some(arg => arg instanceof Error && arg.message === 'preview failed')));
+})();
+"""
+    result = subprocess.run(
+        [node, "--unhandled-rejections=strict", "-e", script, str(source)],
         capture_output=True,
         text=True,
         cwd=repo,
