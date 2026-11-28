@@ -290,10 +290,25 @@ class TestOutcomes:
         assert result.is_error is True
         assert _text(result) == (
             "slow_ok ran past its foreground time limit, and this caller already "
-            "has the maximum number of background jobs, so it was stopped. Retry "
-            "it later, once older jobs have expired."
+            "has the maximum number of background jobs, so it was stopped. "
+            "Retrieve finished jobs with get_job_result, or retry later once "
+            "older jobs have expired."
         )
         assert _loud_fastmcp_records(caplog) == []
+
+    @pytest.mark.usefixtures("non_task_client")
+    async def test_retrieving_a_finished_job_frees_its_slot(self) -> None:
+        async with Client(_server(max_per_subject=1)) as client:
+            first = (await client.call_tool("slow_ok", {})).structured_content
+            assert first is not None and first["status"] == "working"
+            await asyncio.sleep(0.3)
+            polled = await client.call_tool(
+                "get_job_result", {"job_id": first["job_id"]}
+            )
+            assert polled.structured_content is not None
+            assert polled.structured_content["status"] == "completed"
+            second = (await client.call_tool("slow_ok", {})).structured_content
+        assert second is not None and second["status"] == "working"
 
     @pytest.mark.usefixtures("call_path")
     async def test_domain_tool_error_passes_through(self) -> None:

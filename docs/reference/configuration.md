@@ -561,5 +561,5 @@ explains how `READ_ONLY` and `WRITE_PROTECT_EXISTING` combine.
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S` | `25.0` | No | Seconds a long-running tool call may run in the foreground before it is promoted to a background job and a job handle is returned instead. |
 | `MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S` | `3600.0` | No | Seconds a background-job record (working or finished) is retained for polling before it expires from the store. |
-| `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | `256` | No | Maximum live background jobs per calling subject; further promotions are rejected until older records expire. |
+| `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | `256` | No | Maximum live background jobs per calling subject: running, or finished with an outcome not yet retrieved. Further promotions are rejected until a job's outcome is retrieved or its record expires. |
 <!-- GENERATED-ENV-TABLE-REF-DOMAIN-END -->

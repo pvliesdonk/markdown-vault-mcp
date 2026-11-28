@@ -548,7 +548,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT",
-          "description": "Maximum live background jobs per calling subject; further promotions are rejected until older records expire.",
+          "description": "Maximum live background jobs per calling subject: running, or finished with an outcome not yet retrieved. Further promotions are rejected until a job's outcome is retrieved or its record expires.",
           "format": "number",
           "default": "256"
         }
@@ -1205,7 +1205,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT",
-          "description": "Maximum live background jobs per calling subject; further promotions are rejected until older records expire.",
+          "description": "Maximum live background jobs per calling subject: running, or finished with an outcome not yet retrieved. Further promotions are rejected until a job's outcome is retrieved or its record expires.",
           "format": "number",
           "default": "256"
         }

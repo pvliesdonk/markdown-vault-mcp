@@ -11,7 +11,9 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 
 from markdown_vault_mcp._job_store import (
+    _INDEX_COLLECTION,
     _RECORD_COLLECTION,
+    COLLECTED_GRACE_S,
     JobLimitExceededError,
     JobNotFoundError,
     JobStore,
@@ -184,3 +186,79 @@ class TestPerSubjectCap:
         )
         # The prune pass frees the slot instead of rejecting.
         await store.create("alice")
+
+
+class TestCollect:
+    """A job whose outcome the caller received stops counting (#2530)."""
+
+    async def test_collected_jobs_free_their_slots(self):
+        store, _kv = _store(max_per_subject=2)
+        for _ in range(2):
+            record = await store.create("alice")
+            await store.finish("alice", record.job_id, {"ok": True})
+            await store.collect("alice", record.job_id)
+        await store.create("alice")
+
+    async def test_settled_but_uncollected_jobs_still_count(self):
+        store, _kv = _store(max_per_subject=1)
+        record = await store.create("alice")
+        await store.finish("alice", record.job_id, {"ok": True})
+        with pytest.raises(JobLimitExceededError):
+            await store.create("alice")
+
+    async def test_working_job_is_not_collected(self):
+        store, _kv = _store(max_per_subject=1)
+        record = await store.create("alice")
+        await store.collect("alice", record.job_id)
+        with pytest.raises(JobLimitExceededError):
+            await store.create("alice")
+
+    async def test_collected_record_stays_readable_for_the_grace_period(self):
+        store, kv = _store(result_ttl_s=3600.0)
+        record = await store.create("alice")
+        await store.fail("alice", record.job_id, "boom")
+        await store.collect("alice", record.job_id)
+        fetched = await store.get("alice", record.job_id)
+        assert fetched.status == "failed" and fetched.error == "boom"
+        _value, remaining = await kv.ttl(
+            _scope_key("alice", record.job_id), collection=_RECORD_COLLECTION
+        )
+        assert remaining is not None and remaining <= COLLECTED_GRACE_S
+
+    async def test_collect_never_lengthens_a_shorter_lifetime(self):
+        store, kv = _store(result_ttl_s=60.0)
+        record = await store.create("alice")
+        await store.cancel("alice", record.job_id)
+        await store.collect("alice", record.job_id)
+        _value, remaining = await kv.ttl(
+            _scope_key("alice", record.job_id), collection=_RECORD_COLLECTION
+        )
+        assert remaining is not None and remaining <= 60.0
+
+    async def test_collect_is_idempotent_and_keeps_other_ids(self):
+        store, kv = _store()
+        done = await store.create("alice")
+        running = await store.create("alice")
+        await store.finish("alice", done.job_id, {"ok": True})
+        await store.collect("alice", done.job_id)
+        await store.collect("alice", done.job_id)
+        index = await kv.get(_scope_key("alice"), collection=_INDEX_COLLECTION)
+        assert index == {"ids": [running.job_id]}
+
+    async def test_collecting_the_last_id_drops_the_index(self):
+        store, kv = _store()
+        record = await store.create("alice")
+        await store.finish("alice", record.job_id, {"ok": True})
+        await store.collect("alice", record.job_id)
+        assert await kv.get(_scope_key("alice"), collection=_INDEX_COLLECTION) is None
+
+    async def test_collect_of_unknown_or_expired_id_is_noop(self):
+        store, kv = _store()
+        record = await store.create("alice")
+        await store.collect("alice", "nope")
+        await kv.delete(
+            _scope_key("alice", record.job_id), collection=_RECORD_COLLECTION
+        )
+        await store.collect("alice", record.job_id)
+        index = await kv.get(_scope_key("alice"), collection=_INDEX_COLLECTION)
+        assert index == {"ids": [record.job_id]}

@@ -17,11 +17,17 @@ backend (``build_kv_store(config, namespace="jobs")``) with a
   so retention is pinned at creation and never slides.
 - :meth:`JobStore.get` looks a record up within one subject scope; an id
   owned by another scope is indistinguishable from an unknown id.
+- :meth:`JobStore.collect` marks a settled record as delivered once the
+  poller has handed its outcome to the caller: the id leaves the scope's
+  index and the record stays readable for :data:`COLLECTED_GRACE_S` at most,
+  so a poll repeated after a lost response still answers.
 
-**Per-subject cap.** Each scope keeps an index record of its live job ids.
-Only when the index reaches the cap is it pruned against the backend
-(dropping ids whose records have expired) before the create is rejected, so
-the common path costs one index read and two writes.
+**Per-subject cap.** Each scope keeps an index record of its live job ids:
+those still working, and those settled but not yet collected. Only when the
+index reaches the cap is it pruned against the backend (dropping ids whose
+records have expired) before the create is rejected, so the common path
+costs one index read and two writes. A collected job no longer counts
+(#2530).
 
 **Correctness boundary.** The key-value facade has no compare-and-set, so
 one in-process :class:`asyncio.Lock` serialises every read-modify-write:
@@ -109,6 +115,10 @@ class JobNotFoundError(LookupError):
 
 class JobLimitExceededError(RuntimeError):
     """The calling subject already has the maximum number of live jobs."""
+
+
+COLLECTED_GRACE_S = 300.0
+"""Seconds a collected record stays readable, so a repeated poll still answers."""
 
 
 def _scope_key(scope: str, job_id: str = "") -> str:
@@ -212,7 +222,7 @@ class JobStore:
                     raise JobLimitExceededError(
                         f"subject already has {len(ids)} live background "
                         f"jobs (cap {self._max_per_subject}); retry after "
-                        "existing jobs expire."
+                        "existing jobs are collected or expire."
                     )
             ids.append(record.job_id)
             await self._kv.put(
@@ -284,6 +294,47 @@ class JobStore:
             await self._kv.put(
                 key, raw, collection=_RECORD_COLLECTION, ttl=float(remaining)
             )
+
+    async def collect(self, scope: str, job_id: str) -> None:
+        """Release a settled job's slot under the cap once its outcome was read.
+
+        Drops *job_id* from *scope*'s index and shortens the record's lifetime
+        to :data:`COLLECTED_GRACE_S`, never lengthening it. A working, expired
+        or unknown record is left alone, so calling this again is harmless.
+
+        Args:
+            scope: The owning subject scope.
+            job_id: The id whose terminal outcome the caller has received.
+        """
+        key = _scope_key(scope, job_id)
+        async with self._lock:
+            raw, remaining = await self._kv.ttl(key, collection=_RECORD_COLLECTION)
+            if raw is None or remaining is None or raw["status"] == "working":
+                return
+            if remaining > COLLECTED_GRACE_S:
+                await self._kv.put(
+                    key, raw, collection=_RECORD_COLLECTION, ttl=COLLECTED_GRACE_S
+                )
+            await self._drop_from_index(scope, job_id)
+
+    async def _drop_from_index(self, scope: str, job_id: str) -> None:
+        """Remove *job_id* from *scope*'s index; called under the store lock."""
+        index_key = _scope_key(scope)
+        raw_index, remaining = await self._kv.ttl(
+            index_key, collection=_INDEX_COLLECTION
+        )
+        if raw_index is None or job_id not in raw_index["ids"]:
+            return
+        ids = [i for i in raw_index["ids"] if i != job_id]
+        if not ids:
+            await self._kv.delete(index_key, collection=_INDEX_COLLECTION)
+            return
+        await self._kv.put(
+            index_key,
+            {"ids": ids},
+            collection=_INDEX_COLLECTION,
+            ttl=remaining if remaining is not None else self._result_ttl_s,
+        )
 
     async def get(self, scope: str, job_id: str) -> JobRecord:
         """Return the record for *job_id* as visible to *scope*.
