@@ -563,6 +563,11 @@ _META_SCHEMA_VERSION_KEY = "schema_version"
 #: one-item list (OKF 0.3 §11.2 rule 2), so its resource and labels now fill
 #: the ``citations`` table. Still one bump: no tag contains the commit that
 #: set 13.
+#:
+#: Version 13 also covers #2452: a frontmatter block opens only on a first
+#: line that is exactly ``---`` (OKF 0.3 §4), so a block after a blank line
+#: or fenced by ``----`` or ``--- `` is body text, and its keys are no longer
+#: indexed. Still one bump: no tag contains the commit that set 13.
 INDEX_SEMANTICS_VERSION = 13
 
 

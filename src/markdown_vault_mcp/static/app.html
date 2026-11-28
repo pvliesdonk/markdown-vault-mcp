@@ -555,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:370962bd070c3858386587b8b94c451b358bfa5715c46b1bee3333d3c10fd216 -->
+<!-- vendor-spa-source-sha256:769b1d2dacb223d95c8b21e7e4286ef69a570879da7f2b1e38af683ca85f34ef -->
 </head>
 <body>
 <div class="app-container">
@@ -1725,12 +1725,12 @@ app.onteardown = () => {
 
   // Strip a leading YAML frontmatter block so it isn't rendered twice: the
   // frontmatter already shows in the properties panel, and vault_read's
-  // `content` is the whole file including frontmatter. The server's parser
-  // (python-frontmatter) fences on `^-{3,}\s*$`; this deliberately narrower
-  // `-{3,}[ \t]*` covers the realistic cases (`----` and `--- ` fences) so
-  // they strip too, while never over-stripping real body content.
+  // `content` is the whole file including frontmatter. The server opens a
+  // block only on a first line that is exactly `---` and closes it on the
+  // next such line (OKF 0.3 §4, #2452), after one optional byte order mark;
+  // this strips exactly that block and nothing else.
   function stripFrontmatter(text) {
-    return String(text || '').replace(/^﻿?-{3,}[ \t]*\r?\n[\s\S]*?\r?\n-{3,}[ \t]*\r?\n?/, '');
+    return String(text || '').replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?(?:\n|$)/, '');
   }
 
   function normalizeTags(fm) {

@@ -155,7 +155,16 @@ def load_yaml(text: str) -> Any:
 
 
 class Yaml12Handler(YAMLHandler):
-    """The python-frontmatter YAML handler, read and written as above."""
+    """The python-frontmatter YAML handler, read and written as above.
+
+    Its delimiter is a line that is exactly ``---`` (OKF 0.3 §4: "The file
+    MUST start with a line that is exactly ``---``. The block ends at the
+    next line that is exactly ``---``.", #2452), a CRLF line ending
+    included. python-frontmatter's own pattern, ``^-{3,}\\s*$``, also took
+    ``----`` and a delimiter with trailing spaces.
+    """
+
+    FM_BOUNDARY = re.compile(r"^---\r?$", re.MULTILINE)
 
     def load(self, fm: str, **kwargs: object) -> Any:
         """Parse a frontmatter block with core-schema resolution.

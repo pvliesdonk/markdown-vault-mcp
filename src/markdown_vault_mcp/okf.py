@@ -46,7 +46,11 @@ from markdown_vault_mcp._frontmatter_splice import REMOVE, splice_keys
 from markdown_vault_mcp._trivial_edit import is_trivial_edit
 from markdown_vault_mcp._yaml12 import YAML12_HANDLER
 from markdown_vault_mcp.exceptions import InvalidRequestError
-from markdown_vault_mcp.scanner import parse_frontmatter, strip_frontmatter_block
+from markdown_vault_mcp.scanner import (
+    frontmatter_handler,
+    parse_frontmatter,
+    strip_frontmatter_block,
+)
 from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -1016,8 +1020,8 @@ def _block_is_mapping(raw: str) -> bool:
     reads as absent, so it passes. Called only after the parse succeeded,
     so the same handler loads the block again without raising.
     """
-    candidate = raw.lstrip()
-    handler = fm.detect_format(candidate, fm.handlers)
+    candidate = raw.removeprefix("\ufeff")
+    handler = frontmatter_handler(candidate)
     loaded = handler.load(handler.split(candidate)[0]) if handler else None
     return loaded is None or isinstance(loaded, dict)
 

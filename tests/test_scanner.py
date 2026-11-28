@@ -17,6 +17,7 @@ from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
     normalize_heading,
+    parse_frontmatter,
     parse_note,
     scan_directory,
     strip_frontmatter_block,
@@ -1138,10 +1139,36 @@ class TestStripFrontmatterBlock:
         body = "    indented code\n\nprose\n\n\n"
         assert strip_frontmatter_block(f"---\ntitle: T\n---\n\n{body}") == body
 
-    def test_blank_lines_before_the_block_do_not_hide_it(self) -> None:
-        # ``frontmatter.parse`` strips before detecting, so the indexer reads
-        # this as frontmatter; leaving the block in the body would stack it.
-        assert strip_frontmatter_block("\n\n---\ntitle: T\n---\n\n# T\n") == "# T\n"
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "\n\n---\ntitle: T\n---\n\n# T\n",
+            " ---\ntitle: T\n---\n# T\n",
+            "--- \ntitle: T\n---\n# T\n",
+            "----\ntitle: T\n----\n# T\n",
+        ],
+    )
+    def test_a_block_not_opened_by_an_exact_first_line_is_body(self, text: str) -> None:
+        # OKF 0.3 §4: "The file MUST start with a line that is exactly
+        # `---`" (#2452); parse_frontmatter agrees, so nothing stacks.
+        assert strip_frontmatter_block(text) == text
+        assert parse_frontmatter(text).metadata == {}
+
+    def test_only_an_exact_line_closes_the_block(self) -> None:
+        # "The block ends at the next line that is exactly `---`": a
+        # `--- ` with a trailing space closes nothing, so the block is open.
+        text = "---\ntitle: T\n--- \n# T\n"
+        assert parse_frontmatter(text).metadata == {}
+        assert strip_frontmatter_block(text) == text
+
+    @pytest.mark.parametrize(
+        "text", ["\ufeff---\ntype: N\n---\n# T\n", "---\r\ntype: N\r\n---\r\n# T\r\n"]
+    )
+    def test_a_bom_and_crlf_line_endings_still_open_a_block(self, text: str) -> None:
+        # A leading U+FEFF is an encoding signature, as OKF's own parser,
+        # validator and scanner read it (#2452).
+        assert parse_frontmatter(text).metadata == {"type": "N"}
+        assert strip_frontmatter_block(text).lstrip("\r\n").startswith("# T")
 
 
 def test_an_unreadable_directory_is_reported_not_swallowed(tmp_path: Path) -> None:
