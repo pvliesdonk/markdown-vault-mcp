@@ -6752,6 +6752,8 @@ refuses as empty instead. A donor never matches a <code>None</code> (#1505).</p>
     <div class="doc doc-contents ">
 
         <p>Replace the store with <em>documents</em> under <em>identity</em>, durably.</p>
+<p>Reads <em>documents</em> twice and holds its vectors in one matrix
+(:func:<code>~markdown_vault_mcp.stores._resident.generation_snapshot</code>).</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -6775,12 +6777,24 @@ refuses as empty instead. A donor never matches a <code>None</code> (#1505).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="TypeError">TypeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>documents</em> is a single-pass iterator; nothing
+is written.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If a path appears twice, or a row is of another
-dimension or not finite.</p>
+                <p>If a path appears twice, a row is of another
+dimension or not finite, or <em>documents</em> yields other
+documents on its second pass.</p>
               </div>
             </td>
           </tr>

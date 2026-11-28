@@ -455,12 +455,15 @@ Raises:
 
 Replace the store with *documents* under *identity*, durably.
 
+Reads *documents* twice and holds its vectors in one matrix (:func:`~markdown_vault_mcp.stores._resident.generation_snapshot`).
+
 Raises:
 
-| Type            | Description                                                              |
-| --------------- | ------------------------------------------------------------------------ |
-| `ReadOnlyError` | If the store was opened read-only.                                       |
-| `ValueError`    | If a path appears twice, or a row is of another dimension or not finite. |
+| Type            | Description                                                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ReadOnlyError` | If the store was opened read-only.                                                                                            |
+| `TypeError`     | If documents is a single-pass iterator; nothing is written.                                                                   |
+| `ValueError`    | If a path appears twice, a row is of another dimension or not finite, or documents yields other documents on its second pass. |
 
 ### `resources()`
 
