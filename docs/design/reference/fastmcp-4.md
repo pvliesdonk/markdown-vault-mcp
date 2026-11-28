@@ -141,7 +141,7 @@ does not attempt to catalogue the rest of FastMCP's API.
 - FastMCP 4's `Client.call_tool()` transparently polls a protocol-native task
   to completion, while `mode="legacy"` cannot negotiate tasks and exercises a
   task-capable tool's foreground fallback. [source: upgrade]
-  [pins: tests/test_server.py::TestReindexTool::test_reindex_slow_run_promotes_to_job, tests/test_summarize_tool.py::TestSummarizeDualMode::test_slow_summary_promotes_then_completes]
+  [pins: tests/test_server.py::TestReindexTool::test_reindex_slow_run_promotes_to_job, tests/test_summarize_tool.py::TestSummarizeDualMode::test_slow_summary_promotes_then_completes, tests/test_cli_remote.py::test_write_slow_native_reindex_returns_job_before_deadline]
 
 ### MCP Apps backend addressing
 

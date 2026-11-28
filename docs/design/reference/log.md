@@ -109,6 +109,10 @@
 
 ## 2026-11-14
 
+- Added the hosted CLI slow-reindex regression pin to the current [FastMCP task-mode claim](fastmcp-4.md#per-server-task-backend) for #2060. Native FastMCP 4.1.8 source inspection and a real-server HTTP reproduction confirm that legacy mode preserves the foreground job response; the default modern connection waits beyond the CLI deadline. Existing sourced claim and review date remain unchanged.
+
+- Added [Typer parameter sources](typer-parameter-sources.md) for #2060. Inspected installed Typer 0.29.1 and Click 8.5.1 sources and reproduced the unequal enum members and explicit false option. Refute pass checked source names and the default-value distinction. Next review: 2027-05-14.
+
 - New: [Watchdog event filtering](watchdog-event-filtering.md), for #2045.
   Tagged observer, inotify and FSEvents sources establish mutation masks and
   the 4.0.2 minimum; the refutation pass rejects a ninth close-event class and
