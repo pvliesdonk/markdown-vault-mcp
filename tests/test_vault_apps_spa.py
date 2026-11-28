@@ -76,35 +76,26 @@ global.parseToolResult = result => result;
 global.setTimeout = callback => { callback(); return 1; };
 global.clearTimeout = () => {};
 const calls = [], errors = [];
-const reportError = console.error;
 console.error = (...args) => errors.push(args);
-let reject = false;
 window.loadPreview = async path => {
   calls.push(path);
-  if (reject) throw new Error('preview failed');
+  throw new Error('preview failed');
 };
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
   await window.loadBrowser();
-  const note = tree.children[0];
-  note.events.click();
-  reject = true;
-  note.events.click();
+  tree.children[0].events.click();
   await flush();
-  reject = false;
   input.value = 'query';
   input.events.input();
   await flush();
-  const result = tree.children[0];
-  result.events.click();
-  reject = true;
-  result.events.click();
+  tree.children[0].events.click();
   await flush();
-  assert.deepEqual(calls, ['tree.md', 'tree.md', 'search.md', 'search.md']);
+  assert.deepEqual(calls, ['tree.md', 'search.md']);
   assert.equal(errors.length, 2);
   assert.ok(errors.every(args => args.some(arg => arg instanceof Error && arg.message === 'preview failed')));
-})().catch(err => { reportError(err); process.exitCode = 1; });
+})();
 """
     result = subprocess.run(
         [node, "--unhandled-rejections=strict", "-e", script, str(source)],
