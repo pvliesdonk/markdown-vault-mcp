@@ -1524,6 +1524,32 @@ def _stored_generated(stored: str) -> Any:
     return meta.get("generated", REMOVE)
 
 
+def _restamped_generated(meta: dict[str, Any], actor: str, at: str) -> dict[str, Any]:
+    """The written ``generated`` with ``by`` and ``at`` set, other keys kept.
+
+    OKF 0.3 §4.1: "A producer that modifies an existing file MUST keep the
+    keys that it does not know", including keys inside ``generated`` (#2484).
+    The keys come from the written text's own ``generated``, the producer's
+    claim about this content, never from the stored note's, which describe
+    the content this write replaces. Each key keeps its slot; a missing
+    ``by`` or ``at`` is appended. A ``generated`` that is not a mapping has
+    no keys to keep.
+
+    Args:
+        meta: The written text's frontmatter.
+        actor: The provenance actor for ``generated.by``.
+        at: The spelled instant for ``generated.at``.
+
+    Returns:
+        The ``generated`` mapping to write.
+    """
+    supplied = meta.get("generated")
+    generated: dict[str, Any] = dict(supplied) if isinstance(supplied, dict) else {}
+    generated["by"] = actor
+    generated["at"] = at
+    return generated
+
+
 def _stored_verified(stored: str | None) -> object:
     """Return the ``verified`` value of the stored note, as stored.
 
@@ -1566,7 +1592,9 @@ def apply_okf_write_stamp(
     file, and a reader compares each event's ``at`` with ``generated.at`` to
     decide which are current (#2405). It is taken from *stored*, never from
     *text*, so a write neither erases recorded reviews nor adds one of its
-    own; ``okf_verify`` is the only path that records a review. ``sources``
+    own; ``okf_verify`` is the only path that records a review. Inside
+    ``generated`` only ``by`` and ``at`` change: keys the server does not
+    know keep their values and slots (OKF 0.3 §4.1, #2484). ``sources``
     and every other field are untouched.
     Only ``generated`` and ``verified`` are rewritten: every other line of
     the block, comments and quoting included, and the body keep their bytes
@@ -1593,7 +1621,9 @@ def apply_okf_write_stamp(
     post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    updates: dict[str, Any] = {"generated": {"by": actor, "at": okf_timestamp(now)}}
+    updates: dict[str, Any] = {
+        "generated": _restamped_generated(meta, actor, okf_timestamp(now))
+    }
     if stored is not None and is_trivial_edit(stored, text):
         # OKF 0.3 §5.2: a trivial edit does not change generated.at (#2418).
         updates["generated"] = _stored_generated(stored)
