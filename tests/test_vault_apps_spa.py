@@ -126,17 +126,22 @@ class Element {
   appendChild(child) { this.children.push(child); }
 }
 const tree = new Element(), input = new Element(), clear = new Element(), events = {};
+let fail = false;
+tree.appendChild = child => {
+  if (fail) throw new Error('injected tree rendering failure');
+  tree.children.push(child);
+};
 global.document = {
   getElementById: id => ({'browser-tree': tree, 'browser-search-input': input,
     'browser-search-clear': clear})[id],
   createElement: () => new Element(),
 };
 global.window = {addEventListener: (name, handler) => { events[name] = handler; }};
-let fail = false, listCalls = 0;
+let listCalls = 0;
 global.app = {callServerTool: async ({name}) => {
   if (name !== 'app___vault_list') return [{path: 'search.md'}];
   listCalls++;
-  return fail ? {folders: [], notes: null} : {folders: [], notes: [{path: 'root.md'}]};
+  return {folders: [], notes: [{path: 'root.md'}]};
 }};
 global.parseToolResult = result => result;
 global.setTimeout = callback => { callback(); return 1; };
@@ -151,6 +156,7 @@ const clearSearch = () => clear.events.click();
 const deleteQuery = () => { input.value = ''; input.events.input(); };
 (async () => {
   for (const action of [browse, clearSearch, deleteQuery]) {
+    fail = false;
     if (action !== browse) await search();
     fail = false; action(); await flush();
     assert.equal(tree.children[0].dataset.path, 'root.md');
@@ -159,7 +165,8 @@ const deleteQuery = () => { input.value = ''; input.events.input(); };
   }
   assert.equal(listCalls, 6);
   assert.equal(errors.length, 3);
-  assert.ok(errors.every(args => args.some(arg => arg instanceof Error)));
+  assert.ok(errors.every(args => args.some(arg => arg instanceof Error &&
+    arg.message === 'injected tree rendering failure')));
 })();
 """
     result = subprocess.run(
