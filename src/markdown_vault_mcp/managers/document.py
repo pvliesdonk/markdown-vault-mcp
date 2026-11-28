@@ -10,6 +10,7 @@ Serializer behavior: ``docs/design/reference/python-frontmatter-pyyaml.md``.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
 import posixpath
@@ -71,6 +72,7 @@ from markdown_vault_mcp.types import (
     AttachmentContent,
     DeleteResult,
     EditResult,
+    FileEtag,
     MoveFolderResult,
     NoteContent,
     RenameResult,
@@ -149,6 +151,34 @@ def _submodule_links_text(sources: list[str]) -> str:
         f"The links in {names} still name the old path: they are inside a git "
         "submodule or nested repository, which this server does not change. Edit them in the "
         "note's own repository."
+    )
+
+
+def _hash_regular_file(
+    path: str, abs_path: Path, missing: DocumentNotFoundError
+) -> FileEtag:
+    """Stream a regular file through SHA-256, reporting absence as *missing*.
+
+    The path is stat()ed before it is opened, so a FIFO or a directory is
+    absent rather than a hang, and size and mtime come from the open file, so
+    they describe the bytes hashed when a writer replaces the file meanwhile.
+    """
+    try:
+        if not stat.S_ISREG(abs_path.stat().st_mode):
+            raise missing
+        with abs_path.open("rb") as stream:
+            file_stat = os.fstat(stream.fileno())
+            # hashlib reads in bounded chunks: an over-cap file never loads.
+            etag = hashlib.file_digest(stream, "sha256").hexdigest()
+    except (FileNotFoundError, NotADirectoryError):
+        raise missing from None
+    except OSError as exc:
+        raise DocumentUnreadableError(path, str(exc)) from exc
+    return FileEtag(
+        path=path,
+        size_bytes=file_stat.st_size,
+        modified_at=file_stat.st_mtime,
+        etag=etag,
     )
 
 
@@ -743,6 +773,41 @@ class DocumentManager:
             modified_at=doc_row["modified_at"],
             etag="",  # ETag is whole-file; not meaningful for a section
         )
+
+    def read_etag(self, path: str) -> FileEtag:
+        """Return a note's or attachment's etag, size and mtime without its body.
+
+        The file is streamed through SHA-256 in chunks, so memory stays
+        bounded whatever its size, and neither read cap applies: the bytes
+        are hashed on the server and never returned. Paths are confined and
+        allowlisted exactly as :meth:`read` and :meth:`read_attachment` do.
+
+        Args:
+            path: Relative note or attachment path.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.FileEtag` whose ``etag`` equals
+            the one a whole-file read returns.
+
+        Raises:
+            InvalidRequestError: If *path* holds a NUL byte, or is an
+                attachment path that escapes the vault or whose extension is
+                not in the allowlist.
+            DocumentNotFoundError: If no regular file is at *path*.
+            DocumentUnreadableError: If the file system refuses the stat or
+                the read.
+        """
+        if is_note(path):
+            reject_nul(path)
+            abs_path = (self._source_dir / path).resolve()
+            missing = DocumentNotFoundError.note(path)
+            # Confined as read() confines it: outside the vault is absent.
+            if not abs_path.is_relative_to(self._source_dir.resolve()):
+                raise missing
+        else:
+            abs_path = self._artifacts.validate_path(path)
+            missing = DocumentNotFoundError.attachment(path)
+        return _hash_regular_file(path, abs_path, missing)
 
     def attachment_size(self, path: str) -> int:
         """Return the on-disk byte size of an attachment without reading it.

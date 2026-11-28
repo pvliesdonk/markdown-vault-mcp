@@ -18,6 +18,8 @@ from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, Not
 
 ::: markdown_vault_mcp.types.RevisionContent
 
+::: markdown_vault_mcp.types.FileEtag
+
 ::: markdown_vault_mcp.types.NoteInfo
 
 ::: markdown_vault_mcp.types.ParsedNote

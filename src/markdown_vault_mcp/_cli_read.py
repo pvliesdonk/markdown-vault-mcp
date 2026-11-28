@@ -225,7 +225,12 @@ def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
 
 
 def read_payload(
-    vault: Vault, path: str, *, section: str | None = None, revision: str | None = None
+    vault: Vault,
+    path: str,
+    *,
+    section: str | None = None,
+    revision: str | None = None,
+    include_content: bool = True,
 ) -> dict[str, Any]:
     """Read through the native note and attachment response policies.
 
@@ -234,12 +239,17 @@ def read_payload(
         path: Vault-relative note or allowed attachment path.
         section: Optional native section heading.
         revision: Optional historical note revision.
+        include_content: ``False`` returns only the whole file's path, size,
+            mtime and etag, with no read cap, through
+            :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_etag`.
 
     Returns:
         Native structured payload, with live whole-note OKF sources when active.
 
     Raises:
-        InvalidRequestError: The native read or attachment policy refuses the request.
+        InvalidRequestError: The native read or attachment policy refuses the
+            request, or ``include_content=False`` is combined with *section*
+            or *revision*.
         DocumentNotFoundError: No live note exists at the requested path.
     """
     from dataclasses import asdict
@@ -248,6 +258,8 @@ def read_payload(
     from markdown_vault_mcp.okf import derive_annotation, is_bundle_member_path
     from markdown_vault_mcp.utils import is_note
 
+    if not include_content:
+        return _etag_payload(vault, path, section=section, revision=revision)
     if revision is not None:
         return asdict(vault.reader.read_revision(path, revision, section=section))
     if not is_note(path):
@@ -261,6 +273,31 @@ def read_payload(
             note.frontmatter, path=path, include_sources=True
         )
     return data
+
+
+def _etag_payload(
+    vault: Vault, path: str, *, section: str | None, revision: str | None
+) -> dict[str, Any]:
+    """Return a whole file's etag without its body, refusing a partial read."""
+    from dataclasses import asdict
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+
+    if revision is not None:
+        raise InvalidRequestError(
+            f"read(include_content=False) gives the current file's etag, and "
+            f"a read at revision {revision!r} has none. Call read with path "
+            f"{path!r} and include_content=False but no revision, or drop "
+            "include_content to read that revision's text."
+        )
+    if section is not None:
+        raise InvalidRequestError(
+            f"read(include_content=False) gives the whole file's etag, not "
+            f"section {section!r}'s. Call read with path {path!r} and "
+            "include_content=False but no section, or drop include_content "
+            "to read the section."
+        )
+    return asdict(vault.reader.read_etag(path))
 
 
 def _attachment_payload(vault: Vault, path: str) -> dict[str, Any]:

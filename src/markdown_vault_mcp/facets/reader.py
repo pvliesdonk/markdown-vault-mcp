@@ -50,6 +50,7 @@ if TYPE_CHECKING:
         AttachmentInfo,
         CommitDiff,
         DocumentMeta,
+        FileEtag,
         GroupedResult,
         HistoryEntry,
         NoteContent,
@@ -663,6 +664,22 @@ class ReaderFacet:
             section["write_configured"] = configured
             section["write_effective"] = effective
         return section
+
+    def read_etag(self, path: str) -> FileEtag:
+        """Return a note's or attachment's etag without its body, at any size.
+
+        The etag is the lowercase hex SHA-256 of the file's raw bytes, equal
+        to a whole-file :meth:`read` or :meth:`read_attachment` etag. No read
+        cap applies: a large file is hashed in full on this side and none of
+        its bytes are returned. Delegates to :meth:`DocumentManager.read_etag`.
+
+        Args:
+            path: Relative note or allowed attachment path.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.FileEtag`.
+        """
+        return self._doc_mgr.read_etag(path)
 
     def attachment_size(self, path: str) -> int:
         """Return an attachment's on-disk byte size without reading it.

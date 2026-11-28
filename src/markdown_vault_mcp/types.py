@@ -292,7 +292,10 @@ class NoteContent:
             above it (#1391).
         frontmatter: Parsed YAML frontmatter as a dict.
         modified_at: Last-modified time as a Unix timestamp float.
-        etag: Opaque hash of file content for optimistic concurrency checks.
+        etag: Lowercase hex SHA-256 of the file's raw bytes, frontmatter
+            and any byte-order mark included; pass it as ``if_match`` to
+            guard a write. It hashes the bytes on disk, not ``content``,
+            which is decoded text. Empty for a section read.
     """
 
     path: str
@@ -546,7 +549,8 @@ class AttachmentContent:
         size_bytes: File size in bytes.
         content_base64: Base64-encoded file content.
         modified_at: Last-modified time as a Unix timestamp float.
-        etag: Opaque hash for optimistic concurrency checks.
+        etag: Lowercase hex SHA-256 of the file's raw bytes; pass it as
+            ``if_match`` to guard a write.
     """
 
     path: str
@@ -576,6 +580,29 @@ class AttachmentInfo:
     size_bytes: int
     modified_at: float
     kind: str = "attachment"
+
+
+@dataclass
+class FileEtag:
+    """A file's etag without its body, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_etag`.
+
+    Covers notes and allowed attachments alike, at any size: the read caps
+    do not apply, because no bytes are returned.
+
+    Attributes:
+        path: Relative path from the vault root.
+        size_bytes: File size in bytes.
+        modified_at: Last-modified time as a Unix timestamp float.
+        etag: Lowercase hex SHA-256 of the file's raw bytes, the same value
+            a whole-file :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read`
+            or :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment`
+            returns and ``if_match`` checks.
+    """
+
+    path: str
+    size_bytes: int
+    modified_at: float
+    etag: str
 
 
 @dataclass
