@@ -4,21 +4,37 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 from typing import TYPE_CHECKING
 
+import frontmatter as fm
 import pytest
 
-from markdown_vault_mcp.exceptions import DocumentNotFoundError, InvalidRequestError
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    DocumentNotFoundError,
+    InvalidRequestError,
+    ReadOnlyError,
+    SubmodulePathError,
+)
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.managers import _replace_worker as worker
 from markdown_vault_mcp.managers import text_replace as tr
-from markdown_vault_mcp.managers.text_replace import ReplaceRequest
+from markdown_vault_mcp.managers.text_replace import (
+    ReplaceRequest,
+    StalePlanError,
+    TextReplacer,
+)
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.conftest import wait_for_writer_drain
 from tests.fixtures.git import make_superproject
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+
+_ROOT_INDEX = '---\nokf_version: "0.3"\ntitle: Root\n---\n# Root\n'
 
 
 def _vault(root: Path, **settings: object) -> Vault:
@@ -232,26 +248,30 @@ class TestPreview:
         assert "+[foo] foo" in (preview.notes[0].diff or "")
 
     def test_invalid_regex(self, vault: Vault) -> None:
+        request = _req(pattern="(", regex=True)
         with pytest.raises(InvalidRequestError, match="not a valid regular expression"):
-            vault.writer.preview_replace(_req(pattern="(", regex=True))
+            vault.writer.preview_replace(request)
 
     def test_regex_limit(self, vault: Vault, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(tr, "MAX_REPLACEMENTS", 1)
+        request = _req(pattern="foo", regex=True)
         with pytest.raises(InvalidRequestError, match="more than 1 replacements"):
-            vault.writer.preview_replace(_req(pattern="foo", regex=True))
+            vault.writer.preview_replace(request)
 
     def test_literal_limit(self, vault: Vault, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(tr, "MAX_REPLACEMENTS", 1)
+        request = _req(pattern="foo")
         with pytest.raises(InvalidRequestError, match="more than 1 replacements"):
-            vault.writer.preview_replace(_req(pattern="foo"))
+            vault.writer.preview_replace(request)
 
     def test_regex_timeout(self, vault: Vault, monkeypatch: pytest.MonkeyPatch) -> None:
         def slow(*_args: object, **_kwargs: object) -> None:
             raise subprocess.TimeoutExpired(cmd="worker", timeout=3.0)
 
         monkeypatch.setattr(tr.subprocess, "run", slow)
+        request = _req(pattern="foo", regex=True)
         with pytest.raises(InvalidRequestError, match="ran longer than 3 seconds"):
-            vault.writer.preview_replace(_req(pattern="foo", regex=True))
+            vault.writer.preview_replace(request)
 
     def test_catastrophic_backtracking_is_killed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -260,8 +280,9 @@ class TestPreview:
         (tmp_path / "n.md").write_text("a" * 40 + "!\n", encoding="utf-8")
         col = _vault(tmp_path)
         try:
+            request = _req(pattern=r"(a+)+$", regex=True)
             with pytest.raises(InvalidRequestError, match="ran longer"):
-                col.writer.preview_replace(_req(pattern=r"(a+)+$", regex=True))
+                col.writer.preview_replace(request)
         finally:
             col.close()
 
@@ -327,18 +348,19 @@ class TestRequestBounds:
     def test_malformed_requests(
         self, vault: Vault, kwargs: dict[str, object], match: str
     ) -> None:
+        request = _req(**kwargs)
         with pytest.raises(InvalidRequestError, match=match):
-            vault.writer.preview_replace(_req(**kwargs))
+            vault.writer.preview_replace(request)
 
     def test_missing_note(self, vault: Vault) -> None:
+        request = _req(pattern="x", paths=("nope.md",), folders=())
         with pytest.raises(DocumentNotFoundError, match=r"nope\.md"):
-            vault.writer.preview_replace(
-                _req(pattern="x", paths=("nope.md",), folders=())
-            )
+            vault.writer.preview_replace(request)
 
     def test_missing_folder(self, vault: Vault) -> None:
+        request = _req(pattern="x", folders=("nope",))
         with pytest.raises(DocumentNotFoundError, match="Folder not found"):
-            vault.writer.preview_replace(_req(pattern="x", folders=("nope",)))
+            vault.writer.preview_replace(request)
 
     @pytest.mark.parametrize(
         ("name", "value", "match"),
@@ -358,8 +380,9 @@ class TestRequestBounds:
         match: str,
     ) -> None:
         monkeypatch.setattr(tr, name, value)
+        request = _req(pattern="foo")
         with pytest.raises(InvalidRequestError, match=match):
-            vault.writer.preview_replace(_req(pattern="foo"))
+            vault.writer.preview_replace(request)
 
 
 class TestSelection:
@@ -388,8 +411,9 @@ class TestSelection:
         assert [n.path for n in preview.notes] == ["a/deep/two.md"]
 
     def test_a_folder_outside_the_vault_is_refused(self, vault: Vault) -> None:
+        request = _req(pattern="foo", folders=("../",))
         with pytest.raises(InvalidRequestError, match="traversal"):
-            vault.writer.preview_replace(_req(pattern="foo", folders=("../",)))
+            vault.writer.preview_replace(request)
 
     def test_one_file_reached_twice_is_covered_once(
         self, vault: Vault, root: Path
@@ -448,5 +472,198 @@ class TestSelection:
             assert [(r.path, r.reason) for r in preview.refused] == [
                 ("sub/note.md", tr._REASON_NESTED)
             ]
+            result = col.writer.apply_replace(_req(pattern="foo"), preview.plan)
+            assert [(n.path, n.status) for n in result.notes] == [
+                ("sub/note.md", "refused"),
+                ("top.md", "applied"),
+            ]
+            assert "foo" in (source / "sub" / "note.md").read_text(encoding="utf-8")
+        finally:
+            col.close()
+
+
+class TestApply:
+    def test_writes_every_planned_note(self, vault: Vault, root: Path) -> None:
+        request = _req(pattern="foo", replacement="baz")
+        preview = vault.writer.preview_replace(request)
+        result = vault.writer.apply_replace(request, preview.plan)
+        assert (result.applied, result.skipped, result.refused) == (2, 0, 0)
+        assert result.plan == preview.plan
+        text = (root / "a" / "one.md").read_text(encoding="utf-8")
+        assert text == "---\ntitle: foo\n---\n# baz\n\nbaz bar baz\n"
+        assert vault.writer.preview_replace(request).notes == []
+
+    def test_a_note_changed_since_the_preview_refuses_the_apply(
+        self, vault: Vault, root: Path
+    ) -> None:
+        request = _req(pattern="foo", replacement="baz")
+        preview = vault.writer.preview_replace(request)
+        (root / "a" / "deep" / "two.md").write_text("foo changed\n", encoding="utf-8")
+        with pytest.raises(StalePlanError, match="Preview the same request again"):
+            vault.writer.apply_replace(request, preview.plan)
+        assert "foo" in (root / "a" / "one.md").read_text(encoding="utf-8")
+
+    def test_a_plan_for_another_request_is_refused(self, vault: Vault) -> None:
+        plan = vault.writer.preview_replace(_req(pattern="foo", replacement="baz")).plan
+        other = _req(pattern="foo", replacement="qux")
+        with pytest.raises(StalePlanError):
+            vault.writer.apply_replace(other, plan)
+
+    def test_a_plan_survives_a_new_replacer(self, vault: Vault) -> None:
+        request = _req(pattern="foo", replacement="baz")
+        plan = vault.writer.preview_replace(request).plan
+        assert TextReplacer(vault._doc_mgr).apply(request, plan).applied == 2
+
+    def test_read_only_vault(self, root: Path) -> None:
+        col = Vault(source_dir=root, settings=VaultSettings(read_only=True))
+        try:
+            request = _req(pattern="foo")
+            with pytest.raises(ReadOnlyError):
+                col.writer.apply_replace(request, "x" * 64)
+        finally:
+            col.close()
+
+    def test_refused_notes_are_reported_and_left_alone(
+        self, vault: Vault, root: Path
+    ) -> None:
+        (root / "bin.md").write_bytes(b"\xff foo")
+        request = _req(pattern="foo")
+        result = vault.writer.apply_replace(
+            request, vault.writer.preview_replace(request).plan
+        )
+        assert ("bin.md", "refused", "not UTF-8 text") in [
+            (n.path, n.status, n.reason) for n in result.notes
+        ]
+        assert (root / "bin.md").read_bytes() == b"\xff foo"
+
+    @pytest.mark.parametrize(
+        ("error", "status", "reason"),
+        [
+            (ConcurrentModificationError("n", "a", "b"), "skipped", "changed since"),
+            (DocumentNotFoundError("gone"), "skipped", "changed since"),
+            (SubmodulePathError("nested"), "refused", "nested repository"),
+        ],
+    )
+    def test_a_write_refusal_is_a_note_outcome(
+        self,
+        vault: Vault,
+        monkeypatch: pytest.MonkeyPatch,
+        error: Exception,
+        status: str,
+        reason: str,
+    ) -> None:
+        request = _req(pattern="foo", paths=("a/one.md",), folders=())
+        preview = vault.writer.preview_replace(request)
+
+        def refuse(_path: str, _content: str, *, if_match: str) -> None:
+            del if_match
+            raise error
+
+        monkeypatch.setattr(vault._doc_mgr, "rewrite", refuse)
+        result = vault.writer.apply_replace(request, preview.plan)
+        assert [n.status for n in result.notes] == [status]
+        assert reason in (result.notes[0].reason or "")
+
+    def test_a_note_changed_after_the_recompute_is_skipped(
+        self, vault: Vault, root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        request = _req(pattern="foo", replacement="baz")
+        preview = vault.writer.preview_replace(request)
+        real = vault._doc_mgr.rewrite
+        two = root / "a" / "deep" / "two.md"
+
+        def race(path: str, content: str, *, if_match: str) -> None:
+            if path == "a/deep/two.md":
+                two.write_text("foo raced\n", encoding="utf-8")
+            real(path, content, if_match=if_match)
+
+        monkeypatch.setattr(vault._doc_mgr, "rewrite", race)
+        result = vault.writer.apply_replace(request, preview.plan)
+        assert [(n.path, n.status) for n in result.notes] == [
+            ("a/deep/two.md", "skipped"),
+            ("a/one.md", "applied"),
+        ]
+        assert two.read_text(encoding="utf-8") == "foo raced\n"
+
+    def test_upkeep_runs_after_each_write_outside_the_lock(self, vault: Vault) -> None:
+        lock = vault._doc_mgr._file_write_lock
+        seen: list[tuple[str, bool]] = []
+
+        def lock_is_free() -> bool:
+            free: list[bool] = []
+
+            def probe() -> None:
+                got = lock.acquire(blocking=False)
+                free.append(got)
+                if got:
+                    lock.release()
+
+            thread = threading.Thread(target=probe)
+            thread.start()
+            thread.join()
+            return free[0]
+
+        replacer = TextReplacer(
+            vault._doc_mgr, after_write=lambda p: seen.append((p, lock_is_free()))
+        )
+        request = _req(pattern="foo")
+        replacer.apply(request, replacer.preview(request).plan)
+        assert seen == [("a/deep/two.md", True), ("a/one.md", True)]
+
+    def test_a_fault_stops_the_apply(
+        self, vault: Vault, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        written: list[str] = []
+        replacer = TextReplacer(vault._doc_mgr, after_write=written.append)
+        real = vault._doc_mgr.rewrite
+
+        def fail_second(path: str, content: str, *, if_match: str) -> None:
+            if path == "a/one.md":
+                raise OSError("disk full")
+            real(path, content, if_match=if_match)
+
+        monkeypatch.setattr(vault._doc_mgr, "rewrite", fail_second)
+        request = _req(pattern="foo")
+        plan = replacer.preview(request).plan
+        with pytest.raises(OSError, match="disk full"):
+            replacer.apply(request, plan)
+        assert written == ["a/deep/two.md"]
+
+    def test_rewrite_needs_an_existing_note(self, vault: Vault) -> None:
+        with pytest.raises(DocumentNotFoundError):
+            vault._doc_mgr.rewrite("nope.md", "x", if_match="e")
+
+
+class TestOkf:
+    @pytest.fixture
+    def okf_root(self, tmp_path: Path) -> Path:
+        base = tmp_path / "okf"
+        (base / "a" / "x").mkdir(parents=True)
+        (base / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        for rel in ("a/x/one.md", "a/two.md"):
+            (base / rel).write_text(
+                "---\ntype: guide\ntitle: T\n---\nfoo body\n", encoding="utf-8"
+            )
+        return base
+
+    def test_each_written_note_gets_edit_upkeep_and_stamping(
+        self, okf_root: Path
+    ) -> None:
+        col = _vault(okf_root, okf_mode="on", okf_write=True)
+        try:
+            request = _req(pattern="foo", replacement="bar")
+            preview = col.writer.preview_replace(request)
+            result = col.writer.apply_replace(request, preview.plan)
+            assert result.applied == 2
+            wait_for_writer_drain(col)
+            for folder, note in (("a/x", "one.md"), ("a", "two.md")):
+                log = (okf_root / folder / "log.md").read_text(encoding="utf-8")
+                assert log.count("**Update**") == 1
+                assert note in log
+            post = fm.loads(
+                (okf_root / "a" / "x" / "one.md").read_text(encoding="utf-8")
+            )
+            assert post.content == "bar body"
+            assert "at" in post.metadata["generated"]
         finally:
             col.close()

@@ -119,17 +119,21 @@ def regex_spans(
         IndexError: *replacement* names a group *pattern* lacks.
         ReplacementLimitError: A bound was exceeded.
     """
-    # The caller's pattern is the point of this module: it runs here, in a
-    # child process the parent kills at a deadline, so a catastrophic pattern
-    # costs one bounded process, not the server (#2031).
-    compiled = re.compile(pattern)  # NOSONAR(S2631) isolated, killed at a deadline
+    # Sonar S2631 (ReDoS) is accepted here: running the caller's pattern is the
+    # feature. This function runs only in the `python -I` child that
+    # text_replace._regex_spans starts with subprocess.run(timeout=...), which
+    # kills and reaps it at the deadline, so a catastrophic pattern costs one
+    # bounded process and a refusal, never the server (#2031). Nothing in the
+    # server process calls it.
+    compiled = re.compile(pattern)
     # An invalid template fails here even when no body matches.
-    compiled.sub(replacement, "")  # NOSONAR(S2631) isolated, killed at a deadline
+    compiled.sub(replacement, "")
     budget = _Budget(max_replacements, max_output_chars)
     result: list[list[Span]] = []
     for body in bodies:
         spans: list[Span] = []
-        for match in compiled.finditer(body):  # NOSONAR(S2631) isolated, deadline
+        # Still inside the child: the deadline above bounds every match here.
+        for match in compiled.finditer(body):
             text = match.expand(replacement)
             budget.spend(text)
             spans.append((match.start(), match.end(), text))

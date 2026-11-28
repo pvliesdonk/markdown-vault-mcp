@@ -4,9 +4,13 @@
 expression pattern, its replacement, and the notes to cover) into a *plan*:
 every note the replacement would change, with its etag and the hash of its
 new text. A preview returns the plan's digest with per-note counts and
-bounded diffs, and writes nothing.
+bounded diffs, and writes nothing. An apply given that digest recomputes the
+plan, refuses when the digest differs, and otherwise writes each planned note
+through :meth:`~markdown_vault_mcp.managers.document.DocumentManager.rewrite`,
+the path ``edit`` takes, reporting each note applied, skipped or refused.
 
-Matching covers a note's body only: the frontmatter block is never searched.
+Matching covers a note's body only: the frontmatter block is never searched
+or rewritten.
 A regular expression runs in an isolated child process with a deadline; the
 standard-library behaviour that rests on is recorded in
 ``docs/design/reference/regex-replacement-worker.md``.
@@ -27,9 +31,14 @@ import sys
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from markdown_vault_mcp.exceptions import DocumentNotFoundError, InvalidRequestError
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    DocumentNotFoundError,
+    InvalidRequestError,
+    SubmodulePathError,
+)
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.managers._replace_worker import (
     ReplacementLimitError,
@@ -47,7 +56,7 @@ from markdown_vault_mcp.utils.fs import (
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from markdown_vault_mcp.managers.document import DocumentManager
 
@@ -81,6 +90,9 @@ _WORKER = Path(__file__).with_name("_replace_worker.py")
 
 _REASON_NESTED = "inside a nested repository, which this server does not write"
 _REASON_NOT_UTF8 = "not UTF-8 text"
+_REASON_CHANGED = "changed since the preview"
+
+NoteStatus = Literal["applied", "skipped", "refused"]
 
 
 @dataclass(frozen=True)
@@ -160,6 +172,46 @@ class ReplacePreview:
 
 
 @dataclass(frozen=True)
+class NoteOutcome:
+    """What an apply did with one note.
+
+    Attributes:
+        path: Vault-relative note path.
+        status: ``applied`` (written), ``skipped`` (it changed after the
+            plan was recomputed, so it was not written) or ``refused`` (not
+            written: inside a nested repository, or not UTF-8 text).
+        reason: Why it was skipped or refused; ``None`` when applied.
+    """
+
+    path: str
+    status: NoteStatus
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ReplaceResult:
+    """What an apply did, note by note.
+
+    Attributes:
+        plan: The digest the apply was given and matched.
+        notes: One outcome per planned or refused note, in path order.
+        applied: How many notes were written.
+        skipped: How many planned notes changed before their write.
+        refused: How many notes were not written by policy.
+    """
+
+    plan: str
+    notes: list[NoteOutcome]
+    applied: int
+    skipped: int
+    refused: int
+
+
+class StalePlanError(InvalidRequestError):
+    """The notes no longer give the plan an apply was given; nothing was written."""
+
+
+@dataclass(frozen=True)
 class _Snapshot:
     """One read of a note: its etag and its text split at the body."""
 
@@ -223,16 +275,25 @@ class _Proposal:
 
 
 class TextReplacer:
-    """Preview one textual replacement across many notes."""
+    """Preview and apply one textual replacement across many notes."""
 
-    def __init__(self, doc_mgr: DocumentManager) -> None:
-        """Hold the collaborator a replacement reads the vault through.
+    def __init__(
+        self,
+        doc_mgr: DocumentManager,
+        *,
+        after_write: Callable[[str], None] | None = None,
+    ) -> None:
+        """Hold the collaborators a replacement reads and writes through.
 
         Args:
             doc_mgr: Supplies the vault root, the exclude patterns and the
-                nested-repository check.
+                nested-repository check, and writes each note.
+            after_write: Called with each note's path right after its write,
+                outside the write lock, for the upkeep ``edit`` runs after
+                its write; ``None`` runs none.
         """
         self._doc_mgr = doc_mgr
+        self._after_write = after_write
 
     def preview(self, request: ReplaceRequest) -> ReplacePreview:
         """Compute what *request* would change, writing nothing.
@@ -270,6 +331,57 @@ class TextReplacer:
             replacements=sum(n.replacements for n in notes),
             scanned=proposal.scanned,
         )
+
+    def apply(self, request: ReplaceRequest, plan: str) -> ReplaceResult:
+        """Write the planned notes when the notes still give *plan*.
+
+        The plan is recomputed from the notes as they are, with the write
+        lock not held. A different digest refuses the whole apply. Otherwise
+        each planned note is written as ``edit`` writes it, conditional on
+        the etag its plan entry was computed from.
+
+        Args:
+            request: The same replacement and notes the preview was given.
+            plan: The digest :meth:`preview` returned.
+
+        Returns:
+            One outcome per planned or refused note.
+
+        Raises:
+            ReadOnlyError: The vault is read-only.
+            DocumentNotFoundError: A named note or folder does not exist.
+            InvalidRequestError: The request is malformed or exceeds a bound.
+            StalePlanError: The notes no longer give *plan*.
+        """
+        _validate(request)
+        self._doc_mgr.ensure_writable()
+        proposal = self._propose(request)
+        if proposal.digest(request) != plan:
+            raise StalePlanError(
+                f"plan {plan!r} does not match the notes now: a note changed "
+                "since the preview, or the request differs from the previewed "
+                "one; nothing was written. Preview the same request again and "
+                "apply the new plan."
+            )
+        outcomes = {
+            p: NoteOutcome(p, "refused", r) for p, r in proposal.refused.items()
+        }
+        for path, change in proposal.changes.items():
+            outcomes[path] = self._apply_one(change)
+        return _result(plan, outcomes)
+
+    def _apply_one(self, change: _Change) -> NoteOutcome:
+        """Write one planned note if it is still at its etag, and say what happened."""
+        path = change.path
+        try:
+            self._doc_mgr.rewrite(path, change.new_text, if_match=change.snapshot.etag)
+        except SubmodulePathError:
+            return NoteOutcome(path, "refused", _REASON_NESTED)
+        except (ConcurrentModificationError, DocumentNotFoundError):
+            return NoteOutcome(path, "skipped", _REASON_CHANGED)
+        if self._after_write is not None:
+            self._after_write(path)
+        return NoteOutcome(path, "applied")
 
     def _propose(self, request: ReplaceRequest) -> _Proposal:
         """Read every covered note once and compute its replacement spans."""
@@ -510,6 +622,24 @@ def _apply_spans(body: str, spans: Sequence[Span]) -> str:
         position = end
     parts.append(body[position:])
     return "".join(parts)
+
+
+def _result(plan: str, outcomes: dict[str, NoteOutcome]) -> ReplaceResult:
+    notes = [outcomes[p] for p in sorted(outcomes)]
+    counts = {
+        s: sum(1 for n in notes if n.status == s)
+        for s in ("applied", "skipped", "refused")
+    }
+    logger.info(
+        "text_replace_applied plan=%s applied=%d skipped=%d refused=%d",
+        plan,
+        counts["applied"],
+        counts["skipped"],
+        counts["refused"],
+    )
+    return ReplaceResult(
+        plan, notes, counts["applied"], counts["skipped"], counts["refused"]
+    )
 
 
 def _planned_note(change: _Change, *, with_diff: bool) -> PlannedNote:

@@ -42,7 +42,7 @@ src/markdown_vault_mcp/
     _rewrite_ledger.py -- LinkRewriteLedger: bounded in-memory record of link rewrites (path, hash before/after) that lets a rename accept an etag only those rewrites made stale (#1492)
     git_query.py       -- GitQueryManager: git history/diff/revision reads (#610, #1137)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
-    text_replace.py    -- TextReplacer: one literal or regex replacement across many notes' bodies, previewed as a stateless plan digest with counts and span-built diffs; selection and fixed bounds (#2031)
+    text_replace.py    -- TextReplacer: one literal or regex replacement across many notes' bodies, previewed as a stateless plan digest with counts and span-built diffs, and applied note by note through DocumentManager.rewrite with applied/skipped/refused outcomes; selection and fixed bounds (#2031)
     _replace_worker.py -- literal_spans in-process, regex_spans in an isolated `python -I` child killed after a deadline; stdlib-only (#2031)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
@@ -78,7 +78,7 @@ src/markdown_vault_mcp/
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
     reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
-    writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604); preview_replace over a TextReplacer (#2031)
+    writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604); preview_replace/apply_replace over a TextReplacer, with edit's upkeep after each written note (#2031)
     graph.py           -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
     index.py           -- IndexFacet: build/reindex/embeddings, readiness, writer + embeddings status (#604)
     summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)

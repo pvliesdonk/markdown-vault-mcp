@@ -1341,6 +1341,38 @@ class DocumentManager:
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 
+    def rewrite(self, path: str, content: str, *, if_match: str) -> None:
+        """Replace an existing note's whole text as an edit (#2031).
+
+        The write path :meth:`edit` takes, for a caller that computed the new
+        text itself: the same submodule refusal, etag check, OKF enrichment
+        (with the replaced text as ``stored``), index update and ``"edit"``
+        write callback.
+
+        Args:
+            path: Relative document path.
+            content: The note's complete new text, frontmatter included.
+            if_match: Etag of the text *content* was derived from.
+
+        Raises:
+            SubmodulePathError: If *path* lies inside a git submodule or
+                nested repository (#1564, #1949).
+            ReadOnlyError: If the vault is read-only.
+            DocumentNotFoundError: If the file does not exist.
+            ConcurrentModificationError: If the file no longer matches
+                *if_match*.
+            InvalidRequestError: If *path* escapes the source directory.
+        """
+        self._check_writable()
+        with self._file_write_lock:
+            abs_path = self._validate_path(path)
+            self._refuse_submodule(abs_path, "path", path)
+            if not is_regular_file(abs_path):
+                raise DocumentNotFoundError.note(path)
+            check_if_match(abs_path, path, if_match)
+            stored = _read_text_utf8(abs_path)
+            self._finalize_content_write(abs_path, path, content, "edit", stored=stored)
+
     def _edit_with_lines(
         self,
         file_content: str,
