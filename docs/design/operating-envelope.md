@@ -346,14 +346,17 @@ build, is not part of the product, and does not lower the earlier peak.
 
 ## After #1938: the cold build's publish
 
-A profile of the cold build on `873457e0`, per phase, found that the build
-stays bounded until the store publishes, at about 46 MiB of anonymous memory
-at deployed size and 85 MiB at growth. The peak is `publish_generation`,
-which read the whole replayed generation into memory before writing it.
+A profile of the cold build on `873457e0`, per phase, found that keyword
+indexing and embedding stay bounded: about 46 MiB of anonymous memory at
+deployed size, and at growth 110 MiB while indexing and 85 MiB while
+embedding. The peak is `publish_generation`, which read the whole replayed
+generation into memory before writing it.
 
 A streamed SQLite store now checks and writes each note as the generation is
 replayed, inside its one write transaction, and keeps only the paths it has
-seen. A refused note or a failed read rolls the whole publish back.
+seen. A refused note or a failed read rolls the whole publish back. On real builds
+at deployed size, the `chunks`, `documents` and `meta` rows are identical to
+main's (SHA-256 of the ordered rows), as is the top 10 on 25 fixed queries.
 
 Measured on 28 November 2026 on one Linux host (16 threads, 125 GiB), Python 3.14.8, with
 the stand-in provider. Main is `873457e0`; the change is the streamed
