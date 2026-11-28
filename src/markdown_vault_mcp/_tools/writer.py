@@ -1,7 +1,8 @@
 """Write-tool registrations.
 
 FastMCP 4 protocol-era behavior used by ``okf_verify`` is recorded in
-``docs/design/reference/fastmcp-4.md``.
+``docs/design/reference/fastmcp-4.md``; how Claude answers its elicitation,
+in ``docs/design/reference/claude-mcp-client.md``.
 """
 
 from __future__ import annotations

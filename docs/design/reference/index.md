@@ -34,6 +34,10 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [GitHub repository security settings](github-repository-security-settings.md) —
   private vulnerability reporting, Dependabot alerts, push protection and the
   security policy file, as `bootstrap.yml` and `SECURITY.md` rely on them.
+- [Claude as an MCP client](claude-mcp-client.md) — what Claude and Claude
+  Code expect of a server that returns tasks, elicits input, serves skills or
+  transfers files: negotiation, retention, polling, limits and where each
+  works. Read before changing `_tasks.py` or the `okf_verify` elicitation.
 - [MCP model-facing text](mcp-model-facing-text.md) — who reads each
   description field, how clients cut and index it, how FastMCP builds it from
   a docstring, and what the vendors say it should carry; the evidence behind

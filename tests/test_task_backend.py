@@ -78,6 +78,7 @@ def _neutral_docket_env(
     _preset_contract_env(request, monkeypatch)
     monkeypatch.delenv("FASTMCP_DOCKET_URL", raising=False)
     monkeypatch.delenv("FASTMCP_DOCKET_NAME", raising=False)
+    monkeypatch.delenv("FASTMCP_DOCKET_EXECUTION_TTL", raising=False)
 
 
 @dataclass
