@@ -92,7 +92,8 @@ markdown-vault-mcp (new package)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
 +-- server.py         -- template-owned skeleton; DOMAIN-WIRING calls _server_wiring.wire_domain (#901)
 +-- _instructions.py  -- contribute_instructions: domain snippets for the instructions builder (#901)
-+-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
++-- domain.py         -- Service: assembly, startup retry and single-vault MCP publication (#902, #1232)
++-- _vault_runtime.py -- private live-vault boot jobs, watcher and ordered shutdown (#1232)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
 +-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
 +-- cli.py            -- CLI entry point
@@ -1458,7 +1459,7 @@ Submitting the boot reindex whenever the startup pull moved HEAD, whatever the
 switch says, was considered in #1542 and not taken: it would change what the
 switch means. The picture is more forgiving on
 a watcher-active deployment (stdio, no git — the regime #1535 was reported
-against): `_on_file_change` (`domain.py`) calls the full incremental
+against): `_on_file_change` (`_vault_runtime.py`) calls the full incremental
 `reindex()`, not a targeted single-path update, so the first in-session
 filesystem event reconciles every change accumulated while offline, not just
 the one file that triggered it.
@@ -2348,12 +2349,22 @@ Vault(...)
 the vault (such as during maintenance or test teardown). It is a no-op if the
 loop was never started.
 
-In the MCP server, this lifecycle is orchestrated by the `Service` in
-`domain.py` (start/stop/close), which the template-owned `_server_deps.py`
-lifespan scaffold constructs and drives; the lifespan's `finally` block calls
-`Service.stop()`, which calls `close()` and then `VaultInstances.close()`
-(#902/#910, #1765). Callers using `Vault` as a Python library must call
-`close()` explicitly, then close the collaborators they passed in.
+In the MCP server, the template-owned `_server_deps.py` lifespan constructs
+and drives `domain.Service`. It retains configuration and identity assembly,
+source preflight, busy-index retry/cancellation and single-vault publication.
+After construction, it transfers the vault and collaborators to the private
+`_vault_runtime._VaultRuntime` before awaiting startup. That runtime owns boot
+sync, index/reindex/embedding jobs, the pull loop and the file watcher. On stop,
+Service cancels any pending retry and clears publication; the runtime then stops
+the watcher, calls `Vault.close()` and finally `VaultInstances.close()`
+(#902/#910, #1765, #1232). A retry that has not built a vault leaves collaborator
+cleanup with Service.
+
+Independent runtimes consume already-resolved inputs and never select the MCP
+vault or change identity policy. Configuration assembly still registers identity
+claims process-wide, so this seam does not make multiple Service assemblies
+independent. The MCP surface remains single-vault. Callers using `Vault` as a
+Python library still call `close()` explicitly, then close their collaborators.
 
 ### One-Time Transfer Links (`register_transfer_routes`)
 

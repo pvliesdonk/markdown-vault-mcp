@@ -2,9 +2,9 @@
 
 The template-owned ``_server_deps`` scaffold constructs a domain :class:`Service`
 (``start``/``stop``) and yields it to the request context. MVM's ``Service`` builds
-the :class:`~markdown_vault_mcp.vault.Vault`, submits the boot index/reindex/embeddings
-jobs, and runs the file watcher — the lifecycle that used to live inline in
-``_server_deps.make_vault_lifespan`` (#902, epic #898). ``get_vault`` / ``get_config``
+the :class:`~markdown_vault_mcp.vault.Vault` and delegates its live lifecycle to
+the private ``_VaultRuntime``. Assembly, busy-index retries and MCP publication
+remain here (#902, #1232). ``get_vault`` / ``get_config``
 resolve the running service's vault/config for ``Depends``-injected handlers, and the
 module-level singleton reaches the live Vault from HTTP routes outside DI.
 """
@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
+from markdown_vault_mcp._vault_runtime import _VaultRuntime
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
     source_dir_problem,
@@ -30,7 +31,6 @@ from markdown_vault_mcp.exceptions import ConfigurationError, StoreBusyError
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp._file_watcher import VaultFileWatcher
     from markdown_vault_mcp.config_sections._assembly import VaultInstances
     from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 
@@ -155,7 +155,7 @@ class Service:
         self._vault: Vault | None = None
         # The collaborators start() built for the vault; closed after it (#1765).
         self._instances: VaultInstances | None = None
-        self._file_watcher: VaultFileWatcher | None = None
+        self._runtime: _VaultRuntime | None = None
         # Why start() built no vault: the message every accessor raises with
         # until the operator fixes the deployment and restarts.
         self._startup_error: str | None = None
@@ -316,137 +316,14 @@ class Service:
         self, vault: Vault, settings: VaultSettings, instances: VaultInstances
     ) -> None:
         """Publish *vault*, submit the boot jobs and start the background tasks."""
-        config = self._config
+        # Adopt before the first await: stop() owns even a partially started runtime.
+        self._runtime = _VaultRuntime(
+            vault, settings, instances, self._config, self._transport
+        )
+        self._instances = None
         self._vault = vault
         set_vault_singleton(vault)
-
-        # If periodic git pull is enabled, sync before submitting the
-        # initial index build so the scan sees the latest working tree.
-        await asyncio.to_thread(vault.sync_from_remote_before_index)
-
-        # Submit the initial build jobs to the IndexWriter and yield
-        # immediately (#559). build_index_async() short-circuits in
-        # O(1) on warm restarts (existing FTS sentinel from PR #526);
-        # cold restarts submit a BuildIndex job that the writer
-        # processes asynchronously while the lifespan yields.
-        # Bucket-3 tools block on @needs_queryable until the build
-        # completes; bucket-2 tools return whatever is currently in
-        # the index per #526.
-        vault.index.build_index_async()
-        logger.info("build_index_job_submitted")
-
-        # Reconcile offline changes (#665): files added, modified, or
-        # deleted while no server was running are invisible to both the
-        # warm-restart short-circuit above (O(1), no filesystem scan) and
-        # the file watcher below (future events only).  Enqueue an
-        # incremental reindex behind the build: the writer's FIFO ordering
-        # guarantees build-before-reindex, and on a cold boot the full
-        # build has just recorded tracker state (including skipped files),
-        # so the reindex degenerates to a cheap hash scan instead of a
-        # second full parse.  While this job is pending, the writer is
-        # non-drained, so #646's out-of-band `index_stale` meta signal
-        # honestly reports True until the boot reconciliation completes.
-        # This job is now conditional on config.boot_reindex (#1535);
-        # index_stale consequently reports drained sooner without implying
-        # the index agrees with disk.
-        # The HEAD the startup sync left behind is what the boot reindex
-        # covers; recording it lets later reconciles (#1532) skip a redundant
-        # full scan and reindex only once HEAD moves past it.
-        head_at_boot = await asyncio.to_thread(vault.git_head)
-        if config.boot_reindex:
-            vault.adopt_boot_reindex(vault.index.reindex_async(), head_at_boot)
-            logger.info("boot_reindex_job_submitted")
-        else:
-            # Offline changes (files added/modified/deleted while no server
-            # was running) stay invisible to the index until an explicit
-            # reindex runs — either the `reindex` tool or the
-            # `markdown-vault-mcp reindex` CLI command.  Accepting the index
-            # at the boot HEAD keeps that trade: later pulls that move HEAD
-            # still reindex.  This records the git HEAD the index is taken
-            # to reflect; get_index_status still reports offline_changes as
-            # not reconciled, because nothing compared the index with disk.
-            vault.mark_index_reconciled(head_at_boot)
-            logger.info("boot_reindex_disabled reason=config")
-
-        if instances.embedding_provider is not None:
-            vault.index.build_embeddings_async()
-            logger.info("build_embeddings_job_submitted")
-
-        # Start any other background tasks (e.g. git pull loop).
-        vault.start()
-
-        self._start_file_watcher(vault, settings, instances)
-
-    def _start_file_watcher(
-        self, vault: Vault, settings: VaultSettings, instances: VaultInstances
-    ) -> None:
-        """Start the file watcher when no other source reports vault changes."""
-        config = self._config
-        # File watcher — only when git pull and webhook are both inactive so the
-        # watcher and git checkout don't race to trigger reindex (#558).
-        from markdown_vault_mcp._file_watcher import (
-            VaultFileWatcher,
-            should_start_file_watcher,
-        )
-        from markdown_vault_mcp._webhooks import webhook_routes_active
-        from markdown_vault_mcp.exceptions import IndexUnavailableError
-
-        # Use the *resolved* pull interval from the git assembly, not
-        # config.git.pull_interval_s: the config default is 600 even on
-        # non-git vaults, but to_vault_instances() only resolves a non-zero
-        # interval when a sync-enabled git strategy is configured.
-        git_pull_active = instances.git_pull_interval_s > 0
-
-        # Ask whether a webhook can actually deliver, not merely whether its
-        # credentials are set: under stdio no route is mounted, so standing the
-        # watcher down for it would leave no external-change detection at all
-        # (#1263). Same predicate register_webhook_routes mounts on, fed the
-        # same transport make_server was called with.
-        webhook_active = webhook_routes_active(config, self._transport)
-
-        if should_start_file_watcher(
-            config.sync.file_watcher_enabled,
-            git_pull_active,
-            webhook_active,
-        ):
-
-            def _on_file_change() -> None:
-                try:
-                    with vault.pause_writes():
-                        vault.index.reindex()
-                except IndexUnavailableError:
-                    logger.info(
-                        "file_watcher_reindex_skipped reason=index_not_queryable"
-                    )
-                except Exception:
-                    logger.error("file_watcher_reindex_failed", exc_info=True)
-
-            # Never watch the vault's own write targets: reindex() rewrites the
-            # state file on every run, and a watch on its dir would re-trigger
-            # the watcher into a self-feedback loop (#830). .git is protected
-            # too so local git-write commits don't storm reindexes.
-            internal_dirs = [config.source_dir / ".git"]
-            for extra in (
-                settings.effective_state_path(config.source_dir),
-                config.indexing.index_path,
-                settings.effective_embeddings_path(),
-            ):
-                if extra is not None:
-                    internal_dirs.append(extra.parent)
-
-            self._file_watcher = VaultFileWatcher(
-                config.source_dir,
-                _on_file_change,
-                debounce_s=config.sync.file_watcher_debounce_s,
-                exclude_patterns=config.indexing.exclude_patterns,
-                root_floor=config.sync.file_watcher_root_floor,
-                internal_dirs=internal_dirs,
-            )
-            self._file_watcher.start()
-        elif not config.sync.file_watcher_enabled:
-            logger.debug("file_watcher_disabled reason=file_watcher_false")
-        else:
-            logger.info("file_watcher_disabled reason=other_cadence_source_active")
+        await self._runtime.start()
 
     async def stop(self) -> None:
         """Stop the file watcher, close the Vault, then close the collaborators built for it."""
@@ -455,15 +332,13 @@ class Service:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._waiting
             self._waiting = None
-        if self._file_watcher is not None:
-            self._file_watcher.stop()
         # Clear the singleton before closing so any in-flight HTTP handler gets a
         # clean RuntimeError instead of touching a Vault mid-close().
         set_vault_singleton(None)
-        if self._vault is not None:
-            self._vault.close()
-        # The vault closed what it opened; its collaborators are ours (#1765).
-        # Closing the git strategy last flushes the push behind the drained commits.
+        if self._runtime is not None:
+            self._runtime.close()
+            self._runtime = None
+        # Before adoption, a busy-index wait still owns its collaborators here.
         if self._instances is not None:
             self._instances.close()
             self._instances = None

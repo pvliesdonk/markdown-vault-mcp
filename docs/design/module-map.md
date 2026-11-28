@@ -139,7 +139,8 @@ src/markdown_vault_mcp/
     server.py            -- ServerConfig: transport, host, port, auth (OIDC, bearer), stores, tool visibility, apps domain; from_env and server_config_env_suffixes (#2288)
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
     transfer.py          -- TransferConfig: TRANSFER_* link TTL default/max, grace window, lease and upload cap (#2321)
-  domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
+  domain.py            -- Service: config/identity assembly, preflight, busy-index retry and single-vault MCP publication; get_vault/get_config DI (#902, #1232)
+  _vault_runtime.py    -- _VaultRuntime: private owner of one assembled vault’s boot jobs, file watcher and ordered shutdown (#1232)
   _auth.py             -- build_auth / build_bearer_auth / OIDC remote and proxy builders / resolve_auth_mode: the six auth modes and their provider dispatch (#2277)
   _config_surface.py   -- server_config_surface / domain_env_surface / domain_env_suffixes: AST introspection of from_env reads for scripts/gen_config_surface.py (#2289)
   _connection.py       -- connection_identity: protocol revision and client name/version of the current request (#2333)
