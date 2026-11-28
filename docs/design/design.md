@@ -1063,7 +1063,7 @@ branch fires because the worker resets `_index_built=False` and
 records the captured error; the error message itself is read via
 `get_index_status` (#586).
 
-The `toc://` and `similar://` resources translate readiness reasons to fixed resource errors outside `needs_queryable`. Busy and timeout responses distinguish contention from a build in progress and advise retrying. Never-built, failed-build and broken-index responses ask for operator action before retrying. FastMCP logs the chained fault at ERROR with its traceback; exception details do not reach the client (#2256).
+The `toc://` and `similar://` resources translate readiness reasons to fixed resource errors outside `needs_queryable`. Busy and timeout responses distinguish contention from a build in progress and advise retrying. Never-built, failed-build and broken-index responses ask for operator action before retrying. FastMCP logs the readiness exception at ERROR with its traceback and any cause chained to it; a failed build supplies the captured error message, not its traceback. Exception details do not reach the client (#2256).
 
 **Runtime corruption check (issue #541, MCP-layer):** the
 `needs_queryable` decorator also wraps the handler call in a narrow

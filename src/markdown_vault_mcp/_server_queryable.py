@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Lock contention and an unfinished build can resolve without operator action.
+_TRANSIENT_INDEX = frozenset({"busy", "timeout"})
+
 
 _BUSY_ERROR_NAMES: frozenset[str] = frozenset(
     {

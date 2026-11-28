@@ -30,7 +30,7 @@ from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
-from ._server_queryable import needs_queryable
+from ._server_queryable import _TRANSIENT_INDEX, needs_queryable
 from .domain import get_vault
 
 _INDEX_MESSAGES = {
@@ -71,11 +71,8 @@ def _request_outcomes(
         try:
             return await fn(*args, **kwargs)
         except IndexUnavailableError as exc:
-            transient = exc.reason in {"busy", "timeout"}
-            message = _INDEX_MESSAGES.get(exc.reason)
-            if message is None:
-                raise
-            if transient:
+            message = _INDEX_MESSAGES[exc.reason]
+            if exc.reason in _TRANSIENT_INDEX:
                 raise ResourceError(message, log_level=logging.WARNING) from None
             raise ResourceError(message) from exc
         except InvalidRequestError as exc:
