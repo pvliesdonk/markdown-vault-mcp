@@ -25,13 +25,30 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import IndexUnavailableError, InvalidRequestError
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
-from ._server_queryable import needs_queryable
+from ._server_queryable import _TRANSIENT_INDEX, needs_queryable
 from .domain import get_vault
+
+_INDEX_MESSAGES = {
+    "busy": "The search index is busy. Retry shortly.",
+    "timeout": "The search index is still building. Retry shortly.",
+    "never_built": (
+        "The search index has not been built. "
+        "An operator should build the index before you retry."
+    ),
+    "build_failed": (
+        "The search index build failed. "
+        "An operator should check the index before you retry."
+    ),
+    "broken": (
+        "The search index could not be read. "
+        "An operator should check the index before you retry."
+    ),
+}
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -45,13 +62,19 @@ def _request_outcomes(
     A templated resource reads what the URI names; a note that does not
     exist, a field that is not indexed or a vault without embeddings is the
     request's doing (#1608, #1599). ``ResourceError`` defaults to ERROR, so
-    those are re-raised at INFO; anything else stays a fault.
+    those are re-raised at INFO. Readiness reasons get fixed messages;
+    operator faults retain their cause for FastMCP to log.
     """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> ResourceResult:
         try:
             return await fn(*args, **kwargs)
+        except IndexUnavailableError as exc:
+            message = _INDEX_MESSAGES[exc.reason]
+            if exc.reason in _TRANSIENT_INDEX:
+                raise ResourceError(message, log_level=logging.WARNING) from None
+            raise ResourceError(message) from exc
         except InvalidRequestError as exc:
             raise ResourceError(str(exc), log_level=logging.INFO) from None
 
@@ -213,8 +236,8 @@ def register_resources(mcp: FastMCP) -> None:
     @mcp.resource(
         "toc://vault/{path}", mime_type="application/json", icons=_TOOL_ICONS["read"]
     )
-    @needs_queryable()
     @_request_outcomes
+    @needs_queryable()
     async def vault_toc(
         path: str,
         vault: Vault = Depends(get_vault),
@@ -229,8 +252,8 @@ def register_resources(mcp: FastMCP) -> None:
         mime_type="application/json",
         icons=_TOOL_ICONS["get_similar"],
     )
-    @needs_queryable()
     @_request_outcomes
+    @needs_queryable()
     async def vault_similar(
         path: str,
         vault: Vault = Depends(get_vault),

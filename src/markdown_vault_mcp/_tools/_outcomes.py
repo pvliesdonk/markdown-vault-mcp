@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from fastmcp.exceptions import ToolError
 
+from markdown_vault_mcp._server_queryable import _TRANSIENT_INDEX
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -60,10 +61,6 @@ _CHANGE_THE_REQUEST = (
     DocumentExistsError,
     ReadOnlyError,
 )
-
-# The index reasons that heal themselves: lock contention, and a build that
-# was still running when the bounded wait ended.
-_TRANSIENT_INDEX = frozenset({"busy", "timeout"})
 
 
 def outcome_error(exc: Exception) -> ToolError | None:

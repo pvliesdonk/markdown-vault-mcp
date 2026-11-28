@@ -21,6 +21,8 @@ Most JSON resources here serve the same data as a tool, whose reference describe
 
 The `skill://` resources are the `vault-workflow` skill, which tells the model which vault tool to use when. A client that supports skills over MCP, such as Claude Code, lists it by name and description and loads it only when needed; to any other client the files are ordinary resources.
 
+The `toc://` and `similar://` resources wait for the search index to be ready. If it is busy or still building, the response says to retry shortly. If the index has not been built or its build failed, the response asks for operator action before retrying. An unreadable index also needs an operator to check it.
+
 Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 <!-- DOMAIN-INTRO-END -->
 

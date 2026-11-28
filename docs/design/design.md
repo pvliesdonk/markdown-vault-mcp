@@ -1055,13 +1055,15 @@ arriving at the MCP layer go through the
 default (env `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60 s).
 A failed background build surfaces to operators as
 `get_index_status` reporting
-`{"status": "failed", "error": "..."}`. MCP clients see
-`IndexUnavailableError` with `reason="build_failed"` (or
-`reason="timeout"` if the decorator's bounded wait elapsed first)
-from the decorator's `wait_until_queryable` call. The `build_failed`
+`{"status": "failed", "error": "..."}`. The decorator's
+`wait_until_queryable` call raises `IndexUnavailableError` with
+`reason="build_failed"` (or `reason="timeout"` if the bounded wait
+elapsed first). The `build_failed`
 branch fires because the worker resets `_index_built=False` and
 records the captured error; the error message itself is read via
 `get_index_status` (#586).
+
+The `toc://` and `similar://` resources translate readiness reasons to fixed resource errors outside `needs_queryable`. Busy and timeout responses distinguish contention from a build in progress and advise retrying. Never-built, failed-build and broken-index responses ask for operator action before retrying. For those operator-action cases, FastMCP logs the resource error at ERROR with the chained readiness exception and its traceback, including any cause chained to it. A failed build supplies the captured error message, not its traceback. Exception details do not reach the client (#2256).
 
 **Runtime corruption check (issue #541, MCP-layer):** the
 `needs_queryable` decorator also wraps the handler call in a narrow
