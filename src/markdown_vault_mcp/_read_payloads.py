@@ -90,7 +90,7 @@ def parse_filters(values: list[str]) -> dict[str, str]:
 
 def annotate_hits(
     results: list[dict[str, Any]],
-    annotation: Callable[[dict[str, Any]], dict[str, Any]] | None,
+    annotation: Callable[..., dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     """Attach the native OKF hit annotation when a bundle is active.
 
@@ -99,7 +99,8 @@ def annotate_hits(
 
     Args:
         results: Serialized hits, mutated in place.
-        annotation: Native annotation function, or None for an inactive bundle.
+        annotation: Native annotation function, called with the hit's
+            frontmatter and ``path=``, or None for an inactive bundle.
 
     Returns:
         Hits with native annotations; ordinary vaults remain unchanged.
@@ -108,8 +109,9 @@ def annotate_hits(
         from markdown_vault_mcp.okf import is_bundle_member_path
 
         for hit in results:
-            if is_bundle_member_path(str(hit.get("path", ""))):
-                hit["okf"] = annotation(hit.get("frontmatter") or {})
+            path = str(hit.get("path", ""))
+            if is_bundle_member_path(path):
+                hit["okf"] = annotation(hit.get("frontmatter") or {}, path=path)
     return results
 
 

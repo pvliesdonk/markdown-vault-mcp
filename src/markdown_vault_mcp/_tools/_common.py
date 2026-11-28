@@ -152,8 +152,11 @@ async def attach_okf(
     Returns:
         *data*, with the ``okf`` key added when active.
     """
-    if await okf_active(vault) and is_bundle_member_path(str(data.get("path", ""))):
-        data["okf"] = derive_annotation(metadata or {}, include_sources=include_sources)
+    path = str(data.get("path", ""))
+    if await okf_active(vault) and is_bundle_member_path(path):
+        data["okf"] = derive_annotation(
+            metadata or {}, path=path, include_sources=include_sources
+        )
     return data
 
 

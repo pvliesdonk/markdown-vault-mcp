@@ -54,8 +54,9 @@ List of result dicts ranked by file relevance. Each contains:
   metadata rather than applicability to current content),
   `freshness`, `review`, `review_applicability`, `attribution`
   (`sources` in the shape of `review`), `generation`
-  (`generated` as `{state, basis}`), and `sources_count` (when
-  the note cites sources).
+  (`generated` as `{state, basis}`), `sources_count` (when
+  the note cites sources), and, on a deprecated note,
+  `superseded_by` (its replacement's vault path, or null).
 - sections (list[dict]): Up to `chunks_per_file` best-matching
   sections, each with:
 
@@ -117,8 +118,9 @@ section= to get the full document's frontmatter),
 `modified_at` (Unix timestamp), etag (SHA-256 hex str or null).
 On an active OKF bundle, whole-document reads also carry
 an 'okf' dict (type, status, stale, `trust_tier` for recorded review
-metadata, freshness, review, `review_applicability`, recorded, and the
-note's 'sources' list when present). `review_applicability`.state is
+metadata, freshness, review, `review_applicability`, recorded, the
+note's 'sources' list when present, and on a deprecated note
+`superseded_by`: its replacement's vault path, or null). `review_applicability`.state is
 "unknown" when verified has entries or is malformed (no snapshot
 binding) and "none" when it is absent, null, empty or an empty list.
 attribution reports `sources` in the shape of review, and
@@ -607,8 +609,8 @@ Dict with the note context. Fields:
 - okf (dict, optional): OKF read annotation for this note
   (type, status, stale, `trust_tier` for recorded review metadata,
   freshness, review, `review_applicability`, attribution,
-  generation, `sources_count`). Present only when the vault is an
-  active OKF bundle.
+  generation, `sources_count`, and `superseded_by` on a deprecated
+  note). Present only when the vault is an active OKF bundle.
 
 Index freshness is reported out-of-band in the response's
 `_meta.index_stale` field: True when the IndexWriter had

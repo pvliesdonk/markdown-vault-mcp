@@ -221,7 +221,7 @@ def _context_annotations(vault: Vault, data: dict[str, Any], path: str) -> None:
     if conventions:
         data["conventions"] = conventions
     if vault.okf.state().active and is_bundle_member_path(path):
-        data["okf"] = derive_annotation(data["frontmatter"])
+        data["okf"] = derive_annotation(data["frontmatter"], path=path)
 
 
 def read_payload(
@@ -257,7 +257,9 @@ def read_payload(
         raise DocumentNotFoundError.note(path)
     data = asdict(note)
     if section is None and vault.okf.state().active and is_bundle_member_path(path):
-        data["okf"] = derive_annotation(note.frontmatter, include_sources=True)
+        data["okf"] = derive_annotation(
+            note.frontmatter, path=path, include_sources=True
+        )
     return data
 
 
