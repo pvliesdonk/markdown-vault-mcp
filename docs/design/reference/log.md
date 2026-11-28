@@ -2,6 +2,13 @@
 
 ## 2026-11-28
 
+- New: [Windows CRT byte-range locks](windows-byte-locking.md), for #1923.
+  Read the Python 3.15 `msvcrt` docs, CPython 3.14's `PC/msvcrtmodule.c`
+  and `os.open`, and Microsoft's `_locking`, text-and-binary-mode,
+  `LockFile` and `LockFileEx` pages. Builds on the page drafted in #2170,
+  without its path-identity claims, which the code no longer relies on; adds
+  the delayed release after a crash and binary mode. Three claims stay
+  `[unverified]`, and nothing was run on Windows. Next review: 2027-05-28.
 - [Open Knowledge Format v0.3](okf-v0.3.md): every rule the refute pass had
   left unchecked now has a verdict (#2402). Three are departures with bugs
   (#2452, #2454, #2455); #2453 was filed too, then closed by the account
