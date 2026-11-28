@@ -503,6 +503,37 @@ def _generation_chunks(
         yield from _chunk_rows(document.path, row_metadata(document), block)
 
 
+def _stream_generation(
+    conn: sqlite3.Connection, documents: Iterable[DocumentRows], dimension: int
+) -> int:
+    """Replace every row with *documents*, checking each as it arrives (#1938).
+
+    Holds one document's rows and the set of paths seen, never the whole
+    generation; the caller's transaction makes the result all or nothing.
+
+    Returns:
+        The number of chunk rows written.
+
+    Raises:
+        ValueError: If a path appears twice, or a row is of another
+            dimension, not finite, or its metadata cannot be stored.
+    """
+    conn.execute("DELETE FROM chunks")
+    conn.execute("DELETE FROM documents")
+    seen: set[str] = set()
+    written = 0
+    for document in documents:
+        if document.path in seen:
+            raise ValueError(f"publish_generation got {document.path} twice.")
+        seen.add(document.path)
+        vectors = row_vectors(document.rows, dimension)
+        chunks = _chunk_rows(document.path, row_metadata(document), vectors)
+        conn.execute(_UPSERT_DOCUMENT, (document.path, document.token))
+        conn.executemany(_INSERT_CHUNK, chunks)
+        written += len(chunks)
+    return written
+
+
 def _token_conflicts(
     conn: sqlite3.Connection, path: str, expected: ExpectedToken
 ) -> bool:
@@ -1135,6 +1166,9 @@ class SqliteVectorStore(ResidentStore):
     ) -> None:
         """Replace the store with *documents* under *identity* in one commit.
 
+        A streamed store writes each document as it arrives; a resident one
+        checks them all before it starts writing.
+
         Raises:
             ReadOnlyError: If the store was opened read-only.
             ValueError: If a path appears twice, or a row is of another
@@ -1145,14 +1179,13 @@ class SqliteVectorStore(ResidentStore):
                 generation stands.
             sqlite3.Error: If another write error occurs; the previous generation stands.
         """
+        if self._streamed:
+            self._publish_streamed(identity, documents)
+            return
         docs, blocks = validated_generation(identity, documents)
         with self._lock:
             snap = self._writable()
-            new = (
-                hollow_snapshot(identity, snap.generation + 1)
-                if self._streamed
-                else generation_snapshot(identity, snap.generation + 1, docs, blocks)
-            )
+            new = generation_snapshot(identity, snap.generation + 1, docs, blocks)
 
             def work(conn: sqlite3.Connection) -> PublicationOutcome:
                 conn.execute("DELETE FROM chunks")
@@ -1170,6 +1203,49 @@ class SqliteVectorStore(ResidentStore):
             self._where,
             new.generation,
             sum(len(d.rows) for d in docs),
+        )
+
+    def _publish_streamed(
+        self, identity: EmbeddingIdentity, documents: Iterable[DocumentRows]
+    ) -> None:
+        """Publish *documents* as they stream, inside the write transaction (#1938).
+
+        Each document is checked and written before the next is read, so
+        the store holds no copy of the generation; a refused document, or
+        any other error from *documents*, rolls the transaction back and
+        the previous generation stands. On a store's first write the
+        database file is created first and stays behind, holding no rows
+        and no identity: it opens as an empty store, as no file does.
+
+        Raises:
+            ReadOnlyError: If the store was opened read-only.
+            ValueError: If a path appears twice, or a row is of another
+                dimension, not finite, or its metadata cannot be stored.
+            StoreUnavailableError: If the first write cannot create the
+                database; the previous generation stands.
+            StoreCorruptError: If SQLite reports damaged pages; the previous
+                generation stands.
+            sqlite3.Error: If another write error occurs; the previous generation stands.
+        """
+        with self._lock:
+            snap = self._writable()
+            new = hollow_snapshot(identity, snap.generation + 1)
+            written = 0
+
+            def work(conn: sqlite3.Connection) -> PublicationOutcome:
+                nonlocal written
+                written = _stream_generation(conn, documents, identity.dimension)
+                _write_meta(conn, identity, new.generation)
+                return "published"
+
+            self._commit("publish_generation", work)
+            self._snap = new
+            self._truncate_wal()
+        logger.info(
+            "sqlite_vector_store_generation_published path=%s generation=%d rows=%d",
+            self._where,
+            new.generation,
+            written,
         )
 
     def checkpoint(self) -> None:

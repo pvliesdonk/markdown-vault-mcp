@@ -344,6 +344,35 @@ open-store RSS after GC was 433.96 → 433.92 MiB for NumPy, 338.85 →
 148.54 and 174.64 → 165.84 MiB respectively. It ran after the measured
 build, is not part of the product, and does not lower the earlier peak.
 
+## After #1938: the cold build's publish
+
+A profile of the cold build on `873457e0`, per phase, found that the build
+stays bounded until the store publishes, at about 46 MiB of anonymous memory
+at deployed size and 85 MiB at growth. The peak is `publish_generation`,
+which read the whole replayed generation into memory before writing it.
+
+A streamed SQLite store now checks and writes each note as the generation is
+replayed, inside its one write transaction, and keeps only the paths it has
+seen. A refused note or a failed read rolls the whole publish back.
+
+Measured on 28 November 2026 on one Linux host (16 threads, 125 GiB), Python 3.14.8, with
+the stand-in provider. Main is `873457e0`; the change is the streamed
+publish alone. Main and the change alternated, three runs each at deployed
+size and one each at growth. Figures are whole-process peak resident memory
+(`VmHWM`) in MiB, from the per-phase profiler; the envelope harness's
+`--size deployed` build agrees (peak resident 291.2 → 78.5 MiB).
+
+| SQLite, streamed | Deployed (22,764 rows) | Growth (227,640 rows) |
+|---|---|---|
+| Peak, main | 292–293 MiB | 2,267 MiB |
+| Peak, streamed publish | 79 MiB | 137 MiB |
+| Time to index and embed, main | 6.4–6.7 s | 74.3 s |
+| Time to index and embed, streamed publish | 6.3–6.7 s | 64.7 s |
+
+At growth the streamed build's anonymous memory now peaks during keyword
+indexing (110 MiB), not in the publish. The resident stores, numpy and
+resident SQLite, still hold copies of the generation while they publish.
+
 ## What follows
 
 - **#1900** chose the SQLite store, searched streamed, as the default, and
@@ -357,4 +386,5 @@ build, is not part of the product, and does not lower the earlier peak.
   ([above](#after-1936-the-numpy-stores-memory)). **#1937** explained the
   PostgreSQL restart and removed its per-note reads
   ([above](#after-1937-the-postgresql-restart)). **#1938** follows up the
-  cold-build peak.
+  cold-build peak; the streamed SQLite publish no longer holds the
+  generation ([above](#after-1938-the-cold-builds-publish)).
