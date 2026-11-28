@@ -13,10 +13,10 @@ import contextlib
 import logging
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from markdown_vault_mcp.types import EditResult, WriteResult
 
@@ -45,6 +45,7 @@ from markdown_vault_mcp.exceptions import (
     FolderMoveInterruptedError,
     InvalidRequestError,
 )
+from markdown_vault_mcp.managers.text_replace import ReplaceRequest, StalePlanError
 from markdown_vault_mcp.okf import (
     _HUMAN_ACTOR_PREFIX,
     append_okf_verification,
@@ -68,6 +69,8 @@ from ..domain import get_config, get_vault
 from ._common import attach_conventions, attach_remote_health
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 
 @contextlib.contextmanager
@@ -283,6 +286,42 @@ def _write_payload(
     if not link_report:
         data.pop("unresolved_links", None)
     return data
+
+
+async def _replace_call(fn: Callable[..., _T], *args: Any) -> _T:
+    """Run a text-replacement call off the event loop, naming the tool in refusals.
+
+    The library's refusals say what to change; this adds the call to make next,
+    which only the tool knows. A missing note or folder keeps the library's
+    own message, which already names the tool that finds the path.
+
+    Args:
+        fn: ``WriterFacet.preview_replace`` or ``WriterFacet.apply_replace``.
+        *args: Its arguments.
+
+    Returns:
+        Whatever *fn* returns.
+
+    Raises:
+        ToolError: The plan is stale, or the request must change.
+    """
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except StalePlanError as exc:
+        raise ToolError(
+            "The plan no longer matches the notes: one changed since the dry run, "
+            "or the arguments differ from it, so nothing was written and "
+            "resending this call fails again. Call replace_text with the same "
+            "arguments and dry_run=true for a new plan, review it, and pass that.",
+            log_level=logging.INFO,
+        ) from exc
+    except DocumentNotFoundError:
+        raise
+    except InvalidRequestError as exc:
+        raise ToolError(
+            f"{exc} Then call replace_text again with dry_run=true.",
+            log_level=logging.INFO,
+        ) from exc
 
 
 def register(mcp: FastMCP) -> None:
@@ -784,6 +823,89 @@ def register(mcp: FastMCP) -> None:
                     "then tell the user."
                 ) from exc
         return attach_remote_health(vault, asdict(result))
+
+    @mcp.tool(
+        tags={"write"},
+        icons=_TOOL_ICONS["replace_text"],
+        annotations={
+            "title": "Replace Text Across Notes",
+            "read_only_hint": False,
+            # An apply rewrites many notes in one call; a dry run writes nothing.
+            "destructive_hint": True,
+            "idempotent_hint": False,
+        },
+    )
+    @tool_boundary
+    @library_outcomes
+    async def replace_text(
+        pattern: str,
+        replacement: str = "",
+        paths: list[str] | None = None,
+        folders: list[str] | None = None,
+        regex: bool = False,
+        dry_run: bool = True,
+        plan: str | None = None,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Replace every match of one text or regular expression in the bodies of many
+        notes; returns a preview with per-note diffs, or each note's outcome.
+
+        Use edit for one change in one note. Frontmatter is never matched. A call
+        with dry_run true returns a plan; the same arguments with dry_run false and
+        that plan write it.
+
+        Args:
+            pattern: Exact text to find, or a Python regular expression when regex is
+                true.
+            replacement: Text each match becomes; with regex, `\\1` and `\\g<name>`
+                insert capture groups.
+            paths: Notes to cover, by path.
+            folders: Folders whose notes are all covered, recursively; `""` is the
+                whole vault. Paths with a part starting with `.` are left out.
+            regex: Treat pattern as a regular expression.
+            dry_run: True previews and writes nothing; false writes the plan.
+            plan: The plan the dry run returned; needed when dry_run is false.
+
+        Returns:
+            A dry run returns dry_run (true), plan (str), replacements (int),
+            scanned (int), notes (list of {path, replacements, diff,
+            diff_truncated}; diff is null after the first 10 notes) and
+            refused (list of {path, reason}: notes it will not write).
+
+            A write returns dry_run (false), plan (str), the applied, skipped
+            and refused counts (int), and notes (list of {path, status,
+            reason}). Status is `applied`, `skipped` (the note changed just
+            before its write, so it was left as it is) or `refused`. While
+            the vault's git clone cannot reach its remote, `remote` (dict) is
+            present too, and the change is committed locally only.
+
+        Raises:
+            ValueError: If the request is malformed or past a fixed bound, or
+                a path is not a note inside the vault.
+            DocumentNotFoundError: If a named note or folder does not exist.
+            ToolError: If dry_run is false without a plan, or the notes no
+                longer give the plan; nothing is written.
+        """
+        request = ReplaceRequest(
+            pattern=pattern,
+            replacement=replacement,
+            paths=tuple(paths or ()),
+            folders=tuple(folders or ()),
+            regex=regex,
+        )
+        if dry_run:
+            preview = await _replace_call(vault.writer.preview_replace, request)
+            return {"dry_run": True, **asdict(preview)}
+        if not plan:
+            raise ToolError(
+                "replace_text with dry_run=false needs plan. Call replace_text "
+                "with the same arguments and dry_run=true, show the user the "
+                "diffs, then pass the plan it returns.",
+                log_level=logging.INFO,
+            )
+        with write_identity_scope():
+            result = await _replace_call(vault.writer.apply_replace, request, plan)
+        return attach_remote_health(vault, {"dry_run": False, **asdict(result)})
 
     @mcp.tool(
         tags={"write"},

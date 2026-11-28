@@ -32,6 +32,7 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "write",
     "edit",
     "append",
+    "replace_text",
     "delete",
     "rename",
     "move_folder",

@@ -45,6 +45,7 @@ _DRIVEN = (
     "delete",
     "rename",
     "move_folder",
+    "replace_text",
 )
 
 #: Write tools that carry the key but are not driven here: ``fetch`` needs a
@@ -152,6 +153,11 @@ class TestUnsyncedCloneIsReported:
                 "new_path": "folder/renamed.md",
             },
             "move_folder": {"old_dir": "folder", "new_dir": "moved"},
+            "replace_text": {
+                "pattern": "body",
+                "replacement": "replaced",
+                "paths": ["folder/subject.md"],
+            },
         }
 
         server = make_server()
@@ -161,6 +167,12 @@ class TestUnsyncedCloneIsReported:
                 await client.call_tool("read", {"path": "folder/subject.md"})
             )
             arguments["write"]["if_match"] = current["etag"]
+            if tool_name == "replace_text":
+                dry_run = await client.call_tool(tool_name, arguments[tool_name])
+                arguments[tool_name] |= {
+                    "dry_run": False,
+                    "plan": _parse_tool_data(dry_run)["plan"],
+                }
             result = await client.call_tool(tool_name, arguments[tool_name])
 
         payload = _parse_tool_data(result)

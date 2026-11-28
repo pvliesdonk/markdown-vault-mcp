@@ -53,6 +53,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Writer | [`delete`](writer.md#delete) | Delete Note | Permanently delete a note or attachment; only git history can bring it back. |
 | Writer | [`rename`](writer.md#rename) | Rename Note | Rename or move a note or attachment; with `update_links`, links to it in other notes follow it. |
 | Writer | [`move_folder`](writer.md#move_folder) | Move Folder | Move a folder and everything under it to a new location, rewriting every link into it across the vault: rename for a whole folder. |
+| Writer | [`replace_text`](writer.md#replace_text) | Replace Text Across Notes | Replace every match of one text or regular expression in the bodies of many notes; returns a preview with per-note diffs, or each note's outcome. |
 | Writer | [`fetch`](writer.md#fetch) | Fetch to Vault | Download a URL on the server and save it in the vault as a note or attachment; returns its path, size and `final_url`. |
 | Writer | [`okf_convert_links`](writer.md#okf_convert_links) | OKF: Convert Wikilinks | Rewrite wikilinks as bundle-root-absolute Markdown links, the Open Knowledge Format's recommended style; returns counts of links converted and skipped. |
 | Writer | [`okf_generate_index`](writer.md#okf_generate_index) | OKF: Generate index.md | Write a folder's Open Knowledge Format index.md: a link to each note directly in it with its description, and one to each subfolder's index.md, replacing the old listing and keeping its frontmatter. |
