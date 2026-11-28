@@ -148,16 +148,16 @@ vars:
   - name: "FASTMCP_DOCKET_REDELIVERY_TIMEOUT"
     provenance: external
     type_name: "str"
-    default: "300"
-    help: "Seconds before a task claimed by a worker that never finished is redelivered to another."
+    default: "PT5M"
+    help: "How long a task claimed by a worker that never finished waits before it is redelivered to another, as an ISO 8601 duration."
     tags: [tasks]
     wizard: {control: none}
 
   - name: "FASTMCP_DOCKET_RECONNECTION_DELAY"
     provenance: external
     type_name: "str"
-    default: "5"
-    help: "Seconds to wait before reconnecting after the queue connection drops."
+    default: "PT5S"
+    help: "How long to wait before reconnecting after the queue connection drops, as an ISO 8601 duration."
     tags: [tasks]
     wizard: {control: none}
 
@@ -172,8 +172,8 @@ vars:
   - name: "FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL"
     provenance: external
     type_name: "str"
-    default: "0.05"
-    help: "Seconds between queue polls; lower cuts latency and raises idle load."
+    default: "PT0.05S"
+    help: "Time between queue polls, as an ISO 8601 duration; lower cuts latency and raises idle load."
     tags: [tasks]
     wizard: {control: none}
 
