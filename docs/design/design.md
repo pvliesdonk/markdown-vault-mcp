@@ -2452,8 +2452,7 @@ The rest of an upload the uploader must change answers 4xx too (#1696), so a
 client's mistake never reads as a server fault: a note body that is not UTF-8
 is **415 Unsupported Media Type** (RFC 9110 §15.5.16 covers a format problem
 found "as a result of inspecting the data directly"), and an
-`InvalidRequestError` from the write path, such as a frontmatter block the OKF
-enforced-write layer cannot parse, is **422 Unprocessable Content**. pvl-core's
+`InvalidRequestError` from the write path is **422 Unprocessable Content**. pvl-core's
 route logs only the status and class, so the sink logs the reason itself
 (`transfer_upload_refused`, INFO).
 The route releases the token reservation on these errors without extending its

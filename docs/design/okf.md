@@ -617,9 +617,16 @@ A reserved-file change never triggering its own regeneration: #1414.
 Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`; shipped behaviour, which the north star
-  changes: only concepts are stamped, a supplied `generated.by` is kept, supplied reviews survive only as history, and the default actor is the
-  MCP client, then the tool actor, never `human:<subject>`; #2459): writes through `write`/`edit` set/update
-  `generated: {by, at}`, `at` the UTC instant of the write in the spec's
+  changes: a supplied `generated.by` is kept, supplied reviews survive only as history, and the default actor is the
+  MCP client, then the tool actor, never `human:<subject>`; #2459): writes through `write`/`edit` of a
+  concept set/update `generated: {by, at}`. The stamp is for concepts
+  (north star, #2486): a non-reserved `.md` file whose written frontmatter
+  has a non-empty `type` (OKF 0.3 §3.2), read from the content and the
+  reserved names only, never from a folder or another file name. Every other
+  file is written as given: no `generated`, no new frontmatter. That covers a
+  folder `index.md` and every `log.md` (§8, §9: no frontmatter), a typeless
+  `README.md` or `SKILL.md`, and a block that does not parse, which used to be
+  refused (#1454) and now lands as given. The stamp writes `generated.at` as the UTC instant of the write, in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
   the token's usable `sub` when the principal is human (`human:<subject>`), else
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated.by`
@@ -661,16 +668,13 @@ Tool tags following switches: #1412.
   serializer boundary is
   recorded in [Python frontmatter serialization](reference/python-frontmatter-pyyaml.md).
 
-  A stamp is written *into* the note's frontmatter, so content whose block
-  no parser can read leaves nothing to stamp and the write is **refused**
-  (#1454). Writing it unstamped was the alternative and is worse: the layer's
-  whole claim is that every write it passes carries current provenance, and a
-  silent exception to that is the kind an operator finds months later. The
-  refusal is raised where the path is known (`_finalize_content_write`) as the
-  `ValueError` this layer uses for every other rejected write, so a caller is
-  told which note and why rather than being handed the parser's own exception.
-  With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
-  indexer records the file as a `parse_error` skip (#1408).
+  Content whose block no parser can read has no readable `type`, so it is
+  not a concept and lands unstamped, as it does with `OKF_WRITE` off; the
+  indexer records it as a `parse_error` skip (#1408) and the audit reports
+  it as `unparseable_frontmatter`. This reverses #1454's refusal, whose
+  reason was that "every write it passes carries current provenance". The
+  adopted north star narrows that claim to concepts ("Any other file is
+  written as given", #2486).
 - **Verification kept as history** (`OKF_WRITE`): a content write leaves
   `verified` as it was. OKF 0.3 §5.3: "Earlier events stay in the file as
   history." The write moves `generated.at`, and a reader counts only the

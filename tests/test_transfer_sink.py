@@ -27,6 +27,7 @@ from markdown_vault_mcp._transfer_contract import (
 from markdown_vault_mcp._transfer_sink import VaultTransferSink
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
@@ -286,24 +287,22 @@ async def test_write_note_invalid_utf8_is_415(
 
 
 async def test_write_note_refused_by_vault_is_422(
-    config: ProjectConfig, source_dir: Path
+    sink: VaultTransferSink,
+    vault: Vault,
+    source_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (source_dir / "index.md").write_text(
-        "---\nokf_version: '0.2'\n---\n# Bundle\n", encoding="utf-8"
-    )
-    config = replace(config, okf_mode="on", okf_write=True)
-    vault = Vault(
-        source_dir=config.source_dir,
-        settings=VaultSettings.from_project_config(config),
-    )
-    try:
-        sink = VaultTransferSink(config, vault_provider=lambda: vault)
-        with pytest.raises(TransferSinkError) as exc:
-            await sink.write("broken.md", b"---\ntitle: [unclosed\n---\n# x\n")
-        assert exc.value.status_code == 422
-        assert not (source_dir / "broken.md").exists()
-    finally:
-        vault.close()
+    # A body the vault refuses as the uploader's own fault is 422, not 500
+    # (#1696). Which refusal does not matter here, so the vault's is stubbed.
+    def _refuse(path: str, _content: str) -> None:
+        raise InvalidRequestError(f"refused {path}")
+
+    monkeypatch.setattr(vault.writer, "write", _refuse)
+    with pytest.raises(TransferSinkError) as exc:
+        await sink.write("broken.md", b"# x\n")
+    assert exc.value.status_code == 422
+    assert "refused broken.md" in str(exc.value)
+    assert not (source_dir / "broken.md").exists()
 
 
 async def test_write_vault_unavailable_raises_503(config: ProjectConfig) -> None:

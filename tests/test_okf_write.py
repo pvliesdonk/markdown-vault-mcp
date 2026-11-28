@@ -35,7 +35,6 @@ from markdown_vault_mcp._okf_write import (
     resolve_human_subject,
     tool_actor,
 )
-from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.okf import (
     OkfDetector,
@@ -366,6 +365,10 @@ def _inactive_detector(tmp_path: Path) -> OkfDetector:
     return OkfDetector(tmp_path, mode="auto")
 
 
+#: The smallest concept: a non-reserved ``.md`` file with a ``type`` (§3.2).
+_CONCEPT = "---\ntype: Note\n---\n# N\n"
+
+
 class TestBuildOkfWriteEnrich:
     def test_returns_none_when_disabled(self, tmp_path: Path) -> None:
         assert (
@@ -380,7 +383,7 @@ class TestBuildOkfWriteEnrich:
             okf_write=True, detector=_active_detector(tmp_path), version="9.9"
         )
         assert enrich is not None
-        meta = fm.loads(enrich("# N\n", "write")).metadata
+        meta = fm.loads(enrich(_CONCEPT, "write", path="n.md")).metadata
         # No request intent bound → default tool actor.
         assert meta["generated"]["by"] == "markdown-vault-mcp/9.9"
 
@@ -389,15 +392,15 @@ class TestBuildOkfWriteEnrich:
             okf_write=True, detector=_active_detector(tmp_path), version="1"
         )
         assert enrich is not None
-        assert enrich("# N\n", "delete") == "# N\n"
-        assert enrich("# N\n", "rename") == "# N\n"
+        assert enrich(_CONCEPT, "delete", path="n.md") == _CONCEPT
+        assert enrich(_CONCEPT, "rename", path="n.md") == _CONCEPT
 
     def test_noop_when_inactive(self, tmp_path: Path) -> None:
         enrich = build_okf_write_enrich(
             okf_write=True, detector=_inactive_detector(tmp_path), version="1"
         )
         assert enrich is not None
-        assert enrich("# N\n", "write") == "# N\n"
+        assert enrich(_CONCEPT, "write", path="n.md") == _CONCEPT
 
     def test_suppress_intent_makes_it_a_noop(self, tmp_path: Path) -> None:
         enrich = build_okf_write_enrich(
@@ -405,7 +408,7 @@ class TestBuildOkfWriteEnrich:
         )
         assert enrich is not None
         with okf_write_suppressed():
-            assert enrich("# N\n", "write") == "# N\n"
+            assert enrich(_CONCEPT, "write", path="n.md") == _CONCEPT
 
     def test_bound_intent_actor_is_used(self, tmp_path: Path) -> None:
         enrich = build_okf_write_enrich(
@@ -413,8 +416,43 @@ class TestBuildOkfWriteEnrich:
         )
         assert enrich is not None
         with okf_write_intent(OkfWriteIntent(actor="human:peter")):
-            meta = fm.loads(enrich("# N\n", "write")).metadata
+            meta = fm.loads(enrich(_CONCEPT, "write", path="n.md")).metadata
         assert meta["generated"]["by"] == "human:peter"
+
+    @pytest.mark.parametrize(
+        ("path", "text"),
+        [
+            ("log.md", "# Log\n\n## 2026-11-28\n* entry\n"),
+            ("sub/index.md", "---\ntype: Note\n---\n# Index\n"),
+            ("index.md", "---\nokf_version: '0.3'\ntype: Note\n---\n# Root\n"),
+            ("notes/readme.md", "# Readme\n"),
+            ("skill/SKILL.md", "---\nname: s\ndescription: d\n---\n# S\n"),
+            ("n.md", "---\ntype: ''\n---\n# N\n"),
+            ("n.md", "---\ntype: '  '\n---\n# N\n"),
+            ("n.md", "---\ntype:\n---\n# N\n"),
+            ("n.md", "---\ntitle: [unclosed\n---\n# N\n"),
+            ("n.txt", _CONCEPT),
+        ],
+    )
+    def test_a_file_that_is_not_a_concept_lands_as_given(
+        self, tmp_path: Path, path: str, text: str
+    ) -> None:
+        # The stamp is for concepts: a non-reserved .md file whose written
+        # frontmatter has a non-empty type (OKF 0.3 §3.2, #2486).
+        enrich = build_okf_write_enrich(
+            okf_write=True, detector=_active_detector(tmp_path), version="1"
+        )
+        assert enrich is not None
+        assert enrich(text, "write", path=path) == text
+        assert enrich(text, "edit", path=path, stored=text) == text
+
+    def test_a_write_that_gives_a_file_a_type_is_stamped(self, tmp_path: Path) -> None:
+        enrich = build_okf_write_enrich(
+            okf_write=True, detector=_active_detector(tmp_path), version="1"
+        )
+        assert enrich is not None
+        out = enrich(_CONCEPT, "edit", path="readme.md", stored="# Readme\n")
+        assert "generated" in fm.loads(out).metadata
 
 
 class TestIntentContextvar:
@@ -490,6 +528,7 @@ _ROOT_INDEX = '---\nokf_version: "0.2"\ntitle: Root\n---\n# Root\n'
 
 _VERIFIED_NOTE = (
     "---\n"
+    "type: Playbook\n"
     "title: Playbook\n"
     "verified:\n"
     "  - by: human:peter\n"
@@ -531,7 +570,9 @@ class TestContentWriteMatrix:
         )
         enforced_vault.index.build_index()
         # The written text drops `verified`; the stored history survives.
-        enforced_vault.writer.write("note.md", "---\ntitle: Playbook\n---\n# New\n")
+        enforced_vault.writer.write(
+            "note.md", "---\ntype: Playbook\ntitle: Playbook\n---\n# New\n"
+        )
         wait_for_writer_drain(enforced_vault)
         meta = _meta(enforced_vault, "note.md")
         assert meta["verified"] == _KEPT_VERIFIED
@@ -644,51 +685,41 @@ class TestContentWriteMatrix:
         assert meta["generated"] == {"by": "process:enrich"}
 
 
-class TestUnparseableFrontmatterRefusal:
-    """#1454: the refusal is right; it has to say so in the caller's terms."""
+class TestUnparseableFrontmatterLandsAsGiven:
+    """A block that does not parse makes no concept, so it is not stamped.
+
+    The stamp is for concepts (#2486); #1454's refusal, "nowhere to record
+    the provenance", no longer applies to a file that gets none.
+    """
 
     MALFORMED_JSON = "{\n  not json,\n}\n# body\n"
 
-    def test_write_is_refused_with_the_path_and_the_reason(
+    @pytest.mark.parametrize(
+        "content", [MALFORMED_JSON, "---\ntitle: [unclosed\n---\n# b\n"]
+    )
+    def test_write_lands_byte_for_byte(
+        self, enforced_vault: Vault, content: str
+    ) -> None:
+        enforced_vault.writer.write("bad.md", content)
+        wait_for_writer_drain(enforced_vault)
+        on_disk = (enforced_vault.source_dir / "bad.md").read_text(encoding="utf-8")
+        assert on_disk == content
+
+    def test_edit_of_a_malformed_note_lands_unstamped(
         self, enforced_vault: Vault
     ) -> None:
-        # The stamp cannot be applied to a block that does not parse, so the
-        # write is refused — but it used to surface the parser's own exception,
-        # naming no path and reading like a server fault.
-        # The frontmatter is the caller's own content, so the caller must
-        # change the request (#1608).
-        with pytest.raises(InvalidRequestError, match=r"bad\.md") as excinfo:
-            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
-        assert "frontmatter" in str(excinfo.value)
-
-    def test_the_refused_write_leaves_no_file(self, enforced_vault: Vault) -> None:
-        with pytest.raises(ValueError):
-            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
-        assert not (enforced_vault.source_dir / "bad.md").exists()
-
-    def test_malformed_yaml_is_refused_the_same_way(
-        self, enforced_vault: Vault
-    ) -> None:
-        # The dialect is not what the refusal is about (#1408).
-        with pytest.raises(InvalidRequestError, match=r"bad\.md"):
-            enforced_vault.writer.write("bad.md", "---\ntitle: [unclosed\n---\n# b\n")
-
-    def test_editing_an_already_malformed_note_names_the_operation(
-        self, enforced_vault: Vault
-    ) -> None:
-        # `edit` matches on raw text, so it reaches the stamp with a block that
-        # never parsed — the refusal has to read for that operation too.
         (enforced_vault.source_dir / "bad.md").write_text(
             self.MALFORMED_JSON, encoding="utf-8"
         )
-        # The stored note's block is at fault here, not the caller's edit, so
-        # this stays a plain ValueError: a server fault by the design (#1608).
-        with pytest.raises(ValueError, match=r"Cannot edit bad\.md") as excinfo:
-            enforced_vault.writer.edit("bad.md", old_text="# body", new_text="# other")
-        assert not isinstance(excinfo.value, InvalidRequestError)
+        enforced_vault.writer.edit("bad.md", old_text="# body", new_text="# other")
+        wait_for_writer_drain(enforced_vault)
+        on_disk = (enforced_vault.source_dir / "bad.md").read_text(encoding="utf-8")
+        assert on_disk == self.MALFORMED_JSON.replace("# body", "# other")
 
-    def test_a_parseable_note_still_stamps(self, enforced_vault: Vault) -> None:
-        enforced_vault.writer.write("ok.md", '{\n"title": "T"\n}\n# T\n')
+    def test_a_parseable_concept_still_stamps(self, enforced_vault: Vault) -> None:
+        enforced_vault.writer.write(
+            "ok.md", '{\n"title": "T", "type": "Note"\n}\n# T\n'
+        )
         wait_for_writer_drain(enforced_vault)
         assert _meta(enforced_vault, "ok.md")["generated"]["by"].startswith(
             "markdown-vault-mcp/"
@@ -808,7 +839,8 @@ class TestWriteToolThreadsActor:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             await client.call_tool(
-                "write", {"path": "note.md", "content": "# N\n\nBody.\n"}
+                "write",
+                {"path": "note.md", "content": "---\ntype: Note\n---\n# N\n"},
             )
             await wait_for_mcp_writer_drain(client)
         meta = fm.loads((enforced_env / "note.md").read_text(encoding="utf-8")).metadata
@@ -839,28 +871,18 @@ class TestWriteToolThreadsActor:
 
 
 @pytest.mark.usefixtures("enforced_env")
-class TestUnparseableFrontmatterRefusalTool:
-    """The refusal as an MCP client reads it (#1454)."""
+class TestUnparseableFrontmatterTool:
+    """An MCP write of a block that does not parse lands as given (#2486)."""
 
-    async def test_unparseable_frontmatter_is_refused_in_the_client_s_terms(
+    async def test_unparseable_frontmatter_lands_unstamped(
         self, enforced_env: Path
     ) -> None:
-        """The client is told what it did wrong, not what the parser hit.
-
-        The enricher's own exception reached the client as
-        ``Expecting property name enclosed in double quotes`` — no path, no
-        cause, and logged server-side as an unexpected tool failure (#1454).
-        """
+        content = "{\n  not json,\n}\n# b\n"
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError) as excinfo:
-                await client.call_tool(
-                    "write", {"path": "bad.md", "content": "{\n  not json,\n}\n# b\n"}
-                )
-        message = str(excinfo.value)
-        assert "bad.md" in message
-        assert "frontmatter" in message
-        assert not (enforced_env / "bad.md").exists()
+            await client.call_tool("write", {"path": "bad.md", "content": content})
+            await wait_for_mcp_writer_drain(client)
+        assert (enforced_env / "bad.md").read_text(encoding="utf-8") == content
 
 
 @pytest.mark.usefixtures("enforced_env")
@@ -885,7 +907,7 @@ class TestFetchThreadsActor:
             "markdown_vault_mcp._tools.writer.fetch_url",
             AsyncMock(
                 return_value=FetchResult(
-                    body=b"# Fetched\n\nBody.\n",
+                    body=b"---\ntype: Report\n---\n# Fetched\n\nBody.\n",
                     content_type="text/plain",
                     final_url="https://example.com/report.md",
                 )
@@ -1170,7 +1192,8 @@ class TestServiceTokenOkf:
     async def test_write_uses_tool_provenance(self, enforced_env: Path) -> None:
         async with Client(make_server()) as client:
             await client.call_tool(
-                "write", {"path": "service.md", "content": "# Service\n"}
+                "write",
+                {"path": "service.md", "content": "---\ntype: Note\n---\n# S\n"},
             )
             await wait_for_mcp_writer_drain(client)
         meta = fm.loads(

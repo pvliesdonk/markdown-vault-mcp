@@ -506,10 +506,10 @@ def test_server_generated_stamp_reads_back_recorded(
     assert enrich is not None
     note = "---\ntype: Concept\nsources: [{id: a, resource: https://a}]\n---\nBody\n"
     if intent_actor is None:
-        text = enrich(note, "write")
+        text = enrich(note, "write", path="note.md")
     else:
         with okf_write_intent(OkfWriteIntent(actor=intent_actor)):
-            text = enrich(note, "write")
+            text = enrich(note, "write", path="note.md")
     metadata = frontmatter.loads(text).metadata
     assert metadata["generated"]["by"] == expected_by
     annotation = derive_annotation(metadata, now=NOW)
