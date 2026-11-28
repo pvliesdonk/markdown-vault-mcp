@@ -2112,7 +2112,12 @@ the spec itself says, dated and sourced, in
   `okf_active` / `okf_declared_version`. When read-only and `OKF_WRITE` are
   both enabled, startup logs INFO `okf_write_inert` (#1434). The default
   server instructions gain an OKF guidance sentence whenever the mode permits
-  detection (same pre-clone rationale as the conventions sentence).
+  detection (same pre-clone rationale as the conventions sentence). When
+  `stats` reports a bundle, the guidance directs the model to consider
+  lifecycle status, freshness, recorded review claims and review
+  applicability separately, and to treat missing reviews as gaps in review
+  evidence. Clients that cache the server instructions must reconnect to
+  refresh them.
 - **Indexed-field extension**: when detection is active at `Vault`
   construction, the OKF scalar keys (`type`, `status`, `stale_after`)
   join the effective `indexed_frontmatter_fields` set — feeding

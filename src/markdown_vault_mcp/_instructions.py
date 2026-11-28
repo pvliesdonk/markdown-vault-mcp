@@ -193,8 +193,9 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
         )
         snippets.append(
             Snippet(
-                "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
-                "deprecated, stale and unverified ones count for less. "
+                "When 'stats' reports an OKF bundle, consider lifecycle status, "
+                "freshness, recorded review claims, and review applicability separately. "
+                "Treat missing reviews as gaps in review evidence. "
                 # Terse on purpose: the generated instructions stay under
                 # the builder's 1,536-unit generated target, and an
                 # agent-authored literal space is exactly the defect #1494
