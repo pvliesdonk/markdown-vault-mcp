@@ -144,8 +144,26 @@ it describes.
 
 `derived` — Batched provider requests ([#1496][1496]) and the embedding cost of
 generated OKF files ([#1498][1498]) come from the same measurement run. They sit
-under #1499 with no package: the "Done when" does not need them, and #1498 first
-needs a decision on whether reserved files need search by meaning at all.
+under #1499 because the "Done when" does not need them. #1496 is in `026`.
+#1498 has no package: it first needs a decision on whether reserved files need
+search by meaning at all.
+
+`stated` — On writers to one PostgreSQL store: "Eventually we might want to go
+to many writers strict. We start with single writer, but be prepared" (owner,
+17–18 October 2026, in the [#1504][1504] design,
+[#1813](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1813)).
+
+`evidenced` — Every built-in store and the keyword index enforce one writer,
+except on Windows, which takes no lock ([#1923][1923]): the file stores by
+`flock` (`stores/_writer_lock.py`), PostgreSQL by an advisory lease and the
+keyword index by its own lock (decisions 34 and 36 in [design.md](design.md)).
+Two write paths depend on it: the bulk re-token
+(`indexing/embedding_reconciler.py`) and whole-generation publication.
+
+`derived` — Many writers to one store ([#1812][1812]) sits under #1499 with
+no package. It needs an orderable source revision, which the [#1508][1508]
+contract's equality-only token does not provide, so it waits on the storage
+north star ([#2538][2538]).
 
 ### First-class library
 
@@ -239,7 +257,8 @@ system have direction paragraphs here but no governing document. [Refinement #24
 which subsystems need one, in what order, and how the rule is enforced. Each
 candidate gets a review first: OKF ([#2459][2459], which reopens the existing
 one), git integration ([#2462][2462], which led to the version-control north
-star), storage and search ([#2463][2463]), the
+star), storage and search ([#2463][2463], which led to
+[#2538][2538], writing its north star), the
 library and its public surface ([#2464][2464]), the release system
 ([#2465][2465], whose vision document was never adopted), vault views
 ([#2466][2466]) and the documentation system ([#2467][2467]).
@@ -775,7 +794,8 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
   epic [#2460][2460], refinement [#2461][2461], the OKF north star's
   reopening [#2459][2459], the three features that carry the rule
   ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
-  for the other subsystems ([#2462][2462] to [#2467][2467]). Docs and process, which cut no release on their own,
+  for the other subsystems ([#2462][2462] to [#2467][2467]), and writing the
+  storage north star that followed ([#2538][2538]). Docs and process, which cut no release on their own,
   like `010 template-detach`: the reopening's code departures went to the OKF
   packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
@@ -1532,6 +1552,40 @@ contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
 scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
+### 28 November 2026 — storage and search will get a north star
+
+`stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
+with what we are already doing." On the spike's questions, the owner chose
+"VC line + search policy (Recommended)" for the scope and "Finish spikes
+first" for the timing (owner, 28 November 2026).
+
+`evidenced` — The spike's three reports and synthesis are on [#2463][2463].
+They find that the keyword index and the embeddings are one system in code:
+- the embedding model is part of the keyword index's provenance
+  (`indexing/coordinator.py`, the chunking-provenance check);
+- vectors are built from its chunks (`indexing/embedding_reconciler.py` reads
+  `list_chunks`);
+- one writer thread serves both (`indexing/index_writer.py`).
+
+Yet the two were decided apart: storage as epic [#1499][1499], and keyword
+indexing and ranking one issue at a time.
+
+`derived` — The storage north star, written under [#2538][2538], is to record
+the road v6.0.0 took instead of choosing a new one. Its scope is the line the
+version-control north star draws, plus the search-policy layer above the
+stores:
+- the working tree as content store;
+- the keyword and vector stores;
+- the source contract;
+- the content side of [#1474][1474].
+
+History stays with version control. As the owner chose, it is drafted after
+the remaining spikes ([#2464][2464] to [#2467][2467]) have reported; the
+library spike overlaps its question of which storage protocols are a supported
+extension surface. The spike also corrected this index: [#1496][1496] is in
+`026`, not unpackaged, and [#1938][1938] is in `026` too, not `023` as the
+17 November entry left it.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1755,6 +1809,8 @@ do 2517").
 [2461]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2461
 [2462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462
 [2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
+[2538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538
+[1812]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1812
 [2464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464
 [2465]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465
 [2466]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466
