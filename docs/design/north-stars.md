@@ -46,19 +46,30 @@ going and `design.md` says what is built today.
 
 ## Not yet governed
 
-These subsystems are expected to get a north star. Each one's research issue
-lists the decisions it would have to make:
+These subsystems are to get a north star. Each one's research issue lists the
+decisions it would have to make, and its writing issue carries the scope the
+account holder chose:
 
-| Subsystem | Research |
-|---|---|
-| Storage and search | [#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463) |
-| The library and its public surface | [#2464](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464) |
-| The release system | [#2465](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465) |
-| Vault views | [#2466](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466) |
-| The documentation system | [#2467](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467) |
+| Subsystem | Research | North star |
+|---|---|---|
+| Storage and search | [#2463](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463) | [#2538](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538) |
+| The library and its public surfaces | [#2464](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464) | [#2540](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540) |
+| The release system | [#2465](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465) | [#2547](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2547) |
+| The documentation system | [#2467](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2467) | to be decided |
 
 A subsystem moves into the governed list in the change that adopts its north
 star.
+
+## Deliberately ungoverned
+
+### Vault views
+
+The MCP app and its visual surfaces have no north star. In the account
+holder's words, 28 November 2026: "The visual surface does not have an actual
+*vision*.  It has been created ad-hoc." They chose to omit a north star and
+record why ([#2466](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466)).
+A change to vault views is judged on its own issue's outcome. A north star is
+written if a vision forms.
 
 ## Silent, settled or ruled out
 

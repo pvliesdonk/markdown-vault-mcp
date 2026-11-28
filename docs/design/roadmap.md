@@ -263,7 +263,7 @@ library and its public surface ([#2464][2464], which led to
 [#2540][2540]), the release system
 ([#2465][2465], whose vision document was never adopted; it led to
 [#2547][2547]), vault views
-([#2466][2466]) and the documentation system ([#2467][2467]).
+([#2466][2466], which decided against one) and the documentation system ([#2467][2467]).
 
 `stated` — On which subsystems need a north star: "All likely deserve a North
 Star"; on a CI check that a pull request touching a governed subsystem names
@@ -1555,7 +1555,7 @@ contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
 scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
-### 28 November 2026 — storage, the library and releasing will get north stars
+### 28 November 2026 — north stars for storage, the library and releasing, none for vault views
 
 `stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
 with what we are already doing." On the spike's questions, the owner chose
@@ -1644,6 +1644,15 @@ built, generalized to a set of distributions released together, and settles
 those reversals in its rediscussion. The vision and
 [release-migration.md](release-migration.md) then become historical. It meets
 the library north star at the `==` pins between distributions.
+
+`stated` — On vault views: "The visual surface does not have an actual
+*vision*.  It has been created ad-hoc. The North star may just indicate there
+is no current vision. Or we can omit a north star altogether"; the owner chose
+to omit it and record why (28 November 2026, [#2466][2466]).
+
+`derived` — [The registry](north-stars.md) lists vault views as deliberately
+ungoverned. `034 mcp-app` proceeds on each issue's own outcome, and a north
+star is written if a vision forms.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
