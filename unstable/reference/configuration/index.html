@@ -4442,9 +4442,9 @@ explains how <code>READ_ONLY</code> and <code>WRITE_PROTECT_EXISTING</code> comb
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code></td>
-<td><code>_conventions.md</code></td>
+<td><code>.conventions.md</code></td>
 <td>No</td>
-<td>Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions.</td>
+<td>Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). A folder without the default .conventions.md falls back to the deprecated _conventions.md and logs a warning. Set to none to disable folder conventions.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OKF_MODE</code></td>

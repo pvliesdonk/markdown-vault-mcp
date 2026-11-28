@@ -2804,7 +2804,7 @@
 <ul>
 <li><strong>Hybrid search</strong>: SQLite FTS5 keyword search, plus search by meaning once an embedding provider is configured; Reciprocal Rank Fusion merges the two. <a href="use/embeddings/">Embeddings</a>.</li>
 <li><strong>Frontmatter as data</strong>: YAML frontmatter fields become search filters, and required fields can be enforced. <a href="reference/configuration/">Configuration</a>.</li>
-<li><strong>Writes</strong>: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder <code>_conventions.md</code> rules reach the client as it writes. <a href="reference/tools/writer/">Write tools</a>.</li>
+<li><strong>Writes</strong>: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder <code>.conventions.md</code> rules reach the client as it writes; a folder without one falls back to the deprecated <code>_conventions.md</code>. <a href="reference/tools/writer/">Write tools</a>.</li>
 <li><strong>Links</strong>: backlinks, outlinks, broken links, orphans and the path between two notes. <a href="reference/tools/graph/">Graph tools</a>.</li>
 <li><strong>Git</strong>: an optional commit per write, a delayed push, pull or webhook sync, and history and diffs. <a href="use/git-integration/">Git integration</a>.</li>
 <li><strong>Open Knowledge Format</strong>: recognizes OKF bundles, adds each note's type, status, staleness and trust tier to results, and audits and migrates a vault. <a href="use/okf/">Open Knowledge Format</a>.</li>

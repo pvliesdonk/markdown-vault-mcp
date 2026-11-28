@@ -73,7 +73,7 @@ Link conversion, index generation, rename with `update_links=True`, and folder m
 
 ## API Reference
 
-## `VaultSettings(index_path=None, embeddings_path=None, embedding_store='sqlite', embedding_search='', embedding_search_workspace_bytes=1 << 20, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, owns_index_files=True)`
+## `VaultSettings(index_path=None, embeddings_path=None, embedding_store='sqlite', embedding_search='', embedding_search_workspace_bytes=1 << 20, embedding_postgres_dsn=None, embedding_postgres_schema=None, embedding_postgres_pool_size=4, embedding_postgres_statement_timeout_s=30.0, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file=DEFAULT_CONVENTIONS_FILE, okf_mode='auto', okf_write=False, owns_index_files=True)`
 
 Config-derived construction settings for a :class:`~markdown_vault_mcp.vault.Vault`.
 
@@ -165,7 +165,7 @@ Returns:
 
 Return the exclusion patterns with the conventions-file derivation.
 
-When a conventions file is configured, both fnmatch forms are appended (`name` and `**/name` — the `**/` form alone does not match a root-level file) so convention files stay out of the index while remaining disk-readable. Without one, the configured patterns pass through unchanged (possibly `None`).
+When a conventions file is configured, both fnmatch forms of each name :func:`conventions_filenames` returns for it are appended (`name` and `**/name` — the `**/` form alone does not match a root-level file) so convention files stay out of the index while remaining disk-readable. Without one, the configured patterns pass through unchanged (possibly `None`).
 
 Returns:
 

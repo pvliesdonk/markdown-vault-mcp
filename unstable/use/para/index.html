@@ -3443,6 +3443,7 @@
 <p>The four PARA prompts and five templates this guide uses are example files in the repository's <a href="https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para"><code>examples/para/</code></a> folder. No install channel ships them: not the package, the Docker image or the Claude Code plugin. Download the folder, then:</p>
 <ul>
 <li>Copy <code>templates/</code> into the vault as <code>_templates/</code>. The template prompt looks for templates in that vault folder by default (<code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code>, vault-relative).</li>
+<li>Copy the contents of <code>conventions/</code> into the vault root: <code>cp -R conventions/. /path/to/vault/</code>. The files are named <code>.conventions.md</code>, and a shell <code>*</code> glob skips names that start with a dot.</li>
 <li>Keep <code>prompts/</code> outside the vault, so the prompt files stay out of search results. Point <code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code> at it. For Claude Desktop:</li>
 </ul>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -3471,7 +3472,7 @@
   _templates/     # pointed at by MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER
 </code></pre></div>
 <p>The numeric prefixes (<code>0-</code>, <code>1-</code>, <code>…</code>) keep the buckets sorting in the canonical PARA order in any file explorer. <code>0-Inbox/</code> is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.</p>
-<p><strong>The server does not enforce this layout.</strong> You can flatten it, rename folders, or skip folders entirely and rely on the <code>type</code> and <code>status</code> frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root <code>_conventions.md</code> (the sample in <code>examples/para/conventions/</code> lists the layout above) and ask you for any the file doesn't name.</p>
+<p><strong>The server does not enforce this layout.</strong> You can flatten it, rename folders, or skip folders entirely and rely on the <code>type</code> and <code>status</code> frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root <code>.conventions.md</code> (the sample in <code>examples/para/conventions/</code> lists the layout above) and ask you for any the file doesn't name.</p>
 <h3 id="frontmatter-schemas">Frontmatter schemas<a class="headerlink" href="#frontmatter-schemas" title="Permanent link">&para;</a></h3>
 <p>PARA has four note shapes. Each uses a distinct frontmatter block. The templates in <code>examples/para/templates/</code> provide these exactly:</p>
 <p><strong>Inbox:</strong> untyped quick capture. Triage assigns the <code>type</code> later.</p>
@@ -3565,11 +3566,19 @@ same authoring behavior: a Resource note about a regulation should stay
 self-contained and timeless, while the LLM's instinct is to weave in your
 current projects ("this relates to yesterday's slide deck…"). Per-folder
 <a href="../../reference/tools/reader/#get_conventions">convention files</a> fix this: drop a
-<code>_conventions.md</code> into a folder and the server surfaces it to the client at
+<code>.conventions.md</code> into a folder and the server surfaces it to the client at
 write time (in the results of <code>write</code>, <code>edit</code>, <code>append</code> and <code>fetch</code>, and through the <code>get_conventions</code> tool).
-The files are excluded from search results but stay readable.</p>
+The files are excluded from search results but stay readable. The leading dot
+also keeps them out of an <a href="../okf/">OKF</a> bundle.</p>
+<p>Earlier releases named the file <code>_conventions.md</code>. A folder without a
+<code>.conventions.md</code> still uses its <code>_conventions.md</code>, and the server logs
+<code>conventions_legacy_filename_deprecated</code> once for that folder. This fallback is
+deprecated and goes in a later major release: rename each <code>_conventions.md</code> to
+<code>.conventions.md</code>. A folder holding both uses only <code>.conventions.md</code>. If you set
+<code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code> to a name of your own, the server reads
+only that name.</p>
 <p>Two example files that encode PARA's linking directionality:</p>
-<p><code>3-Resources/_conventions.md</code>:</p>
+<p><code>3-Resources/.conventions.md</code>:</p>
 <div class="highlight"><pre><span></span><code>Reference material. Notes here are self-contained and timeless:
 
 <span class="k">-</span><span class="w"> </span>No "relates to project X" or "from yesterday's meeting" prose.
@@ -3578,7 +3587,7 @@ The files are excluded from search results but stay readable.</p>
 <span class="k">-</span><span class="w"> </span>Structure: summary first, then detail. External sources under
   <span class="sb">`## References`</span>.
 </code></pre></div>
-<p><code>1-Projects/_conventions.md</code>:</p>
+<p><code>1-Projects/.conventions.md</code>:</p>
 <div class="highlight"><pre><span></span><code>Active project notes. Link out freely to 3-Resources for background
 material (one-way: project → resource). Keep project state, decisions,
 and next actions here — do not duplicate reference content from
@@ -3587,7 +3596,7 @@ and next actions here — do not duplicate reference content from
 <p>The reverse-linking rule costs nothing: <code>get_backlinks</code> (and Obsidian's
 backlinks pane) recover the project→resource references from the resource's
 side, so the resource never needs to mention the projects that cite it.</p>
-<p>A root-level <code>_conventions.md</code> holds vault-wide rules (heading style, tag
+<p>A root-level <code>.conventions.md</code> holds vault-wide rules (heading style, tag
 hygiene) and names the folder for each PARA bucket; nested files add to it.
 Every shipped prompt reads these conventions: the PARA prompts take their
 folders from them, the built-in <code>propose-links</code> prompt skips or reverses link

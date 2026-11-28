@@ -482,7 +482,7 @@ Convention files are left out of search and listings but can be read and edited 
 returns the conventions that apply, root first:
 
 ```
-{"path": "3-Resources/topic.md", "conventions": [{"folder": "", "path": "_conventions.md", "content": "…"}, {"folder": "3-Resources", "path": "3-Resources/_conventions.md", "content": "Keep notes self-contained; do not link out to project notes."}]}
+{"path": "3-Resources/topic.md", "conventions": [{"folder": "", "path": ".conventions.md", "content": "…"}, {"folder": "3-Resources", "path": "3-Resources/.conventions.md", "content": "Keep notes self-contained; do not link out to project notes."}]}
 ```
 
 ## `okf_validate`
