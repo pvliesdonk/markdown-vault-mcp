@@ -40,7 +40,8 @@ class JobsConfig:
             from record creation. A record past its TTL vanishes, and a later
             poll reports the id as unknown or expired.
         max_per_subject: Cap on live job records per calling subject, which
-            bounds the store's growth per caller.
+            bounds the store's growth per caller. A job counts while it runs
+            and until its outcome is retrieved or its record expires.
     """
 
     soft_deadline_s: float = field(
@@ -70,8 +71,10 @@ class JobsConfig:
         default=_DEFAULT_MAX_PER_SUBJECT,
         metadata={
             "help": (
-                "Maximum live background jobs per calling subject; further "
-                "promotions are rejected until older records expire."
+                "Maximum live background jobs per calling subject: running, "
+                "or finished with an outcome not yet retrieved. Further "
+                "promotions are rejected until a job's outcome is retrieved "
+                "or its record expires."
             ),
             "tags": ("jobs",),
             "wizard": {"group": "Jobs", "when": "server"},

@@ -6004,7 +6004,11 @@ contain this, both operator-tunable:
   ``KV_STORE_URL`` unset, core >=4.11.1 defaults to ``file:///data/state``
   where that directory is usable — the Docker image — and in-process
   memory everywhere else), are scoped to the calling subject, and expire
-  ``JOBS_RESULT_TTL_S`` after creation — the same non-durable posture as
+  ``JOBS_RESULT_TTL_S`` after creation. A subject holds at most
+  ``JOBS_MAX_PER_SUBJECT`` of them; a job stops counting once
+  ``get_job_result`` has returned its terminal outcome, and that record then
+  stays readable for at most five minutes, so a poll repeated after a lost
+  response still answers (#2530). Job records share the same non-durable posture as
   index status and transfer tokens (a promoted job dies with the process;
   durable execution is the native task path's job, with a ``redis://``
   tasks backend). Because the ``Jobs`` mechanics are built from the loaded

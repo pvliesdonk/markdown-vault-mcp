@@ -29,7 +29,6 @@ from markdown_vault_mcp._job_store import (
     JOB_RETRY_AFTER_S,
     JobHandle,
     JobLimitExceededError,
-    JobRecord,
     JobStore,
 )
 from markdown_vault_mcp._kv_store import build_kv_store
@@ -175,22 +174,12 @@ class Jobs:
         )
         return self._handle(record.job_id, tool=tool)
 
-    async def get(self, job_id: str) -> JobRecord:
-        """Return the calling subject's record for *job_id*.
-
-        Args:
-            job_id: The id a promoted call returned.
-
-        Returns:
-            The stored record.
-
-        Raises:
-            JobNotFoundError: Unknown or expired id, or another subject's.
-        """
-        return await self._store.get(_current_scope(), job_id)
-
     async def poll(self, job_id: str) -> dict[str, Any]:
         """Return the polling payload for *job_id*, the body of ``get_job_result``.
+
+        A terminal outcome is collected as it is returned: the job stops
+        counting against the caller's cap, and the same poll keeps answering
+        for a short grace period.
 
         Args:
             job_id: The id a promoted call returned.
@@ -202,7 +191,10 @@ class Jobs:
         Raises:
             JobNotFoundError: Unknown or expired id, or another subject's.
         """
-        record = await self.get(job_id)
+        scope = _current_scope()
+        record = await self._store.get(scope, job_id)
+        if record.status != "working":
+            await self._store.collect(scope, job_id)
         payload: dict[str, Any] = {
             "job_id": record.job_id,
             "status": record.status,

@@ -143,13 +143,15 @@ def register_long_running_tool(
                     work(*args, **kwargs), tool=tool_name
                 )
             except JobLimitExceededError:
-                # The caller is at its cap of live job records; they count
-                # until they expire, so waiting is the only way out.
+                # The caller is at its cap of live job records; a record stops
+                # counting once get_job_result hands back its outcome, or when
+                # it expires (#2530).
                 raise ToolError(
                     f"{tool_name} ran past its foreground time limit, and this "
                     "caller already has the maximum number of background jobs, "
-                    "so it was stopped. Retry it later, once older jobs have "
-                    "expired.",
+                    "so it was stopped. Retrieve finished jobs with "
+                    f"{JOB_POLL_TOOL_NAME}, or retry later once older jobs "
+                    "have expired.",
                     log_level=logging.INFO,
                 ) from None
 
@@ -173,7 +175,9 @@ def register_job_tools(
 
     Lookups are scoped to the calling subject: another subject's job id
     answers exactly like an unknown one, so ids are not probeable across
-    callers. Records expire ``result_ttl_s`` after creation.
+    callers. Records expire ``result_ttl_s`` after creation; once a poll
+    returns a terminal outcome, the job leaves the caller's cap and its record
+    stays readable for a short grace period only.
 
     Args:
         mcp: The server to register on.
