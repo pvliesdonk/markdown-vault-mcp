@@ -5,7 +5,7 @@ kind: how-to
 
 # Open Knowledge Format (OKF) with markdown-vault-mcp
 
-[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
+[Open Knowledge Format](https://github.com/open-knowledge-format/open-knowledge-format) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
 
 !!! note
     OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.
@@ -139,6 +139,12 @@ string after line endings are normalized to LF and it is encoded as UTF-8. It
 is not the file's raw-byte etag or a portable file identity, and cannot be used
 as `if_match`. No index refresh, traversal, metadata write or permission change
 is part of this call. See the [tool reference](../reference/tools/reader.md#inspect_citations).
+
+## Reading the specification
+
+The server serves the text of the one OKF version it follows, 0.3, as the `okf-spec` skill, so an assistant that reaches your vault only through this server can read the format it is asked to write. The specification doesn't have to live in your vault as a note. A client that supports skills over MCP, such as Claude or Claude Code, lists the skill by name and description and loads it when the assistant needs it; to other clients its files are ordinary resources, such as `skill://okf-spec/SPEC.md`. The skill disappears with the OKF tools when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+The file is the specification exactly as the [Open Knowledge Format project](https://github.com/open-knowledge-format/open-knowledge-format) published it, under the Apache License 2.0. The skill carries that license and a note naming the exact revision. A server release that moves to a newer OKF version replaces it.
 
 ## Migrating an existing vault
 

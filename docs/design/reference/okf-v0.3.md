@@ -52,7 +52,9 @@ where the account holder ruled that a departure from the standard is a bug.
 - Depended on by: `src/markdown_vault_mcp/okf.py`, `_okf_write.py`,
   `_okf_convention.py`, `okf_bundle.py`, `managers/okf_migrate.py`, the
   link resolver in `scanner.py`, and `utils/links.py` (written
-  destinations). `docs/design/okf.md` decides what the project does.
+  destinations); the served `okf-spec` skill ships this commit's `SPEC.md`
+  unchanged (`src/markdown_vault_mcp/skills/okf-spec/`).
+  `docs/design/okf.md` decides what the project does.
 
 ## Where the text lives
 

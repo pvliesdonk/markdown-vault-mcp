@@ -132,7 +132,7 @@ tool search.
 - Skills work for claude.ai connectors, servers the user adds, and servers
   from plugins. Each server shows up to 100 skills. [source: cc-mcp]
 - A scanned skill is limited to 100 KB per text file and 400 KB in total.
-  [source: cc-mcp]
+  [source: cc-mcp] [pins: tests/test_served_skills.py::test_served_skill_fits_claudes_scan_limits]
 - MCP skills are not supported in cloud sessions, `claude -p`, `claude
   remote-control` server mode, GitHub Actions or the Agent SDK, nor for
   servers in the desktop app. On Team and Enterprise plans they are off until
