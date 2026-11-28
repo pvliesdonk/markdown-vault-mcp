@@ -144,8 +144,26 @@ it describes.
 
 `derived` — Batched provider requests ([#1496][1496]) and the embedding cost of
 generated OKF files ([#1498][1498]) come from the same measurement run. They sit
-under #1499 with no package: the "Done when" does not need them, and #1498 first
-needs a decision on whether reserved files need search by meaning at all.
+under #1499 because the "Done when" does not need them. #1496 is in `026`.
+#1498 has no package: it first needs a decision on whether reserved files need
+search by meaning at all.
+
+`stated` — On writers to one PostgreSQL store: "Eventually we might want to go
+to many writers strict. We start with single writer, but be prepared" (owner,
+17–18 October 2026, in the [#1504][1504] design,
+[#1813](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1813)).
+
+`evidenced` — Every built-in store and the keyword index enforce one writer,
+except on Windows, which takes no lock ([#1923][1923]): the file stores by
+`flock` (`stores/_writer_lock.py`), PostgreSQL by an advisory lease and the
+keyword index by its own lock (decisions 34 and 36 in [design.md](design.md)).
+Two write paths depend on it: the bulk re-token
+(`indexing/embedding_reconciler.py`) and whole-generation publication.
+
+`derived` — Many writers to one store ([#1812][1812]) sits under #1499 with
+no package. It needs an orderable source revision, which the [#1508][1508]
+contract's equality-only token does not provide, so it waits on the storage
+north star ([#2538][2538]).
 
 ### First-class library
 
@@ -239,10 +257,14 @@ system have direction paragraphs here but no governing document. [Refinement #24
 which subsystems need one, in what order, and how the rule is enforced. Each
 candidate gets a review first: OKF ([#2459][2459], which reopens the existing
 one), git integration ([#2462][2462], which led to the version-control north
-star), storage and search ([#2463][2463]), the
-library and its public surface ([#2464][2464]), the release system
-([#2465][2465], whose vision document was never adopted), vault views
-([#2466][2466]) and the documentation system ([#2467][2467]).
+star), storage and search ([#2463][2463], which led to
+[#2538][2538], writing its north star), the
+library and its public surface ([#2464][2464], which led to
+[#2540][2540]), the release system
+([#2465][2465], whose vision document was never adopted; it led to
+[#2547][2547]), vault views
+([#2466][2466], which decided against one) and the documentation system
+([#2467][2467], which led to [#2557][2557]).
 
 `stated` — On which subsystems need a north star: "All likely deserve a North
 Star"; on a CI check that a pull request touching a governed subsystem names
@@ -775,7 +797,10 @@ is one higher, so that OKF v0.3 conformance takes `025` (§ Revisions).
   epic [#2460][2460], refinement [#2461][2461], the OKF north star's
   reopening [#2459][2459], the three features that carry the rule
   ([#2493][2493] first, then [#2494][2494] and [#2495][2495]), and the spikes
-  for the other subsystems ([#2462][2462] to [#2467][2467]). Docs and process, which cut no release on their own,
+  for the other subsystems ([#2462][2462] to [#2467][2467]), and writing the
+  storage, library, release and documentation north stars that followed
+  ([#2538][2538], [#2540][2540], [#2547][2547], [#2557][2557]), and the
+  template-artifact removal ([#2558][2558]). Docs and process, which cut no release on their own,
   like `010 template-detach`: the reopening's code departures went to the OKF
   packages below.
 - **[025 okf-v03-conformance](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/42)**
@@ -1532,6 +1557,139 @@ contributed pull requests (#2188, #2198) are taken up with [#2517][2517], whose
 scenarios their tests feed (owner, 27 November 2026: "We'll get to that when we
 do 2517").
 
+### 28 November 2026 — the north-star spikes report
+
+`stated` — Asked for a framing for spike [#2463][2463]: "No. I'm pretty happy
+with what we are already doing." On the spike's questions, the owner chose
+"VC line + search policy (Recommended)" for the scope and "Finish spikes
+first" for the timing (owner, 28 November 2026).
+
+`evidenced` — The spike's three reports and synthesis are on [#2463][2463].
+They find that the keyword index and the embeddings are one system in code:
+- the embedding model is part of the keyword index's provenance
+  (`indexing/coordinator.py`, the chunking-provenance check);
+- vectors are built from its chunks (`indexing/embedding_reconciler.py` reads
+  `list_chunks`);
+- one writer thread serves both (`indexing/index_writer.py`).
+
+Yet the two were decided apart: storage as epic [#1499][1499], and keyword
+indexing and ranking one issue at a time.
+
+`derived` — The storage north star, written under [#2538][2538], is to record
+the road v6.0.0 took instead of choosing a new one. Its scope is the line the
+version-control north star draws, plus the search-policy layer above the
+stores:
+- the working tree as content store;
+- the keyword and vector stores;
+- the source contract;
+- the content side of [#1474][1474].
+
+History stays with version control. As the owner chose, it is drafted after
+the remaining spikes ([#2464][2464] to [#2467][2467]) have reported; the
+library spike overlaps its question of which storage protocols are a supported
+extension surface. The spike also corrected this index: [#1496][1496] is in
+`026`, not unpackaged, and [#1938][1938] is in `026` too, not `023` as the
+17 November entry left it.
+
+`stated` — For this and every later north star: "we prefer clean, decoupled,
+abstracted/generalized architecture if possible. That may not be how it is
+right now, but it is a preferred goal" (owner, 28 November 2026, framing spike
+[#2464][2464]). On that spike's scope question, the owner chose "Surfaces incl.
+MCP policy (Recommended)".
+
+`evidenced` — Spike [#2464][2464] found that epic [#1471][1471]'s premises
+have moved since refinement, and that the code draws the library/server
+boundary far from the plan:
+- **The template detach.** [#2019][2019] and [#2000][2000] are still blocked
+  by template#855. The verdict of [#1473][1473] moved the library to a new
+  import package because keeping `markdown_vault_mcp` "fights the template".
+- **Private reaches.** The server reads private `Vault` internals as "a
+  trusted consumer" (`_tools/git.py`), against [#2020][2020].
+- **No declared surface.** The import-surface guard checks an empty package
+  root (`tests/public_import_surface.txt`).
+- **One shape, two rules.** MCP payloads are the library's dataclasses, so
+  one edit changes two surfaces under two compatibility rules.
+
+`derived` — The library north star ([#2540][2540]) covers:
+- the Python caller surface;
+- packaging and distributions;
+- the CLI and client;
+- whether an extension surface exists;
+- one compatibility policy for every public surface, the MCP surface's
+  included.
+
+The content of the tools, the meaning of the storage and history protocols,
+and how lockstep releases are cut stay outside it. It is drafted after the
+remaining spikes, like the storage one. In § First-class library and the
+sections before it, `020` names the package now numbered `029`.
+
+`stated` — On releasing: "We are pretty happy with what it is now, but it is
+*purely* intended for an mcp server in various shapes. If we grow with a
+library, a cli, and maybe other options, the release system should
+accommodate." On spike [#2465][2465]'s question, the owner chose "Replace with
+new NS (Recommended)" (owner, 28 November 2026).
+
+`evidenced` — The release model generalizes: a release is a reviewed pull
+request, with one tag and one changelog, and the edge build is versionless.
+The plumbing assumes one server distribution:
+- knope versions only the root `pyproject.toml` (`knope.toml`);
+- the plugin builder accepts exactly one wheel
+  (`.github/actions/build-plugin-zip/vendor.py`);
+- every artifact except the wheel is the server's.
+
+[release-vision.md](release-vision.md) was never adopted, and the build
+reverses it in several places. For example, rc wheels reach PyPI because the
+mcpb bundle points there (`release.yml`).
+
+`derived` — The release north star ([#2547][2547]) is written from what was
+built, generalized to a set of distributions released together, and settles
+those reversals in its rediscussion. The vision and
+[release-migration.md](release-migration.md) then become historical. It meets
+the library north star at the `==` pins between distributions.
+
+`stated` — On vault views: "The visual surface does not have an actual
+*vision*.  It has been created ad-hoc. The North star may just indicate there
+is no current vision. Or we can omit a north star altogether"; the owner chose
+to omit it and record why (28 November 2026, [#2466][2466]).
+
+`derived` — [The registry](north-stars.md) lists vault views as deliberately
+ungoverned. `034 mcp-app` proceeds on each issue's own outcome, and a north
+star is written if a vision forms.
+
+`stated` — On documentation, five points (owner, 28 November 2026, framing
+[#2467][2467]):
+- "we create reference files after a research spike for internal reference.
+  That is so an agent (builder/reviewer) can work from docs instead of
+  parametric memory, or has to research again";
+- "documentation should *always* be kept up to date with any PR or package";
+- "release notes are mandatory (and agent generated via a special skill)
+  before every release";
+- "general documentation should be actually useable by actual users. There is
+  a persona skill to test for that, that we run every now and then to improve
+  docs";
+- "there is an artifact in documentation coming from template/domain
+  separation. That is not relevant anymore".
+
+On the spike's questions, the owner chose "The system (Recommended)" for the
+scope, "File it now (Recommended)" for the template artifact, and "Release
+(#2547)" as the first north star to draft.
+
+`evidenced` — The site's own checks block no merge. The strict build and the
+structure check run in `docs.yml`, and the rulesets require only `CI Success`
+and, on `main` and release branches, `SPA source up-to-date`
+(`.github/rulesets/`). Reader testing ran twice, on 28 September and
+4 October, and not since ([#1272][1272]). Most template markers are read by
+nothing ([#2558][2558]).
+
+`derived` — The documentation north star ([#2557][2557]) governs the system,
+not what each subsystem's pages say. It takes over [#2260][2260]. Removing
+what nothing reads of the template artifact ([#2558][2558]) does not wait for
+it.
+
+`derived` — Order of drafting: release ([#2547][2547]) first, by the owner's
+choice. The order of storage ([#2538][2538]), the library ([#2540][2540]) and
+documentation ([#2557][2557]) after it is open.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
@@ -1755,6 +1913,14 @@ do 2517").
 [2461]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2461
 [2462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2462
 [2463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2463
+[2538]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2538
+[2540]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2540
+[2547]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2547
+[2557]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2557
+[2260]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2260
+[2558]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2558
+[2020]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2020
+[1812]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1812
 [2464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2464
 [2465]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2465
 [2466]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/2466
