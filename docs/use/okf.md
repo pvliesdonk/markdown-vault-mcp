@@ -84,7 +84,9 @@ It joins body markers such as `[^handbook]` to frontmatter `sources` entries who
 `id` is exactly `handbook`. The result includes the literal parsed source records,
 unknown fields included. `source_indices` identifies matching records by their
 zero-based positions in that response. Those positions can change when sources
-are reordered; the exact string `id` is the stable key. Labels are not trimmed,
+are reordered; the exact string `id` is the stable key. A `sources` written as
+one mapping rather than a list is read as a one-entry list, at position 0, and a
+null or empty `sources` as none, as OKF 0.3 §11.2 asks. Labels are not trimmed,
 case-folded or coerced from numbers.
 
 - `matched`: exactly one source entry has the label's ID, even if that entry has
