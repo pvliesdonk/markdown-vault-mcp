@@ -2116,8 +2116,8 @@ the spec itself says, dated and sourced, in
   `stats` reports a bundle, the guidance directs the model to consider
   lifecycle status, freshness, recorded review claims and review
   applicability separately, and to treat missing reviews as gaps in review
-  evidence. Clients that cache the server instructions receive changes when
-  they reconnect.
+  evidence. Clients that cache the server instructions must reconnect to
+  refresh them.
 - **Indexed-field extension**: when detection is active at `Vault`
   construction, the OKF scalar keys (`type`, `status`, `stale_after`)
   join the effective `indexed_frontmatter_fields` set — feeding
