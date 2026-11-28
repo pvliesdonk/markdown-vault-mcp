@@ -2,6 +2,12 @@
 
 ## 2026-11-28
 
+- [Open Knowledge Format v0.3](okf-v0.3.md): every rule the refute pass had
+  left unchecked now has a verdict (#2402). Three are departures with bugs
+  (#2452, #2454, #2455); #2453 was filed too, then closed by the account
+  holder as not a departure; one departure is #1443 (032); the rest conform
+  or are not applicable.
+  Rows 24 to 29 record the 025 fixes. No spec claim changed.
 - New: [UTF-8 byte order mark before a frontmatter block](bom-before-frontmatter.md),
   for #2452. Read OKF 0.3 SPEC.md and the OKF repository's parser, validator
   and scanner at 527e81aff5, the Unicode Standard 18.0.0, RFC 3629, YAML

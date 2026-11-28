@@ -366,21 +366,62 @@ Notes on the table:
   root-relative links written by `okf_convert_links` (both forms valid),
   and `-` list markers in a generated index (the spec's `*` is an example).
 
+## Rules checked against the server on 2026-11-28 (#2402)
+
+The refute pass named rules this page had not yet checked against the
+server. Each now has a verdict. [observed: `uv run python` probes over
+the stamp, `okf_verify`, conflict marking, `okf_generate_index` and the
+audit on main at c09dad02, 2026-11-28]
+
+- Opening line, "The file MUST start with a line that is exactly `---`"
+  (§4): departed; row 29, #2452. A leading BOM is read as an encoding
+  signature, a reading the spec leaves open
+  ([bom-before-frontmatter.md](bom-before-frontmatter.md)).
+- "Producers SHOULD name their own keys `x-<producer>-<name>`" (§4.1):
+  departed in conflict marking; row 28, #2455.
+- "Producers MUST NOT use them for concepts" (§3.1), on a client write of
+  `index.md` or `log.md` that carries a `type`: not a departure. The bytes
+  of a client's write are the client's; the north star refuses a client
+  write to a reserved file only while the server maintains it, and the
+  server never treats a reserved file as a concept or stamps one (#2453,
+  closed by the account holder, 2026-11-28).
+- "Producers SHOULD NOT make two paths that differ only by case" (§6): #2454,
+  open.
+- "Producers SHOULD NOT use custom YAML tags" (§4): conforms. Every value
+  the server writes is a plain string or null, dumped by `InteropDumper`,
+  which quotes dates and date-times as strings (`_yaml12.py`). A tag a
+  client wrote is the client's content: the stamp's splice keeps it byte
+  for byte, and a block that does not load is not a concept, so it is not
+  stamped (row 25).
+- "producers MUST use `human:` for content that a person wrote or
+  confirmed" (§7): `okf_verify` conforms. It records `human:<subject>`, or
+  `human:local` after a confirmed elicitation. The stamp departs: it
+  replaces a supplied `generated.by`, so content a client recorded as
+  `human:carol` is saved as the server's actor. Tracked by #1443 (032),
+  which the north star's "keeps a supplied `generated.by`" settles.
+- §6.1, "A link refers to a concept when its target, without a
+  `#fragment`, resolves (§6) to a concept file": not applicable. No OKF
+  surface builds or presents the §6.4 bundle graph; the link tools serve
+  the vault's link graph, and the graph view only labels nodes with their
+  `type`.
+- "Producers SHOULD put a bundle-root `index.md` with `okf_version` in each
+  bundle" (§8.1): not followed, on purpose. The north star says
+  regeneration "does not invent a declaration when absent", and the server
+  writes `okf_version` only when it upgrades a bundle it manages (#2423,
+  032).
+- "Omit `stale_after` when no review date is known. Do not invent one."
+  (§5.5): conforms. With `required_frontmatter` naming `stale_after`, the
+  reserved-file generators write `stale_after: null`, which "is the same as
+  an absent key" (§5.5, §11.2). Seeding frontmatter into reserved files at
+  all is row 11, #1438 (032). The stamp, `okf_verify` and the transforms
+  write no lifecycle value.
+- "SHOULD calculate staleness only from `stale_after`" (§11.2): conforms.
+  `derive_stale` reads only `stale_after`, and the `stale` filter, the
+  ranking downweight and `okf_stats` use it; `generated.at`, review dates
+  and file times never make a note stale.
+
 ## Not covered
 
-- Rules named by the refute pass and not yet checked against the server:
-  the opening line "MUST start with a line that is exactly `---`" (the
-  server accepts a BOM first, #1407); "Producers SHOULD NOT use custom YAML
-  tags"; the `x-<producer>-<name>` key SHOULD; "Producers MUST NOT use
-  them for concepts" (§3.1) on writes of `index.md` / `log.md` carrying a
-  `type`; "producers MUST use `human:` for content that a person wrote or
-  confirmed"; "Producers SHOULD NOT make two paths that differ only by
-  case"; §6.1's rule that a link refers to a concept only when its
-  fragment-less target is a concept file; the §8.1 SHOULD to put a root
-  `index.md` with a quoted `okf_version` in each bundle; §5.5's "Do not
-  invent one" against `required_frontmatter` seeding; and §11.2's "SHOULD
-  calculate staleness only from `stale_after`". [source: spec] (§3.1, §4,
-  §4.1, §5.5, §6, §6.1, §7, §8.1, §11.2)
 - A tension inside the spec: the YAML 1.2 core schema (§4) has no
   timestamp type, yet §5 says consumers "MUST accept a quoted string and a
   YAML-native timestamp". Rows 4, 5 and 13 assume both hold.
