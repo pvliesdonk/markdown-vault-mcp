@@ -1552,13 +1552,13 @@ class TestGitSyncOnce:
         orig_post = fm.loads((work / "note.md").read_text())
         assert orig_post.metadata["title"] == "Obsidian Note"
         assert orig_post.metadata["tags"] == ["vault"]
-        assert "conflict_with" in orig_post.metadata
+        assert "x-markdown-vault-mcp-conflict-with" in orig_post.metadata
         # Existing fields keep their order; the conflict fields append (#2029).
         assert list(orig_post.metadata) == [
             "title",
             "tags",
-            "conflict_with",
-            "conflict_date",
+            "x-markdown-vault-mcp-conflict-with",
+            "x-markdown-vault-mcp-conflict-date",
         ]
 
         # Conflict file: MCP frontmatter preserved + conflict fields added.
@@ -1567,12 +1567,12 @@ class TestGitSyncOnce:
         conflict_post = fm.loads(conflict_files[0].read_text())
         assert conflict_post.metadata["title"] == "MCP Note"
         assert conflict_post.metadata["tags"] == ["test"]
-        assert conflict_post.metadata["conflict_with"] == "note.md"
+        assert conflict_post.metadata["x-markdown-vault-mcp-conflict-with"] == "note.md"
         assert list(conflict_post.metadata) == [
             "title",
             "tags",
-            "conflict_with",
-            "conflict_date",
+            "x-markdown-vault-mcp-conflict-with",
+            "x-markdown-vault-mcp-conflict-date",
         ]
 
     def test_sync_once_conflict_non_conflicting_files_preserved(
@@ -1926,7 +1926,7 @@ class TestGitSyncOnce:
         assert len(written) == 1
         conflict_path = git_repo / written[0]
         assert conflict_path.exists()
-        assert "conflict_with" in conflict_path.read_text()
+        assert "x-markdown-vault-mcp-conflict-with" in conflict_path.read_text()
 
         # Both frontmatter-parse warnings were logged.
         warnings = [r for r in caplog.records if "frontmatter" in r.message]
@@ -2098,7 +2098,7 @@ class TestGitSyncOnce:
         assert "note.md" not in files, files  # skipped original NOT staged
 
     def test_write_conflict_files_stages_updated_original(self, git_repo: Path) -> None:
-        """A successfully-updated original (conflict_with frontmatter written) IS
+        """A successfully-updated original (conflict frontmatter written) IS
         staged into the conflict commit alongside its sibling (#675 regression
         guard — the fix must not stop staging originals it actually rewrote)."""
         (git_repo / "note.md").write_text("# original\n", encoding="utf-8")
@@ -2110,8 +2110,10 @@ class TestGitSyncOnce:
         files = self._head_commit_files(git_repo)
         assert "note.md" in files, files  # updated original staged
         assert written[0] in files, files  # sibling staged
-        # The original actually received the conflict_with frontmatter.
-        assert "conflict_with" in (git_repo / "note.md").read_text(encoding="utf-8")
+        # The original actually received the conflict frontmatter.
+        assert "x-markdown-vault-mcp-conflict-with" in (git_repo / "note.md").read_text(
+            encoding="utf-8"
+        )
 
     def test_write_conflict_files_mixed_batch_stages_only_updated(
         self, git_repo: Path

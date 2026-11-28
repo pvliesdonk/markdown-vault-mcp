@@ -35,6 +35,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#: The frontmatter keys conflict marking writes. OKF 0.3 §4.1: "Producers
+#: SHOULD name their own keys ``x-<producer>-<name>``", and future OKF
+#: versions will not define keys that start with ``x-`` (#2455). They were
+#: ``conflict_with`` and ``conflict_date`` before.
+CONFLICT_WITH_KEY = "x-markdown-vault-mcp-conflict-with"
+CONFLICT_DATE_KEY = "x-markdown-vault-mcp-conflict-date"
+
+
 def resolve_rebase_conflicts(
     git_root: Path,
     env: dict[str, str] | None,
@@ -380,13 +388,14 @@ def write_conflict_files(
     commit_email: str,
     token: str | None,
 ) -> list[str] | None:
-    """Write conflict files and add ``conflict_with`` frontmatter to both sides.
+    """Write conflict files and add conflict frontmatter to both sides.
 
     For each ``(relative_path, content)`` in *saved*:
 
     1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
-       with ``conflict_with`` and ``conflict_date`` frontmatter.
-    2. Merge ``conflict_with`` and ``conflict_date`` into the original
+       with :data:`CONFLICT_WITH_KEY` and :data:`CONFLICT_DATE_KEY`
+       frontmatter.
+    2. Merge the same two keys into the original
        file's existing frontmatter.  If the original cannot be read or
        rewritten (removed/inaccessible after the existence check, or not
        valid UTF-8), its update is skipped with a logged warning — the
@@ -405,7 +414,7 @@ def write_conflict_files(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     conflict_date = now.isoformat(timespec="seconds")
     written: list[str] = []
-    # Originals we actually rewrote with conflict_with frontmatter. Only these
+    # Originals we actually rewrote with conflict frontmatter. Only these
     # get staged into the conflict commit — an original whose update was skipped
     # (#662 OSError/UnicodeDecodeError guard) must NOT be re-staged here (#675).
     updated_originals: list[str] = []
@@ -427,8 +436,8 @@ def write_conflict_files(
             )
             post = frontmatter.Post(mcp_content)
 
-        post.metadata["conflict_with"] = rel_path
-        post.metadata["conflict_date"] = conflict_date
+        post.metadata[CONFLICT_WITH_KEY] = rel_path
+        post.metadata[CONFLICT_DATE_KEY] = conflict_date
 
         conflict_abs = git_root / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
@@ -437,7 +446,7 @@ def write_conflict_files(
             encoding="utf-8",
         )
 
-        # --- Update original file with conflict_with frontmatter ---
+        # --- Update original file with conflict frontmatter ---
         original_abs = git_root / rel_path
         try:
             original_present = path_exists(original_abs)
@@ -465,8 +474,8 @@ def write_conflict_files(
                         exc_info=True,
                     )
                     orig_post = frontmatter.Post(content)
-                orig_post.metadata["conflict_with"] = conflict_rel
-                orig_post.metadata["conflict_date"] = conflict_date
+                orig_post.metadata[CONFLICT_WITH_KEY] = conflict_rel
+                orig_post.metadata[CONFLICT_DATE_KEY] = conflict_date
                 original_abs.write_text(
                     frontmatter.dumps(
                         orig_post, handler=YAML12_HANDLER, sort_keys=False
@@ -492,7 +501,7 @@ def write_conflict_files(
         return written
 
     # Stage only the files we actually touched: originals we rewrote with
-    # conflict_with frontmatter (NOT ones whose update was skipped — #675;
+    # conflict frontmatter (NOT ones whose update was skipped — #675;
     # re-staging a skipped original here would needlessly re-add an untouched
     # file, or stage a *deletion* for a TOCTOU-removed one) plus the new
     # conflict siblings. A skipped original keeps whatever the rebase already
