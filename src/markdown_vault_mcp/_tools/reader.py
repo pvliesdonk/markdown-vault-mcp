@@ -172,6 +172,7 @@ def register(mcp: FastMCP) -> None:
         path: str,
         section: str | None = None,
         revision: str | None = None,
+        include_content: bool = True,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return a note's text, frontmatter and etag, or an attachment's bytes as
@@ -188,6 +189,8 @@ def register(mcp: FastMCP) -> None:
                 previous_revision; returns the note as it stood then, without an etag.
                 Pass path as the note is named today. To restore that text, write it
                 with the etag of a read without revision.
+            include_content: False returns only path, size_bytes, modified_at and
+                etag, the SHA-256 of the whole file's raw bytes, at any file size.
 
         Returns:
             For .md: dict with path, title, folder, content (the full raw
@@ -211,8 +214,14 @@ def register(mcp: FastMCP) -> None:
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
             etag (SHA-256 hex str or null).
-            The 'etag' value can be passed as 'if_match' to write, edit,
+            The 'etag' value is the lowercase hex SHA-256 of the file's raw
+            bytes, frontmatter and any byte-order mark included, so it is not a
+            hash of 'content'. It can be passed as 'if_match' to write, edit,
             delete, or rename to guard against concurrent modifications.
+            With include_content=False: dict with path, size_bytes,
+            modified_at and etag, the same etag a whole-file read returns,
+            for notes and attachments of any size. Neither read size limit
+            applies; the server hashes the whole file and returns none of it.
             With revision=: dict with path, historical_path (the name the note
             carried at that revision), revision, and content: the whole raw
             file, or just one section's body when section= is also given. No
@@ -231,12 +240,19 @@ def register(mcp: FastMCP) -> None:
                 attachment, or git's records do not show the note existing at
                 that revision (a name later reused by a different note is
                 refused rather than answered with the other note's content).
+                With `include_content=False`: if `section` or `revision` is
+                also given.
             DocumentUnreadableError: If the file cannot be read or decoded, its
                 frontmatter does not parse, or git stores it in LFS at that
                 revision.
         """
         return await asyncio.to_thread(
-            read_payload, vault, path, section=section, revision=revision
+            read_payload,
+            vault,
+            path,
+            section=section,
+            revision=revision,
+            include_content=include_content,
         )
 
     @mcp.tool(
