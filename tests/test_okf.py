@@ -719,7 +719,12 @@ class TestOkfInstructions:
         text = _guidance(read_only=True, okf_mode=mode)
         assert "OKF" in text
         assert "'stats' reports an OKF bundle" in text
-        assert "trust tier" in text
+        assert (
+            "consider lifecycle status, freshness, recorded review claims, "
+            "and review applicability separately" in text
+        )
+        assert "Treat missing reviews as gaps in review evidence." in text
+        assert "weigh notes by trust tier" not in text
 
     def test_maintained_vault_does_not_ask_the_agent_to_update_navigation(
         self,
