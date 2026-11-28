@@ -74,17 +74,20 @@ continues to support computed OKF filters.
 
 ## WriterFacet
 
-Create, edit, append, delete, rename, and attachment writes, and the preview
-of one text replacement across many notes.
+Create, edit, append, delete, rename, and attachment writes, and one text
+replacement across many notes.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.writer.WriterFacet
 <!-- vale on -->
 
-### Previewing a text replacement across notes
+### Replacing text across notes
 
 `preview_replace` computes one replacement across the notes a request covers
-and writes nothing. Matches cover each note's body and never its frontmatter.
+and writes nothing. `apply_replace` takes the plan from that preview,
+recomputes it, and writes each planned note when the notes still give that
+plan. Matches cover each note's body and never its frontmatter. Each write
+behaves like `edit`, OKF stamping and upkeep included.
 
 ```python { .fragment }
 from markdown_vault_mcp.managers.text_replace import ReplaceRequest
@@ -98,7 +101,14 @@ request = ReplaceRequest(
 preview = vault.writer.preview_replace(request)
 # preview.notes: each note it would change, with a count and, for the first
 # ten, a diff; preview.refused: notes it would leave alone, with the reason.
+result = vault.writer.apply_replace(request, preview.plan)
+# Each of result.notes is applied, skipped or refused.
 ```
+
+`apply_replace` raises `StalePlanError` and writes nothing when a covered
+note changed after the preview, or the request differs from the previewed
+one; preview again and apply the new plan. A note that changes between that
+check and its own write is reported `skipped` and left as it is.
 
 A request covers at most 1,000 notes, reads at most 256 KiB per note and
 8 MiB in total, changes at most 200 notes and makes at most 10,000
@@ -115,6 +125,12 @@ selection. A preview shows diffs for the first 10 changed notes, each cut at
 ::: markdown_vault_mcp.managers.text_replace.PlannedNote
 
 ::: markdown_vault_mcp.managers.text_replace.NoteRefusal
+
+::: markdown_vault_mcp.managers.text_replace.ReplaceResult
+
+::: markdown_vault_mcp.managers.text_replace.NoteOutcome
+
+::: markdown_vault_mcp.managers.text_replace.StalePlanError
 <!-- vale on -->
 
 ## GraphFacet

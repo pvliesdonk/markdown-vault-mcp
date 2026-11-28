@@ -3847,7 +3847,8 @@ so it reports `[]`, as `get_broken_links` reports nothing for it.
 `TextReplacer` (`managers/text_replace.py`) computes one literal or regular
 expression replacement across the notes a request covers: the notes named in
 `paths` and every note under each folder in `folders`. It is reached through
-`WriterFacet.preview_replace`, which writes nothing.
+`WriterFacet.preview_replace`, which writes nothing, and
+`WriterFacet.apply_replace`, which writes the previewed plan.
 
 **Body only.** A match never covers a note's frontmatter block (the account
 holder's choice, [#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7239788112)).
@@ -3876,6 +3877,39 @@ path, etag and new-text hash. Two previews share it exactly when they would
 write the same text to the same notes from the same note versions, whatever
 selection reached them. Nothing is cached: the digest is recomputable from
 the vault. The design is #2187's.
+
+**Apply.** An apply recomputes the plan from the notes as they are, with the
+write lock not held. A digest that differs from the one the caller passes
+raises `StalePlanError` and writes nothing: a note changed since the preview,
+or the request is not the previewed one ("The apply recomputes the matches
+and refuses when the digest differs", the account holder's re-plan on
+[#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7241060214)).
+The caller previews again. Otherwise each planned note is written through
+`DocumentManager.rewrite`, conditional on the etag its plan entry was read
+at. That is `edit`'s write path: the submodule refusal, the `if_match` check,
+OKF enrichment with the stored text, the index update and the `edit` write
+callback, so stamping and the trivial-edit rule behave as they do for
+`edit`. Each note is reported, the account holder's "Per-note outcomes"
+([#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7239788112)):
+`applied`; `skipped` when its write meets an etag conflict or a vanished
+note, which, with the digest checked first, only a change landing between
+the recompute and that note's write can cause; or `refused`, for a note the
+preview already listed as refused, or one inside a nested repository at
+write time. A refused note is never written. Any other failure stops the
+apply as a fault, after the notes already written, and a preview then shows
+what remains.
+
+**Upkeep.** After each write, outside the write lock, the facet runs the
+upkeep `edit` runs after its write: `ConventionMaintainer.maintain(path,
+"edit")`, so each written note gets its own `log.md` bullet and listing
+refresh. One editorial event spanning the notes is #2381's, not this
+feature's. A reserved file is an ordinary note here, as it is for `edit`;
+refusing client writes to maintained reserved files is #1419's, for every
+write.
+
+**Commits.** The library adds no commit boundary of its own: under the MCP
+server the tool call is the boundary (#1264), and a direct library caller
+commits per write, as it does for `edit`.
 
 **Regular expressions.** `re` has no timeout and can backtrack
 catastrophically, so a regex runs in `managers/_replace_worker.py` as a
@@ -7970,4 +8004,4 @@ Later decisions (2026-10-22, #1505):
 | 36 | One owner per keyword index | An owning on-disk open of the keyword index takes `{index}.lock` through the vector stores' writer lock, before any DDL, and holds it until the index closes or is collected (#1890). `index`, `reindex` and `embeddings import` refused by it exit 1 with the "Stop the server first" message and change neither store. A server refused by it logs ERROR `vault_unavailable reason=index_busy`, serves with the vault unavailable (every tool names the other process), retries every `_INDEX_BUSY_RETRY_S` (5 s), and opens the vault once the lock is free, logging `vault_available after=index_busy`. Windows uses the same writer exclusion (#1923). | Two processes owning one index each ran a writer and change detection over the same rows, and before this a CLI run beside a server rewrote the keyword index before the vector lock refused it (#1890). Refusing at the open is the only point before anything is written. A server that crashed instead would crash-loop under a restart policy while a second server ran; one that stayed unavailable for good would leave a deployment without a vault after a `reindex` overlapped a restart, so it waits for the lock instead. |
 | 37 | Default embedding store | With no store set the vectors live in the SQLite store; an unset search mode is the store's own, streamed for SQLite and PostgreSQL and resident for numpy, resolved by `store_default_search` in both the server config and the library; a 5.x install upgrades into it through the released-sidecar donor (#1900) | #1899 measured a one-note edit at about 0.27 MB against numpy's whole-store rewrite (106 MB to 1.06 GB) and 20–25 MB of search memory against numpy's 165 MB to 2.1 GB, at the cost of p95 latency (about 150 ms deployed, 1 s at growth); resident speed stays one setting away. Rejected: SQLite resident as the default (it holds every vector in memory, as numpy does, and #1899 did not measure it); PostgreSQL (it needs a service the built-in default must not) |
 | 38 | Outline source | The outline (`get_toc`, `toc://vault/{path}`, folder mode included) reads `note_headings`, filled at index time by `parse_note` with the same heading scan `read(path, section=...)` uses, never the chunk table; `INDEX_SEMANTICS_VERSION` 11 fills it on existing vaults. A read-only open of an index without the table (built by an older version) falls back to chunk headings and logs WARNING `toc_heading_table_missing` once. `schema_version` stays 1: the table is additive and an older version reads an index that has it (#2033). | `get_toc` read `sections` from its start (#97), so every heading the chunker gives no chunk was missing: all of a note of 30 lines or fewer, H3+ inside a section within budget, a heading with no body, and a parent re-split at its sub-headings with no text between. Outline and search chunks answer different questions, and tying one to the other let a chunker change silently change the outline. Storing the headings keeps folder mode one query over up to 200 notes. **Rejected:** parsing headings from disk per call, as `read(section=)` does (#741): no schema change, but folder mode would read up to 200 files per call. **Rejected:** making the chunker keep every heading: chunk boundaries serve search, and a row per heading would change ranking and embeddings. **Rejected:** bumping `schema_version`: an older version would then refuse an index it can read. |
-| 39 | Text replacement preview | One literal or regex replacement covers note bodies only; a preview returns a plan digest, per-note counts and bounded diffs and writes nothing; fixed bounds refuse rather than truncate; a regex runs in an isolated process with a 3 s deadline; folder walks skip dot and excluded paths, named paths reach what `edit` reaches (#2031). | The account holder chose body-only matching on #2031. The plan digest, the isolated regex process and the refusing bounds come from the contributed #2187. The digest is stateless: the account holder selected "Go, lean rebuild (Recommended)" on [#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7241060214). **Rejected:** a cache of previewed plans (server state the digest would depend on); a plan token carrying every entry (the model would have to echo it); diffing with `difflib`, whose cost grows with how far apart the matches are. |
+| 39 | Text replacement across notes | One literal or regex replacement covers note bodies only; a preview returns a plan digest, per-note counts and bounded diffs and writes nothing; an apply recomputes the digest, refuses the whole call when it differs, and otherwise writes each planned note through `edit`'s write path and upkeep, reporting it applied, skipped or refused; fixed bounds refuse rather than truncate; a regex runs in an isolated process with a 3 s deadline; folder walks skip dot and excluded paths, named paths reach what `edit` reaches (#2031). | The account holder chose body-only matching and per-note outcomes on #2031. The plan digest, the isolated regex process and the refusing bounds come from the contributed #2187. The digest is stateless: the account holder selected "Go, lean rebuild (Recommended)" on [#2031](https://github.com/pvliesdonk/markdown-vault-mcp/issues/2031#issuecomment-7241060214). **Rejected:** a cache of previewed plans, which would let an apply skip only the changed notes but makes an apply depend on server state; an all-or-nothing apply; one `log.md` entry per apply (#2381's editorial event); a plan token carrying every entry (the model would have to echo it); diffing with `difflib`, whose cost grows with how far apart the matches are. |

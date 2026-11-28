@@ -2,7 +2,8 @@
 
 A thin view over :class:`~markdown_vault_mcp.managers.document.DocumentManager`
 exposing the vault's write / edit / append / delete / rename / attachment
-operations, and the preview of one text replacement across many notes.
+operations, and one text replacement across many notes, previewed then
+applied.
 Part of the ``vault.py`` facade decomposition (#576); reached via the
 ``Vault.writer`` accessor.
 """
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.text_replace import (
         ReplacePreview,
         ReplaceRequest,
+        ReplaceResult,
     )
     from markdown_vault_mcp.okf import (
         OkfConvertResult,
@@ -68,7 +70,8 @@ class WriterFacet:
             convention_maintainer: The OKF enforced-write convention
                 maintainer (#964); ``None`` (the default, and whenever
                 ``OKF_WRITE`` is off) disables ``log.md`` / ``index.md``
-                upkeep on ``write`` / ``edit``.
+                upkeep on ``write`` / ``edit`` and on each note
+                :meth:`apply_replace` writes.
             previous_revision: Resolves the revision holding a note's current
                 content, for the overwrite breadcrumb (#1137).  ``None`` (the
                 default, and on a vault without git) omits the breadcrumb.
@@ -88,7 +91,12 @@ class WriterFacet:
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
         self._link_reporter = link_reporter
-        self._replacer = TextReplacer(doc_mgr)
+        self._replacer = TextReplacer(doc_mgr, after_write=self._after_edit)
+
+    def _after_edit(self, path: str) -> None:
+        """Run the upkeep :meth:`edit` runs after writing *path*."""
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.maintain(path, "edit")
 
     def preview_replace(self, request: ReplaceRequest) -> ReplacePreview:
         """Preview one text replacement across many notes, writing nothing (#2031).
@@ -111,6 +119,29 @@ class WriterFacet:
                 is not a note, or exceeds one of the fixed bounds.
         """
         return self._replacer.preview(request)
+
+    def apply_replace(self, request: ReplaceRequest, plan: str) -> ReplaceResult:
+        """Apply a previewed text replacement, note by note (#2031).
+
+        Recomputes the plan and refuses, writing nothing, when it is no longer
+        *plan*. Otherwise writes each planned note as :meth:`edit` writes it,
+        with the same upkeep after each write, and reports every note as
+        applied, skipped (it changed just before its write) or refused.
+
+        Args:
+            request: The request :meth:`preview_replace` was given.
+            plan: The ``plan`` that preview returned.
+
+        Returns:
+            :class:`~markdown_vault_mcp.managers.text_replace.ReplaceResult`.
+
+        Raises:
+            ReadOnlyError: If the vault is read-only.
+            DocumentNotFoundError: A named note or folder does not exist.
+            InvalidRequestError: The request is malformed or exceeds a bound.
+            StalePlanError: The notes no longer give *plan*; preview again.
+        """
+        return self._replacer.apply(request, plan)
 
     def _with_link_report(
         self, path: str, report: bool, mutate: Callable[[], _R]
