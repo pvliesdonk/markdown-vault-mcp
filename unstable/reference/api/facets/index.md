@@ -619,7 +619,7 @@ Raises:
 
 ## WriterFacet
 
-Create, edit, append, delete, rename, and attachment writes.
+Create, edit, append, delete, rename, and attachment writes, and the preview of one text replacement across many notes.
 
 ## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None, link_reporter=None)`
 
@@ -636,6 +636,34 @@ Parameters:
 | `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
 | `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
 | `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
+
+### `preview_replace(request)`
+
+Preview one text replacement across many notes, writing nothing (#2031).
+
+Matches cover each note's body; the frontmatter is never matched.
+
+Parameters:
+
+| Name      | Type             | Description                                                                    | Default    |
+| --------- | ---------------- | ------------------------------------------------------------------------------ | ---------- |
+| `request` | `ReplaceRequest` | The pattern, its replacement, and the paths and folders whose notes it covers. | *required* |
+
+Returns:
+
+| Type             | Description                                                      |
+| ---------------- | ---------------------------------------------------------------- |
+| `ReplacePreview` | class:~markdown_vault_mcp.managers.text_replace.ReplacePreview:  |
+| `ReplacePreview` | the plan digest, the notes it would change with their match      |
+| `ReplacePreview` | counts and diffs for the first ten, and the notes it matches but |
+| `ReplacePreview` | would not write.                                                 |
+
+Raises:
+
+| Type                    | Description                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `DocumentNotFoundError` | A named note or folder does not exist.                                                         |
+| `InvalidRequestError`   | The request is malformed, names a path that is not a note, or exceeds one of the fixed bounds. |
 
 ### `okf_preview_log_repair(path)`
 
@@ -935,6 +963,78 @@ Raises:
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `InvalidRequestError`         | If the path escapes the source directory or has an extension not in the allowlist.                                            |
+
+### Previewing a text replacement across notes
+
+`preview_replace` computes one replacement across the notes a request covers and writes nothing. Matches cover each note's body and never its frontmatter.
+
+```
+from markdown_vault_mcp.managers.text_replace import ReplaceRequest
+
+request = ReplaceRequest(
+    pattern=r"(\d{2})/(\d{2})/(\d{4})",
+    replacement=r"\3-\2-\1",
+    folders=("Journal",),
+    regex=True,
+)
+preview = vault.writer.preview_replace(request)
+# preview.notes: each note it would change, with a count and, for the first
+# ten, a diff; preview.refused: notes it would leave alone, with the reason.
+```
+
+A request covers at most 1,000 notes, reads at most 256 KiB per note and 8 MiB in total, changes at most 200 notes and makes at most 10,000 replacements. Past a bound, the request is refused with `InvalidRequestError` rather than cut short. A regular expression gets 3 seconds across the whole selection. A preview shows diffs for the first 10 changed notes, each cut at 3,000 characters; narrow `paths` or `folders` to see the rest.
+
+## `ReplaceRequest(pattern, replacement='', paths=(), folders=(), regex=False)`
+
+One textual replacement and the notes it covers.
+
+Attributes:
+
+| Name          | Type              | Description                                                                       |
+| ------------- | ----------------- | --------------------------------------------------------------------------------- |
+| `pattern`     | `str`             | The text to find: exact text, or a Python regular expression when regex is true.  |
+| `replacement` | `str`             | The text each match becomes. With regex, \\1 and \\g<name> insert capture groups. |
+| `paths`       | `tuple[str, ...]` | Notes named one by one, vault-relative.                                           |
+| `folders`     | `tuple[str, ...]` | Folders whose notes are all covered, recursively; "" is the whole vault.          |
+| `regex`       | `bool`            | Whether pattern is a regular expression.                                          |
+
+## `ReplacePreview(plan, notes, refused, replacements, scanned)`
+
+What a replacement would do, computed from the notes as they are.
+
+Attributes:
+
+| Name           | Type                | Description                                                                                                                                                                                                                                 |
+| -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan`         | `str`               | The plan's digest: the SHA-256 of the pattern, replacement and mode with each changed note's path, etag and new-text hash. Two previews share it exactly when they would write the same text to the same notes from the same note versions. |
+| `notes`        | `list[PlannedNote]` | Every note it would change, in path order.                                                                                                                                                                                                  |
+| `refused`      | `list[NoteRefusal]` | Every covered note it matches but would not write, and every covered note it cannot read as text, in path order.                                                                                                                            |
+| `replacements` | `int`               | Total matches across notes.                                                                                                                                                                                                                 |
+| `scanned`      | `int`               | How many notes were read.                                                                                                                                                                                                                   |
+
+## `PlannedNote(path, replacements, diff, diff_truncated=False)`
+
+A note the previewed replacement would change.
+
+Attributes:
+
+| Name             | Type   | Description                                       |
+| ---------------- | ------ | ------------------------------------------------- |
+| `path`           | `str`  | Vault-relative note path.                         |
+| `replacements`   | `int`  | How many matches the replacement changes in it.   |
+| `diff`           | \`str  | None\`                                            |
+| `diff_truncated` | `bool` | Whether diff was cut at :data:PREVIEW_DIFF_CHARS. |
+
+## `NoteRefusal(path, reason)`
+
+A covered note that matches, or cannot be read, and is not to be written.
+
+Attributes:
+
+| Name     | Type  | Description                 |
+| -------- | ----- | --------------------------- |
+| `path`   | `str` | Vault-relative note path.   |
+| `reason` | `str` | Why the note is left alone. |
 
 ## GraphFacet
 
